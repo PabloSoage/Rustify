@@ -1,0 +1,32 @@
+[package]
+name = "core_engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "core_engine"
+crate-type = ["cdylib"] # Crucial: generates the .so binary for the NDK
+
+[dependencies]
+# JNI bridge with Android
+jni = { version = "0.22.4", default-features = false }
+
+# High-performance asynchronous concurrency and threading
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync"] }
+
+# Ultra-efficient HTTP client with native/rustls TLS support
+reqwest = { version = "0.12.7", default-features = false, features = ["json", "rustls-tls"] }
+
+# The world's fastest JSON serializer/deserializer
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+
+# Fast regular expressions for cleaning metadata
+regex = "1.10.6"
+
+# --- Optimizations for Android NDK (Reduces .so file size) ---
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link Time Optimization: removes dead code
+codegen-units = 1   # Slower compilation, but smaller/faster binary
+strip = true        # Strips debugging symbols
