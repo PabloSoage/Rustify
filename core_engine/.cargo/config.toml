@@ -1,0 +1,3 @@
+[target.aarch64-linux-android]
+# NEON and hardware crypto algorithms are standard and mandatory in arm64-v8a
+rustflags = ["-C", "target-feature=+neon,+crypto"]

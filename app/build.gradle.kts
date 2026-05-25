@@ -10,6 +10,7 @@ android {
             minorApiLevel = 1
         }
     }
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.varuna.rustify"
@@ -19,6 +20,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -31,11 +36,24 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
+
     buildFeatures {
         compose = true
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.directories.add("src/main/jniLibs")
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -56,3 +74,51 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+// --- RUST CORE INTEGRATION ---
+
+// Define the target architectures to compile (64-bit physical devices and modern emulators)
+val targets = listOf("arm64-v8a", "x86_64")
+
+// Detect the host operating system to invoke the correct executable file for Cargo
+val cargoCommand = if (System.getProperty("os.name").lowercase().contains("windows")) "cargo.exe" else "cargo"
+
+// Dynamically register an individual Gradle 'Exec' task for each specified architecture
+targets.forEach { target ->
+    tasks.register<Exec>("buildRustCore_${target}") {
+        group = "rust"
+        description = "Compiles the Rust core_engine for $target architecture via cargo-ndk"
+        workingDir = file("../core_engine")
+
+        inputs.dir("../core_engine/src")
+        outputs.dir("src/main/jniLibs/$target")
+
+        // Execute the cargo-ndk command with the specific architecture target flag and output directory
+        commandLine(
+            cargoCommand, "ndk",
+            "-t", target,
+            "-o", "../app/src/main/jniLibs",
+            "build", "--release"
+        )
+    }
+}
+
+// Orchestrator task that triggers the compilation of all defined Rust architectures sequentially or in parallel
+tasks.register("buildRustCoreAll") {
+    group = "rust"
+    description = "Compiles the Rust core_engine for all supported Android ABIs"
+    dependsOn(targets.map { "buildRustCore_${it}" })
+}
+
+// Hook into the Android build lifecycle to automate Rust compilation
+// This intercepts the package generation phase right before Android merges the native JNI libraries
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+        dependsOn("buildRustCoreAll")
+    }
+}
+
+
+
+
+

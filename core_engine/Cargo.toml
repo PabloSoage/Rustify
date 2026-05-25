@@ -24,6 +24,10 @@ serde_json = "1.0.128"
 # Fast regular expressions for cleaning metadata
 regex = "1.10.6"
 
+# To generate the anonymous Spotify TOTP at the byte level
+totp-rs = { version = "5.5.1", features = ["gen_secret"] }
+
+
 # --- Optimizations for Android NDK (Reduces .so file size) ---
 [profile.release]
 opt-level = "z"     # Optimize for size
