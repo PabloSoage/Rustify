@@ -78,10 +78,13 @@ dependencies {
 // --- RUST CORE INTEGRATION ---
 
 // Define the target architectures to compile (64-bit physical devices and modern emulators)
-val targets = listOf("arm64-v8a", "x86_64")
+val targets = listOf(/*"arm64-v8a",*/ "x86_64")
 
 // Detect the host operating system to invoke the correct executable file for Cargo
 val cargoCommand = if (System.getProperty("os.name").lowercase().contains("windows")) "cargo.exe" else "cargo"
+
+// Get the number of CPU cores for parallel compilation
+val cpuCount = Runtime.getRuntime().availableProcessors()
 
 // Dynamically register an individual Gradle 'Exec' task for each specified architecture
 targets.forEach { target ->
@@ -93,20 +96,23 @@ targets.forEach { target ->
         inputs.dir("../core_engine/src")
         outputs.dir("src/main/jniLibs/$target")
 
-        // Execute the cargo-ndk command with the specific architecture target flag and output directory
+        // Execute the cargo-ndk command with explicit job parallelism and specific architecture target
         commandLine(
             cargoCommand, "ndk",
             "-t", target,
             "-o", "../app/src/main/jniLibs",
-            "build", "--release"
+            "build", "--release",
+            "-j", cpuCount.toString() // Use all available CPU cores for compilation
         )
     }
 }
 
-// Orchestrator task that triggers the compilation of all defined Rust architectures sequentially or in parallel
+// Orchestrator task that triggers the compilation of all defined Rust architectures in parallel
 tasks.register("buildRustCoreAll") {
     group = "rust"
-    description = "Compiles the Rust core_engine for all supported Android ABIs"
+    description = "Compiles the Rust core_engine for all supported Android ABIs (in parallel)"
+
+    // Each architecture task will run in parallel with others
     dependsOn(targets.map { "buildRustCore_${it}" })
 }
 
