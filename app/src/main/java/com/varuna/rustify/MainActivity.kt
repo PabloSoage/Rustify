@@ -43,6 +43,15 @@ import androidx.compose.foundation.clickable
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.SpotifyImage
+import androidx.activity.compose.BackHandler
+import coil.compose.AsyncImage
+import com.varuna.rustify.ui.screens.DetailScreen
+
+sealed class Screen {
+    object Home : Screen()
+    data class PlaylistDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
+    data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +80,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
+    val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
+
+    // Physical / Gesture Back Button handling
+    BackHandler(enabled = navigationStack.size > 1) {
+        navigationStack.removeLast()
+    }
 
     // Auto-restore session on first launch
     LaunchedEffect(Unit) {
@@ -138,67 +153,125 @@ fun EngineTester(modifier: Modifier = Modifier) {
         return
     }
 
-    // Main Home Screen Interface
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Home", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = {
-                        coroutineScope.launch {
-                            spotifyRepo.logout()
-                            CookieManager.getInstance().removeAllCookies(null)
-                            CookieManager.getInstance().flush()
-                            isLoggedIn = false
-                            browseSections = null
-                        }
-                    }) {
-                        Text("Logout", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
-            if (isRunning && browseSections == null) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else if (errorMessage != null) {
-                Column(modifier = Modifier.align(Alignment.Center)) {
-                    Text("Error:", color = MaterialTheme.colorScheme.error)
-                    Text(errorMessage!!)
-                    Button(onClick = {
-                        coroutineScope.launch {
-                            isRunning = true
-                            errorMessage = null
-                            try {
-                                browseSections = spotifyRepo.getBrowseSections(10)
-                            } catch (e: Exception) {
-                                errorMessage = e.message
+    // Render screen based on current navigation stack state
+    when (val currentScreen = navigationStack.lastOrNull() ?: Screen.Home) {
+        is Screen.Home -> {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Home", fontWeight = FontWeight.Bold) },
+                        actions = {
+                            IconButton(onClick = {
+                                coroutineScope.launch {
+                                    spotifyRepo.logout()
+                                    CookieManager.getInstance().removeAllCookies(null)
+                                    CookieManager.getInstance().flush()
+                                    isLoggedIn = false
+                                    browseSections = null
+                                    navigationStack.clear()
+                                    navigationStack.add(Screen.Home)
+                                }
+                            }) {
+                                Text("Logout", color = MaterialTheme.colorScheme.error)
                             }
-                            isRunning = false
                         }
-                    }) {
-                        Text("Retry")
-                    }
+                    )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp)
-                ) {
-                    browseSections?.let { sections ->
-                        items(sections) { section ->
-                            BrowseSectionView(section = section)
+            ) { paddingValues ->
+                Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+                    if (isRunning && browseSections == null) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else if (errorMessage != null) {
+                        Column(modifier = Modifier.align(Alignment.Center)) {
+                            Text("Error:", color = MaterialTheme.colorScheme.error)
+                            Text(errorMessage!!)
+                            Button(onClick = {
+                                coroutineScope.launch {
+                                    isRunning = true
+                                    errorMessage = null
+                                    try {
+                                        browseSections = spotifyRepo.getBrowseSections(10)
+                                    } catch (e: Exception) {
+                                        errorMessage = e.message
+                                    }
+                                    isRunning = false
+                                }
+                            }) {
+                                Text("Retry")
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 16.dp)
+                        ) {
+                            browseSections?.let { sections ->
+                                items(sections) { section ->
+                                    BrowseSectionView(
+                                        section = section,
+                                        onItemClick = { item ->
+                                            when (item) {
+                                                is BrowseSectionItem.PlaylistItem -> {
+                                                    navigationStack.add(
+                                                        Screen.PlaylistDetail(
+                                                            id = item.playlist.id,
+                                                            name = item.playlist.name,
+                                                            images = item.playlist.images
+                                                        )
+                                                    )
+                                                }
+                                                is BrowseSectionItem.AlbumItem -> {
+                                                    navigationStack.add(
+                                                        Screen.AlbumDetail(
+                                                            id = item.album.id,
+                                                            name = item.album.name,
+                                                            images = item.album.images
+                                                        )
+                                                    )
+                                                }
+                                                is BrowseSectionItem.ArtistItem -> {
+                                                    // Optional artist detail handling
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+        is Screen.PlaylistDetail -> {
+            DetailScreen(
+                itemId = currentScreen.id,
+                itemName = currentScreen.name,
+                itemImages = currentScreen.images,
+                isPlaylist = true,
+                spotifyRepo = spotifyRepo,
+                onBackClick = { navigationStack.removeLast() },
+                modifier = modifier
+            )
+        }
+        is Screen.AlbumDetail -> {
+            DetailScreen(
+                itemId = currentScreen.id,
+                itemName = currentScreen.name,
+                itemImages = currentScreen.images,
+                isPlaylist = false,
+                spotifyRepo = spotifyRepo,
+                onBackClick = { navigationStack.removeLast() },
+                modifier = modifier
+            )
+        }
     }
 }
 
 @Composable
-fun BrowseSectionView(section: BrowseSection) {
+fun BrowseSectionView(
+    section: BrowseSection,
+    onItemClick: (BrowseSectionItem) -> Unit
+) {
     if (section.items.isEmpty()) return
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
@@ -214,9 +287,25 @@ fun BrowseSectionView(section: BrowseSection) {
         ) {
             items(section.items) { item ->
                 when (item) {
-                    is BrowseSectionItem.PlaylistItem -> PlaylistItemCard(item.playlist.name, item.playlist.description, item.playlist.images, onClick = {})
-                    is BrowseSectionItem.AlbumItem -> PlaylistItemCard(item.album.name, item.album.artists.joinToString(", ") { it.name }, item.album.images, onClick = {})
-                    is BrowseSectionItem.ArtistItem -> PlaylistItemCard(item.artist.name, "Artist", item.artist.images, isCircle = true, onClick = {})
+                    is BrowseSectionItem.PlaylistItem -> PlaylistItemCard(
+                        title = item.playlist.name, 
+                        subtitle = item.playlist.description, 
+                        images = item.playlist.images, 
+                        onClick = { onItemClick(item) }
+                    )
+                    is BrowseSectionItem.AlbumItem -> PlaylistItemCard(
+                        title = item.album.name, 
+                        subtitle = item.album.artists.joinToString(", ") { it.name }, 
+                        images = item.album.images, 
+                        onClick = { onItemClick(item) }
+                    )
+                    is BrowseSectionItem.ArtistItem -> PlaylistItemCard(
+                        title = item.artist.name, 
+                        subtitle = "Artist", 
+                        images = item.artist.images, 
+                        isCircle = true, 
+                        onClick = { onItemClick(item) }
+                    )
                 }
             }
         }
@@ -244,13 +333,26 @@ fun PlaylistItemCard(
                 .clip(if (isCircle) RoundedCornerShape(70.dp) else RoundedCornerShape(8.dp)),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            if (imageUrl != null) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
-                    Text(title.take(1).uppercase(), style = MaterialTheme.typography.headlineLarge, color = Color.White)
-                }
+            if (!imageUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
             } else {
-                Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
-                    Text(title.take(1).uppercase(), style = MaterialTheme.typography.headlineLarge, color = Color.White)
+                val backgroundColor = if (isCircle) Color.DarkGray else Color(0xFF1DB954).copy(alpha = 0.8f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(backgroundColor), 
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = title.take(1).uppercase(), 
+                        style = MaterialTheme.typography.headlineLarge, 
+                        color = Color.White
+                    )
                 }
             }
         }
