@@ -10,45 +10,34 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.varuna.rustify.bridge.SpotifyEngineException
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.theme.RustifyTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONException
-import org.json.JSONObject
-
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.clickable
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.SpotifyImage
 import androidx.activity.compose.BackHandler
-import coil.compose.AsyncImage
 import com.varuna.rustify.ui.screens.DetailScreen
+import com.varuna.rustify.ui.screens.HomeScreen
+import com.varuna.rustify.ui.screens.SearchScreen
+import com.varuna.rustify.ui.screens.LibraryScreen
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.LibraryMusic
 
 sealed class Screen {
     object Home : Screen()
+    object Search : Screen()
+    object Library : Screen()
     data class PlaylistDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
 }
@@ -84,7 +73,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
 
     // Physical / Gesture Back Button handling
     BackHandler(enabled = navigationStack.size > 1) {
-        navigationStack.removeLast()
+        navigationStack.removeAt(navigationStack.lastIndex)
     }
 
     // Auto-restore session on first launch
@@ -154,229 +143,156 @@ fun EngineTester(modifier: Modifier = Modifier) {
     }
 
     // Render screen based on current navigation stack state
-    when (val currentScreen = navigationStack.lastOrNull() ?: Screen.Home) {
-        is Screen.Home -> {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text("Home", fontWeight = FontWeight.Bold) },
-                        actions = {
-                            IconButton(onClick = {
-                                coroutineScope.launch {
-                                    spotifyRepo.logout()
-                                    CookieManager.getInstance().removeAllCookies(null)
-                                    CookieManager.getInstance().flush()
-                                    isLoggedIn = false
-                                    browseSections = null
-                                    navigationStack.clear()
-                                    navigationStack.add(Screen.Home)
-                                }
-                            }) {
-                                Text("Logout", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    )
-                }
-            ) { paddingValues ->
-                Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
-                    if (isRunning && browseSections == null) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                    } else if (errorMessage != null) {
-                        Column(modifier = Modifier.align(Alignment.Center)) {
-                            Text("Error:", color = MaterialTheme.colorScheme.error)
-                            Text(errorMessage!!)
-                            Button(onClick = {
-                                coroutineScope.launch {
-                                    isRunning = true
-                                    errorMessage = null
-                                    try {
-                                        browseSections = spotifyRepo.getBrowseSections(10)
-                                    } catch (e: Exception) {
-                                        errorMessage = e.message
-                                    }
-                                    isRunning = false
-                                }
-                            }) {
-                                Text("Retry")
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 16.dp)
-                        ) {
-                            browseSections?.let { sections ->
-                                items(sections) { section ->
-                                    BrowseSectionView(
-                                        section = section,
-                                        onItemClick = { item ->
-                                            when (item) {
-                                                is BrowseSectionItem.PlaylistItem -> {
-                                                    navigationStack.add(
-                                                        Screen.PlaylistDetail(
-                                                            id = item.playlist.id,
-                                                            name = item.playlist.name,
-                                                            images = item.playlist.images
-                                                        )
-                                                    )
-                                                }
-                                                is BrowseSectionItem.AlbumItem -> {
-                                                    navigationStack.add(
-                                                        Screen.AlbumDetail(
-                                                            id = item.album.id,
-                                                            name = item.album.name,
-                                                            images = item.album.images
-                                                        )
-                                                    )
-                                                }
-                                                is BrowseSectionItem.ArtistItem -> {
-                                                    // Optional artist detail handling
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        is Screen.PlaylistDetail -> {
-            DetailScreen(
-                itemId = currentScreen.id,
-                itemName = currentScreen.name,
-                itemImages = currentScreen.images,
-                isPlaylist = true,
-                spotifyRepo = spotifyRepo,
-                onBackClick = { navigationStack.removeLast() },
-                modifier = modifier
-            )
-        }
-        is Screen.AlbumDetail -> {
-            DetailScreen(
-                itemId = currentScreen.id,
-                itemName = currentScreen.name,
-                itemImages = currentScreen.images,
-                isPlaylist = false,
-                spotifyRepo = spotifyRepo,
-                onBackClick = { navigationStack.removeLast() },
-                modifier = modifier
-            )
-        }
-    }
-}
+    val currentScreen = navigationStack.lastOrNull() ?: Screen.Home
+    val bottomNavScreens = listOf(Screen.Home, Screen.Search, Screen.Library)
+    val isBottomNavScreen = bottomNavScreens.contains(currentScreen)
 
-@Composable
-fun BrowseSectionView(
-    section: BrowseSection,
-    onItemClick: (BrowseSectionItem) -> Unit
-) {
-    if (section.items.isEmpty()) return
-
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-        Text(
-            text = section.title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(section.items) { item ->
-                when (item) {
-                    is BrowseSectionItem.PlaylistItem -> PlaylistItemCard(
-                        title = item.playlist.name, 
-                        subtitle = item.playlist.description, 
-                        images = item.playlist.images, 
-                        onClick = { onItemClick(item) }
-                    )
-                    is BrowseSectionItem.AlbumItem -> PlaylistItemCard(
-                        title = item.album.name, 
-                        subtitle = item.album.artists.joinToString(", ") { it.name }, 
-                        images = item.album.images, 
-                        onClick = { onItemClick(item) }
-                    )
-                    is BrowseSectionItem.ArtistItem -> PlaylistItemCard(
-                        title = item.artist.name, 
-                        subtitle = "Artist", 
-                        images = item.artist.images, 
-                        isCircle = true, 
-                        onClick = { onItemClick(item) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun PlaylistItemCard(
-    title: String,
-    subtitle: String?,
-    images: List<SpotifyImage>?,
-    isCircle: Boolean = false,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .width(140.dp)
-            .clickable(onClick = onClick)
-    ) {
-        val imageUrl = images?.maxByOrNull { it.width ?: 0 }?.url
-        
-        Surface(
-            modifier = Modifier
-                .size(140.dp)
-                .clip(if (isCircle) RoundedCornerShape(70.dp) else RoundedCornerShape(8.dp)),
-            color = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            if (!imageUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                val backgroundColor = if (isCircle) Color.DarkGray else Color(0xFF1DB954).copy(alpha = 0.8f)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(backgroundColor), 
-                    contentAlignment = Alignment.Center
+    Scaffold(
+        bottomBar = {
+            if (isBottomNavScreen) {
+                NavigationBar(
+                    containerColor = Color(0xFF121212),
+                    contentColor = Color(0xFF1DB954)
                 ) {
-                    Text(
-                        text = title.take(1).uppercase(), 
-                        style = MaterialTheme.typography.headlineLarge, 
-                        color = Color.White
+                    NavigationBarItem(
+                        selected = currentScreen == Screen.Home,
+                        onClick = {
+                            if (currentScreen != Screen.Home) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Home)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                        label = { Text("Home") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentScreen == Screen.Search,
+                        onClick = {
+                            if (currentScreen != Screen.Search) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Search)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                        label = { Text("Search") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentScreen == Screen.Library,
+                        onClick = {
+                            if (currentScreen != Screen.Library) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Library)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
+                        label = { Text("Library") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
                     )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+    ) { paddingValues ->
+        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+            when (currentScreen) {
+                is Screen.Home -> {
+                    HomeScreen(
+                        browseSections = browseSections,
+                        isRunning = isRunning,
+                        errorMessage = errorMessage,
+                        onRetry = {
+                            coroutineScope.launch {
+                                isRunning = true
+                                errorMessage = null
+                                try {
+                                    browseSections = spotifyRepo.getBrowseSections(10)
+                                } catch (e: Exception) {
+                                    errorMessage = e.message
+                                }
+                                isRunning = false
+                            }
+                        },
+                        onItemClick = { item ->
+                            when (item) {
+                                is BrowseSectionItem.PlaylistItem -> {
+                                    navigationStack.add(Screen.PlaylistDetail(item.playlist.id, item.playlist.name, item.playlist.images))
+                                }
+                                is BrowseSectionItem.AlbumItem -> {
+                                    navigationStack.add(Screen.AlbumDetail(item.album.id, item.album.name, item.album.images))
+                                }
+                                is BrowseSectionItem.ArtistItem -> {}
+                            }
+                        }
+                    )
+                }
+                is Screen.Search -> {
+                    SearchScreen(
+                        spotifyRepo = spotifyRepo,
+                        onTrackClick = { /* Maybe play track */ },
+                        onAlbumClick = { id, name, images ->
+                            navigationStack.add(Screen.AlbumDetail(id, name, images))
+                        },
+                        onPlaylistClick = { id, name, images ->
+                            navigationStack.add(Screen.PlaylistDetail(id, name, images))
+                        }
+                    )
+                }
+                is Screen.Library -> {
+                    LibraryScreen(
+                        spotifyRepo = spotifyRepo,
+                        onPlaylistClick = { id, name, images ->
+                            navigationStack.add(Screen.PlaylistDetail(id, name, images))
+                        },
+                        onAlbumClick = { id, name, images ->
+                            navigationStack.add(Screen.AlbumDetail(id, name, images))
+                        },
+                        onTrackClick = { /* Maybe play track */ }
+                    )
+                }
+                is Screen.PlaylistDetail -> {
+                    DetailScreen(
+                        itemId = currentScreen.id,
+                        itemName = currentScreen.name,
+                        itemImages = currentScreen.images,
+                        isPlaylist = true,
+                        spotifyRepo = spotifyRepo,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.AlbumDetail -> {
+                    DetailScreen(
+                        itemId = currentScreen.id,
+                        itemName = currentScreen.name,
+                        itemImages = currentScreen.images,
+                        isPlaylist = false,
+                        spotifyRepo = spotifyRepo,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+            }
         }
     }
 }
+
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable

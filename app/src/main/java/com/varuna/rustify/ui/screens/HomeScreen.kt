@@ -1,0 +1,216 @@
+package com.varuna.rustify.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.varuna.rustify.bridge.BrowseSection
+import com.varuna.rustify.bridge.BrowseSectionItem
+import com.varuna.rustify.bridge.SpotifyImage
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    browseSections: List<BrowseSection>?,
+    isRunning: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+    onItemClick: (BrowseSectionItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val darkBackground = Color(0xFF121212)
+    val gradientColor = Color(0xFF2E2E2E)
+
+    Box(modifier = modifier.fillMaxSize().background(darkBackground)) {
+        // Aesthetic Top Gradient Background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(gradientColor, Color.Transparent)
+                    )
+                )
+        )
+
+        if (isRunning && browseSections == null) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color(0xFF1DB954)
+            )
+        } else if (errorMessage != null) {
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Error Loading Home", color = MaterialTheme.colorScheme.error)
+                Text(errorMessage, color = Color.White)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                ) {
+                    Text("Retry", color = Color.White)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp) // Bottom padding for Nav Bar
+            ) {
+                item {
+                    Text(
+                        text = "Good Evening", // In a real app, calculate based on time
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
+                    )
+                }
+
+                browseSections?.let { sections ->
+                    items(sections) { section ->
+                        BrowseSectionView(
+                            section = section,
+                            onItemClick = onItemClick
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BrowseSectionView(
+    section: BrowseSection,
+    onItemClick: (BrowseSectionItem) -> Unit
+) {
+    if (section.items.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = section.title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(section.items) { item ->
+                when (item) {
+                    is BrowseSectionItem.PlaylistItem -> PlaylistItemCard(
+                        title = item.playlist.name,
+                        subtitle = item.playlist.description,
+                        images = item.playlist.images,
+                        onClick = { onItemClick(item) }
+                    )
+                    is BrowseSectionItem.AlbumItem -> PlaylistItemCard(
+                        title = item.album.name,
+                        subtitle = item.album.artists.joinToString(", ") { it.name },
+                        images = item.album.images,
+                        onClick = { onItemClick(item) }
+                    )
+                    is BrowseSectionItem.ArtistItem -> PlaylistItemCard(
+                        title = item.artist.name,
+                        subtitle = "Artist",
+                        images = item.artist.images,
+                        isCircle = true,
+                        onClick = { onItemClick(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistItemCard(
+    title: String,
+    subtitle: String?,
+    images: List<SpotifyImage>?,
+    isCircle: Boolean = false,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .clickable(onClick = onClick)
+    ) {
+        val imageUrl = images?.maxByOrNull { it.width ?: 0 }?.url
+
+        Surface(
+            modifier = Modifier
+                .size(140.dp)
+                .clip(if (isCircle) RoundedCornerShape(70.dp) else RoundedCornerShape(12.dp)),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            if (!imageUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                val backgroundColor = if (isCircle) Color.DarkGray else Color(0xFF1DB954).copy(alpha = 0.8f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(backgroundColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = title.take(1).uppercase(),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.LightGray,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
