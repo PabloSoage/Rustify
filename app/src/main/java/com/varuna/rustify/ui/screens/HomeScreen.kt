@@ -22,6 +22,7 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.ui.components.PlaylistItemCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,75 +143,6 @@ fun BrowseSectionView(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun PlaylistItemCard(
-    title: String,
-    subtitle: String?,
-    images: List<SpotifyImage>?,
-    isCircle: Boolean = false,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .width(140.dp)
-            .clickable(onClick = onClick)
-    ) {
-        val imageUrl = images?.maxByOrNull { it.width ?: 0 }?.url
-
-        Surface(
-            modifier = Modifier
-                .size(140.dp)
-                .clip(if (isCircle) RoundedCornerShape(70.dp) else RoundedCornerShape(12.dp)),
-            color = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            if (!imageUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                val backgroundColor = if (isCircle) Color.DarkGray else Color(0xFF1DB954).copy(alpha = 0.8f)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(backgroundColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = title.take(1).uppercase(),
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = Color.White
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.LightGray,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }

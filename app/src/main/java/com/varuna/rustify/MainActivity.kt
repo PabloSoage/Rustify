@@ -25,10 +25,13 @@ import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.SpotifyImage
 import androidx.activity.compose.BackHandler
-import com.varuna.rustify.ui.screens.DetailScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.AlbumScreen
+import com.varuna.rustify.ui.screens.PlaylistScreen
+import com.varuna.rustify.ui.screens.ArtistScreen
+import com.varuna.rustify.ui.screens.TrackScreen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -40,6 +43,8 @@ sealed class Screen {
     object Library : Screen()
     data class PlaylistDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
+    data class ArtistDetail(val id: String) : Screen()
+    data class TrackDetail(val id: String) : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -239,7 +244,9 @@ fun EngineTester(modifier: Modifier = Modifier) {
                                 is BrowseSectionItem.AlbumItem -> {
                                     navigationStack.add(Screen.AlbumDetail(item.album.id, item.album.name, item.album.images))
                                 }
-                                is BrowseSectionItem.ArtistItem -> {}
+                                is BrowseSectionItem.ArtistItem -> {
+                                    navigationStack.add(Screen.ArtistDetail(item.artist.id))
+                                }
                             }
                         }
                     )
@@ -247,7 +254,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                 is Screen.Search -> {
                     SearchScreen(
                         spotifyRepo = spotifyRepo,
-                        onTrackClick = { /* Maybe play track */ },
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
@@ -265,27 +272,46 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onTrackClick = { /* Maybe play track */ }
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
                     )
                 }
                 is Screen.PlaylistDetail -> {
-                    DetailScreen(
-                        itemId = currentScreen.id,
-                        itemName = currentScreen.name,
-                        itemImages = currentScreen.images,
-                        isPlaylist = true,
+                    PlaylistScreen(
+                        playlistId = currentScreen.id,
+                        playlistName = currentScreen.name,
+                        playlistImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
-                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
                     )
                 }
                 is Screen.AlbumDetail -> {
-                    DetailScreen(
-                        itemId = currentScreen.id,
-                        itemName = currentScreen.name,
-                        itemImages = currentScreen.images,
-                        isPlaylist = false,
+                    AlbumScreen(
+                        albumId = currentScreen.id,
+                        albumName = currentScreen.name,
+                        albumImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
-                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
+                    )
+                }
+                is Screen.ArtistDetail -> {
+                    ArtistScreen(
+                        artistId = currentScreen.id,
+                        spotifyRepo = spotifyRepo,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
+                        onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                    )
+                }
+                is Screen.TrackDetail -> {
+                    TrackScreen(
+                        trackId = currentScreen.id,
+                        spotifyRepo = spotifyRepo,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
             }
