@@ -95,6 +95,15 @@ targets.forEach { target ->
         description = "Compiles the Rust core_engine for $target architecture via cargo-ndk"
         workingDir = file("../core_engine")
 
+        // Retrieve the NDK path from Android components
+        val androidComponents = project.extensions.getByType<com.android.build.api.variant.ApplicationAndroidComponentsExtension>()
+        val ndkDir = androidComponents.sdkComponents.ndkDirectory.get().asFile
+        val sdkDir = androidComponents.sdkComponents.sdkDirectory.get().asFile
+
+        // Set the environment variables required by cargo-ndk
+        environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
+        environment("ANDROID_HOME", sdkDir.absolutePath)
+
         inputs.dir("../core_engine/src")
         outputs.dir("src/main/jniLibs/$target")
 
