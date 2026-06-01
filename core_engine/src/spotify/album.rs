@@ -39,7 +39,7 @@ impl SpotifyClient {
         let release_date_precision = album_data["date"]["precision"].as_str()
             .or(Some("day"))
             .map(|s| s.to_string());
-        let total_tracks = album_data["tracks"]["totalCount"].as_u64().map(|c| c as u32);
+        let total_tracks = album_data["tracksV2"]["totalCount"].as_u64().map(|c| c as u32);
         let label = album_data["label"].as_str().map(|s| s.to_string());
 
         Ok(FullAlbum {
@@ -74,10 +74,10 @@ impl SpotifyClient {
             return Err(SpotifyError::ApiError(404, "Album not found".to_string()));
         }
 
-        let total_count = album_data["tracks"]["totalCount"].as_u64().unwrap_or(0) as u32;
+        let total_count = album_data["tracksV2"]["totalCount"].as_u64().unwrap_or(0) as u32;
 
         let empty = vec![];
-        let items_arr = album_data["tracks"]["items"].as_array().unwrap_or(&empty);
+        let items_arr = album_data["tracksV2"]["items"].as_array().unwrap_or(&empty);
 
         // Map GQL items to FullTrack
         let mut tracks = Vec::new();

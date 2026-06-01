@@ -959,6 +959,7 @@ impl SpotifyClient {
             "queryWhatsNewFeed" => "3b53dede3c6054e8b7c962dd280eb6761c5d1c82b06b039f4110d76a62b4966b",
             "addToLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
             "removeFromLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
+            "getTrack" => "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294",
             _ => "",
         };
 
@@ -1039,11 +1040,19 @@ pub fn parse_gql_track(track: &Value) -> Option<FullTrack> {
 
     let duration_ms = track["duration"]["totalMilliseconds"]
         .as_u64()
+        .or_else(|| track["trackDuration"]["totalMilliseconds"].as_u64())
+        .or_else(|| track["duration_ms"].as_u64())
+        .or_else(|| track["durationMs"].as_u64())
         .unwrap_or(0) as u32;
 
     let explicit = track["contentRating"]["label"].as_str() == Some("EXPLICIT");
 
-    let artists = parse_gql_artists(&track["artists"]);
+    let mut artists = parse_gql_artists(&track["artists"]);
+    if artists.is_empty() {
+        artists = parse_gql_artists(&track["firstArtist"]);
+        let mut others = parse_gql_artists(&track["otherArtists"]);
+        artists.append(&mut others);
+    }
 
     let album = track.get("albumOfTrack").and_then(|album_data| {
         let album_uri = album_data["uri"].as_str()?;

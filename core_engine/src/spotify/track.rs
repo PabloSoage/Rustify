@@ -13,12 +13,23 @@ const HASH_ADD_TO_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c
 const HASH_REMOVE_FROM_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915";
 
 impl SpotifyClient {
-    /// Fetch full track details via REST API.
-    /// Deserializes into RestFullTrack (snake_case) then converts to FullTrack.
+    /// Fetch full track details via GraphQL API.
     pub async fn get_track(&self, id: &str) -> SpotifyResult<FullTrack> {
-        let path = format!("/tracks/{}", id);
-        let rest: RestFullTrack = self.api_get(&path).await?;
-        Ok(FullTrack::from(rest))
+        let uri = format!("spotify:track:{}", id);
+        let variables = json!({
+            "uri": uri
+        });
+
+        // Passes empty static hash to trigger dynamic lookups automatically
+        let gql = self.gql_post(variables, "getTrack", "").await?;
+        let track_val = &gql["data"]["trackUnion"];
+
+        if track_val.is_null() || track_val["__typename"].as_str() != Some("Track") {
+            return Err(SpotifyError::ApiError(404, "Track not found".to_string()));
+        }
+
+        parse_gql_track(track_val)
+            .ok_or_else(|| SpotifyError::ParseError("Failed to parse track from GQL".to_string()))
     }
 
     /// Save tracks to library via GQL addToLibrary.
