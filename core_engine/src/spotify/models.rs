@@ -48,7 +48,7 @@ pub(crate) struct RestFollowers {
 
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct RestSimpleArtist {
-    pub id: String,
+    pub id: Option<String>,
     pub name: String,
     pub external_urls: RestExternalUrls,
     #[serde(default)]
@@ -57,7 +57,7 @@ pub(crate) struct RestSimpleArtist {
 
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct RestFullArtist {
-    pub id: String,
+    pub id: Option<String>,
     pub name: String,
     pub external_urls: RestExternalUrls,
     #[serde(default)]
@@ -71,7 +71,7 @@ pub(crate) struct RestFullArtist {
 
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct RestSimpleAlbum {
-    pub id: String,
+    pub id: Option<String>,
     pub name: String,
     pub external_urls: RestExternalUrls,
     pub release_date: Option<String>,
@@ -85,7 +85,7 @@ pub(crate) struct RestSimpleAlbum {
 
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct RestFullAlbum {
-    pub id: String,
+    pub id: Option<String>,
     pub name: String,
     pub external_urls: RestExternalUrls,
     pub release_date: Option<String>,
@@ -234,13 +234,14 @@ impl From<RestImage> for SpotifyImage {
 
 impl From<RestSimpleArtist> for SimpleArtist {
     fn from(r: RestSimpleArtist) -> Self {
+        let id = r.id.unwrap_or_default();
         let external_uri = if r.external_urls.spotify.is_empty() {
-            format!("https://open.spotify.com/artist/{}", r.id)
+            if id.is_empty() { String::new() } else { format!("https://open.spotify.com/artist/{}", id) }
         } else {
             r.external_urls.spotify
         };
         SimpleArtist {
-            id: r.id,
+            id,
             name: r.name,
             external_uri,
             images: r.images.map(|imgs| imgs.into_iter().map(SpotifyImage::from).collect()),
@@ -250,13 +251,14 @@ impl From<RestSimpleArtist> for SimpleArtist {
 
 impl From<RestFullArtist> for FullArtist {
     fn from(r: RestFullArtist) -> Self {
+        let id = r.id.unwrap_or_default();
         let external_uri = if r.external_urls.spotify.is_empty() {
-            format!("https://open.spotify.com/artist/{}", r.id)
+            if id.is_empty() { String::new() } else { format!("https://open.spotify.com/artist/{}", id) }
         } else {
             r.external_urls.spotify
         };
         FullArtist {
-            id: r.id,
+            id,
             name: r.name,
             external_uri,
             images: r.images.into_iter().map(SpotifyImage::from).collect(),
@@ -268,13 +270,14 @@ impl From<RestFullArtist> for FullArtist {
 
 impl From<RestSimpleAlbum> for SimpleAlbum {
     fn from(r: RestSimpleAlbum) -> Self {
+        let id = r.id.unwrap_or_default();
         let external_uri = if r.external_urls.spotify.is_empty() {
-            format!("https://open.spotify.com/album/{}", r.id)
+            if id.is_empty() { String::new() } else { format!("https://open.spotify.com/album/{}", id) }
         } else {
             r.external_urls.spotify
         };
         SimpleAlbum {
-            id: r.id,
+            id,
             name: r.name,
             external_uri,
             release_date: r.release_date,
@@ -288,13 +291,14 @@ impl From<RestSimpleAlbum> for SimpleAlbum {
 
 impl From<RestFullAlbum> for FullAlbum {
     fn from(r: RestFullAlbum) -> Self {
+        let id = r.id.unwrap_or_default();
         let external_uri = if r.external_urls.spotify.is_empty() {
-            format!("https://open.spotify.com/album/{}", r.id)
+            if id.is_empty() { String::new() } else { format!("https://open.spotify.com/album/{}", id) }
         } else {
             r.external_urls.spotify
         };
         FullAlbum {
-            id: r.id,
+            id,
             name: r.name,
             external_uri,
             release_date: r.release_date,
