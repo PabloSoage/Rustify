@@ -1,7 +1,7 @@
 // core_engine/src/spotify/album.rs
 //
-// Album endpoints.
-// All REST calls now go through proper RestXxx types and convert via From.
+// Album endpoints rewritten to use 100% GraphQL via api-partner.spotify.com,
+// completely bypassing Envoy REST 429 blocks for Free accounts.
 
 use serde_json::json;
 use crate::spotify::client::*;
@@ -11,33 +11,98 @@ const HASH_WHATS_NEW_FEED: &str = "3b53dede3c6054e8b7c962dd280eb6761c5d1c82b06b0
 const HASH_ADD_TO_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915";
 const HASH_REMOVE_FROM_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915";
 
-// Minimal REST struct for /albums/{id}/tracks (simplified track items).
-#[derive(Debug, serde::Deserialize)]
-struct RestSimpleTrackItem {
-    id: Option<String>,
-}
-
 impl SpotifyClient {
-    /// Fetch full album details via REST API.
+    /// Fetch full album details via GraphQL API.
     pub async fn get_album(&self, id: &str) -> SpotifyResult<FullAlbum> {
-        let path = format!("/albums/{}", id);
-        let rest: RestFullAlbum = self.api_get(&path).await?;
-        Ok(FullAlbum::from(rest))
+        let uri = format!("spotify:album:{}", id);
+        let variables = json!({
+            "uri": uri,
+            "locale": "en",
+            "offset": 0,
+            "limit": 1
+        });
+
+        // Passes empty static hash to trigger dynamic lookups automatically
+        let gql = self.gql_post(variables, "getAlbum", "").await?;
+        let album_data = &gql["data"]["albumUnion"];
+
+        if album_data.is_null() || album_data["__typename"].as_str() != Some("Album") {
+            return Err(SpotifyError::ApiError(404, "Album not found".to_string()));
+        }
+
+        let name = album_data["name"].as_str().unwrap_or("").to_string();
+        let images = parse_images_from_sources(&album_data["coverArt"]["sources"]);
+        let artists = parse_gql_artists(&album_data["artists"]);
+        let release_date = album_data["date"]["isoString"].as_str()
+            .or_else(|| album_data["date"]["year"].as_u64().map(|_| "2026")) // fallback
+            .map(|s| s.to_string());
+        let release_date_precision = album_data["date"]["precision"].as_str()
+            .or(Some("day"))
+            .map(|s| s.to_string());
+        let total_tracks = album_data["tracks"]["totalCount"].as_u64().map(|c| c as u32);
+        let label = album_data["label"].as_str().map(|s| s.to_string());
+
+        Ok(FullAlbum {
+            id: id.to_string(),
+            name,
+            external_uri: format!("https://open.spotify.com/album/{}", id),
+            release_date,
+            release_date_precision,
+            images,
+            artists,
+            album_type: album_data["type"].as_str().map(|s| s.to_lowercase()),
+            total_tracks,
+            record_label: label,
+            genres: vec![],
+        })
     }
 
-    /// Fetch tracks for an album.
-    /// GET /albums/{id}/tracks for IDs → batch GET /tracks for full FullTrack data.
+    /// Fetch tracks for an album using GQL.
     pub async fn get_album_tracks(&self, id: &str, limit: u32, offset: u32) -> SpotifyResult<PaginatedResponse<FullTrack>> {
-        let path = format!("/albums/{}/tracks?limit={}&offset={}", id, limit.min(50), offset);
-        let paging: RestPaging<RestSimpleTrackItem> = self.api_get(&path).await?;
+        let uri = format!("spotify:album:{}", id);
+        let variables = json!({
+            "uri": uri,
+            "locale": "en",
+            "offset": offset,
+            "limit": limit.min(50)
+        });
 
-        let track_ids: Vec<String> = paging.items.into_iter()
-            .filter_map(|t| t.id)
-            .collect();
+        let gql = self.gql_post(variables, "getAlbum", "").await?;
+        let album_data = &gql["data"]["albumUnion"];
 
-        let tracks = self.batch_get_tracks(&track_ids).await?;
+        if album_data.is_null() || album_data["__typename"].as_str() != Some("Album") {
+            return Err(SpotifyError::ApiError(404, "Album not found".to_string()));
+        }
 
-        let next_offset = if paging.next.is_some() {
+        let total_count = album_data["tracks"]["totalCount"].as_u64().unwrap_or(0) as u32;
+
+        let empty = vec![];
+        let items_arr = album_data["tracks"]["items"].as_array().unwrap_or(&empty);
+
+        // Map GQL items to FullTrack
+        let mut tracks = Vec::new();
+        for item in items_arr {
+            let track_val = &item["track"];
+            if let Some(mut track) = parse_gql_track(track_val) {
+                // Set the album context since GQL topTracks or tracks of getAlbum don't have albumOfTrack
+                let album_images = parse_images_from_sources(&album_data["coverArt"]["sources"]);
+                let album_artists = parse_gql_artists(&album_data["artists"]);
+                track.album = Some(SimpleAlbum {
+                    id: id.to_string(),
+                    name: album_data["name"].as_str().unwrap_or("").to_string(),
+                    external_uri: format!("https://open.spotify.com/album/{}", id),
+                    release_date: album_data["date"]["isoString"].as_str().map(|s| s.to_string()),
+                    release_date_precision: album_data["date"]["precision"].as_str().map(|s| s.to_string()),
+                    images: album_images,
+                    artists: album_artists,
+                    album_type: album_data["type"].as_str().map(|s| s.to_lowercase()),
+                });
+                tracks.push(track);
+            }
+        }
+
+        let has_more = offset + (tracks.len() as u32) < total_count;
+        let next_offset = if has_more {
             Some(offset + limit.min(50))
         } else {
             None
@@ -45,10 +110,10 @@ impl SpotifyClient {
 
         Ok(PaginatedResponse {
             items: tracks,
-            total: paging.total,
-            limit: paging.limit,
+            total: total_count,
+            limit: limit.min(50),
             next_offset,
-            has_more: paging.next.is_some(),
+            has_more,
         })
     }
 

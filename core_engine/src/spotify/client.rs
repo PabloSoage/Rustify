@@ -8,9 +8,11 @@
 use reqwest::{Client, header};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use totp_rs::{Algorithm, TOTP, Secret};
+use regex::Regex;
+use std::collections::HashMap;
 
 use crate::spotify::models::*;
 
@@ -107,34 +109,19 @@ const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 
 /// Generate a random-ish user agent to avoid fingerprinting.
 fn generate_user_agent() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let variant = now % 5;
-    let chrome_minor = (now / 7) % 500;
-
-    let os = match variant {
-        0 => "Windows NT 10.0; Win64; x64",
-        1 => "Macintosh; Intel Mac OS X 10_15_7",
-        2 => "X11; Linux x86_64",
-        3 => "Linux; Android 14",
-        _ => "Windows NT 10.0; Win64; x64",
-    };
-
-    let is_mobile = os.contains("Android") || os.contains("iPhone");
-    let mobile_token = if is_mobile { " Mobile" } else { "" };
-
-    format!(
-        "Mozilla/5.0 ({}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.{}.0{} Safari/537.36",
-        os, chrome_minor, mobile_token
-    )
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36".to_string()
 }
 
 pub struct SpotifyClient {
     http: Client,
     credentials: Option<SpotifyCredentials>,
     sp_dc: Option<String>,
+    refresh_token: RwLock<Option<String>>,
+    client_credentials: RwLock<Option<String>>,
+    client_credentials_expiration: RwLock<u64>,
+    developer_client_id: RwLock<Option<String>>,
+    developer_client_secret: RwLock<Option<String>>,
+    gql_hashes: RwLock<HashMap<String, String>>,
 }
 
 impl SpotifyClient {
@@ -146,6 +133,12 @@ impl SpotifyClient {
                 .unwrap(),
             credentials: None,
             sp_dc: None,
+            refresh_token: RwLock::new(None),
+            client_credentials: RwLock::new(None),
+            client_credentials_expiration: RwLock::new(0),
+            developer_client_id: RwLock::new(None),
+            developer_client_secret: RwLock::new(None),
+            gql_hashes: RwLock::new(HashMap::new()),
         }
     }
 
@@ -165,6 +158,7 @@ impl SpotifyClient {
                     error: None,
                     access_token: Some(creds.access_token),
                     expiration: Some(creds.expiration),
+                    refresh_token: None,
                 })
             }
             Err(e) => {
@@ -176,12 +170,128 @@ impl SpotifyClient {
                     error: Some(e.to_string()),
                     access_token: None,
                     expiration: None,
+                    refresh_token: None,
                 })
             }
         }
     }
 
+    pub async fn login_with_auth_code(&mut self, code: &str, redirect_uri: &str) -> SpotifyResult<LoginResult> {
+        let client_id = {
+            let id = self.developer_client_id.read().unwrap();
+            id.clone().ok_or(SpotifyError::InternalError("Client ID not configured".into()))?
+        };
+        let client_secret = {
+            let secret = self.developer_client_secret.read().unwrap();
+            secret.clone().ok_or(SpotifyError::InternalError("Client Secret not configured".into()))?
+        };
+
+        let url = "https://accounts.spotify.com/api/token";
+        let res = self.http.post(url)
+            .basic_auth(&client_id, Some(&client_secret))
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+            ])
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            let status = res.status().as_u16();
+            let body = res.text().await.unwrap_or_default();
+            return Err(SpotifyError::ApiError(status, format!("Auth code exchange failed: {}", body)));
+        }
+
+        #[derive(Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+            refresh_token: Option<String>,
+            expires_in: u64,
+        }
+
+        let resp: TokenResponse = res.json().await?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let creds = SpotifyCredentials {
+            client_id: client_id.clone(),
+            access_token: resp.access_token.clone(),
+            expiration: now + (resp.expires_in * 1000),
+            is_anonymous: false,
+        };
+
+        self.credentials = Some(creds.clone());
+        if let Some(ref rt) = resp.refresh_token {
+            *self.refresh_token.write().unwrap() = Some(rt.clone());
+        }
+
+        Ok(LoginResult {
+            success: true,
+            user: None,
+            error: None,
+            access_token: Some(creds.access_token),
+            expiration: Some(creds.expiration),
+            refresh_token: resp.refresh_token.clone(),
+        })
+    }
+
     pub async fn refresh_token(&mut self) -> SpotifyResult<()> {
+        if let Some(ref rt) = *self.refresh_token.read().unwrap() {
+            let client_id = {
+                let id = self.developer_client_id.read().unwrap();
+                id.clone().ok_or(SpotifyError::InternalError("Client ID not configured".into()))?
+            };
+            let client_secret = {
+                let secret = self.developer_client_secret.read().unwrap();
+                secret.clone().ok_or(SpotifyError::InternalError("Client Secret not configured".into()))?
+            };
+
+            let url = "https://accounts.spotify.com/api/token";
+            let res = self.http.post(url)
+                .basic_auth(&client_id, Some(&client_secret))
+                .form(&[
+                    ("grant_type", "refresh_token"),
+                    ("refresh_token", rt),
+                ])
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                let status = res.status().as_u16();
+                let body = res.text().await.unwrap_or_default();
+                return Err(SpotifyError::ApiError(status, format!("Refresh token failed: {}", body)));
+            }
+
+            #[derive(Deserialize)]
+            struct RefreshResponse {
+                access_token: String,
+                refresh_token: Option<String>,
+                expires_in: u64,
+            }
+
+            let resp: RefreshResponse = res.json().await?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+
+            let creds = SpotifyCredentials {
+                client_id: client_id.clone(),
+                access_token: resp.access_token.clone(),
+                expiration: now + (resp.expires_in * 1000),
+                is_anonymous: false,
+            };
+
+            self.credentials = Some(creds);
+            if let Some(new_rt) = resp.refresh_token {
+                *self.refresh_token.write().unwrap() = Some(new_rt);
+            }
+            return Ok(());
+        }
+
         let sp_dc = self.sp_dc.clone()
             .ok_or(SpotifyError::NotAuthenticated)?;
 
@@ -210,6 +320,7 @@ impl SpotifyClient {
     pub fn logout(&mut self) {
         self.credentials = None;
         self.sp_dc = None;
+        *self.refresh_token.write().unwrap() = None;
     }
 
     pub async fn restore_session(
@@ -217,16 +328,25 @@ impl SpotifyClient {
         sp_dc: &str,
         access_token: Option<&str>,
         expiration: Option<u64>,
+        refresh_token_opt: Option<&str>,
     ) -> SpotifyResult<LoginResult> {
-        self.sp_dc = Some(sp_dc.to_string());
+        if let Some(rt) = refresh_token_opt {
+            if !rt.is_empty() {
+                *self.refresh_token.write().unwrap() = Some(rt.to_string());
+            }
+        }
+
+        self.sp_dc = if sp_dc.is_empty() { None } else { Some(sp_dc.to_string()) };
+
         if let (Some(token), Some(exp)) = (access_token, expiration) {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis() as u64;
             if now + 60000 < exp {
+                let client_id = self.developer_client_id.read().unwrap().clone().unwrap_or_default();
                 let creds = SpotifyCredentials {
-                    client_id: "".to_string(),
+                    client_id,
                     access_token: token.to_string(),
                     expiration: exp,
                     is_anonymous: false,
@@ -238,9 +358,38 @@ impl SpotifyClient {
                     error: None,
                     access_token: Some(token.to_string()),
                     expiration: Some(exp),
+                    refresh_token: self.refresh_token.read().unwrap().clone(),
                 });
             }
         }
+
+        if self.refresh_token.read().unwrap().is_some() {
+            match self.refresh_token().await {
+                Ok(_) => {
+                    let creds = self.credentials.as_ref().unwrap();
+                    let rt = self.refresh_token.read().unwrap().clone();
+                    return Ok(LoginResult {
+                        success: true,
+                        user: None,
+                        error: None,
+                        access_token: Some(creds.access_token.clone()),
+                        expiration: Some(creds.expiration),
+                        refresh_token: rt,
+                    });
+                }
+                Err(e) => {
+                    return Ok(LoginResult {
+                        success: false,
+                        user: None,
+                        error: Some(format!("Failed to refresh session: {}", e)),
+                        access_token: None,
+                        expiration: None,
+                        refresh_token: None,
+                    });
+                }
+            }
+        }
+
         self.login_with_sp_dc(sp_dc).await
     }
 
@@ -357,6 +506,75 @@ impl SpotifyClient {
     }
 
     // =========================================================================
+    // =========================================================================
+    // CLIENT CREDENTIALS FLOW (for REST API)
+    // =========================================================================
+
+    pub fn set_developer_credentials(&self, client_id: &str, client_secret: &str) {
+        *self.developer_client_id.write().unwrap() = Some(client_id.to_string());
+        *self.developer_client_secret.write().unwrap() = Some(client_secret.to_string());
+        *self.client_credentials.write().unwrap() = None;
+        *self.client_credentials_expiration.write().unwrap() = 0;
+    }
+
+    pub async fn fetch_client_credentials_token(&self) -> SpotifyResult<String> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Read from cache
+        {
+            let token_lock = self.client_credentials.read().unwrap();
+            let exp_lock = self.client_credentials_expiration.read().unwrap();
+            if let Some(ref token) = *token_lock {
+                if now + 60 < *exp_lock {
+                    return Ok(token.clone());
+                }
+            }
+        }
+
+        // Get developer credentials or fall back to defaults
+        let client_id = {
+            let id = self.developer_client_id.read().unwrap();
+            id.clone().unwrap_or_else(|| "4c97a4b21a07409ea4017e889d701ab0".to_string())
+        };
+        let client_secret = {
+            let secret = self.developer_client_secret.read().unwrap();
+            secret.clone().unwrap_or_else(|| "049386348c4146059d646b9a89d7fa2a".to_string())
+        };
+
+        let url = "https://accounts.spotify.com/api/token";
+        
+        let res = self.http.post(url)
+            .basic_auth(&client_id, Some(&client_secret))
+            .form(&[("grant_type", "client_credentials")])
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            let status = res.status().as_u16();
+            let body = res.text().await.unwrap_or_default();
+            return Err(SpotifyError::ApiError(status, format!("Client credentials request failed: {}", body)));
+        }
+
+        #[derive(Deserialize)]
+        struct ClientCredentialsResponse {
+            access_token: String,
+            expires_in: u64,
+        }
+
+        let resp: ClientCredentialsResponse = res.json().await?;
+        let token = resp.access_token.clone();
+
+        // Update cache
+        *self.client_credentials.write().unwrap() = Some(token.clone());
+        *self.client_credentials_expiration.write().unwrap() = now + resp.expires_in;
+
+        Ok(token)
+    }
+
+    // =========================================================================
     // REST API (api.spotify.com/v1)
     // =========================================================================
 
@@ -378,12 +596,15 @@ impl SpotifyClient {
     }
 
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> SpotifyResult<T> {
-        let token = self.access_token()?;
+        let token = if let Ok(user_token) = self.access_token() {
+            user_token.to_string()
+        } else {
+            self.fetch_client_credentials_token().await?
+        };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let res = self.http.get(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header("App-Platform", "WebPlayer")
             .send()
             .await?;
 
@@ -392,12 +613,15 @@ impl SpotifyClient {
     }
 
     pub async fn api_post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> SpotifyResult<T> {
-        let token = self.access_token()?;
+        let token = if let Ok(user_token) = self.access_token() {
+            user_token.to_string()
+        } else {
+            self.fetch_client_credentials_token().await?
+        };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let res = self.http.post(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header("App-Platform", "WebPlayer")
             .json(body)
             .send()
             .await?;
@@ -407,12 +631,15 @@ impl SpotifyClient {
     }
 
     pub async fn api_put(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = self.access_token()?;
+        let token = if let Ok(user_token) = self.access_token() {
+            user_token.to_string()
+        } else {
+            self.fetch_client_credentials_token().await?
+        };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let res = self.http.put(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header("App-Platform", "WebPlayer")
             .json(body)
             .send()
             .await?;
@@ -422,12 +649,15 @@ impl SpotifyClient {
     }
 
     pub async fn api_delete(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = self.access_token()?;
+        let token = if let Ok(user_token) = self.access_token() {
+            user_token.to_string()
+        } else {
+            self.fetch_client_credentials_token().await?
+        };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let res = self.http.delete(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header("App-Platform", "WebPlayer")
             .json(body)
             .send()
             .await?;
@@ -506,13 +736,19 @@ impl SpotifyClient {
     pub async fn gql_post(&self, variables: Value, operation_name: &str, sha256_hash: &str) -> SpotifyResult<Value> {
         let token = self.access_token()?;
 
+        let hash = if sha256_hash.is_empty() {
+            self.get_gql_hash(operation_name).await?
+        } else {
+            sha256_hash.to_string()
+        };
+
         let body = GqlRequest {
             variables,
             operation_name: operation_name.to_string(),
             extensions: GqlExtensions {
                 persisted_query: GqlPersistedQuery {
                     version: 1,
-                    sha256_hash: sha256_hash.to_string(),
+                    sha256_hash: hash,
                 },
             },
         };
@@ -548,6 +784,190 @@ impl SpotifyClient {
         }
 
         Ok(json)
+    }
+
+    /// Scrapes open.spotify.com and Spotify Web Player JS chunks to dynamically extract the latest sha256 GQL operation hashes.
+    pub async fn fetch_gql_hashes(&self) -> SpotifyResult<()> {
+        // Step 1: Fetch Spotify homepage
+        let resp = self.http.get("https://open.spotify.com").send().await?;
+        let html = resp.text().await?;
+
+        // Step 2: Extract JS links
+        let re_js = Regex::new(r#"src="([^"]+\.js)""#).unwrap();
+        let js_links: Vec<String> = re_js.captures_iter(&html)
+            .map(|cap| cap[1].to_string())
+            .collect();
+
+        // Step 3: Find web-player JS pack
+        let js_pack_url = js_links
+            .iter()
+            .find(|link| link.contains("web-player/web-player") && link.ends_with(".js"))
+            .cloned();
+
+        let js_pack_url = match js_pack_url {
+            Some(url) => {
+                if url.starts_with('/') {
+                    format!("https://open.spotify.com{}", url)
+                } else {
+                    url
+                }
+            }
+            None => return Err(SpotifyError::InternalError("Could not find web-player valid JS link".into())),
+        };
+
+        // Step 4: Extract CDN base URL from the JS pack URL
+        let cdn_base = js_pack_url
+            .rsplit_once('/')
+            .map(|(base, _)| base.to_string())
+            .ok_or_else(|| SpotifyError::InternalError("Could not parse CDN base from JS URL".into()))?;
+
+        // Step 5: Fetch the web-player JS pack
+        let resp = self.http.get(&js_pack_url).send().await?;
+        let js_content = resp.text().await?;
+
+        // Step 6: Extract chunk mappings
+        let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)\}"#).unwrap();
+        let matches: Vec<_> = re_obj.find_iter(&js_content).map(|m| m.as_str()).collect();
+
+        if matches.len() < 5 {
+            return Err(SpotifyError::InternalError(format!(
+                "Could not find both mappings in the JS code (matches found: {})",
+                matches.len()
+            )));
+        }
+
+        // map1 is at index 3: key -> hash (e.g. 4406 -> "8bfb4d6d")
+        // map2 is at index 4: key -> name (e.g. 4406 -> "xpui-routes-search")
+        let hash_map = self.parse_js_dict(matches[3])?;
+        let name_map = self.parse_js_dict(matches[4])?;
+
+        // Step 7: Combine chunks
+        let mut combined_chunks = Vec::new();
+        for (key, name) in &name_map {
+            if let Some(hash) = hash_map.get(key) {
+                combined_chunks.push(format!("{}.{}.js", name, hash));
+            }
+        }
+
+        // Step 8: Fetch main JS and chunks to search for operation hashes
+        let mut raw_hashes = js_content;
+
+        // Fetch each chunk and append to raw_hashes
+        for chunk in combined_chunks {
+            let url = format!("{}/{}", cdn_base, chunk);
+            if let Ok(resp) = self.http.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(text) = resp.text().await {
+                        raw_hashes.push_str(&text);
+                    }
+                }
+            }
+        }
+
+        // Step 9: Parse all GQL operation names and sha256 hashes using Regex
+        let re_hash = Regex::new(r#""([^"]+)","(query|mutation)","([a-f0-9]{64})""#).unwrap();
+        let mut new_hashes = HashMap::new();
+        for cap in re_hash.captures_iter(&raw_hashes) {
+            let op_name = cap[1].to_string();
+            let hash = cap[3].to_string();
+            new_hashes.insert(op_name, hash);
+        }
+
+        eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes", new_hashes.len());
+
+        let mut cache = self.gql_hashes.write().unwrap();
+        *cache = new_hashes;
+
+        Ok(())
+    }
+
+    fn parse_js_dict(&self, s: &str) -> SpotifyResult<HashMap<i32, String>> {
+        let content = s.trim_start_matches('{').trim_end_matches('}');
+        let mut map = HashMap::new();
+
+        let mut current = content;
+        while !current.is_empty() {
+            if let Some(colon_idx) = current.find(':') {
+                let key_str = &current[..colon_idx];
+                let key: i32 = key_str
+                    .parse()
+                    .map_err(|_| SpotifyError::ParseError(format!("Failed to parse key: {}", key_str)))?;
+
+                let remainder = &current[colon_idx + 1..];
+                if !remainder.starts_with('"') {
+                    return Err(SpotifyError::ParseError("Value does not start with quote".into()));
+                }
+
+                if let Some(end_quote_idx) = remainder[1..].find('"') {
+                    let end_quote_real_idx = end_quote_idx + 1;
+                    let value = &remainder[1..end_quote_real_idx];
+                    map.insert(key, value.to_string());
+
+                    if remainder.len() > end_quote_real_idx + 1 {
+                        if remainder.as_bytes()[end_quote_real_idx + 1] == b',' {
+                            current = &remainder[end_quote_real_idx + 2..];
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
+                    return Err(SpotifyError::ParseError("Value does not end with quote".into()));
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(map)
+    }
+
+    /// Retrieve GQL operation hash by name, either from cache or scraping open.spotify.com, with hardcoded fallbacks.
+    pub async fn get_gql_hash(&self, operation_name: &str) -> SpotifyResult<String> {
+        // First try reading from cache
+        {
+            let cache = self.gql_hashes.read().unwrap();
+            if let Some(hash) = cache.get(operation_name) {
+                return Ok(hash.clone());
+            }
+        }
+
+        // If not found, fetch them
+        if let Err(e) = self.fetch_gql_hashes().await {
+            eprintln!("[Spotify] Failed to fetch GQL hashes dynamically: {}. Using fallback.", e);
+        }
+
+        // Try reading from cache again
+        {
+            let cache = self.gql_hashes.read().unwrap();
+            if let Some(hash) = cache.get(operation_name) {
+                return Ok(hash.clone());
+            }
+        }
+
+        // Fallback static hashes for common operations just in case
+        let fallback = match operation_name {
+            "getAlbum" => "317769974246830509a25b3992b8d00ca45a556dfbfbf6d8b9415c1e5509c25f",
+            "fetchPlaylist" => "63df14979e27306db09b9f71c4c1a792440026e64c39ebc6381df43d46342807",
+            "queryArtistOverview" => "54b684534720973a903332eb45c613e55136ff937e29cf9787ffda42a1768df2",
+            "searchDesktop" => "4801118d4a100f756e833d33984436a3899cff359c532f8fd3aaf174b60b3b49",
+            "searchTracks" => "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428",
+            "searchAlbums" => "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2",
+            "searchArtists" => "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909",
+            "searchPlaylists" => "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58",
+            "queryWhatsNewFeed" => "3b53dede3c6054e8b7c962dd280eb6761c5d1c82b06b039f4110d76a62b4966b",
+            "addToLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
+            "removeFromLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
+            _ => "",
+        };
+
+        if !fallback.is_empty() {
+            eprintln!("[Spotify] GQL hash for {} not found, using static fallback", operation_name);
+            return Ok(fallback.to_string());
+        }
+
+        Err(SpotifyError::InternalError(format!("Could not find hash for GQL operation: {}", operation_name)))
     }
 }
 

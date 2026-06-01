@@ -35,9 +35,46 @@ class SpotifyRepository(context: Context) {
         private const val KEY_SP_DC = "sp_dc_cookie"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
+        private const val KEY_CLIENT_ID = "developer_client_id"
+        private const val KEY_CLIENT_SECRET = "developer_client_secret"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        // Load stored developer credentials or fall back to defaults (bypass 429 errors)
+        val clientId = prefs.getString(KEY_CLIENT_ID, "4c97a4b21a07409ea4017e889d701ab0") ?: "4c97a4b21a07409ea4017e889d701ab0"
+        val clientSecret = prefs.getString(KEY_CLIENT_SECRET, "049386348c4146059d646b9a89d7fa2a") ?: "049386348c4146059d646b9a89d7fa2a"
+        NativeEngine.setDeveloperCredentials(clientId, clientSecret)
+    }
+
+    /**
+     * Sets custom developer credentials, updates the native engine, and persists them in SharedPreferences.
+     */
+    fun setDeveloperCredentials(clientId: String, clientSecret: String) {
+        prefs.edit().apply {
+            putString(KEY_CLIENT_ID, clientId)
+            putString(KEY_CLIENT_SECRET, clientSecret)
+        }.apply()
+        NativeEngine.setDeveloperCredentials(clientId, clientSecret)
+    }
+
+    /**
+     * Gets the saved developer Client ID, if configured.
+     */
+    fun getDeveloperClientId(): String? {
+        val stored = prefs.getString(KEY_CLIENT_ID, null)
+        return if (stored == "4c97a4b21a07409ea4017e889d701ab0") null else stored
+    }
+
+    /**
+     * Gets the saved developer Client Secret, if configured.
+     */
+    fun getDeveloperClientSecret(): String? {
+        val stored = prefs.getString(KEY_CLIENT_SECRET, null)
+        return if (stored == "049386348c4146059d646b9a89d7fa2a") null else stored
+    }
 
     // =========================================================================
     // INTERNAL HELPERS
@@ -96,11 +133,16 @@ class SpotifyRepository(context: Context) {
     }
 
     /**
-     * Logout: clears Rust state and persisted cookie.
+     * Logout: clears Rust state and persisted cookie/tokens. Preserves developer settings.
      */
     suspend fun logout() = withContext(Dispatchers.IO) {
         NativeEngine.logoutSpotifyNative()
-        prefs.edit().clear().apply()
+        prefs.edit().apply {
+            remove(KEY_SP_DC)
+            remove(KEY_ACCESS_TOKEN)
+            remove(KEY_EXPIRATION)
+            remove(KEY_REFRESH_TOKEN)
+        }.apply()
     }
 
     /**
@@ -109,25 +151,56 @@ class SpotifyRepository(context: Context) {
     fun isAuthenticated(): Boolean = NativeEngine.isSpotifyAuthenticatedNative()
 
     /**
-     * Attempt to restore a previous session from the saved sp_dc cookie.
-     * Call this on app startup to auto-login.
-     * @return LoginResult if a saved cookie exists, null if no saved session.
+     * Login using OAuth Authorization Code obtained from redirect.
      */
-    suspend fun restoreSession(): LoginResult? = withContext(Dispatchers.IO) {
-        val savedCookie = prefs.getString(KEY_SP_DC, null) ?: return@withContext null
-        val cachedToken = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
-        val cachedExp = prefs.getLong(KEY_EXPIRATION, 0L)
-        
-        val json = NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp)
+    suspend fun loginWithAuthCode(code: String, redirectUri: String): LoginResult = withContext(Dispatchers.IO) {
+        val json = NativeEngine.loginSpotifyWithAuthCodeNative(code, redirectUri)
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
             prefs.edit().apply {
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
+                if (result.refreshToken != null && result.refreshToken.isNotEmpty()) {
+                    putString(KEY_REFRESH_TOKEN, result.refreshToken)
+                }
+            }.apply()
+        }
+        result
+    }
+
+    /**
+     * Attempt to restore a previous session from the saved sp_dc cookie or OAuth refresh token.
+     * Call this on app startup to auto-login.
+     * @return LoginResult if a saved cookie or refresh token exists, null if no saved session.
+     */
+    suspend fun restoreSession(): LoginResult? = withContext(Dispatchers.IO) {
+        val savedCookie = prefs.getString(KEY_SP_DC, "") ?: ""
+        val cachedToken = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
+        val cachedExp = prefs.getLong(KEY_EXPIRATION, 0L)
+        val savedRefreshToken = prefs.getString(KEY_REFRESH_TOKEN, "") ?: ""
+        
+        if (savedCookie.isEmpty() && savedRefreshToken.isEmpty()) {
+            return@withContext null
+        }
+        
+        val json = NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp, savedRefreshToken)
+        val result = LoginResult.fromJson(JSONObject(json))
+        if (result.success) {
+            prefs.edit().apply {
+                putString(KEY_ACCESS_TOKEN, result.accessToken)
+                putLong(KEY_EXPIRATION, result.expiration ?: 0L)
+                if (result.refreshToken != null && result.refreshToken.isNotEmpty()) {
+                    putString(KEY_REFRESH_TOKEN, result.refreshToken)
+                }
             }.apply()
         } else {
-            // Cookie and token are no longer valid, clear them
-            prefs.edit().clear().apply()
+            // Cookie and tokens are no longer valid, clear session (preserve developer settings)
+            prefs.edit().apply {
+                remove(KEY_SP_DC)
+                remove(KEY_ACCESS_TOKEN)
+                remove(KEY_EXPIRATION)
+                remove(KEY_REFRESH_TOKEN)
+            }.apply()
         }
         result
     }
@@ -141,9 +214,10 @@ class SpotifyRepository(context: Context) {
     }
 
     /**
-     * Check if there's a saved session cookie available.
+     * Check if there's a saved session available (either sp_dc cookie or refresh token).
      */
-    fun hasSavedSession(): Boolean = prefs.getString(KEY_SP_DC, null) != null
+    fun hasSavedSession(): Boolean = 
+        (prefs.getString(KEY_SP_DC, null) != null) || (prefs.getString(KEY_REFRESH_TOKEN, null) != null)
 
     // =========================================================================
     // USER / LIBRARY

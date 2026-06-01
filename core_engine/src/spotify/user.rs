@@ -87,7 +87,7 @@ impl SpotifyClient {
         let total_count = library_data["totalCount"].as_u64().unwrap_or(0) as u32;
 
         let empty = vec![];
-        let album_ids: Vec<String> = library_data["items"]
+        let albums: Vec<FullAlbum> = library_data["items"]
             .as_array()
             .unwrap_or(&empty)
             .iter()
@@ -95,14 +95,29 @@ impl SpotifyClient {
                 item["item"]["__typename"].as_str() == Some("AlbumResponseWrapper") &&
                 item["item"]["data"]["__typename"].as_str() == Some("Album")
             })
-            .filter_map(|item| id_from_uri(item["item"]["_uri"].as_str()?).map(|s| s.to_string()))
-            .collect();
+            .filter_map(|item| {
+                let album_data = &item["item"]["data"];
+                let uri = item["item"]["_uri"].as_str().or_else(|| album_data["uri"].as_str())?;
+                let id = id_from_uri(uri)?.to_string();
 
-        let albums = if album_ids.is_empty() {
-            vec![]
-        } else {
-            self.batch_get_albums(&album_ids).await?
-        };
+                let images = parse_images_from_sources(&album_data["coverArt"]["sources"]);
+                let artists = parse_gql_artists(&album_data["artists"]);
+
+                Some(FullAlbum {
+                    id: id.clone(),
+                    name: album_data["name"].as_str().unwrap_or("").to_string(),
+                    images,
+                    artists,
+                    release_date: None,
+                    release_date_precision: None,
+                    album_type: None,
+                    total_tracks: None,
+                    record_label: None,
+                    genres: vec![],
+                    external_uri: format!("https://open.spotify.com/album/{}", id),
+                })
+            })
+            .collect();
 
         let current_offset = paging_info["offset"].as_u64().unwrap_or(offset as u64) as u32;
         let current_limit = paging_info["limit"].as_u64().unwrap_or(limit as u64) as u32;
@@ -141,7 +156,7 @@ impl SpotifyClient {
         let total_count = library_data["totalCount"].as_u64().unwrap_or(0) as u32;
 
         let empty = vec![];
-        let artist_ids: Vec<String> = library_data["items"]
+        let artists: Vec<FullArtist> = library_data["items"]
             .as_array()
             .unwrap_or(&empty)
             .iter()
@@ -149,14 +164,23 @@ impl SpotifyClient {
                 item["item"]["__typename"].as_str() == Some("ArtistResponseWrapper") &&
                 item["item"]["data"]["__typename"].as_str() == Some("Artist")
             })
-            .filter_map(|item| id_from_uri(item["item"]["_uri"].as_str()?).map(|s| s.to_string()))
-            .collect();
+            .filter_map(|item| {
+                let artist_data = &item["item"]["data"];
+                let uri = item["item"]["_uri"].as_str().or_else(|| artist_data["uri"].as_str())?;
+                let id = id_from_uri(uri)?.to_string();
 
-        let artists = if artist_ids.is_empty() {
-            vec![]
-        } else {
-            self.batch_get_artists(&artist_ids).await?
-        };
+                let images = parse_images_from_sources(&artist_data["visuals"]["avatarImage"]["sources"]);
+
+                Some(FullArtist {
+                    id: id.clone(),
+                    name: artist_data["profile"]["name"].as_str().unwrap_or("").to_string(),
+                    images,
+                    genres: vec![],
+                    followers: None,
+                    external_uri: format!("https://open.spotify.com/artist/{}", id),
+                })
+            })
+            .collect();
 
         let current_offset = paging_info["offset"].as_u64().unwrap_or(offset as u64) as u32;
         let current_limit = paging_info["limit"].as_u64().unwrap_or(limit as u64) as u32;

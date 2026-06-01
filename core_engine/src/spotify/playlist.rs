@@ -1,33 +1,100 @@
 // core_engine/src/spotify/playlist.rs
 //
-// Playlist endpoints — REST with proper RestXxx deserialization.
+// Playlist endpoints.
+// GET requests now use 100% GraphQL via api-partner.spotify.com.
+// Write/mutation operations remain REST since they don't encounter Envoy blocks.
 
 use serde_json::{json, Value};
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 
 impl SpotifyClient {
-    /// Fetch full playlist details via REST API.
+    /// Fetch full playlist details via GraphQL API.
     pub async fn get_playlist(&self, id: &str) -> SpotifyResult<FullPlaylist> {
-        let path = format!("/playlists/{}", id);
-        let rest: RestFullPlaylist = self.api_get(&path).await?;
-        Ok(FullPlaylist::from(rest))
+        let uri = format!("spotify:playlist:{}", id);
+        let variables = json!({
+            "uri": uri,
+            "offset": 0,
+            "limit": 1,
+            "enableWatchFeedEntrypoint": false
+        });
+
+        let gql = self.gql_post(variables, "fetchPlaylist", "").await?;
+        let playlist_data = &gql["data"]["playlistV2"];
+
+        if playlist_data.is_null() || playlist_data["__typename"].as_str() != Some("Playlist") {
+            return Err(SpotifyError::ApiError(404, "Playlist not found".to_string()));
+        }
+
+        let name = playlist_data["name"].as_str().unwrap_or("").to_string();
+        let description = playlist_data["description"].as_str().map(|s| s.to_string());
+        let images = parse_images_nested(&playlist_data["images"]);
+
+        let owner = playlist_data.get("ownerV2").and_then(|o| o.get("data")).map(|owner_data| {
+            let owner_uri = owner_data["uri"].as_str().unwrap_or("");
+            let owner_id = id_from_uri(owner_uri).unwrap_or("").to_string();
+            SpotifyUser {
+                id: owner_id.clone(),
+                name: owner_data["name"].as_str().map(|s| s.to_string()),
+                external_uri: format!("https://open.spotify.com/user/{}", owner_id),
+                images: parse_images_from_sources(&owner_data["avatar"]["sources"]),
+                followers: None,
+                country: None,
+                product: None,
+            }
+        });
+
+        let total_tracks = playlist_data["content"]["totalCount"].as_u64().unwrap_or(0) as u32;
+
+        Ok(FullPlaylist {
+            id: id.to_string(),
+            name,
+            description,
+            images,
+            external_uri: format!("https://open.spotify.com/playlist/{}", id),
+            owner,
+            tracks: Some(PlaylistTracks { total: total_tracks }),
+            collaborative: false,
+            public: playlist_data["public"].as_bool(),
+        })
     }
 
-    /// Fetch tracks within a playlist via REST API.
-    /// Items deserialize into RestPlaylistTrackItem (which contains RestFullTrack),
-    /// then convert to FullTrack via From.
+    /// Fetch tracks within a playlist via GraphQL API.
     pub async fn get_playlist_tracks(&self, id: &str, limit: u32, offset: u32) -> SpotifyResult<PaginatedResponse<FullTrack>> {
-        let path = format!("/playlists/{}/tracks?limit={}&offset={}", id, limit.min(100), offset);
-        let paging: RestPaging<RestPlaylistTrackItem> = self.api_get(&path).await?;
+        let uri = format!("spotify:playlist:{}", id);
+        let variables = json!({
+            "uri": uri,
+            "offset": offset,
+            "limit": limit.min(100),
+            "enableWatchFeedEntrypoint": false
+        });
 
-        let tracks: Vec<FullTrack> = paging.items
-            .into_iter()
-            .filter_map(|item| item.track)
-            .map(FullTrack::from)
-            .collect();
+        let gql = self.gql_post(variables, "fetchPlaylist", "").await?;
+        let playlist_data = &gql["data"]["playlistV2"];
 
-        let next_offset = if paging.next.is_some() {
+        if playlist_data.is_null() || playlist_data["__typename"].as_str() != Some("Playlist") {
+            return Err(SpotifyError::ApiError(404, "Playlist not found".to_string()));
+        }
+
+        let total_count = playlist_data["content"]["totalCount"].as_u64().unwrap_or(0) as u32;
+
+        let empty = vec![];
+        let items_arr = playlist_data["content"]["items"].as_array().unwrap_or(&empty);
+
+        let mut tracks = Vec::new();
+        for item in items_arr {
+            let track_val = item.get("itemV2")
+                .or_else(|| item.get("item"))
+                .and_then(|v| v.get("data"));
+            if let Some(track_val) = track_val {
+                if let Some(track) = parse_gql_track(track_val) {
+                    tracks.push(track);
+                }
+            }
+        }
+
+        let has_more = offset + (tracks.len() as u32) < total_count;
+        let next_offset = if has_more {
             Some(offset + limit.min(100))
         } else {
             None
@@ -35,10 +102,10 @@ impl SpotifyClient {
 
         Ok(PaginatedResponse {
             items: tracks,
-            total: paging.total,
-            limit: paging.limit,
+            total: total_count,
+            limit: limit.min(100),
             next_offset,
-            has_more: paging.next.is_some(),
+            has_more,
         })
     }
 

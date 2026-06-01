@@ -21,7 +21,7 @@ impl SpotifyClient {
     /// (proper snake_case) so deserialization is correct.
     async fn convert_gql_tracks(&self, tracks_data: &serde_json::Value) -> SpotifyResult<Vec<FullTrack>> {
         let empty = vec![];
-        let ids: Vec<String> = tracks_data["items"]
+        let tracks: Vec<FullTrack> = tracks_data["items"]
             .as_array()
             .unwrap_or(&empty)
             .iter()
@@ -29,14 +29,12 @@ impl SpotifyClient {
                 item["item"]["__typename"].as_str() == Some("TrackResponseWrapper") &&
                 item["item"]["data"]["__typename"].as_str() == Some("Track")
             })
-            .filter_map(|item| id_from_uri(item["item"]["data"]["uri"].as_str()?).map(|s| s.to_string()))
+            .filter_map(|item| {
+                parse_gql_track(&item["item"]["data"])
+            })
             .collect();
 
-        if ids.is_empty() {
-            return Ok(vec![]);
-        }
-
-        self.batch_get_tracks(&ids).await
+        Ok(tracks)
     }
 
     /// Convert GQL albumsV2 search results inline.

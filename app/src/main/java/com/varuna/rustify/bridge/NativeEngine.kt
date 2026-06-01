@@ -59,13 +59,32 @@ object NativeEngine {
     external fun isSpotifyAuthenticatedNative(): Boolean
 
     /**
-     * Restores a previous session from a saved sp_dc cookie (called on app start).
+     * Restores a previous session from a saved sp_dc cookie or OAuth refresh token (called on app start).
      * @param spDcCookie The saved sp_dc cookie value.
      * @param accessToken The saved access token.
      * @param expirationMs The expiration timestamp in milliseconds.
+     * @param refreshToken The saved OAuth refresh token.
      * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
      */
-    external fun restoreSpotifySessionNative(spDcCookie: String, accessToken: String, expirationMs: Long): String
+    external fun restoreSpotifySessionNative(spDcCookie: String, accessToken: String, expirationMs: Long, refreshToken: String): String
+
+    /**
+     * Authenticates the user using the OAuth authorization code.
+     * @param code The authorization code.
+     * @param redirectUri The registered redirect URI.
+     * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
+     */
+    external fun loginSpotifyWithAuthCodeNative(code: String, redirectUri: String): String
+
+    /**
+     * Sets the Spotify Developer Credentials (Client ID & Client Secret) in the Rust engine.
+     * These credentials will be used for REST API requests to bypass 429 errors.
+     */
+    fun setDeveloperCredentials(clientId: String, clientSecret: String): Boolean {
+        return setSpotifyDeveloperCredentialsNative(clientId, clientSecret)
+    }
+
+    private external fun setSpotifyDeveloperCredentialsNative(clientId: String, clientSecret: String): Boolean
 
     // =====================================================================
     // SPOTIFY — USER / LIBRARY

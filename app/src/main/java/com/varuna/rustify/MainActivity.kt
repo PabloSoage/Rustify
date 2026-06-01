@@ -73,6 +73,11 @@ fun EngineTester(modifier: Modifier = Modifier) {
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    // Dynamic credentials input state
+    var showDevSettings by remember { mutableStateOf(false) }
+    var clientIdInput by remember { mutableStateOf(spotifyRepo.getDeveloperClientId() ?: "") }
+    var clientSecretInput by remember { mutableStateOf(spotifyRepo.getDeveloperClientSecret() ?: "") }
+
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
 
@@ -101,13 +106,19 @@ fun EngineTester(modifier: Modifier = Modifier) {
     }
 
     if (showWebView) {
+        val hasCustomCreds = clientIdInput.trim().isNotEmpty() && clientSecretInput.trim().isNotEmpty()
         SpotifyLoginWebView(
-            onSpDcFound = { spDcCookie ->
+            clientId = if (hasCustomCreds) clientIdInput.trim() else "",
+            onLoginSuccess = { codeOrCookie ->
                 showWebView = false
                 isRunning = true
 
                 coroutineScope.launch {
-                    val result = spotifyRepo.login(spDcCookie)
+                    val result = if (hasCustomCreds) {
+                        spotifyRepo.loginWithAuthCode(codeOrCookie, "http://localhost:8080/callback")
+                    } else {
+                        spotifyRepo.login(codeOrCookie)
+                    }
                     if (result.success) {
                         isLoggedIn = true
                         try {
@@ -128,7 +139,10 @@ fun EngineTester(modifier: Modifier = Modifier) {
 
     if (!isLoggedIn) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+            ) {
                 Text("Spotify Engine Standby", style = MaterialTheme.typography.headlineMedium)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { showWebView = true }, enabled = !isRunning) {
@@ -141,6 +155,40 @@ fun EngineTester(modifier: Modifier = Modifier) {
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+                TextButton(onClick = { showDevSettings = !showDevSettings }) {
+                    Text(if (showDevSettings) "Hide API Settings" else "Developer API Credentials")
+                }
+                
+                if (showDevSettings) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = clientIdInput,
+                        onValueChange = { clientIdInput = it },
+                        label = { Text("Spotify Client ID") },
+                        modifier = Modifier.fillMaxWidth(0.85f),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = clientSecretInput,
+                        onValueChange = { clientSecretInput = it },
+                        label = { Text("Spotify Client Secret") },
+                        modifier = Modifier.fillMaxWidth(0.85f),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            spotifyRepo.setDeveloperCredentials(clientIdInput.trim(), clientSecretInput.trim())
+                            showDevSettings = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                    ) {
+                        Text("Save Credentials", color = Color.Black)
+                    }
                 }
             }
         }
@@ -322,7 +370,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun SpotifyLoginWebView(onSpDcFound: (String) -> Unit, onCancel: () -> Unit) {
+fun SpotifyLoginWebView(clientId: String, onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -339,28 +387,30 @@ fun SpotifyLoginWebView(onSpDcFound: (String) -> Unit, onCancel: () -> Unit) {
                     settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
                     webViewClient = object : WebViewClient() {
+                        private var loginAlreadyDone = false
 
-                        // Guard to prevent multiple cookie interceptions.
-                        // The WebView fires both doUpdateVisitedHistory and onPageFinished
-                        // during redirects, which would trigger multiple login attempts.
-                        private var cookieAlreadyFound = false
+                        private fun checkLoginAndFinish(url: String?) {
+                            if (loginAlreadyDone) return
 
-                        private fun checkCookieAndFinish(url: String?) {
-                            // If we already found the cookie, skip all further checks
-                            if (cookieAlreadyFound) return
+                            if (url != null) {
+                                if (clientId.isNotEmpty() && url.contains("code=")) {
+                                    val code = url.substringAfter("code=").substringBefore("&")
+                                    if (code.isNotEmpty()) {
+                                        loginAlreadyDone = true
+                                        onLoginSuccess(code)
+                                    }
+                                } else if (clientId.isEmpty() && url.contains("spotify.com")) {
+                                    val cookies = CookieManager.getInstance().getCookie(url)
+                                    if (cookies != null && cookies.contains("sp_dc=")) {
+                                        val spDc = cookies.split(";")
+                                            .map { it.trim() }
+                                            .find { it.startsWith("sp_dc=") }
+                                            ?.substringAfter("sp_dc=")
 
-                            if (url != null && url.contains("spotify.com")) {
-                                val cookies = CookieManager.getInstance().getCookie(url)
-                                if (cookies != null && cookies.contains("sp_dc=")) {
-                                    val spDc = cookies.split(";")
-                                        .map { it.trim() }
-                                        .find { it.startsWith("sp_dc=") }
-                                        ?.substringAfter("sp_dc=")
-
-                                    if (!spDc.isNullOrEmpty()) {
-                                        // Set the guard BEFORE calling the callback
-                                        cookieAlreadyFound = true
-                                        onSpDcFound(spDc)
+                                        if (!spDc.isNullOrEmpty()) {
+                                            loginAlreadyDone = true
+                                            onLoginSuccess(spDc)
+                                        }
                                     }
                                 }
                             }
@@ -368,17 +418,32 @@ fun SpotifyLoginWebView(onSpDcFound: (String) -> Unit, onCancel: () -> Unit) {
 
                         override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                             super.doUpdateVisitedHistory(view, url, isReload)
-                            checkCookieAndFinish(url)
+                            checkLoginAndFinish(url)
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
-                            checkCookieAndFinish(url)
+                            checkLoginAndFinish(url)
                         }
                     }
 
-                    // URL REAL: Pasarela de login oficial de Spotify
-                    loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
+                    if (clientId.isNotEmpty()) {
+                        val scopes = listOf(
+                            "user-library-read",
+                            "user-library-modify",
+                            "playlist-read-private",
+                            "playlist-modify-public",
+                            "playlist-modify-private",
+                            "user-follow-read",
+                            "user-follow-modify",
+                            "user-read-private",
+                            "user-read-email"
+                        ).joinToString(" ")
+                        val authUrl = "https://accounts.spotify.com/authorize?client_id=$clientId&response_type=code&redirect_uri=http://localhost:8080/callback&scope=${scopes}"
+                        loadUrl(authUrl)
+                    } else {
+                        loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
+                    }
                 }
             },
             modifier = Modifier.fillMaxSize()
