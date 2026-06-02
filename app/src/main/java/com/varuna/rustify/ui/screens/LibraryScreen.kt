@@ -406,6 +406,7 @@ fun VerticalScrollbarWithTooltip(
     var isDragging by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(0f) }
     var scrollbarHeight by remember { mutableStateOf(0f) }
+    var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -431,17 +432,23 @@ fun VerticalScrollbarWithTooltip(
                 detectDragGestures(
                     onDragStart = { offset ->
                         isDragging = true
-                        dragOffset = offset.y.coerceIn(0f, scrollbarHeight)
-                        val targetIndex = (dragFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
-                        coroutineScope.launch {
+                        val newDragOffset = offset.y.coerceIn(0f, scrollbarHeight)
+                        dragOffset = newDragOffset
+                        val currentFraction = if (scrollbarHeight > 0) newDragOffset / scrollbarHeight else 0f
+                        val targetIndex = (currentFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
+                        scrollJob?.cancel()
+                        scrollJob = coroutineScope.launch {
                             lazyListState.scrollToItem(targetIndex)
                         }
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        dragOffset = (dragOffset + dragAmount.y).coerceIn(0f, scrollbarHeight)
-                        val targetIndex = (dragFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
-                        coroutineScope.launch {
+                        val newDragOffset = (dragOffset + dragAmount.y).coerceIn(0f, scrollbarHeight)
+                        dragOffset = newDragOffset
+                        val currentFraction = if (scrollbarHeight > 0) newDragOffset / scrollbarHeight else 0f
+                        val targetIndex = (currentFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
+                        scrollJob?.cancel()
+                        scrollJob = coroutineScope.launch {
                             lazyListState.scrollToItem(targetIndex)
                         }
                     },
