@@ -3,6 +3,7 @@ package com.varuna.rustify.bridge
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -41,12 +42,26 @@ class SpotifyRepository(context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val likedTrackIds = mutableStateMapOf<String, Boolean>()
+
+    fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
+
+    fun setTrackLikedState(id: String, liked: Boolean) {
+        likedTrackIds[id] = liked
+    }
 
     init {
         // Load stored developer credentials or fall back to defaults (bypass 429 errors)
         val clientId = prefs.getString(KEY_CLIENT_ID, "4c97a4b21a07409ea4017e889d701ab0") ?: "4c97a4b21a07409ea4017e889d701ab0"
         val clientSecret = prefs.getString(KEY_CLIENT_SECRET, "049386348c4146059d646b9a89d7fa2a") ?: "049386348c4146059d646b9a89d7fa2a"
         NativeEngine.setDeveloperCredentials(clientId, clientSecret)
+
+        // Initialize cache directory in Rust engine
+        val cacheDirPath = context.cacheDir.absolutePath
+        NativeEngine.initSpotifyCacheDirNative(cacheDirPath)
+
+        // Trigger background hash check/warmup
+        NativeEngine.warmupSpotifyHashesNative()
     }
 
     /**
@@ -239,7 +254,63 @@ class SpotifyRepository(context: Context) {
      */
     suspend fun getSavedTracks(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         val json = NativeEngine.getSpotifySavedTracksNative(limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        val paginated = PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        withContext(Dispatchers.Main) {
+            paginated.items.forEach { track ->
+                track.id?.let { id ->
+                    likedTrackIds[id] = true
+                }
+            }
+        }
+        paginated
+    }
+
+    /**
+     * Check if a list of tracks is saved/liked in the user's library.
+     */
+    suspend fun checkSavedTracks(ids: List<String>): List<Boolean> = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyList()
+        val json = NativeEngine.checkSpotifySavedTracksNative(JSONArray(ids).toString())
+        val array = JSONArray(checkForErrorArray(json))
+        List(array.length()) { array.getBoolean(it) }
+    }
+
+    /**
+     * Check and cache liked status for a batch of tracks.
+     */
+    suspend fun checkAndCacheLikedStates(trackIds: List<String>) {
+        val unknownIds = trackIds.filter { it.isNotEmpty() && !likedTrackIds.containsKey(it) }
+        if (unknownIds.isEmpty()) return
+        try {
+            unknownIds.chunked(50).forEach { chunk ->
+                val contains = checkSavedTracks(chunk)
+                withContext(Dispatchers.Main) {
+                    chunk.zip(contains).forEach { (id, isLiked) ->
+                        likedTrackIds[id] = isLiked
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Toggle like/unlike status for a track.
+     */
+    suspend fun toggleLikeTrack(id: String): OperationResult = withContext(Dispatchers.IO) {
+        val currentlyLiked = isTrackLiked(id)
+        val result = if (currentlyLiked) {
+            unsaveTracks(listOf(id))
+        } else {
+            saveTracks(listOf(id))
+        }
+        if (result.success) {
+            withContext(Dispatchers.Main) {
+                likedTrackIds[id] = !currentlyLiked
+            }
+        }
+        result
     }
 
     /**

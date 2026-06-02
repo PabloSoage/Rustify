@@ -60,6 +60,8 @@ fun AlbumScreen(
             tracks = response.items
             hasMore = response.hasMore
             offset = tracks.size
+            val trackIds = response.items.mapNotNull { it.id }
+            spotifyRepo.checkAndCacheLikedStates(trackIds)
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load details"
         } finally {
@@ -334,6 +336,8 @@ fun AlbumScreen(
                                             tracks = tracks + response.items
                                             offset += response.items.size
                                             hasMore = response.hasMore
+                                            val newTrackIds = response.items.mapNotNull { it.id }
+                                            spotifyRepo.checkAndCacheLikedStates(newTrackIds)
                                         } else {
                                             hasMore = false
                                         }
@@ -345,11 +349,19 @@ fun AlbumScreen(
                                 }
                             }
                             
+                            val trackId = track.id ?: ""
+                            val isLiked = spotifyRepo.isTrackLiked(trackId)
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
                                 fallbackCoverUrl = primaryImageUrl,
-                                onClick = { onTrackClick(track) }
+                                onClick = { onTrackClick(track) },
+                                isLiked = isLiked,
+                                onLikeToggle = {
+                                    coroutineScope.launch {
+                                        spotifyRepo.toggleLikeTrack(trackId)
+                                    }
+                                }
                             )
                         }
                         

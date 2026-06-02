@@ -49,6 +49,7 @@ fun TrackScreen(
         errorMessage = null
         try {
             trackDetails = spotifyRepo.getTrack(trackId)
+            spotifyRepo.checkAndCacheLikedStates(listOf(trackId))
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load track"
         } finally {
@@ -97,6 +98,7 @@ fun TrackScreen(
                             errorMessage = null
                             try {
                                 trackDetails = spotifyRepo.getTrack(trackId)
+                                spotifyRepo.checkAndCacheLikedStates(listOf(trackId))
                             } catch (e: Exception) {
                                 errorMessage = e.message ?: "Failed to load track"
                             } finally {
@@ -230,9 +232,17 @@ fun TrackScreen(
                                 }
                             }
 
-                            // Favorite placeholder
-                            IconButton(onClick = { /* Like */ }) {
-                                Text("♡", color = Color.White, fontSize = 28.sp)
+                            val isLiked = spotifyRepo.isTrackLiked(trackId)
+                            IconButton(onClick = {
+                                coroutineScope.launch {
+                                    spotifyRepo.toggleLikeTrack(trackId)
+                                }
+                            }) {
+                                Text(
+                                    text = if (isLiked) "♥" else "♡",
+                                    color = if (isLiked) spotifyGreen else Color.White,
+                                    fontSize = 28.sp
+                                )
                             }
                         }
                     }

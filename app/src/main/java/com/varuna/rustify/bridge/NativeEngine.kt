@@ -349,4 +349,21 @@ object NativeEngine {
      * @return A JSON string representing a list of BrowseSection.
      */
     external fun getSpotifyBrowseNative(limit: Int): String
+
+    /**
+     * Initializes the cache directory for the Spotify client in Rust.
+     */
+    external fun initSpotifyCacheDirNative(cacheDir: String)
+
+    /**
+     * Triggers the background scrape/warmup of Spotify GraphQL hashes in Rust.
+     */
+    external fun warmupSpotifyHashesNative()
+
+    /**
+     * Checks if a batch of tracks are liked in the user's library.
+     * @param idsJson JSON array of track IDs.
+     * @return JSON string of the booleans array.
+     */
+    external fun checkSpotifySavedTracksNative(idsJson: String): String
 }

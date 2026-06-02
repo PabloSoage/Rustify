@@ -122,6 +122,7 @@ pub struct SpotifyClient {
     developer_client_id: RwLock<Option<String>>,
     developer_client_secret: RwLock<Option<String>>,
     gql_hashes: RwLock<HashMap<String, String>>,
+    cache_dir: RwLock<Option<String>>,
 }
 
 impl SpotifyClient {
@@ -139,6 +140,7 @@ impl SpotifyClient {
             developer_client_id: RwLock::new(None),
             developer_client_secret: RwLock::new(None),
             gql_hashes: RwLock::new(HashMap::new()),
+            cache_dir: RwLock::new(None),
         }
     }
 
@@ -517,6 +519,57 @@ impl SpotifyClient {
         *self.client_credentials_expiration.write().unwrap() = 0;
     }
 
+    pub fn set_cache_dir(&self, path: &str) {
+        *self.cache_dir.write().unwrap() = Some(path.to_string());
+        if let Err(e) = self.load_hashes_from_disk() {
+            eprintln!("[Spotify] Failed to load hashes from disk cache: {}", e);
+        }
+    }
+
+    pub fn clone_http(&self) -> reqwest::Client {
+        self.http.clone()
+    }
+
+    pub fn update_gql_hashes(&self, new_hashes: HashMap<String, String>) {
+        {
+            let mut cache = self.gql_hashes.write().unwrap();
+            *cache = new_hashes;
+        }
+        if let Err(e) = self.save_hashes_to_disk() {
+            eprintln!("[Spotify] Failed to save hashes to disk cache: {}", e);
+        }
+    }
+
+    fn get_hashes_file_path(&self) -> Option<std::path::PathBuf> {
+        let dir = self.cache_dir.read().unwrap();
+        dir.as_ref().map(|d| std::path::Path::new(d).join("spotify_gql_hashes.json"))
+    }
+
+    pub fn load_hashes_from_disk(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(path) = self.get_hashes_file_path() {
+            if path.exists() {
+                let file = std::fs::File::open(path)?;
+                let reader = std::io::BufReader::new(file);
+                let loaded_hashes: HashMap<String, String> = serde_json::from_reader(reader)?;
+                let mut cache = self.gql_hashes.write().unwrap();
+                *cache = loaded_hashes;
+                eprintln!("[Spotify] Loaded {} GQL operation hashes from disk cache", cache.len());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn save_hashes_to_disk(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(path) = self.get_hashes_file_path() {
+            let file = std::fs::File::create(path)?;
+            let writer = std::io::BufWriter::new(file);
+            let cache = self.gql_hashes.read().unwrap();
+            serde_json::to_writer_pretty(writer, &*cache)?;
+            eprintln!("[Spotify] Saved {} GQL operation hashes to disk cache", cache.len());
+        }
+        Ok(())
+    }
+
     pub async fn fetch_client_credentials_token(&self) -> SpotifyResult<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -788,140 +841,12 @@ impl SpotifyClient {
 
     /// Scrapes open.spotify.com and Spotify Web Player JS chunks to dynamically extract the latest sha256 GQL operation hashes.
     pub async fn fetch_gql_hashes(&self) -> SpotifyResult<()> {
-        // Step 1: Fetch Spotify homepage
-        let resp = self.http.get("https://open.spotify.com").send().await?;
-        let html = resp.text().await?;
-
-        // Step 2: Extract JS links
-        let re_js = Regex::new(r#"src="([^"]+\.js)""#).unwrap();
-        let js_links: Vec<String> = re_js.captures_iter(&html)
-            .map(|cap| cap[1].to_string())
-            .collect();
-
-        // Step 3: Find web-player JS pack
-        let js_pack_url = js_links
-            .iter()
-            .find(|link| link.contains("web-player/web-player") && link.ends_with(".js"))
-            .cloned();
-
-        let js_pack_url = match js_pack_url {
-            Some(url) => {
-                if url.starts_with('/') {
-                    format!("https://open.spotify.com{}", url)
-                } else {
-                    url
-                }
-            }
-            None => return Err(SpotifyError::InternalError("Could not find web-player valid JS link".into())),
-        };
-
-        // Step 4: Extract CDN base URL from the JS pack URL
-        let cdn_base = js_pack_url
-            .rsplit_once('/')
-            .map(|(base, _)| base.to_string())
-            .ok_or_else(|| SpotifyError::InternalError("Could not parse CDN base from JS URL".into()))?;
-
-        // Step 5: Fetch the web-player JS pack
-        let resp = self.http.get(&js_pack_url).send().await?;
-        let js_content = resp.text().await?;
-
-        // Step 6: Extract chunk mappings
-        let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)\}"#).unwrap();
-        let matches: Vec<_> = re_obj.find_iter(&js_content).map(|m| m.as_str()).collect();
-
-        if matches.len() < 5 {
-            return Err(SpotifyError::InternalError(format!(
-                "Could not find both mappings in the JS code (matches found: {})",
-                matches.len()
-            )));
-        }
-
-        // map1 is at index 3: key -> hash (e.g. 4406 -> "8bfb4d6d")
-        // map2 is at index 4: key -> name (e.g. 4406 -> "xpui-routes-search")
-        let hash_map = self.parse_js_dict(matches[3])?;
-        let name_map = self.parse_js_dict(matches[4])?;
-
-        // Step 7: Combine chunks
-        let mut combined_chunks = Vec::new();
-        for (key, name) in &name_map {
-            if let Some(hash) = hash_map.get(key) {
-                combined_chunks.push(format!("{}.{}.js", name, hash));
-            }
-        }
-
-        // Step 8: Fetch main JS and chunks to search for operation hashes
-        let mut raw_hashes = js_content;
-
-        // Fetch each chunk and append to raw_hashes
-        for chunk in combined_chunks {
-            let url = format!("{}/{}", cdn_base, chunk);
-            if let Ok(resp) = self.http.get(&url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text().await {
-                        raw_hashes.push_str(&text);
-                    }
-                }
-            }
-        }
-
-        // Step 9: Parse all GQL operation names and sha256 hashes using Regex
-        let re_hash = Regex::new(r#""([^"]+)","(query|mutation)","([a-f0-9]{64})""#).unwrap();
-        let mut new_hashes = HashMap::new();
-        for cap in re_hash.captures_iter(&raw_hashes) {
-            let op_name = cap[1].to_string();
-            let hash = cap[3].to_string();
-            new_hashes.insert(op_name, hash);
-        }
-
-        eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes", new_hashes.len());
-
-        let mut cache = self.gql_hashes.write().unwrap();
-        *cache = new_hashes;
-
+        let new_hashes = scrape_gql_hashes_with_client(&self.http).await?;
+        self.update_gql_hashes(new_hashes);
         Ok(())
     }
 
-    fn parse_js_dict(&self, s: &str) -> SpotifyResult<HashMap<i32, String>> {
-        let content = s.trim_start_matches('{').trim_end_matches('}');
-        let mut map = HashMap::new();
 
-        let mut current = content;
-        while !current.is_empty() {
-            if let Some(colon_idx) = current.find(':') {
-                let key_str = &current[..colon_idx];
-                let key: i32 = key_str
-                    .parse()
-                    .map_err(|_| SpotifyError::ParseError(format!("Failed to parse key: {}", key_str)))?;
-
-                let remainder = &current[colon_idx + 1..];
-                if !remainder.starts_with('"') {
-                    return Err(SpotifyError::ParseError("Value does not start with quote".into()));
-                }
-
-                if let Some(end_quote_idx) = remainder[1..].find('"') {
-                    let end_quote_real_idx = end_quote_idx + 1;
-                    let value = &remainder[1..end_quote_real_idx];
-                    map.insert(key, value.to_string());
-
-                    if remainder.len() > end_quote_real_idx + 1 {
-                        if remainder.as_bytes()[end_quote_real_idx + 1] == b',' {
-                            current = &remainder[end_quote_real_idx + 2..];
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                } else {
-                    return Err(SpotifyError::ParseError("Value does not end with quote".into()));
-                }
-            } else {
-                break;
-            }
-        }
-
-        Ok(map)
-    }
 
     /// Retrieve GQL operation hash by name, either from cache or scraping open.spotify.com, with hardcoded fallbacks.
     pub async fn get_gql_hash(&self, operation_name: &str) -> SpotifyResult<String> {
@@ -1033,8 +958,14 @@ pub fn parse_gql_artists(artists_data: &Value) -> Vec<SimpleArtist> {
         .collect()
 }
 
-pub fn parse_gql_track(track: &Value) -> Option<FullTrack> {
-    let uri = track.get("uri").or_else(|| track.get("_uri"))
+pub fn parse_gql_track(track_val: &Value) -> Option<FullTrack> {
+    let (track, parent_uri) = if track_val.get("data").is_some() {
+        (&track_val["data"], track_val.get("uri").or_else(|| track_val.get("_uri")))
+    } else {
+        (track_val, None)
+    };
+
+    let uri = track.get("uri").or_else(|| track.get("_uri")).or(parent_uri)
         .and_then(|v| v.as_str())?;
     let track_id = id_from_uri(uri)?.to_string();
 
@@ -1088,4 +1019,135 @@ pub fn parse_gql_track(track: &Value) -> Option<FullTrack> {
         external_uri: format!("https://open.spotify.com/track/{}", track_id),
         isrc,
     })
+}
+
+pub fn parse_js_dict_raw(s: &str) -> SpotifyResult<HashMap<i32, String>> {
+    let content = s.trim_start_matches('{').trim_end_matches('}');
+    let mut map = HashMap::new();
+
+    let mut current = content;
+    while !current.is_empty() {
+        if let Some(colon_idx) = current.find(':') {
+            let key_str = &current[..colon_idx];
+            let key: i32 = key_str
+                .parse()
+                .map_err(|_| SpotifyError::ParseError(format!("Failed to parse key: {}", key_str)))?;
+
+            let remainder = &current[colon_idx + 1..];
+            if !remainder.starts_with('"') {
+                return Err(SpotifyError::ParseError("Value does not start with quote".into()));
+            }
+
+            if let Some(end_quote_idx) = remainder[1..].find('"') {
+                let end_quote_real_idx = end_quote_idx + 1;
+                let value = &remainder[1..end_quote_real_idx];
+                map.insert(key, value.to_string());
+
+                if remainder.len() > end_quote_real_idx + 1 {
+                    if remainder.as_bytes()[end_quote_real_idx + 1] == b',' {
+                        current = &remainder[end_quote_real_idx + 2..];
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                return Err(SpotifyError::ParseError("Value does not end with quote".into()));
+            }
+        } else {
+            break;
+        }
+    }
+
+    Ok(map)
+}
+
+pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyResult<HashMap<String, String>> {
+    // Step 1: Fetch Spotify homepage
+    let resp = http.get("https://open.spotify.com").send().await?;
+    let html = resp.text().await?;
+
+    // Step 2: Extract JS links
+    let re_js = Regex::new(r#"src="([^"]+\.js)""#).unwrap();
+    let js_links: Vec<String> = re_js.captures_iter(&html)
+        .map(|cap| cap[1].to_string())
+        .collect();
+
+    // Step 3: Find web-player JS pack
+    let js_pack_url = js_links
+        .iter()
+        .find(|link| link.contains("web-player/web-player") && link.ends_with(".js"))
+        .cloned();
+
+    let js_pack_url = match js_pack_url {
+        Some(url) => {
+            if url.starts_with('/') {
+                format!("https://open.spotify.com{}", url)
+            } else {
+                url
+            }
+        }
+        None => return Err(SpotifyError::InternalError("Could not find web-player valid JS link".into())),
+    };
+
+    // Step 4: Extract CDN base URL from the JS pack URL
+    let cdn_base = js_pack_url
+        .rsplit_once('/')
+        .map(|(base, _)| base.to_string())
+        .ok_or_else(|| SpotifyError::InternalError("Could not parse CDN base from JS URL".into()))?;
+
+    // Step 5: Fetch the web-player JS pack
+    let resp = http.get(&js_pack_url).send().await?;
+    let js_content = resp.text().await?;
+
+    // Step 6: Extract chunk mappings
+    let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)\}"#).unwrap();
+    let matches: Vec<_> = re_obj.find_iter(&js_content).map(|m| m.as_str()).collect();
+
+    if matches.len() < 5 {
+        return Err(SpotifyError::InternalError(format!(
+            "Could not find both mappings in the JS code (matches found: {})",
+            matches.len()
+        )));
+    }
+
+    let hash_map = parse_js_dict_raw(matches[3])?;
+    let name_map = parse_js_dict_raw(matches[4])?;
+
+    // Step 7: Combine chunks
+    let mut combined_chunks = Vec::new();
+    for (key, name) in &name_map {
+        if let Some(hash) = hash_map.get(key) {
+            combined_chunks.push(format!("{}.{}.js", name, hash));
+        }
+    }
+
+    // Step 8: Fetch main JS and chunks to search for operation hashes
+    let mut raw_hashes = js_content;
+
+    // Fetch each chunk and append to raw_hashes
+    for chunk in combined_chunks {
+        let url = format!("{}/{}", cdn_base, chunk);
+        if let Ok(resp) = http.get(&url).send().await {
+            if resp.status().is_success() {
+                if let Ok(text) = resp.text().await {
+                    raw_hashes.push_str(&text);
+                }
+            }
+        }
+    }
+
+    // Step 9: Parse all GQL operation names and sha256 hashes using Regex
+    let re_hash = Regex::new(r#""([^"]+)","(query|mutation)","([a-f0-9]{64})""#).unwrap();
+    let mut new_hashes = HashMap::new();
+    for cap in re_hash.captures_iter(&raw_hashes) {
+        let op_name = cap[1].to_string();
+        let hash = cap[3].to_string();
+        new_hashes.insert(op_name, hash);
+    }
+
+    eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes via scrape_gql_hashes_with_client", new_hashes.len());
+
+    Ok(new_hashes)
 }

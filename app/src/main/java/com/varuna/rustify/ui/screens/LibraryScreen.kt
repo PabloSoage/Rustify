@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.varuna.rustify.ui.components.TrackRowItem
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ fun LibraryScreen(
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onTrackClick: (FullTrack) -> Unit,
+    onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -79,7 +82,7 @@ fun LibraryScreen(
             when (selectedTab) {
                 LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick)
                 LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick)
-                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo)
+                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick)
                 LibraryTab.TRACKS -> LibraryTracks(spotifyRepo, onTrackClick)
             }
         }
@@ -126,7 +129,7 @@ fun LibraryPlaylists(
                 }
             }
         },
-        itemContent = { playlist ->
+        itemContent = { _, playlist ->
             SearchResultRow(
                 title = playlist.name,
                 subtitle = "Playlist • ${playlist.owner?.name ?: "Spotify"}",
@@ -178,7 +181,7 @@ fun LibraryAlbums(
                 }
             }
         },
-        itemContent = { album ->
+        itemContent = { _, album ->
             SearchResultRow(
                 title = album.name,
                 subtitle = "Album • ${album.artists.joinToString(", ") { it.name }}",
@@ -192,7 +195,8 @@ fun LibraryAlbums(
 
 @Composable
 fun LibraryArtists(
-    spotifyRepo: SpotifyRepository
+    spotifyRepo: SpotifyRepository,
+    onArtistClick: (String) -> Unit
 ) {
     var artists by remember { mutableStateOf<List<FullArtist>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -229,13 +233,13 @@ fun LibraryArtists(
                 }
             }
         },
-        itemContent = { artist ->
+        itemContent = { _, artist ->
             SearchResultRow(
                 title = artist.name,
                 subtitle = "Artist",
                 imageUrl = artist.images.maxByOrNull { it.width ?: 0 }?.url,
                 isCircle = true,
-                onClick = { /* Handle artist click */ }
+                onClick = { onArtistClick(artist.id) }
             )
         },
         emptyMessage = "No followed artists found."
@@ -282,12 +286,20 @@ fun LibraryTracks(
                 }
             }
         },
-        itemContent = { track ->
-            SearchResultRow(
-                title = track.name,
-                subtitle = "Track • ${track.artists.joinToString(", ") { it.name }}",
-                imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
-                onClick = { onTrackClick(track) }
+        itemContent = { index, track ->
+            val trackId = track.id ?: ""
+            val isLiked = spotifyRepo.isTrackLiked(trackId)
+            TrackRowItem(
+                index = index + 1,
+                track = track,
+                fallbackCoverUrl = null,
+                onClick = { onTrackClick(track) },
+                isLiked = isLiked,
+                onLikeToggle = {
+                    coroutineScope.launch {
+                        spotifyRepo.toggleLikeTrack(trackId)
+                    }
+                }
             )
         },
         emptyMessage = "No liked tracks found."
@@ -300,7 +312,7 @@ fun <T> LibraryContentList(
     errorMessage: String?,
     items: List<T>?,
     onRetry: () -> Unit,
-    itemContent: @Composable (T) -> Unit,
+    itemContent: @Composable (Int, T) -> Unit,
     emptyMessage: String
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -334,8 +346,8 @@ fun <T> LibraryContentList(
                 LazyColumn(
                     contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Bottom nav padding
                 ) {
-                    items(items) { item ->
-                        itemContent(item)
+                    itemsIndexed(items) { index, item ->
+                        itemContent(index, item)
                     }
                 }
             }

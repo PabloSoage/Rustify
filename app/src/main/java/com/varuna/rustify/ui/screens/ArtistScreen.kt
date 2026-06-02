@@ -64,6 +64,9 @@ fun ArtistScreen(
                 topTracks = tracksDef.await().items
                 albums = albumsDef.await().items
                 relatedArtists = relatedDef.await().items
+                
+                val trackIds = topTracks.mapNotNull { it.id }
+                spotifyRepo.checkAndCacheLikedStates(trackIds)
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Failed to load artist"
             } finally {
@@ -186,11 +189,19 @@ fun ArtistScreen(
                             )
                         }
                         items(topTracks.take(5).withIndex().toList()) { (index, track) ->
+                            val trackId = track.id ?: ""
+                            val isLiked = spotifyRepo.isTrackLiked(trackId)
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
                                 fallbackCoverUrl = artist.images.minByOrNull { it.width ?: 999 }?.url,
-                                onClick = { onTrackClick(track) }
+                                onClick = { onTrackClick(track) },
+                                isLiked = isLiked,
+                                onLikeToggle = {
+                                    coroutineScope.launch {
+                                        spotifyRepo.toggleLikeTrack(trackId)
+                                    }
+                                }
                             )
                         }
                         item { Spacer(modifier = Modifier.height(24.dp)) }

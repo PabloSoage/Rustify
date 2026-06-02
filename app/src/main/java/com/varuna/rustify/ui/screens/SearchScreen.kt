@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.*
 import kotlinx.coroutines.Job
@@ -40,6 +41,7 @@ fun SearchScreen(
     onTrackClick: (FullTrack) -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -72,6 +74,8 @@ fun SearchScreen(
                 // Or we can just use searchAll and filter locally for demonstration.
                 val results = spotifyRepo.searchAll(query, limit = 20)
                 searchResults = results
+                val trackIds = results.tracks.mapNotNull { it.id }
+                spotifyRepo.checkAndCacheLikedStates(trackIds)
             } catch (e: Exception) {
                 errorMessage = e.message
             } finally {
@@ -187,11 +191,19 @@ fun SearchScreen(
                         if (results.tracks.isNotEmpty()) {
                             item { SectionHeader("Tracks") }
                             items(results.tracks) { track ->
+                                val trackId = track.id ?: ""
+                                val isLiked = spotifyRepo.isTrackLiked(trackId)
                                 SearchResultRow(
                                     title = track.name,
                                     subtitle = "Track • ${track.artists.joinToString(", ") { it.name }}",
                                     imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
-                                    onClick = { onTrackClick(track) }
+                                    onClick = { onTrackClick(track) },
+                                    isLiked = isLiked,
+                                    onLikeToggle = {
+                                        coroutineScope.launch {
+                                            spotifyRepo.toggleLikeTrack(trackId)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -234,7 +246,7 @@ fun SearchScreen(
                                     subtitle = "Artist",
                                     imageUrl = artist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     isCircle = true,
-                                    onClick = { /* Handle Artist click later */ }
+                                    onClick = { artist.id?.let(onArtistClick) }
                                 )
                             }
                         }
@@ -263,7 +275,9 @@ fun SearchResultRow(
     subtitle: String,
     imageUrl: String?,
     isCircle: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isLiked: Boolean = false,
+    onLikeToggle: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -316,6 +330,19 @@ fun SearchResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+
+        if (onLikeToggle != null) {
+            IconButton(
+                onClick = onLikeToggle,
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                Text(
+                    text = if (isLiked) "♥" else "♡",
+                    color = if (isLiked) Color(0xFF1DB954) else Color.White,
+                    fontSize = 20.sp
+                )
+            }
         }
     }
 }

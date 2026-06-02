@@ -32,6 +32,17 @@ impl SpotifyClient {
             .ok_or_else(|| SpotifyError::ParseError("Failed to parse track from GQL".to_string()))
     }
 
+    /// Check if tracks are saved in the user's library.
+    pub async fn check_saved_tracks(&self, ids: &[String]) -> SpotifyResult<Vec<bool>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let joined = ids.join(",");
+        let path = format!("/me/tracks/contains?ids={}", joined);
+        let contains: Vec<bool> = self.api_get(&path).await?;
+        Ok(contains)
+    }
+
     /// Save tracks to library via GQL addToLibrary.
     pub async fn save_tracks(&self, ids: &[String]) -> SpotifyResult<()> {
         let uris: Vec<String> = ids.iter().map(|id| format!("spotify:track:{}", id)).collect();

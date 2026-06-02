@@ -308,7 +308,8 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         },
                         onPlaylistClick = { id, name, images ->
                             navigationStack.add(Screen.PlaylistDetail(id, name, images))
-                        }
+                        },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
                 is Screen.Library -> {
@@ -320,7 +321,8 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
+                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
                 is Screen.PlaylistDetail -> {

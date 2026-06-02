@@ -839,6 +839,70 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyTra
     })
 }
 
+/// JNI Bridge: Initialize cache directory
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_initSpotifyCacheDirNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    cache_dir: JString<'local>,
+) {
+    let _ = jni_bridge!(env_unowned, |env| {
+        if let Ok(mutf8) = cache_dir.mutf8_chars(env) {
+            let path = mutf8.to_string();
+            let client = spotify::client::get_spotify_client();
+            client.write().unwrap().set_cache_dir(&path);
+        }
+        "".to_string()
+    });
+}
+
+/// JNI Bridge: Warm up GQL hashes in the background
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotifyHashesNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    let _ = jni_bridge!(env_unowned, |env| {
+        get_runtime().spawn(async {
+            eprintln!("[Spotify] Background hash warmup started...");
+            let client_clone = {
+                let client = spotify::client::get_spotify_client().read().unwrap();
+                client.clone_http()
+            };
+            match spotify::client::scrape_gql_hashes_with_client(&client_clone).await {
+                Ok(new_hashes) => {
+                    let client = spotify::client::get_spotify_client().write().unwrap();
+                    client.update_gql_hashes(new_hashes);
+                    eprintln!("[Spotify] Background hash warmup completed successfully.");
+                }
+                Err(e) => {
+                    eprintln!("[Spotify] Background hash warmup failed: {}", e);
+                }
+            }
+        });
+        "".to_string()
+    });
+}
+
+/// JNI Bridge: Check if tracks are saved
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_checkSpotifySavedTracksNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    ids_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = ids_json.mutf8_chars(env)?;
+        let ids_str = mutf8.to_string();
+        let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
+        let async_result = get_runtime().block_on(async {
+            let client = spotify::client::get_spotify_client().read().unwrap();
+            client.check_saved_tracks(&ids).await
+        });
+        serialize_result(async_result)
+    })
+}
+
 // =============================================================================
 // SPOTIFY — SEARCH
 // =============================================================================

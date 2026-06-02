@@ -7,7 +7,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,7 +26,9 @@ fun TrackRowItem(
     index: Int,
     track: FullTrack,
     fallbackCoverUrl: String?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isLiked: Boolean = false,
+    onLikeToggle: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -115,6 +119,21 @@ fun TrackRowItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+
+        // Like Button
+        if (onLikeToggle != null) {
+            IconButton(
+                onClick = onLikeToggle,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Text(
+                    text = if (isLiked) "♥" else "♡",
+                    color = if (isLiked) Color(0xFF1DB954) else Color.White,
+                    fontSize = 20.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
         }
 
         // Track Duration
