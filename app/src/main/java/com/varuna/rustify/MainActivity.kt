@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.varuna.rustify.bridge.SpotifyRepository
@@ -50,11 +52,36 @@ sealed class Screen {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        
+        // Configure Coil image loading with a persistent disk cache (512MB)
+        val imageLoader = coil.ImageLoader.Builder(this)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(512L * 1024 * 1024)
+                    .build()
+            }
+            .respectCacheHeaders(false)
+            .build()
+        coil.Coil.setImageLoader(imageLoader)
+
         enableEdgeToEdge()
         setContent {
             RustifyTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    EngineTester(modifier = Modifier.padding(innerPadding))
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFF121212)
+                ) {
+                    EngineTester()
                 }
             }
         }
@@ -200,9 +227,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
     val bottomNavScreens = listOf(Screen.Home, Screen.Search, Screen.Library)
     val isBottomNavScreen = bottomNavScreens.contains(currentScreen)
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Scaffold(
         bottomBar = {
-            if (isBottomNavScreen) {
+            if (isBottomNavScreen && !isLandscape) {
                 NavigationBar(
                     containerColor = Color(0xFF121212),
                     contentColor = Color(0xFF1DB954)
@@ -263,9 +293,15 @@ fun EngineTester(modifier: Modifier = Modifier) {
                     )
                 }
             }
-        }
+        },
+        containerColor = Color(0xFF121212)
     ) { paddingValues ->
-        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+        val contentModifier = if (isLandscape) {
+            modifier.fillMaxSize()
+        } else {
+            modifier.fillMaxSize().padding(paddingValues)
+        }
+        val screenContent = @Composable {
             when (currentScreen) {
                 is Screen.Home -> {
                     HomeScreen(
@@ -364,6 +400,82 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
+            }
+        }
+
+        if (isLandscape && isBottomNavScreen) {
+            Row(modifier = contentModifier) {
+                NavigationRail(
+                    containerColor = Color(0xFF121212),
+                    contentColor = Color(0xFF1DB954),
+                    modifier = Modifier.fillMaxHeight()
+                ) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    NavigationRailItem(
+                        selected = currentScreen == Screen.Home,
+                        onClick = {
+                            if (currentScreen != Screen.Home) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Home)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                        label = { Text("Home") },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = currentScreen == Screen.Search,
+                        onClick = {
+                            if (currentScreen != Screen.Search) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Search)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                        label = { Text("Search") },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = currentScreen == Screen.Library,
+                        onClick = {
+                            if (currentScreen != Screen.Library) {
+                                navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                navigationStack.add(Screen.Library)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
+                        label = { Text("Library") },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = Color(0xFF1DB954),
+                            selectedTextColor = Color(0xFF1DB954),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    screenContent()
+                }
+            }
+        } else {
+            Box(modifier = contentModifier) {
+                screenContent()
             }
         }
     }

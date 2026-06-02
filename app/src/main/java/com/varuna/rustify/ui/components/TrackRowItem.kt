@@ -18,7 +18,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
+import androidx.compose.ui.platform.LocalContext
 import com.varuna.rustify.bridge.FullTrack
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +36,8 @@ fun TrackRowItem(
     fallbackCoverUrl: String?,
     onClick: () -> Unit,
     isLiked: Boolean = false,
-    onLikeToggle: (() -> Unit)? = null
+    onLikeToggle: (() -> Unit)? = null,
+    isScrollbarDragging: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -47,11 +51,23 @@ fun TrackRowItem(
             text = index.toString(),
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
             color = Color.Gray,
-            modifier = Modifier.width(32.dp)
+            modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
+            maxLines = 1,
+            softWrap = false
         )
 
         // Track Cover art thumbnail
         val trackImageUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url ?: fallbackCoverUrl
+        val context = LocalContext.current
+        val imageRequest = ImageRequest.Builder(context)
+            .data(trackImageUrl)
+            .apply {
+                if (isScrollbarDragging) {
+                    networkCachePolicy(CachePolicy.DISABLED)
+                }
+            }
+            .build()
+
         Surface(
             modifier = Modifier
                 .size(44.dp)
@@ -59,25 +75,20 @@ fun TrackRowItem(
             color = Color.DarkGray
         ) {
             if (!trackImageUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = trackImageUrl,
+                SubcomposeAsyncImage(
+                    model = imageRequest,
                     contentDescription = "Track Thumbnail",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    loading = {
+                        TrackPlaceholder(track = track)
+                    },
+                    error = {
+                        TrackPlaceholder(track = track)
+                    }
                 )
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Gray),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = track.name.take(1).uppercase(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White
-                    )
-                }
+                TrackPlaceholder(track = track)
             }
         }
 
@@ -183,5 +194,21 @@ fun SpotifyLikeButton(
                 modifier = Modifier.size(24.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun TrackPlaceholder(track: FullTrack) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Gray),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = track.name.take(1).uppercase(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White
+        )
     }
 }

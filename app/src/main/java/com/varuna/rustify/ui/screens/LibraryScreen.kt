@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.varuna.rustify.ui.components.TrackRowItem
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ fun LibraryScreen(
             edgePadding = 16.dp,
             indicator = {
                 TabRowDefaults.PrimaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(selectedTab.ordinal),
                     color = spotifyGreen
                 )
             }
@@ -261,6 +263,9 @@ fun LibraryTracks(
     val isSyncing = spotifyRepo.isSyncingLikedTracks
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var isScrollbarDragging by remember { mutableStateOf(false) }
+    val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (tracks.isEmpty() && isSyncing) {
@@ -278,7 +283,7 @@ fun LibraryTracks(
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = lazyListState,
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp), // Bottom nav padding
+                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding), // Bottom nav padding
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(tracks, key = { _, track -> track.id ?: "" }) { index, track ->
@@ -294,7 +299,8 @@ fun LibraryTracks(
                                 coroutineScope.launch {
                                     spotifyRepo.toggleLikeTrack(track)
                                 }
-                            }
+                            },
+                            isScrollbarDragging = isScrollbarDragging
                         )
                     }
                 }
@@ -307,9 +313,10 @@ fun LibraryTracks(
                         val track = tracks.getOrNull(index)
                         formatAddedAt(track?.addedAt)
                     },
+                    onDragStateChanged = { isScrollbarDragging = it },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(top = 8.dp, bottom = 100.dp)
+                        .padding(top = 8.dp, bottom = bottomPadding)
                 )
             }
         }
@@ -325,6 +332,8 @@ fun <T> LibraryContentList(
     itemContent: @Composable (Int, T) -> Unit,
     emptyMessage: String
 ) {
+    val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val bottomPadding = if (isLandscape) 16.dp else 100.dp
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading && items == null) {
             CircularProgressIndicator(
@@ -354,7 +363,7 @@ fun <T> LibraryContentList(
                 )
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Bottom nav padding
+                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding)
                 ) {
                     itemsIndexed(items) { index, item ->
                         itemContent(index, item)
@@ -399,6 +408,7 @@ fun VerticalScrollbarWithTooltip(
     lazyListState: androidx.compose.foundation.lazy.LazyListState,
     itemsCount: Int,
     getDateForItem: (Int) -> String,
+    onDragStateChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (itemsCount <= 0) return
@@ -409,6 +419,10 @@ fun VerticalScrollbarWithTooltip(
     var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(isDragging) {
+        onDragStateChanged(isDragging)
+    }
 
     val firstVisibleIndex = lazyListState.firstVisibleItemIndex
     val scrollFraction = if (itemsCount > 1) firstVisibleIndex.toFloat() / (itemsCount - 1) else 0f

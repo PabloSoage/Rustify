@@ -49,6 +49,8 @@ fun SearchScreen(
     val spotifyGreen = Color(0xFF1DB954)
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
+    val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
     var searchQuery by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf(SearchFilter.ALL) }
@@ -186,7 +188,7 @@ fun SearchScreen(
             } else if (searchResults != null) {
                 val results = searchResults!!
                 LazyColumn(
-                    contentPadding = PaddingValues(bottom = 100.dp) // Nav bar padding
+                    contentPadding = PaddingValues(bottom = bottomPadding)
                 ) {
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.TRACKS) {
                         if (results.tracks.isNotEmpty()) {

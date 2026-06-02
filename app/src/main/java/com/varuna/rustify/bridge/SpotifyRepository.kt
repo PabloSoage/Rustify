@@ -122,6 +122,9 @@ class SpotifyRepository(context: Context) {
                 if (cachedFirstTrackId == newFirstTrackId) {
                     if (response.total.toInt() == likedTracks.size) {
                         return@withContext
+                    } else {
+                        fetchAllSavedTracks()
+                        return@withContext
                     }
                 }
 
