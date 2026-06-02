@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.*
+import com.varuna.rustify.ui.components.SpotifyLikeButton
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -201,7 +202,7 @@ fun SearchScreen(
                                     isLiked = isLiked,
                                     onLikeToggle = {
                                         coroutineScope.launch {
-                                            spotifyRepo.toggleLikeTrack(trackId)
+                                            spotifyRepo.toggleLikeTrack(track)
                                         }
                                     }
                                 )
@@ -333,16 +334,11 @@ fun SearchResultRow(
         }
 
         if (onLikeToggle != null) {
-            IconButton(
+            SpotifyLikeButton(
+                isLiked = isLiked,
                 onClick = onLikeToggle,
                 modifier = Modifier.padding(start = 8.dp)
-            ) {
-                Text(
-                    text = if (isLiked) "♥" else "♡",
-                    color = if (isLiked) Color(0xFF1DB954) else Color.White,
-                    fontSize = 20.sp
-                )
-            }
+            )
         }
     }
 }

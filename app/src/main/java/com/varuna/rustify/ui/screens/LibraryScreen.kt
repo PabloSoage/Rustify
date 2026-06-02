@@ -15,6 +15,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.varuna.rustify.bridge.*
 import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectDragGestures
 
 enum class LibraryTab(val title: String) {
     PLAYLISTS("Playlists"),
@@ -251,59 +257,63 @@ fun LibraryTracks(
     spotifyRepo: SpotifyRepository,
     onTrackClick: (FullTrack) -> Unit
 ) {
-    var tracks by remember { mutableStateOf<List<FullTrack>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val tracks = spotifyRepo.likedTracks
+    val isSyncing = spotifyRepo.isSyncingLikedTracks
     val coroutineScope = rememberCoroutineScope()
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-    LaunchedEffect(Unit) {
-        if (tracks == null) {
-            isLoading = true
-            try {
-                tracks = spotifyRepo.getSavedTracks(limit = 50).items
-            } catch (e: Exception) {
-                errorMessage = e.message
-            } finally {
-                isLoading = false
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (tracks.isEmpty() && isSyncing) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color(0xFF1DB954)
+            )
+        } else if (tracks.isEmpty()) {
+            Text(
+                text = "No liked tracks found.",
+                color = Color.Gray,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp), // Bottom nav padding
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    itemsIndexed(tracks, key = { _, track -> track.id ?: "" }) { index, track ->
+                        val trackId = track.id ?: ""
+                        val isLiked = spotifyRepo.isTrackLiked(trackId)
+                        TrackRowItem(
+                            index = index + 1,
+                            track = track,
+                            fallbackCoverUrl = null,
+                            onClick = { onTrackClick(track) },
+                            isLiked = isLiked,
+                            onLikeToggle = {
+                                coroutineScope.launch {
+                                    spotifyRepo.toggleLikeTrack(track)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                // Custom scrollbar with date tooltip
+                VerticalScrollbarWithTooltip(
+                    lazyListState = lazyListState,
+                    itemsCount = tracks.size,
+                    getDateForItem = { index ->
+                        val track = tracks.getOrNull(index)
+                        formatAddedAt(track?.addedAt)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = 8.dp, bottom = 100.dp)
+                )
             }
         }
     }
-
-    LibraryContentList(
-        isLoading = isLoading,
-        errorMessage = errorMessage,
-        items = tracks,
-        onRetry = {
-            coroutineScope.launch {
-                isLoading = true
-                errorMessage = null
-                try {
-                    tracks = spotifyRepo.getSavedTracks(limit = 50).items
-                } catch (e: Exception) {
-                    errorMessage = e.message
-                } finally {
-                    isLoading = false
-                }
-            }
-        },
-        itemContent = { index, track ->
-            val trackId = track.id ?: ""
-            val isLiked = spotifyRepo.isTrackLiked(trackId)
-            TrackRowItem(
-                index = index + 1,
-                track = track,
-                fallbackCoverUrl = null,
-                onClick = { onTrackClick(track) },
-                isLiked = isLiked,
-                onLikeToggle = {
-                    coroutineScope.launch {
-                        spotifyRepo.toggleLikeTrack(trackId)
-                    }
-                }
-            )
-        },
-        emptyMessage = "No liked tracks found."
-    )
 }
 
 @Composable
@@ -350,6 +360,151 @@ fun <T> LibraryContentList(
                         itemContent(index, item)
                     }
                 }
+            }
+        }
+    }
+}
+
+fun formatAddedAt(addedAt: String?): String {
+    if (addedAt.isNullOrEmpty()) return ""
+    try {
+        if (addedAt.length >= 7) {
+            val year = addedAt.substring(0, 4)
+            val monthNum = addedAt.substring(5, 7)
+            val monthName = when (monthNum) {
+                "01" -> "Jan"
+                "02" -> "Feb"
+                "03" -> "Mar"
+                "04" -> "Apr"
+                "05" -> "May"
+                "06" -> "Jun"
+                "07" -> "Jul"
+                "08" -> "Aug"
+                "09" -> "Sep"
+                "10" -> "Oct"
+                "11" -> "Nov"
+                "12" -> "Dec"
+                else -> ""
+            }
+            return if (monthName.isNotEmpty()) "$monthName $year" else year
+        }
+    } catch (e: Exception) {
+        // ignore
+    }
+    return ""
+}
+
+@Composable
+fun VerticalScrollbarWithTooltip(
+    lazyListState: androidx.compose.foundation.lazy.LazyListState,
+    itemsCount: Int,
+    getDateForItem: (Int) -> String,
+    modifier: Modifier = Modifier
+) {
+    if (itemsCount <= 0) return
+
+    var isDragging by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    var scrollbarHeight by remember { mutableStateOf(0f) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    val firstVisibleIndex = lazyListState.firstVisibleItemIndex
+    val scrollFraction = if (itemsCount > 1) firstVisibleIndex.toFloat() / (itemsCount - 1) else 0f
+
+    val dragFraction = if (scrollbarHeight > 0) (dragOffset / scrollbarHeight).coerceIn(0f, 1f) else 0f
+    val activeIndex = if (isDragging) {
+        (dragFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
+    } else {
+        firstVisibleIndex.coerceIn(0, itemsCount - 1)
+    }
+    val tooltipText = remember(activeIndex, isDragging) { getDateForItem(activeIndex) }
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(50.dp)
+            .onGloballyPositioned { coordinates ->
+                scrollbarHeight = coordinates.size.height.toFloat()
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        isDragging = true
+                        dragOffset = offset.y.coerceIn(0f, scrollbarHeight)
+                        val targetIndex = (dragFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
+                        coroutineScope.launch {
+                            lazyListState.scrollToItem(targetIndex)
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragOffset = (dragOffset + dragAmount.y).coerceIn(0f, scrollbarHeight)
+                        val targetIndex = (dragFraction * (itemsCount - 1)).toInt().coerceIn(0, itemsCount - 1)
+                        coroutineScope.launch {
+                            lazyListState.scrollToItem(targetIndex)
+                        }
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                    }
+                )
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 4.dp)
+                .fillMaxHeight()
+                .width(2.dp)
+                .background(Color.Gray.copy(alpha = 0.2f))
+        )
+
+        val handleSize = 40.dp
+        val density = LocalDensity.current
+        val handleSizePx = with(density) { handleSize.toPx() }
+        
+        val handleOffset = if (!isDragging) {
+            val maxOffset = scrollbarHeight - handleSizePx
+            (scrollFraction * maxOffset).coerceAtLeast(0f)
+        } else {
+            (dragOffset - handleSizePx / 2).coerceIn(0f, scrollbarHeight - handleSizePx)
+        }
+
+        val handleOffsetDp = with(density) { handleOffset.toDp() }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 2.dp)
+                .offset(y = handleOffsetDp)
+                .size(width = 6.dp, height = handleSize)
+                .background(
+                    color = if (isDragging) Color(0xFF1DB954) else Color.Gray.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(3.dp)
+                )
+        )
+
+        if (isDragging && tooltipText.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(
+                        x = (-16).dp,
+                        y = handleOffsetDp + (handleSize / 2) - 16.dp
+                    )
+                    .background(Color(0xFF2E2E2E), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = tooltipText,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

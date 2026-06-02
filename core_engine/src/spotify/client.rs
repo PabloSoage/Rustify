@@ -1018,6 +1018,7 @@ pub fn parse_gql_track(track_val: &Value) -> Option<FullTrack> {
         album,
         external_uri: format!("https://open.spotify.com/track/{}", track_id),
         isrc,
+        added_at: None,
     })
 }
 

@@ -334,6 +334,7 @@ impl From<RestFullTrack> for FullTrack {
             isrc,
             artists: r.artists.into_iter().map(SimpleArtist::from).collect(),
             album: r.album.map(SimpleAlbum::from),
+            added_at: None,
         }
     }
 }
@@ -550,6 +551,8 @@ pub struct FullTrack {
     pub isrc: String,
     pub artists: Vec<SimpleArtist>,
     pub album: Option<SimpleAlbum>,
+    #[serde(rename = "addedAt", skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<String>,
 }
 
 // ── Playlists ─────────────────────────────────────────────────────────────────

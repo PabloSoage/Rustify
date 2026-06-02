@@ -26,6 +26,7 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.components.SpotifyLikeButton
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -233,17 +234,14 @@ fun TrackScreen(
                             }
 
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
-                            IconButton(onClick = {
-                                coroutineScope.launch {
-                                    spotifyRepo.toggleLikeTrack(trackId)
+                            SpotifyLikeButton(
+                                isLiked = isLiked,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        trackDetails?.let { spotifyRepo.toggleLikeTrack(it) }
+                                    }
                                 }
-                            }) {
-                                Text(
-                                    text = if (isLiked) "♥" else "♡",
-                                    color = if (isLiked) spotifyGreen else Color.White,
-                                    fontSize = 28.sp
-                                )
-                            }
+                            )
                         }
                     }
                 }

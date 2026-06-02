@@ -199,7 +199,7 @@ fun ArtistScreen(
                                 isLiked = isLiked,
                                 onLikeToggle = {
                                     coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(trackId)
+                                        spotifyRepo.toggleLikeTrack(track)
                                     }
                                 }
                             )

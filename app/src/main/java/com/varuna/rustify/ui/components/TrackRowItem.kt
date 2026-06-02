@@ -20,6 +20,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.FullTrack
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 
 @Composable
 fun TrackRowItem(
@@ -123,16 +128,10 @@ fun TrackRowItem(
 
         // Like Button
         if (onLikeToggle != null) {
-            IconButton(
-                onClick = onLikeToggle,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Text(
-                    text = if (isLiked) "♥" else "♡",
-                    color = if (isLiked) Color(0xFF1DB954) else Color.White,
-                    fontSize = 20.sp
-                )
-            }
+            SpotifyLikeButton(
+                isLiked = isLiked,
+                onClick = onLikeToggle
+            )
             Spacer(modifier = Modifier.width(8.dp))
         }
 
@@ -150,4 +149,39 @@ fun formatDuration(ms: Int): String {
     val mins = totalSecs / 60
     val secs = totalSecs % 60
     return String.format(java.util.Locale.getDefault(), "%d:%02d", mins, secs)
+}
+
+@Composable
+fun SpotifyLikeButton(
+    isLiked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(36.dp)
+    ) {
+        if (isLiked) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(Color(0xFF1DB954), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Added to Liked",
+                    tint = Color.Black,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        } else {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Add to Liked",
+                tint = Color.Gray,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
 }

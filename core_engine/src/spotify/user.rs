@@ -47,7 +47,14 @@ impl SpotifyClient {
             .unwrap_or(&empty)
             .iter()
             .filter(|item| item["__typename"].as_str() == Some("UserLibraryTrackResponse"))
-            .filter_map(|item| parse_gql_track(&item["track"]))
+            .filter_map(|item| {
+                let mut track = parse_gql_track(&item["track"])?;
+                let added_at = item["addedAt"].as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| item["addedAt"]["isoString"].as_str().map(|s| s.to_string()));
+                track.added_at = added_at;
+                Some(track)
+            })
             .collect();
 
         let current_offset = paging_info["offset"].as_u64().unwrap_or(offset as u64) as u32;

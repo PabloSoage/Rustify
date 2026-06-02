@@ -4,8 +4,12 @@ package com.varuna.rustify.bridge
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -44,6 +48,154 @@ class SpotifyRepository(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val likedTrackIds = mutableStateMapOf<String, Boolean>()
 
+    private val appCtx = context.applicationContext
+    private val repositoryScope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
+
+    val likedTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
+    var isSyncingLikedTracks by mutableStateOf(false)
+        private set
+
+    private fun getLikedTracksCacheFile(): java.io.File {
+        return java.io.File(appCtx.cacheDir, "spotify_liked_tracks_cache.json")
+    }
+
+    private fun loadLikedTracksFromCache() {
+        val file = getLikedTracksCacheFile()
+        if (!file.exists()) return
+        try {
+            val jsonStr = file.readText()
+            val array = JSONArray(jsonStr)
+            val loadedTracks = mutableListOf<FullTrack>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                loadedTracks.add(FullTrack.fromJson(obj))
+            }
+            repositoryScope.launch(Dispatchers.Main) {
+                likedTracks.clear()
+                likedTracks.addAll(loadedTracks)
+                loadedTracks.forEach { track ->
+                    track.id?.let { likedTrackIds[it] = true }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun saveLikedTracksToCache() {
+        val file = getLikedTracksCacheFile()
+        try {
+            val array = JSONArray()
+            likedTracks.forEach { track ->
+                array.put(track.toJson())
+            }
+            file.writeText(array.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun triggerBackgroundSync() {
+        repositoryScope.launch {
+            if (isAuthenticated()) {
+                syncLikedTracks()
+            }
+        }
+    }
+
+    suspend fun syncLikedTracks() {
+        if (isSyncingLikedTracks) return
+        withContext(Dispatchers.Main) {
+            isSyncingLikedTracks = true
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                val response = getSavedTracks(limit = 50, offset = 0)
+                if (likedTracks.isEmpty()) {
+                    fetchAllSavedTracks()
+                    return@withContext
+                }
+
+                val cachedFirstTrackId = likedTracks.firstOrNull()?.id
+                val newFirstTrackId = response.items.firstOrNull()?.id
+
+                if (cachedFirstTrackId == newFirstTrackId) {
+                    if (response.total.toInt() == likedTracks.size) {
+                        return@withContext
+                    }
+                }
+
+                val newTracks = mutableListOf<FullTrack>()
+                var currentOffset = 0
+                var hasMore = true
+                var foundMatchInCache = false
+
+                while (hasMore && !foundMatchInCache) {
+                    val page = getSavedTracks(limit = 50, offset = currentOffset)
+                    if (page.items.isEmpty()) {
+                        break
+                    }
+
+                    for (item in page.items) {
+                        if (item.id == cachedFirstTrackId) {
+                            foundMatchInCache = true
+                            break
+                        }
+                        newTracks.add(item)
+                    }
+
+                    if (!foundMatchInCache && page.hasMore) {
+                        currentOffset += page.items.size
+                    } else {
+                        hasMore = false
+                    }
+                }
+
+                if (foundMatchInCache) {
+                    withContext(Dispatchers.Main) {
+                        likedTracks.addAll(0, newTracks)
+                        newTracks.forEach { track ->
+                            track.id?.let { likedTrackIds[it] = true }
+                        }
+                    }
+                    saveLikedTracksToCache()
+                } else {
+                    fetchAllSavedTracks()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            withContext(Dispatchers.Main) {
+                isSyncingLikedTracks = false
+            }
+        }
+    }
+
+    private suspend fun fetchAllSavedTracks() {
+        val allTracks = mutableListOf<FullTrack>()
+        var currentOffset = 0
+        var hasMore = true
+        while (hasMore) {
+            val page = getSavedTracks(limit = 50, offset = currentOffset)
+            allTracks.addAll(page.items)
+            if (page.hasMore && page.items.isNotEmpty()) {
+                currentOffset += page.items.size
+            } else {
+                hasMore = false
+            }
+        }
+        withContext(Dispatchers.Main) {
+            likedTracks.clear()
+            likedTracks.addAll(allTracks)
+            likedTrackIds.clear()
+            allTracks.forEach { track ->
+                track.id?.let { likedTrackIds[it] = true }
+            }
+        }
+        saveLikedTracksToCache()
+    }
+
     fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
 
     fun setTrackLikedState(id: String, liked: Boolean) {
@@ -62,6 +214,16 @@ class SpotifyRepository(context: Context) {
 
         // Trigger background hash check/warmup
         NativeEngine.warmupSpotifyHashesNative()
+
+        // Load cache and trigger background sync
+        repositoryScope.launch {
+            withContext(Dispatchers.IO) {
+                loadLikedTracksFromCache()
+            }
+            if (isAuthenticated()) {
+                syncLikedTracks()
+            }
+        }
     }
 
     /**
@@ -143,6 +305,7 @@ class SpotifyRepository(context: Context) {
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
             }.apply()
+            triggerBackgroundSync()
         }
         result
     }
@@ -179,6 +342,7 @@ class SpotifyRepository(context: Context) {
                     putString(KEY_REFRESH_TOKEN, result.refreshToken)
                 }
             }.apply()
+            triggerBackgroundSync()
         }
         result
     }
@@ -208,6 +372,7 @@ class SpotifyRepository(context: Context) {
                     putString(KEY_REFRESH_TOKEN, result.refreshToken)
                 }
             }.apply()
+            triggerBackgroundSync()
         } else {
             // Cookie and tokens are no longer valid, clear session (preserve developer settings)
             prefs.edit().apply {
@@ -298,7 +463,11 @@ class SpotifyRepository(context: Context) {
     /**
      * Toggle like/unlike status for a track.
      */
-    suspend fun toggleLikeTrack(id: String): OperationResult = withContext(Dispatchers.IO) {
+    /**
+     * Toggle like/unlike status for a track by object.
+     */
+    suspend fun toggleLikeTrack(track: FullTrack): OperationResult = withContext(Dispatchers.IO) {
+        val id = track.id ?: return@withContext OperationResult(false, "Track ID is missing")
         val currentlyLiked = isTrackLiked(id)
         val result = if (currentlyLiked) {
             unsaveTracks(listOf(id))
@@ -307,10 +476,38 @@ class SpotifyRepository(context: Context) {
         }
         if (result.success) {
             withContext(Dispatchers.Main) {
-                likedTrackIds[id] = !currentlyLiked
+                if (currentlyLiked) {
+                    likedTrackIds[id] = false
+                    likedTracks.removeAll { it.id == id }
+                } else {
+                    likedTrackIds[id] = true
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    val nowStr = sdf.format(java.util.Date())
+                    val newTrack = track.copy(addedAt = nowStr)
+                    likedTracks.add(0, newTrack)
+                }
+                saveLikedTracksToCache()
             }
         }
         result
+    }
+
+    /**
+     * Toggle like/unlike status for a track by ID (fallback).
+     */
+    suspend fun toggleLikeTrack(id: String): OperationResult = withContext(Dispatchers.IO) {
+        val skeleton = FullTrack(
+            id = id,
+            name = "",
+            externalUri = "",
+            explicit = false,
+            durationMs = 0,
+            isrc = "",
+            artists = emptyList(),
+            album = null
+        )
+        toggleLikeTrack(skeleton)
     }
 
     /**

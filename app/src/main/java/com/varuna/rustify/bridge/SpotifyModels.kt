@@ -18,6 +18,13 @@ data class SpotifyImage(
     val height: Int?,
     val width: Int?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("url", url)
+        json.put("height", height)
+        json.put("width", width)
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): SpotifyImage = SpotifyImage(
             url = json.optString("url", ""),
@@ -106,6 +113,18 @@ data class SimpleArtist(
     val externalUri: String,
     val images: List<SpotifyImage>?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        if (images != null) {
+            val imgArr = JSONArray()
+            images.forEach { imgArr.put(it.toJson()) }
+            json.put("images", imgArr)
+        }
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): SimpleArtist = SimpleArtist(
             id = json.optString("id", ""),
@@ -160,6 +179,22 @@ data class SimpleAlbum(
     val artists: List<SimpleArtist>,
     val albumType: String?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        json.put("releaseDate", releaseDate)
+        json.put("releaseDatePrecision", releaseDatePrecision)
+        val imgArr = JSONArray()
+        images.forEach { imgArr.put(it.toJson()) }
+        json.put("images", imgArr)
+        val artArr = JSONArray()
+        artists.forEach { artArr.put(it.toJson()) }
+        json.put("artists", artArr)
+        json.put("albumType", albumType)
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): SimpleAlbum = SimpleAlbum(
             id = json.optString("id", ""),
@@ -221,8 +256,27 @@ data class FullTrack(
     val durationMs: Int,
     val isrc: String,
     val artists: List<SimpleArtist>,
-    val album: SimpleAlbum?
+    val album: SimpleAlbum?,
+    val addedAt: String? = null
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        json.put("explicit", explicit)
+        json.put("durationMs", durationMs)
+        json.put("isrc", isrc)
+        val artArr = JSONArray()
+        artists.forEach { artArr.put(it.toJson()) }
+        json.put("artists", artArr)
+        json.put("album", album?.toJson())
+        if (addedAt != null) {
+            json.put("addedAt", addedAt)
+        }
+        return json
+    }
+
     companion object {
         fun fromJson(json: JSONObject): FullTrack = FullTrack(
             id = if (json.has("id") && !json.isNull("id")) json.optString("id") else null,
@@ -232,7 +286,8 @@ data class FullTrack(
             durationMs = json.optInt("durationMs", 0),
             isrc = json.optString("isrc", ""),
             artists = SimpleArtist.listFromJsonArray(json.optJSONArray("artists")),
-            album = if (json.has("album") && !json.isNull("album")) SimpleAlbum.fromJson(json.getJSONObject("album")) else null
+            album = if (json.has("album") && !json.isNull("album")) SimpleAlbum.fromJson(json.getJSONObject("album")) else null,
+            addedAt = if (json.has("addedAt") && !json.isNull("addedAt")) json.optString("addedAt") else null
         )
 
         fun listFromJsonArray(array: JSONArray?): List<FullTrack> {

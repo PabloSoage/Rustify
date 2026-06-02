@@ -359,7 +359,7 @@ fun AlbumScreen(
                                 isLiked = isLiked,
                                 onLikeToggle = {
                                     coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(trackId)
+                                        spotifyRepo.toggleLikeTrack(track)
                                     }
                                 }
                             )
