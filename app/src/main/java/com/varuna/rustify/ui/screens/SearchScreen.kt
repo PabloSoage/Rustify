@@ -78,7 +78,7 @@ fun SearchScreen(
                 val results = spotifyRepo.searchAll(query, limit = 20)
                 searchResults = results
                 val trackIds = results.tracks.mapNotNull { it.id }
-                spotifyRepo.checkAndCacheLikedStates(trackIds)
+
             } catch (e: Exception) {
                 errorMessage = e.message
             } finally {

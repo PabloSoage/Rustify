@@ -49,6 +49,12 @@ android {
             jniLibs.directories.add("src/main/jniLibs")
         }
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 kotlin {
@@ -68,13 +74,16 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.androidx.compose.ui.tooling)
+    // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
 }
 
 // --- RUST CORE INTEGRATION ---

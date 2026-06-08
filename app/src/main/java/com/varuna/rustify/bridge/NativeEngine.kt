@@ -29,6 +29,34 @@ object NativeEngine {
      */
     external fun getAudioStreamsNative(videoId: String): String
 
+    /**
+     * Starts the audio proxy HTTP server in the background.
+     * @param cacheDir Absolute path of the application cache directory.
+     * @return The dynamic port assigned by the OS (or 0 if failed).
+     */
+    external fun startAudioServerNative(cacheDir: String): Int
+
+    /**
+     * Registers a Spotify track's metadata to memory to enable automatic YouTube Music matching.
+     */
+    external fun registerTrackMetadataNative(id: String, name: String, artistsJson: String, durationMs: Int, isrc: String)
+
+    /**
+     * Manually overrides the YouTube video ID mapping for a given Spotify track ID.
+     */
+    external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
+
+    /**
+     * Retrieves the manual YouTube video ID override for a given Spotify track ID, if any.
+     */
+    external fun getAlternativeTrackNative(spotifyId: String): String
+
+    /**
+     * Notifies the Rust engine of the current playback queue to schedule pre-buffering.
+     * @param trackIdsJson JSON array of Spotify track IDs.
+     */
+    external fun updateQueueNative(trackIdsJson: String)
+
     // =====================================================================
     // SPOTIFY — AUTHENTICATION
     // =====================================================================

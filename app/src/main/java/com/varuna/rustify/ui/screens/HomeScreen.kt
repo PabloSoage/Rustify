@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,7 @@ fun HomeScreen(
     errorMessage: String?,
     onRetry: () -> Unit,
     onItemClick: (BrowseSectionItem) -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -78,14 +81,26 @@ fun HomeScreen(
                 contentPadding = PaddingValues(top = 16.dp, bottom = bottomPadding)
             ) {
                 item {
-                    Text(
-                        text = "Good Evening", // In a real app, calculate based on time
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        ),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Good Evening", // In a real app, calculate based on time
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                        IconButton(onClick = onSettingsClick) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
+                    }
                 }
 
                 browseSections?.let { sections ->

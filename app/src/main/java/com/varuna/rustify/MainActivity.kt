@@ -30,6 +30,7 @@ import androidx.activity.compose.BackHandler
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.SettingsScreen
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
@@ -38,6 +39,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import coil.compose.AsyncImage
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.player.AudioPlayerService
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+
 
 sealed class Screen {
     object Home : Screen()
@@ -47,11 +63,30 @@ sealed class Screen {
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class ArtistDetail(val id: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
+    object Settings : Screen()
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize YoutubeDL
+        try {
+            com.yausername.youtubedl_android.YoutubeDL.getInstance().init(application)
+            android.util.Log.d("YoutubeDL", "YoutubeDL initialized successfully.")
+            // Auto-update in background
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    com.yausername.youtubedl_android.YoutubeDL.getInstance().updateYoutubeDL(application, com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.STABLE)
+                    android.util.Log.d("YoutubeDL", "YoutubeDL updated successfully.")
+                } catch (e: Exception) {
+                    android.util.Log.e("YoutubeDL", "Failed to update YoutubeDL", e)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YoutubeDL", "Failed to initialize YoutubeDL", e)
+        }
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -94,16 +129,19 @@ fun EngineTester(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
 
+    val audioPlayerService = remember { AudioPlayerService(context) }
+    DisposableEffect(audioPlayerService) {
+        onDispose {
+            audioPlayerService.release()
+        }
+    }
+
+
     var isRunning by remember { mutableStateOf(false) }
     var isLoggedIn by remember { mutableStateOf(false) }
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    // Dynamic credentials input state
-    var showDevSettings by remember { mutableStateOf(false) }
-    var clientIdInput by remember { mutableStateOf(spotifyRepo.getDeveloperClientId() ?: "") }
-    var clientSecretInput by remember { mutableStateOf(spotifyRepo.getDeveloperClientSecret() ?: "") }
 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
@@ -133,19 +171,13 @@ fun EngineTester(modifier: Modifier = Modifier) {
     }
 
     if (showWebView) {
-        val hasCustomCreds = clientIdInput.trim().isNotEmpty() && clientSecretInput.trim().isNotEmpty()
         SpotifyLoginWebView(
-            clientId = if (hasCustomCreds) clientIdInput.trim() else "",
             onLoginSuccess = { codeOrCookie ->
                 showWebView = false
                 isRunning = true
 
                 coroutineScope.launch {
-                    val result = if (hasCustomCreds) {
-                        spotifyRepo.loginWithAuthCode(codeOrCookie, "http://localhost:8080/callback")
-                    } else {
-                        spotifyRepo.login(codeOrCookie)
-                    }
+                    val result = spotifyRepo.login(codeOrCookie)
                     if (result.success) {
                         isLoggedIn = true
                         try {
@@ -184,39 +216,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                     Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
-                TextButton(onClick = { showDevSettings = !showDevSettings }) {
-                    Text(if (showDevSettings) "Hide API Settings" else "Developer API Credentials")
-                }
-                
-                if (showDevSettings) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = clientIdInput,
-                        onValueChange = { clientIdInput = it },
-                        label = { Text("Spotify Client ID") },
-                        modifier = Modifier.fillMaxWidth(0.85f),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = clientSecretInput,
-                        onValueChange = { clientSecretInput = it },
-                        label = { Text("Spotify Client Secret") },
-                        modifier = Modifier.fillMaxWidth(0.85f),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            spotifyRepo.setDeveloperCredentials(clientIdInput.trim(), clientSecretInput.trim())
-                            showDevSettings = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
-                    ) {
-                        Text("Save Credentials", color = Color.Black)
-                    }
-                }
+                // Removed Developer Settings UI
             }
         }
         return
@@ -227,70 +227,89 @@ fun EngineTester(modifier: Modifier = Modifier) {
     val bottomNavScreens = listOf(Screen.Home, Screen.Search, Screen.Library)
     val isBottomNavScreen = bottomNavScreens.contains(currentScreen)
 
+    val playerState by audioPlayerService.state.collectAsState()
+    val currentTrack = playerState.currentTrack
+
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(
         bottomBar = {
-            if (isBottomNavScreen && !isLandscape) {
-                NavigationBar(
-                    containerColor = Color(0xFF121212),
-                    contentColor = Color(0xFF1DB954)
-                ) {
-                    NavigationBarItem(
-                        selected = currentScreen == Screen.Home,
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
+                    MiniPlayer(
+                        track = currentTrack,
+                        isPlaying = playerState.isPlaying,
+                        positionMs = playerState.positionMs,
+                        durationMs = playerState.durationMs,
+                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
                         onClick = {
-                            if (currentScreen != Screen.Home) {
-                                navigationStack.removeAll { bottomNavScreens.contains(it) }
-                                navigationStack.add(Screen.Home)
+                            currentTrack.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
                             }
-                        },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF1DB954),
-                            selectedTextColor = Color(0xFF1DB954),
-                            unselectedIconColor = Color.LightGray,
-                            unselectedTextColor = Color.LightGray,
-                            indicatorColor = Color(0xFF2A2A2A)
-                        )
+                        }
                     )
-                    NavigationBarItem(
-                        selected = currentScreen == Screen.Search,
-                        onClick = {
-                            if (currentScreen != Screen.Search) {
-                                navigationStack.removeAll { bottomNavScreens.contains(it) }
-                                navigationStack.add(Screen.Search)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                        label = { Text("Search") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF1DB954),
-                            selectedTextColor = Color(0xFF1DB954),
-                            unselectedIconColor = Color.LightGray,
-                            unselectedTextColor = Color.LightGray,
-                            indicatorColor = Color(0xFF2A2A2A)
+                }
+                if (isBottomNavScreen && !isLandscape) {
+                    NavigationBar(
+                        containerColor = Color(0xFF121212),
+                        contentColor = Color(0xFF1DB954)
+                    ) {
+                        NavigationBarItem(
+                            selected = currentScreen == Screen.Home,
+                            onClick = {
+                                if (currentScreen != Screen.Home) {
+                                    navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                    navigationStack.add(Screen.Home)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                            label = { Text("Home") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF1DB954),
+                                selectedTextColor = Color(0xFF1DB954),
+                                unselectedIconColor = Color.LightGray,
+                                unselectedTextColor = Color.LightGray,
+                                indicatorColor = Color(0xFF2A2A2A)
+                            )
                         )
-                    )
-                    NavigationBarItem(
-                        selected = currentScreen == Screen.Library,
-                        onClick = {
-                            if (currentScreen != Screen.Library) {
-                                navigationStack.removeAll { bottomNavScreens.contains(it) }
-                                navigationStack.add(Screen.Library)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                        label = { Text("Library") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF1DB954),
-                            selectedTextColor = Color(0xFF1DB954),
-                            unselectedIconColor = Color.LightGray,
-                            unselectedTextColor = Color.LightGray,
-                            indicatorColor = Color(0xFF2A2A2A)
+                        NavigationBarItem(
+                            selected = currentScreen == Screen.Search,
+                            onClick = {
+                                if (currentScreen != Screen.Search) {
+                                    navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                    navigationStack.add(Screen.Search)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            label = { Text("Search") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF1DB954),
+                                selectedTextColor = Color(0xFF1DB954),
+                                unselectedIconColor = Color.LightGray,
+                                unselectedTextColor = Color.LightGray,
+                                indicatorColor = Color(0xFF2A2A2A)
+                            )
                         )
-                    )
+                        NavigationBarItem(
+                            selected = currentScreen == Screen.Library,
+                            onClick = {
+                                if (currentScreen != Screen.Library) {
+                                    navigationStack.removeAll { bottomNavScreens.contains(it) }
+                                    navigationStack.add(Screen.Library)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
+                            label = { Text("Library") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF1DB954),
+                                selectedTextColor = Color(0xFF1DB954),
+                                unselectedIconColor = Color.LightGray,
+                                unselectedTextColor = Color.LightGray,
+                                indicatorColor = Color(0xFF2A2A2A)
+                            )
+                        )
+                    }
                 }
             }
         },
@@ -332,13 +351,16 @@ fun EngineTester(modifier: Modifier = Modifier) {
                                     navigationStack.add(Screen.ArtistDetail(item.artist.id))
                                 }
                             }
+                        },
+                        onSettingsClick = {
+                            navigationStack.add(Screen.Settings)
                         }
                     )
                 }
                 is Screen.Search -> {
                     SearchScreen(
                         spotifyRepo = spotifyRepo,
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
+                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
@@ -357,7 +379,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
+                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
@@ -368,7 +390,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         playlistImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
+                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) }
                     )
                 }
                 is Screen.AlbumDetail -> {
@@ -378,7 +400,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         albumImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } }
+                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) }
                     )
                 }
                 is Screen.ArtistDetail -> {
@@ -386,7 +408,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         artistId = currentScreen.id,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { it.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) } },
+                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
@@ -395,9 +417,16 @@ fun EngineTester(modifier: Modifier = Modifier) {
                     TrackScreen(
                         trackId = currentScreen.id,
                         spotifyRepo = spotifyRepo,
+                        audioPlayerService = audioPlayerService,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                    )
+                }
+                is Screen.Settings -> {
+                    SettingsScreen(
+                        spotifyRepository = spotifyRepo,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
             }
@@ -484,7 +513,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun SpotifyLoginWebView(clientId: String, onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) {
+fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -506,25 +535,17 @@ fun SpotifyLoginWebView(clientId: String, onLoginSuccess: (String) -> Unit, onCa
                         private fun checkLoginAndFinish(url: String?) {
                             if (loginAlreadyDone) return
 
-                            if (url != null) {
-                                if (clientId.isNotEmpty() && url.contains("code=")) {
-                                    val code = url.substringAfter("code=").substringBefore("&")
-                                    if (code.isNotEmpty()) {
-                                        loginAlreadyDone = true
-                                        onLoginSuccess(code)
-                                    }
-                                } else if (clientId.isEmpty() && url.contains("spotify.com")) {
-                                    val cookies = CookieManager.getInstance().getCookie(url)
-                                    if (cookies != null && cookies.contains("sp_dc=")) {
-                                        val spDc = cookies.split(";")
-                                            .map { it.trim() }
-                                            .find { it.startsWith("sp_dc=") }
-                                            ?.substringAfter("sp_dc=")
+                            if (url != null && url.contains("spotify.com")) {
+                                val cookies = CookieManager.getInstance().getCookie(url)
+                                if (cookies != null && cookies.contains("sp_dc=")) {
+                                    val spDc = cookies.split(";")
+                                        .map { it.trim() }
+                                        .find { it.startsWith("sp_dc=") }
+                                        ?.substringAfter("sp_dc=")
 
-                                        if (!spDc.isNullOrEmpty()) {
-                                            loginAlreadyDone = true
-                                            onLoginSuccess(spDc)
-                                        }
+                                    if (!spDc.isNullOrEmpty()) {
+                                        loginAlreadyDone = true
+                                        onLoginSuccess(spDc)
                                     }
                                 }
                             }
@@ -541,26 +562,104 @@ fun SpotifyLoginWebView(clientId: String, onLoginSuccess: (String) -> Unit, onCa
                         }
                     }
 
-                    if (clientId.isNotEmpty()) {
-                        val scopes = listOf(
-                            "user-library-read",
-                            "user-library-modify",
-                            "playlist-read-private",
-                            "playlist-modify-public",
-                            "playlist-modify-private",
-                            "user-follow-read",
-                            "user-follow-modify",
-                            "user-read-private",
-                            "user-read-email"
-                        ).joinToString(" ")
-                        val authUrl = "https://accounts.spotify.com/authorize?client_id=$clientId&response_type=code&redirect_uri=http://localhost:8080/callback&scope=${scopes}"
-                        loadUrl(authUrl)
-                    } else {
-                        loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
-                    }
+                    loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
                 }
             },
             modifier = Modifier.fillMaxSize()
         )
     }
 }
+
+@Composable
+fun MiniPlayer(
+    track: FullTrack,
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    onTogglePlayPause: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val spotifyGreen = Color(0xFF1DB954)
+    val progress = if (durationMs > 0) positionMs.toFloat() / durationMs.toFloat() else 0f
+    val imgUrl = track.album?.images?.minByOrNull { it.width ?: 9999 }?.url
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF2A2A2A))
+            .clickable { onClick() }
+    ) {
+        // Thin progress indicator at the top
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = spotifyGreen,
+            trackColor = Color.Gray.copy(alpha = 0.3f),
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Mini Cover Art
+            Surface(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = Color.DarkGray
+            ) {
+                if (!imgUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = imgUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = Color.LightGray,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Title and Artist
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.name,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = track.artists.joinToString(", ") { it.name },
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Play/Pause button
+            IconButton(onClick = onTogglePlayPause) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Play/Pause",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
+}

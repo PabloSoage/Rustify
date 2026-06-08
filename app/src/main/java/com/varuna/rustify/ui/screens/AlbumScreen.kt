@@ -61,7 +61,7 @@ fun AlbumScreen(
             hasMore = response.hasMore
             offset = tracks.size
             val trackIds = response.items.mapNotNull { it.id }
-            spotifyRepo.checkAndCacheLikedStates(trackIds)
+
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load details"
         } finally {
@@ -337,7 +337,7 @@ fun AlbumScreen(
                                             offset += response.items.size
                                             hasMore = response.hasMore
                                             val newTrackIds = response.items.mapNotNull { it.id }
-                                            spotifyRepo.checkAndCacheLikedStates(newTrackIds)
+
                                         } else {
                                             hasMore = false
                                         }

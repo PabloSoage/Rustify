@@ -34,14 +34,11 @@ class SpotifyEngineException(message: String) : Exception(message)
  *   val tracks = repo.getSavedTracks(20, 0)
  */
 class SpotifyRepository(context: Context) {
-
     companion object {
         private const val PREFS_NAME = "rustify_spotify_prefs"
         private const val KEY_SP_DC = "sp_dc_cookie"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
-        private const val KEY_CLIENT_ID = "developer_client_id"
-        private const val KEY_CLIENT_SECRET = "developer_client_secret"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
     }
 
@@ -206,11 +203,6 @@ class SpotifyRepository(context: Context) {
     }
 
     init {
-        // Load stored developer credentials or fall back to defaults (bypass 429 errors)
-        val clientId = prefs.getString(KEY_CLIENT_ID, "4c97a4b21a07409ea4017e889d701ab0") ?: "4c97a4b21a07409ea4017e889d701ab0"
-        val clientSecret = prefs.getString(KEY_CLIENT_SECRET, "049386348c4146059d646b9a89d7fa2a") ?: "049386348c4146059d646b9a89d7fa2a"
-        NativeEngine.setDeveloperCredentials(clientId, clientSecret)
-
         // Initialize cache directory in Rust engine
         val cacheDirPath = context.cacheDir.absolutePath
         NativeEngine.initSpotifyCacheDirNative(cacheDirPath)
@@ -227,33 +219,6 @@ class SpotifyRepository(context: Context) {
                 syncLikedTracks()
             }
         }
-    }
-
-    /**
-     * Sets custom developer credentials, updates the native engine, and persists them in SharedPreferences.
-     */
-    fun setDeveloperCredentials(clientId: String, clientSecret: String) {
-        prefs.edit().apply {
-            putString(KEY_CLIENT_ID, clientId)
-            putString(KEY_CLIENT_SECRET, clientSecret)
-        }.apply()
-        NativeEngine.setDeveloperCredentials(clientId, clientSecret)
-    }
-
-    /**
-     * Gets the saved developer Client ID, if configured.
-     */
-    fun getDeveloperClientId(): String? {
-        val stored = prefs.getString(KEY_CLIENT_ID, null)
-        return if (stored == "4c97a4b21a07409ea4017e889d701ab0") null else stored
-    }
-
-    /**
-     * Gets the saved developer Client Secret, if configured.
-     */
-    fun getDeveloperClientSecret(): String? {
-        val stored = prefs.getString(KEY_CLIENT_SECRET, null)
-        return if (stored == "049386348c4146059d646b9a89d7fa2a") null else stored
     }
 
     // =========================================================================
@@ -433,35 +398,7 @@ class SpotifyRepository(context: Context) {
         paginated
     }
 
-    /**
-     * Check if a list of tracks is saved/liked in the user's library.
-     */
-    suspend fun checkSavedTracks(ids: List<String>): List<Boolean> = withContext(Dispatchers.IO) {
-        if (ids.isEmpty()) return@withContext emptyList()
-        val json = NativeEngine.checkSpotifySavedTracksNative(JSONArray(ids).toString())
-        val array = JSONArray(checkForErrorArray(json))
-        List(array.length()) { array.getBoolean(it) }
-    }
-
-    /**
-     * Check and cache liked status for a batch of tracks.
-     */
-    suspend fun checkAndCacheLikedStates(trackIds: List<String>) {
-        val unknownIds = trackIds.filter { it.isNotEmpty() && !likedTrackIds.containsKey(it) }
-        if (unknownIds.isEmpty()) return
-        try {
-            unknownIds.chunked(50).forEach { chunk ->
-                val contains = checkSavedTracks(chunk)
-                withContext(Dispatchers.Main) {
-                    chunk.zip(contains).forEach { (id, isLiked) ->
-                        likedTrackIds[id] = isLiked
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
+    // Removed REST-based checkSavedTracks and checkAndCacheLikedStates
 
     /**
      * Toggle like/unlike status for a track.

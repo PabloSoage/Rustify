@@ -66,7 +66,7 @@ fun ArtistScreen(
                 relatedArtists = relatedDef.await().items
                 
                 val trackIds = topTracks.mapNotNull { it.id }
-                spotifyRepo.checkAndCacheLikedStates(trackIds)
+
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Failed to load artist"
             } finally {

@@ -97,6 +97,105 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAudioStrea
     })
 }
 
+/// JNI Bridge: Start audio proxy server in background, returns the dynamic port
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startAudioServerNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    cache_dir: JString<'local>,
+) -> jint {
+    let env_outcome = env_unowned.with_env(|env| -> jni::errors::Result<jint> {
+        let mutf8 = cache_dir.mutf8_chars(env)?;
+        let cache_dir_str = mutf8.to_string();
+        
+        let port_res = get_runtime().block_on(async {
+            youtube::server::start_server(cache_dir_str).await
+        });
+        
+        match port_res {
+            Ok(port) => Ok(port as jint),
+            Err(e) => {
+                eprintln!("Failed to start Rust audio server: {}", e);
+                Ok(0)
+            }
+        }
+    });
+    match env_outcome.into_outcome() {
+        Outcome::Ok(port) => port,
+        _ => 0,
+    }
+}
+
+/// JNI Bridge: Register track metadata in Rust memory
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerTrackMetadataNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: JString<'local>,
+    name: JString<'local>,
+    artists_json: JString<'local>,
+    duration_ms: jint,
+    isrc: JString<'local>,
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let id_str = id.mutf8_chars(env)?.to_string();
+        let name_str = name.mutf8_chars(env)?.to_string();
+        let artists_json_str = artists_json.mutf8_chars(env)?.to_string();
+        let isrc_str = isrc.mutf8_chars(env)?.to_string();
+        
+        let artists: Vec<String> = serde_json::from_str(&artists_json_str).unwrap_or_default();
+        
+        youtube::server::register_track_meta(id_str, name_str, artists, duration_ms as u32, isrc_str);
+        Ok(())
+    });
+}
+
+/// JNI Bridge: Set manual alternative YouTube Video ID override
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setAlternativeTrackNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    spotify_id: JString<'local>,
+    youtube_id: JString<'local>,
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let s_id = spotify_id.mutf8_chars(env)?.to_string();
+        let y_id = youtube_id.mutf8_chars(env)?.to_string();
+        youtube::server::set_alternative_track(s_id, y_id);
+        Ok(())
+    });
+}
+
+/// JNI Bridge: Get current alternative YouTube Video ID override if exists
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativeTrackNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    spotify_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = spotify_id.mutf8_chars(env)?;
+        let s_id = mutf8.to_string();
+        let alt_id = youtube::server::get_alternative_track(&s_id).unwrap_or_default();
+        alt_id
+    })
+}
+
+/// JNI Bridge: Send queue of track IDs for caching/buffering
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateQueueNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_ids_json: JString<'local>,
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let json_str = track_ids_json.mutf8_chars(env)?.to_string();
+        let track_ids: Vec<String> = serde_json::from_str(&json_str).unwrap_or_default();
+        youtube::server::update_playback_queue(track_ids);
+        Ok(())
+    });
+}
+
 // =============================================================================
 // SPOTIFY — AUTHENTICATION
 // =============================================================================

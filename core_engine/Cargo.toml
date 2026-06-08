@@ -12,23 +12,28 @@ crate-type = ["cdylib"] # Crucial: generates the .so binary for the NDK
 jni = { version = "0.22.4", default-features = false }
 
 # High-performance asynchronous concurrency and threading
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util"] }
 
 # Ultra-efficient HTTP client with native/rustls TLS support
-reqwest = { version = "0.12.7", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12.7", default-features = false, features = ["json", "rustls-tls", "stream"] }
 
 # The world's fastest JSON serializer/deserializer
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
-
-# Fast regular expressions for cleaning metadata
-regex = "1.10.6"
 
 # To generate the anonymous Spotify TOTP at the byte level
 totp-rs = { version = "5.5.1", features = ["gen_secret"] }
 
 # URL encoding for Spotify search queries
 urlencoding = "2.1.3"
+
+# Fast regular expressions (used in spotify/client.rs for metadata cleaning)
+regex = "1.10.6"
+
+# YouTube / YouTube Music InnerTube client — handles n-param deobfuscation,
+# stream URL extraction, search, and caching automatically.
+# rustls-tls: avoid native system TLS (not reliably available on Android)
+rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
 
 
 # --- Optimizations for Android NDK (Reduces .so file size) ---
