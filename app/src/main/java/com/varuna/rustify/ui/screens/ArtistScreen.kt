@@ -34,7 +34,7 @@ fun ArtistScreen(
     artistId: String,
     spotifyRepo: SpotifyRepository,
     onBackClick: () -> Unit,
-    onTrackClick: (FullTrack) -> Unit,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -195,7 +195,7 @@ fun ArtistScreen(
                                 index = index + 1,
                                 track = track,
                                 fallbackCoverUrl = artist.images.minByOrNull { it.width ?: 999 }?.url,
-                                onClick = { onTrackClick(track) },
+                                onClick = { onTrackClick(topTracks.take(5), index) },
                                 isLiked = isLiked,
                                 onLikeToggle = {
                                     coroutineScope.launch {

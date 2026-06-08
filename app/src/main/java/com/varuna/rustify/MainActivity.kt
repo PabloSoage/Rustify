@@ -379,7 +379,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
@@ -390,7 +390,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         playlistImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) }
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) }
                     )
                 }
                 is Screen.AlbumDetail -> {
@@ -400,7 +400,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         albumImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) }
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) }
                     )
                 }
                 is Screen.ArtistDetail -> {
@@ -408,7 +408,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         artistId = currentScreen.id,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )

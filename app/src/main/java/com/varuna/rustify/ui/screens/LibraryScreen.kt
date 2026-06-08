@@ -35,7 +35,7 @@ fun LibraryScreen(
     spotifyRepo: SpotifyRepository,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
-    onTrackClick: (FullTrack) -> Unit,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -257,7 +257,7 @@ fun LibraryArtists(
 @Composable
 fun LibraryTracks(
     spotifyRepo: SpotifyRepository,
-    onTrackClick: (FullTrack) -> Unit
+    onTrackClick: (List<FullTrack>, Int) -> Unit
 ) {
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
@@ -293,7 +293,7 @@ fun LibraryTracks(
                             index = index + 1,
                             track = track,
                             fallbackCoverUrl = null,
-                            onClick = { onTrackClick(track) },
+                            onClick = { onTrackClick(tracks, index) },
                             isLiked = isLiked,
                             onLikeToggle = {
                                 coroutineScope.launch {

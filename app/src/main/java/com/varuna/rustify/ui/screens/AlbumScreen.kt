@@ -36,7 +36,7 @@ fun AlbumScreen(
     albumImages: List<SpotifyImage>,
     spotifyRepo: SpotifyRepository,
     onBackClick: () -> Unit,
-    onTrackClick: (FullTrack) -> Unit,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
@@ -292,7 +292,7 @@ fun AlbumScreen(
                                     .size(56.dp)
                                     .clickable { 
                                         if (tracks.isNotEmpty()) {
-                                            onTrackClick(tracks.first())
+                                            onTrackClick(tracks, 0)
                                         }
                                     },
                                 shape = CircleShape,
@@ -355,7 +355,7 @@ fun AlbumScreen(
                                 index = index + 1,
                                 track = track,
                                 fallbackCoverUrl = primaryImageUrl,
-                                onClick = { onTrackClick(track) },
+                                onClick = { onTrackClick(tracks, index) },
                                 isLiked = isLiked,
                                 onLikeToggle = {
                                     coroutineScope.launch {

@@ -353,7 +353,7 @@ data class SimplePlaylist(
         fun fromJson(json: JSONObject): SimplePlaylist = SimplePlaylist(
             id = json.optString("id", ""),
             name = json.optString("name", ""),
-            description = json.optString("description", ""),
+            description = json.optString("description", "").cleanHtml(),
             images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
             externalUri = json.optString("externalUri", ""),
             owner = if (json.has("owner") && !json.isNull("owner")) PlaylistOwner.fromJson(json.getJSONObject("owner")) else null,
@@ -382,7 +382,7 @@ data class FullPlaylist(
         fun fromJson(json: JSONObject): FullPlaylist = FullPlaylist(
             id = json.optString("id", ""),
             name = json.optString("name", ""),
-            description = json.optString("description", ""),
+            description = json.optString("description", "").cleanHtml(),
             images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
             externalUri = json.optString("externalUri", ""),
             owner = if (json.has("owner") && !json.isNull("owner")) PlaylistOwner.fromJson(json.getJSONObject("owner")) else null,
@@ -518,3 +518,14 @@ sealed class BrowseSectionItem {
         }
     }
 }
+
+fun String.cleanHtml(): String {
+    return this.replace(Regex("<[^>]*>"), "")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&#39;", "'")
+        .trim()
+}
+
