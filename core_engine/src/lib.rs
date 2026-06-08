@@ -970,7 +970,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
             };
             match spotify::client::scrape_gql_hashes_with_client(&client_clone).await {
                 Ok(new_hashes) => {
-                    let client = spotify::client::get_spotify_client().write().unwrap();
+                    let client = spotify::client::get_spotify_client().read().unwrap();
                     client.update_gql_hashes(new_hashes);
                     eprintln!("[Spotify] Background hash warmup completed successfully.");
                 }

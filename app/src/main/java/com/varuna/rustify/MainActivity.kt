@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +43,8 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -128,6 +131,7 @@ class MainActivity : ComponentActivity() {
 fun EngineTester(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
+    val saveableStateHolder = rememberSaveableStateHolder()
 
     val audioPlayerService = remember { AudioPlayerService(context) }
     DisposableEffect(audioPlayerService) {
@@ -237,12 +241,20 @@ fun EngineTester(modifier: Modifier = Modifier) {
         bottomBar = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
+                    val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack.id }
+                    val hasPrevious = queueIndex > 0
+                    val hasNext = queueIndex != -1 && queueIndex < playerState.queue.lastIndex
+
                     MiniPlayer(
                         track = currentTrack,
                         isPlaying = playerState.isPlaying,
                         positionMs = playerState.positionMs,
                         durationMs = playerState.durationMs,
+                        hasPrevious = hasPrevious,
+                        hasNext = hasNext,
                         onTogglePlayPause = { audioPlayerService.togglePlayPause() },
+                        onSkipPrevious = { audioPlayerService.skipToPrevious() },
+                        onSkipNext = { audioPlayerService.skipToNext() },
                         onClick = {
                             currentTrack.id?.let { id ->
                                 navigationStack.add(Screen.TrackDetail(id))
@@ -320,8 +332,20 @@ fun EngineTester(modifier: Modifier = Modifier) {
         } else {
             modifier.fillMaxSize().padding(paddingValues)
         }
+        val screenKey = when (currentScreen) {
+            is Screen.Home -> "Home"
+            is Screen.Search -> "Search"
+            is Screen.Library -> "Library"
+            is Screen.PlaylistDetail -> "PlaylistDetail_${currentScreen.id}"
+            is Screen.AlbumDetail -> "AlbumDetail_${currentScreen.id}"
+            is Screen.ArtistDetail -> "ArtistDetail_${currentScreen.id}"
+            is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
+            is Screen.Settings -> "Settings"
+        }
+
         val screenContent = @Composable {
-            when (currentScreen) {
+            saveableStateHolder.SaveableStateProvider(screenKey) {
+                when (currentScreen) {
                 is Screen.Home -> {
                     HomeScreen(
                         browseSections = browseSections,
@@ -361,6 +385,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
                     SearchScreen(
                         spotifyRepo = spotifyRepo,
                         onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
+                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                        onGoToQueue = {
+                            currentTrack?.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
+                            }
+                        },
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
@@ -380,6 +410,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
                         onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                        onGoToQueue = {
+                            currentTrack?.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
+                            }
+                        },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
@@ -390,7 +426,17 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         playlistImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) }
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                        onGoToQueue = {
+                            currentTrack?.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
+                            }
+                        },
+                        onAlbumClick = { id, name, images ->
+                            navigationStack.add(Screen.AlbumDetail(id, name, images))
+                        },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
                 is Screen.AlbumDetail -> {
@@ -400,7 +446,17 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         albumImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) }
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                        onGoToQueue = {
+                            currentTrack?.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
+                            }
+                        },
+                        onAlbumClick = { id, name, images ->
+                            navigationStack.add(Screen.AlbumDetail(id, name, images))
+                        },
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
                 }
                 is Screen.ArtistDetail -> {
@@ -409,6 +465,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                        onGoToQueue = {
+                            currentTrack?.id?.let { id ->
+                                navigationStack.add(Screen.TrackDetail(id))
+                            }
+                        },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
                     )
@@ -431,6 +493,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
 
         if (isLandscape && isBottomNavScreen) {
             Row(modifier = contentModifier) {
@@ -576,7 +639,11 @@ fun MiniPlayer(
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
     onTogglePlayPause: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -651,6 +718,19 @@ fun MiniPlayer(
                 )
             }
 
+            // Previous Button
+            IconButton(
+                onClick = onSkipPrevious,
+                enabled = hasPrevious
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipPrevious,
+                    contentDescription = "Previous",
+                    tint = if (hasPrevious) Color.White else Color.Gray,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
             // Play/Pause button
             IconButton(onClick = onTogglePlayPause) {
                 Icon(
@@ -658,6 +738,19 @@ fun MiniPlayer(
                     contentDescription = "Play/Pause",
                     tint = Color.White,
                     modifier = Modifier.size(28.dp)
+                )
+            }
+
+            // Next Button
+            IconButton(
+                onClick = onSkipNext,
+                enabled = hasNext
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Next",
+                    tint = if (hasNext) Color.White else Color.Gray,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }

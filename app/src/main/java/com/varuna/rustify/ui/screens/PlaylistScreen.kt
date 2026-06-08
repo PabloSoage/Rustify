@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.*
 import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,10 +38,15 @@ fun PlaylistScreen(
     spotifyRepo: SpotifyRepository,
     onBackClick: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -361,7 +367,8 @@ fun PlaylistScreen(
                                     coroutineScope.launch {
                                         spotifyRepo.toggleLikeTrack(track)
                                     }
-                                }
+                                },
+                                onMoreClick = { selectedTrackForMenu = track }
                             )
                         }
                         
@@ -381,5 +388,44 @@ fun PlaylistScreen(
                 }
             }
         }
+    }
+
+    if (selectedTrackForMenu != null) {
+        TrackOptionsMenuBottomSheet(
+            track = selectedTrackForMenu!!,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { selectedTrackForMenu = null },
+            onAddToQueue = {
+                onAddToQueue(selectedTrackForMenu!!)
+                selectedTrackForMenu = null
+            },
+            onGoToQueue = {
+                onGoToQueue()
+                selectedTrackForMenu = null
+            },
+            onGoToAlbum = { id, name, images ->
+                onAlbumClick(id, name, images)
+                selectedTrackForMenu = null
+            },
+            onGoToArtist = { id ->
+                onArtistClick(id)
+                selectedTrackForMenu = null
+            },
+            onRemoveFromPlaylist = {
+                val trackToRemove = selectedTrackForMenu!!
+                coroutineScope.launch {
+                    trackToRemove.id?.let { tid ->
+                        val res = spotifyRepo.removeTracksFromPlaylist(playlistId, listOf(tid))
+                        if (res.success) {
+                            val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
+                            tracks = response.items
+                            offset = tracks.size
+                            hasMore = response.hasMore
+                        }
+                    }
+                }
+                selectedTrackForMenu = null
+            }
+        )
     }
 }

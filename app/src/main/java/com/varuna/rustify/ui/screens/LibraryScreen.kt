@@ -6,9 +6,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,12 +38,14 @@ fun LibraryScreen(
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
-    var selectedTab by remember { mutableStateOf(LibraryTab.PLAYLISTS) }
+    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.PLAYLISTS) }
 
     Column(
         modifier = modifier
@@ -91,7 +95,14 @@ fun LibraryScreen(
                 LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick)
                 LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick)
                 LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick)
-                LibraryTab.TRACKS -> LibraryTracks(spotifyRepo, onTrackClick)
+                LibraryTab.TRACKS -> LibraryTracks(
+                    spotifyRepo = spotifyRepo,
+                    onTrackClick = onTrackClick,
+                    onAddToQueue = onAddToQueue,
+                    onGoToQueue = onGoToQueue,
+                    onAlbumClick = onAlbumClick,
+                    onArtistClick = onArtistClick
+                )
             }
         }
     }
@@ -257,13 +268,18 @@ fun LibraryArtists(
 @Composable
 fun LibraryTracks(
     spotifyRepo: SpotifyRepository,
-    onTrackClick: (List<FullTrack>, Int) -> Unit
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit
 ) {
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
     var isScrollbarDragging by remember { mutableStateOf(false) }
+    var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
@@ -300,7 +316,8 @@ fun LibraryTracks(
                                     spotifyRepo.toggleLikeTrack(track)
                                 }
                             },
-                            isScrollbarDragging = isScrollbarDragging
+                            isScrollbarDragging = isScrollbarDragging,
+                            onMoreClick = { selectedTrackForMenu = track }
                         )
                     }
                 }
@@ -320,6 +337,33 @@ fun LibraryTracks(
                 )
             }
         }
+    }
+
+
+
+    if (selectedTrackForMenu != null) {
+        TrackOptionsMenuBottomSheet(
+            track = selectedTrackForMenu!!,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { selectedTrackForMenu = null },
+            onAddToQueue = {
+                onAddToQueue(selectedTrackForMenu!!)
+                selectedTrackForMenu = null
+            },
+            onGoToQueue = {
+                onGoToQueue()
+                selectedTrackForMenu = null
+            },
+            onGoToAlbum = { id, name, images ->
+                onAlbumClick(id, name, images)
+                selectedTrackForMenu = null
+            },
+            onGoToArtist = { id ->
+                onArtistClick(id)
+                selectedTrackForMenu = null
+            },
+            onRemoveFromPlaylist = null
+        )
     }
 }
 

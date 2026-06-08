@@ -3,26 +3,26 @@ package com.varuna.rustify.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import com.varuna.rustify.player.AudioPlayerState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -39,6 +39,7 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.components.SpotifyLikeButton
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -261,24 +262,26 @@ fun TrackScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showMappingDialog by remember { mutableStateOf(false) }
+    var showQueueBottomSheet by remember { mutableStateOf(false) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
     
     val coroutineScope = rememberCoroutineScope()
     val playerState by audioPlayerService.state.collectAsState()
 
-    val isCurrentTrack = playerState.currentTrack?.id == trackId
+    val trackToShow = playerState.currentTrack ?: trackDetails
+    val isCurrentTrack = playerState.currentTrack != null || trackDetails?.id == trackId
     val isPlaying = isCurrentTrack && playerState.isPlaying
     val isBuffering = isCurrentTrack && playerState.isBuffering
     val isError = isCurrentTrack && playerState.isError
     val bufferPercent = if (isCurrentTrack) playerState.bufferPercent else 0
     val currentPosition = if (isCurrentTrack) playerState.positionMs else 0L
-    val totalDuration = if (isCurrentTrack) playerState.durationMs else (trackDetails?.durationMs?.toLong() ?: 0L)
+    val totalDuration = if (isCurrentTrack) playerState.durationMs else (trackToShow?.durationMs?.toLong() ?: 0L)
 
     LaunchedEffect(trackId) {
         isLoading = true
         errorMessage = null
         try {
             trackDetails = spotifyRepo.getTrack(trackId)
-
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load track"
         } finally {
@@ -289,7 +292,7 @@ fun TrackScreen(
     val spotifyGreen = Color(0xFF1DB954)
     val darkBackground = Color(0xFF121212)
 
-    val imgUrl = trackDetails?.album?.images?.maxByOrNull { it.width ?: 0 }?.url
+    val imgUrl = trackToShow?.album?.images?.maxByOrNull { it.width ?: 0 }?.url
 
     fun formatTime(ms: Long): String {
         val totalSecs = ms / 1000
@@ -309,6 +312,17 @@ fun TrackScreen(
                             contentDescription = "Back",
                             tint = Color.White
                         )
+                    }
+                },
+                actions = {
+                    trackToShow?.let {
+                        IconButton(onClick = { showOptionsMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options",
+                                tint = Color.White
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -334,7 +348,6 @@ fun TrackScreen(
                             errorMessage = null
                             try {
                                 trackDetails = spotifyRepo.getTrack(trackId)
-                    
                             } catch (e: Exception) {
                                 errorMessage = e.message ?: "Failed to load track"
                             } finally {
@@ -345,7 +358,7 @@ fun TrackScreen(
                 }
             }
         } else {
-            trackDetails?.let { track ->
+            trackToShow?.let { track ->
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Blurred Background
                     if (!imgUrl.isNullOrEmpty()) {
@@ -376,6 +389,19 @@ fun TrackScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
+                        if (isBuffering) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                                    .height(2.dp),
+                                color = spotifyGreen,
+                                trackColor = Color.Transparent
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(18.dp))
+                        }
+
                         // Big Cover Art
                         Surface(
                             modifier = Modifier
@@ -395,28 +421,44 @@ fun TrackScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Title
-                        Text(
-                            text = track.name,
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Artist Link
-                        Text(
-                            text = track.artists.joinToString(", ") { it.name },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = spotifyGreen,
-                            modifier = Modifier.clickable {
-                                if (track.artists.isNotEmpty()) {
-                                    onArtistClick(track.artists.first().id)
-                                }
+                        // Title and Like button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track.name,
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = track.artists.joinToString(", ") { it.name },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = spotifyGreen,
+                                    modifier = Modifier.clickable {
+                                        if (track.artists.isNotEmpty()) {
+                                            onArtistClick(track.artists.first().id)
+                                        }
+                                    }
+                                )
                             }
-                        )
+
+                            // Like Button
+                            val isLiked = track.id?.let { spotifyRepo.isTrackLiked(it) } ?: false
+                            SpotifyLikeButton(
+                                isLiked = isLiked,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        spotifyRepo.toggleLikeTrack(track)
+                                    }
+                                }
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(4.dp))
 
@@ -429,7 +471,7 @@ fun TrackScreen(
                                 track.album?.let {
                                     onAlbumClick(it.id, it.name, it.images)
                                 }
-                            }
+                            }.align(Alignment.Start)
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -494,15 +536,13 @@ fun TrackScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                         ) {
-                            // Queue button / Add to Queue
-                            IconButton(onClick = {
-                                audioPlayerService.enqueue(track)
-                            }) {
+                            // Shuffle Button
+                            IconButton(onClick = { audioPlayerService.toggleShuffle() }) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                                    contentDescription = "Add to Queue",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Shuffle",
+                                    tint = if (playerState.isShuffle) spotifyGreen else Color.White,
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
 
@@ -595,16 +635,15 @@ fun TrackScreen(
                                 )
                             }
 
-                            // Like button
-                            val isLiked = spotifyRepo.isTrackLiked(trackId)
-                            SpotifyLikeButton(
-                                isLiked = isLiked,
-                                onClick = {
-                                    coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(track)
-                                    }
-                                }
-                            )
+                            // Queue Button
+                            IconButton(onClick = { showQueueBottomSheet = true }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                                    contentDescription = "View Queue",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -630,7 +669,7 @@ fun TrackScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(onClick = {
-                            trackDetails?.let { audioPlayerService.loadAndPlay(it) }
+                            trackToShow?.let { audioPlayerService.loadAndPlay(it) }
                         }) {
                             Text("Reintentar", color = Color.White, fontSize = 12.sp)
                         }
@@ -641,20 +680,239 @@ fun TrackScreen(
     }
 
     if (showMappingDialog) {
-        trackDetails?.let { track ->
+        trackToShow?.let { track ->
             YouTubeMappingDialog(
                 track = track,
                 audioPlayerService = audioPlayerService,
                 onDismiss = { showMappingDialog = false },
                 onMappingSelected = { ytId ->
                     showMappingDialog = false
-                    NativeEngine.setAlternativeTrackNative(trackId, ytId)
-                    // Reiniciar reproducción si es el track actual para aplicar el cambio
-                    if (isCurrentTrack) {
-                        audioPlayerService.loadAndPlay(track)
+                    track.id?.let { tid ->
+                        NativeEngine.setAlternativeTrackNative(tid, ytId)
+                        if (isCurrentTrack) {
+                            audioPlayerService.loadAndPlay(track)
+                        }
                     }
                 }
             )
+        }
+    }
+
+    if (showQueueBottomSheet) {
+        QueueBottomSheet(
+            playerState = playerState,
+            audioPlayerService = audioPlayerService,
+            onDismiss = { showQueueBottomSheet = false }
+        )
+    }
+
+    if (showOptionsMenu && trackToShow != null) {
+        TrackOptionsMenuBottomSheet(
+            track = trackToShow,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { showOptionsMenu = false },
+            onAddToQueue = {
+                audioPlayerService.enqueue(trackToShow)
+                showOptionsMenu = false
+            },
+            onGoToQueue = {
+                showOptionsMenu = false
+                showQueueBottomSheet = true
+            },
+            onGoToAlbum = { id, name, images ->
+                showOptionsMenu = false
+                onAlbumClick(id, name, images)
+            },
+            onGoToArtist = { id ->
+                showOptionsMenu = false
+                onArtistClick(id)
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QueueBottomSheet(
+    playerState: AudioPlayerState,
+    audioPlayerService: AudioPlayerService,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1E1E),
+        contentColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                text = "Cola de reproducción",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            // Current Track Section
+            Text(
+                text = "Sonando ahora",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            playerState.currentTrack?.let { current ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val imgUrl = current.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                    Surface(
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(4.dp)),
+                        color = Color.DarkGray
+                    ) {
+                        if (!imgUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = imgUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(current.name, fontWeight = FontWeight.SemiBold, color = Color(0xFF1DB954), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(current.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Next Up Section
+            Text(
+                text = "Siguiente en la cola",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            val queue = playerState.queue
+            val currentIdx = queue.indexOfFirst { it.id == playerState.currentTrack?.id }
+            val nextUpTracks = if (currentIdx != -1) queue.drop(currentIdx + 1) else queue
+            val nextUpStartIndex = if (currentIdx != -1) currentIdx + 1 else 0
+
+            if (nextUpTracks.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("La cola está vacía", color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    itemsIndexed(nextUpTracks, key = { indexInNextUp, track -> "${track.id ?: ""}_$indexInNextUp" }) { indexInNextUp, track ->
+                        val originalIndex = nextUpStartIndex + indexInNextUp
+                        
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.EndToStart) {
+                                    audioPlayerService.removeFromQueue(originalIndex)
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                        )
+
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            backgroundContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFFCC2200))
+                                        .padding(horizontal = 20.dp),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = Color.White
+                                    )
+                                }
+                            },
+                            content = {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF1E1E1E))
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    var accumulatedDragY = 0f
+                                    Icon(
+                                        imageVector = Icons.Default.DragHandle,
+                                        contentDescription = "Drag to reorder",
+                                        tint = Color.Gray,
+                                        modifier = Modifier
+                                            .padding(end = 12.dp)
+                                            .pointerInput(originalIndex) {
+                                                detectDragGestures(
+                                                    onDragStart = { accumulatedDragY = 0f },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        accumulatedDragY += dragAmount.y
+                                                        val threshold = 90f
+                                                        if (accumulatedDragY > threshold) {
+                                                            val target = originalIndex + 1
+                                                            if (target < queue.size) {
+                                                                audioPlayerService.moveQueueItem(originalIndex, target)
+                                                            }
+                                                            accumulatedDragY = 0f
+                                                        } else if (accumulatedDragY < -threshold) {
+                                                            val target = originalIndex - 1
+                                                            if (target > currentIdx) {
+                                                                audioPlayerService.moveQueueItem(originalIndex, target)
+                                                            }
+                                                            accumulatedDragY = 0f
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                    )
+
+                                    val imgUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                                    Surface(
+                                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
+                                        color = Color.DarkGray
+                                    ) {
+                                        if (!imgUrl.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = imgUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(track.name, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(track.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }

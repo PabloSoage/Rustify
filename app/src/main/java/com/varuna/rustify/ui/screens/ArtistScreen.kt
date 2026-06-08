@@ -24,6 +24,7 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.*
 import com.varuna.rustify.ui.components.TrackRowItem
 import com.varuna.rustify.ui.components.PlaylistItemCard
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -35,6 +36,8 @@ fun ArtistScreen(
     spotifyRepo: SpotifyRepository,
     onBackClick: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -43,6 +46,7 @@ fun ArtistScreen(
     var topTracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var albums by remember { mutableStateOf<List<SimpleAlbum>>(emptyList()) }
     var relatedArtists by remember { mutableStateOf<List<FullArtist>>(emptyList()) }
+    var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
 
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -201,7 +205,8 @@ fun ArtistScreen(
                                     coroutineScope.launch {
                                         spotifyRepo.toggleLikeTrack(track)
                                     }
-                                }
+                                },
+                                onMoreClick = { selectedTrackForMenu = track }
                             )
                         }
                         item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -262,5 +267,30 @@ fun ArtistScreen(
                 }
             }
         }
+    }
+
+    if (selectedTrackForMenu != null) {
+        TrackOptionsMenuBottomSheet(
+            track = selectedTrackForMenu!!,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { selectedTrackForMenu = null },
+            onAddToQueue = {
+                onAddToQueue(selectedTrackForMenu!!)
+                selectedTrackForMenu = null
+            },
+            onGoToQueue = {
+                onGoToQueue()
+                selectedTrackForMenu = null
+            },
+            onGoToAlbum = { id, name, images ->
+                onAlbumClick(id, name, images)
+                selectedTrackForMenu = null
+            },
+            onGoToArtist = { id ->
+                onArtistClick(id)
+                selectedTrackForMenu = null
+            },
+            onRemoveFromPlaylist = null
+        )
     }
 }

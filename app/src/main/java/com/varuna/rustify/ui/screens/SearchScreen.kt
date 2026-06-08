@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.*
 import com.varuna.rustify.ui.components.SpotifyLikeButton
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -40,6 +42,8 @@ enum class SearchFilter {
 fun SearchScreen(
     spotifyRepo: SpotifyRepository,
     onTrackClick: (FullTrack) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
@@ -54,6 +58,7 @@ fun SearchScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf(SearchFilter.ALL) }
+    var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
 
     var isLoading by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<NormalizedSearchResults?>(null) }
@@ -206,6 +211,9 @@ fun SearchScreen(
                                         coroutineScope.launch {
                                             spotifyRepo.toggleLikeTrack(track)
                                         }
+                                    },
+                                    onMoreClick = {
+                                        selectedTrackForMenu = track
                                     }
                                 )
                             }
@@ -258,6 +266,32 @@ fun SearchScreen(
             }
         }
     }
+
+
+
+    if (selectedTrackForMenu != null) {
+        TrackOptionsMenuBottomSheet(
+            track = selectedTrackForMenu!!,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { selectedTrackForMenu = null },
+            onAddToQueue = {
+                onAddToQueue(selectedTrackForMenu!!)
+                selectedTrackForMenu = null
+            },
+            onGoToQueue = {
+                onGoToQueue()
+                selectedTrackForMenu = null
+            },
+            onGoToAlbum = { id, name, images ->
+                onAlbumClick(id, name, images)
+                selectedTrackForMenu = null
+            },
+            onGoToArtist = { id ->
+                onArtistClick(id)
+                selectedTrackForMenu = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -280,7 +314,8 @@ fun SearchResultRow(
     isCircle: Boolean = false,
     onClick: () -> Unit,
     isLiked: Boolean = false,
-    onLikeToggle: (() -> Unit)? = null
+    onLikeToggle: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -341,6 +376,19 @@ fun SearchResultRow(
                 onClick = onLikeToggle,
                 modifier = Modifier.padding(start = 8.dp)
             )
+        }
+
+        if (onMoreClick != null) {
+            IconButton(
+                onClick = onMoreClick,
+                modifier = Modifier.padding(start = 4.dp).size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = Color.LightGray
+                )
+            }
         }
     }
 }

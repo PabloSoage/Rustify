@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 
 @Composable
@@ -37,7 +38,8 @@ fun TrackRowItem(
     onClick: () -> Unit,
     isLiked: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
-    isScrollbarDragging: Boolean = false
+    isScrollbarDragging: Boolean = false,
+    onMoreClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -143,7 +145,21 @@ fun TrackRowItem(
                 isLiked = isLiked,
                 onClick = onLikeToggle
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+
+        if (onMoreClick != null) {
+            IconButton(
+                onClick = onMoreClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = Color.LightGray
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
         }
 
         // Track Duration
