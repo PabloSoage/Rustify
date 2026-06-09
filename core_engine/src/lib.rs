@@ -79,24 +79,6 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchYouTube
     })
 }
 
-/// JNI Bridge: Extract Audio Streams
-#[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAudioStreamsNative<'local>(
-    mut env_unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    video_id: JString<'local>,
-) -> jstring {
-    jni_bridge!(env_unowned, |env| {
-        let mutf8 = video_id.mutf8_chars(env)?;
-        let rust_id = mutf8.to_string();
-        let async_result = get_runtime().block_on(async {
-            let scraper = youtube::scraper::YouTubeScraper::new();
-            scraper.get_audio_streams(&rust_id).await
-        });
-        serialize_result(async_result)
-    })
-}
-
 /// JNI Bridge: Start audio proxy server in background, returns the dynamic port
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startAudioServerNative<'local>(

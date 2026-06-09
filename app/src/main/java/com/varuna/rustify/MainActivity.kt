@@ -2,60 +2,96 @@
 package com.varuna.rustify
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
-import android.content.res.Configuration
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.varuna.rustify.bridge.SpotifyRepository
-import com.varuna.rustify.ui.theme.RustifyTheme
-import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.Color
-import com.varuna.rustify.bridge.BrowseSection
-import com.varuna.rustify.bridge.BrowseSectionItem
-import com.varuna.rustify.bridge.SpotifyImage
-import androidx.activity.compose.BackHandler
-import com.varuna.rustify.ui.screens.HomeScreen
-import com.varuna.rustify.ui.screens.SearchScreen
-import com.varuna.rustify.ui.screens.LibraryScreen
-import com.varuna.rustify.ui.screens.SettingsScreen
-import com.varuna.rustify.ui.screens.AlbumScreen
-import com.varuna.rustify.ui.screens.PlaylistScreen
-import com.varuna.rustify.ui.screens.ArtistScreen
-import com.varuna.rustify.ui.screens.TrackScreen
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
-import coil.compose.AsyncImage
-import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.player.AudioPlayerService
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
+import com.varuna.rustify.bridge.BrowseSection
+import com.varuna.rustify.bridge.BrowseSectionItem
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.ui.screens.AlbumScreen
+import com.varuna.rustify.ui.screens.ArtistScreen
+import com.varuna.rustify.ui.screens.HomeScreen
+import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.PlaylistScreen
+import com.varuna.rustify.ui.screens.SearchScreen
+import com.varuna.rustify.ui.screens.SettingsScreen
+import com.varuna.rustify.ui.screens.TrackScreen
+import com.varuna.rustify.ui.theme.RustifyTheme
+import kotlinx.coroutines.launch
 
 
 sealed class Screen {
@@ -78,9 +114,13 @@ class MainActivity : ComponentActivity() {
             com.yausername.youtubedl_android.YoutubeDL.getInstance().init(application)
             android.util.Log.d("YoutubeDL", "YoutubeDL initialized successfully.")
             // Auto-update in background
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
-                    com.yausername.youtubedl_android.YoutubeDL.getInstance().updateYoutubeDL(application, com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.STABLE)
+                    val prefs = application.getSharedPreferences("rustify_settings", MODE_PRIVATE)
+                    val channelStr = prefs.getString("ytdlp_channel", "NIGHTLY")
+                    val channel = if (channelStr == "STABLE") com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.STABLE else com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.NIGHTLY
+                    
+                    com.yausername.youtubedl_android.YoutubeDL.getInstance().updateYoutubeDL(application, channel)
                     android.util.Log.d("YoutubeDL", "YoutubeDL updated successfully.")
                 } catch (e: Exception) {
                     android.util.Log.e("YoutubeDL", "Failed to update YoutubeDL", e)
@@ -90,10 +130,8 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("YoutubeDL", "Failed to initialize YoutubeDL", e)
         }
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
+        window.attributes.layoutInDisplayCutoutMode =
+            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         
         // Configure Coil image loading with a persistent disk cache (512MB)
         val imageLoader = coil.ImageLoader.Builder(this)
@@ -755,4 +793,4 @@ fun MiniPlayer(
             }
         }
     }
-}
+}

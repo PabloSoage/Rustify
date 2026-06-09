@@ -1,4 +1,5 @@
 // app/src/main/java/com/varuna/rustify/bridge/SpotifyModels.kt
+@file:Suppress("unused")
 package com.varuna.rustify.bridge
 
 import org.json.JSONArray

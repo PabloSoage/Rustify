@@ -6,6 +6,7 @@ package com.varuna.rustify.bridge
  * All functions delegate to native Rust implementations for maximum performance.
  * Strings are passed as JSON for complex data structures.
  */
+@Suppress("unused", "MemberVisibilityCanBePrivate")
 object NativeEngine {
     init {
         System.loadLibrary("core_engine")

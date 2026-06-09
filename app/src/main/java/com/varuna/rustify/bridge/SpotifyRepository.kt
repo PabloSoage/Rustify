@@ -2,14 +2,15 @@
 package com.varuna.rustify.bridge
 
 import android.content.Context
+import androidx.core.content.edit
 import android.content.SharedPreferences
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,6 +34,7 @@ class SpotifyEngineException(message: String) : Exception(message)
  *   val result = repo.login(spDcCookie)
  *   val tracks = repo.getSavedTracks(20, 0)
  */
+@Suppress("unused", "MemberVisibilityCanBePrivate")
 class SpotifyRepository(context: Context) {
     companion object {
         private const val PREFS_NAME = "rustify_spotify_prefs"
@@ -117,7 +119,7 @@ class SpotifyRepository(context: Context) {
                 val newFirstTrackId = response.items.firstOrNull()?.id
 
                 if (cachedFirstTrackId == newFirstTrackId) {
-                    if (response.total.toInt() == likedTracks.size) {
+                    if (response.total == likedTracks.size) {
                         return@withContext
                     } else {
                         fetchAllSavedTracks()
@@ -130,7 +132,7 @@ class SpotifyRepository(context: Context) {
                 var hasMore = true
                 var foundMatchInCache = false
 
-                while (hasMore && !foundMatchInCache) {
+                while (hasMore) {
                     val page = getSavedTracks(limit = 50, offset = currentOffset)
                     if (page.items.isEmpty()) {
                         break
@@ -144,7 +146,11 @@ class SpotifyRepository(context: Context) {
                         newTracks.add(item)
                     }
 
-                    if (!foundMatchInCache && page.hasMore) {
+                    if (foundMatchInCache) {
+                        break
+                    }
+
+                    if (page.hasMore) {
                         currentOffset += page.items.size
                     } else {
                         hasMore = false
@@ -268,11 +274,11 @@ class SpotifyRepository(context: Context) {
         val json = NativeEngine.loginSpotifyNative(spDcCookie)
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
-            prefs.edit().apply {
+            prefs.edit {
                 putString(KEY_SP_DC, spDcCookie)
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
-            }.apply()
+            }
             triggerBackgroundSync()
         }
         result
@@ -283,12 +289,12 @@ class SpotifyRepository(context: Context) {
      */
     suspend fun logout() = withContext(Dispatchers.IO) {
         NativeEngine.logoutSpotifyNative()
-        prefs.edit().apply {
+        prefs.edit {
             remove(KEY_SP_DC)
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_EXPIRATION)
             remove(KEY_REFRESH_TOKEN)
-        }.apply()
+        }
     }
 
     /**
@@ -303,13 +309,13 @@ class SpotifyRepository(context: Context) {
         val json = NativeEngine.loginSpotifyWithAuthCodeNative(code, redirectUri)
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
-            prefs.edit().apply {
+            prefs.edit {
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
-                if (result.refreshToken != null && result.refreshToken.isNotEmpty()) {
+                if (!result.refreshToken.isNullOrEmpty()) {
                     putString(KEY_REFRESH_TOKEN, result.refreshToken)
                 }
-            }.apply()
+            }
             triggerBackgroundSync()
         }
         result
@@ -333,22 +339,22 @@ class SpotifyRepository(context: Context) {
         val json = NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp, savedRefreshToken)
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
-            prefs.edit().apply {
+            prefs.edit {
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
-                if (result.refreshToken != null && result.refreshToken.isNotEmpty()) {
+                if (!result.refreshToken.isNullOrEmpty()) {
                     putString(KEY_REFRESH_TOKEN, result.refreshToken)
                 }
-            }.apply()
+            }
             triggerBackgroundSync()
         } else {
             // Cookie and tokens are no longer valid, clear session (preserve developer settings)
-            prefs.edit().apply {
+            prefs.edit {
                 remove(KEY_SP_DC)
                 remove(KEY_ACCESS_TOKEN)
                 remove(KEY_EXPIRATION)
                 remove(KEY_REFRESH_TOKEN)
-            }.apply()
+            }
         }
         result
     }

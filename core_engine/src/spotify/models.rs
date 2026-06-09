@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // core_engine/src/spotify/models.rs
 //
 // Two tiers of types:

@@ -154,7 +154,7 @@ async fn handle_connection(socket: &mut tokio::net::TcpStream, cache_dir: &str) 
         let track_id = match extract_query_param(&path, "track_id") {
             Some(id) => id,
             None => {
-                socket.write_all(b"HTTP/1.1 400 Missing track_id\r\nContent-Length: 0\r\n\r\n").await?;
+                socket.write_all(b"HTTP/1.1 400 Missing track_id\r\n\r\n").await?;
                 return Ok(());
             }
         };
@@ -186,65 +186,7 @@ async fn handle_connection(socket: &mut tokio::net::TcpStream, cache_dir: &str) 
         return Ok(());
     }
 
-    // --- /play endpoint: resolves then sends a 307 redirect to YouTube CDN ---
-    // ExoPlayer follows 307 redirects natively, so it streams directly from YouTube
-    if !path.starts_with("/play") {
-        socket.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await?;
-        return Ok(());
-    }
-
-    let track_id = match extract_query_param(&path, "track_id") {
-        Some(id) => id,
-        None => {
-            socket.write_all(b"HTTP/1.1 400 Missing track_id\r\n\r\n").await?;
-            return Ok(());
-        }
-    };
-    let youtube_id_opt = extract_query_param(&path, "youtube_id");
-
-    eprintln!("[Play] track_id={} youtube_id={:?}", track_id, youtube_id_opt);
-
-    let stream_url_opt = if let Some(yt_id) = &youtube_id_opt {
-        let scraper = crate::youtube::scraper::YouTubeScraper::new_with_cache(cache_dir);
-        scraper.get_audio_streams(yt_id).await.ok()
-            .and_then(|streams| {
-                streams.into_iter().max_by_key(|s| {
-                    (if s.container == "webm" { 1_000_000u32 } else { 0u32 }) + s.bitrate
-                })
-            })
-            .map(|s| s.url)
-    } else {
-        match resolve_youtube_id(&track_id, cache_dir).await {
-            Some(yt_id) => {
-                let scraper = crate::youtube::scraper::YouTubeScraper::new_with_cache(cache_dir);
-                scraper.get_audio_streams(&yt_id).await.ok()
-                    .and_then(|streams| {
-                        streams.into_iter().max_by_key(|s| {
-                            (if s.container == "webm" { 1_000_000u32 } else { 0u32 }) + s.bitrate
-                        })
-                    })
-                    .map(|s| s.url)
-            },
-            None => None
-        }
-    };
-
-    match stream_url_opt {
-        Some(url) => {
-            eprintln!("[Play] Redirecting to url={}...", &url[..url.len().min(80)]);
-            // 307 Temporary Redirect — ExoPlayer follows this and streams directly from YouTube CDN
-            let resp = format!(
-                "HTTP/1.1 307 Temporary Redirect\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                url
-            );
-            socket.write_all(resp.as_bytes()).await?;
-        }
-        None => {
-            eprintln!("[Play] FAIL for track_id={}", track_id);
-            socket.write_all(b"HTTP/1.1 503 Stream Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
-        }
-    }
-
+    socket.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await?;
     Ok(())
 }
 
@@ -360,40 +302,6 @@ fn extract_query_param(path: &str, param: &str) -> Option<String> {
     None
 }
 
-fn parse_range_header(req_str: &str) -> Option<String> {
-    for line in req_str.lines() {
-        if line.to_lowercase().starts_with("range:") {
-            return Some(line["range:".len()..].trim().to_string());
-        }
-    }
-    None
-}
-
-fn parse_user_agent_header(req_str: &str) -> Option<String> {
-    for line in req_str.lines() {
-        if line.to_lowercase().starts_with("user-agent:") {
-            return Some(line["user-agent:".len()..].trim().to_string());
-        }
-    }
-    None
-}
-
-fn parse_byte_range(range_header: &Option<String>, file_len: u64) -> (u64, u64) {
-    if let Some(range) = range_header {
-        let range = range.trim().replace("bytes=", "");
-        let parts: Vec<&str> = range.split('-').collect();
-        if parts.len() >= 2 {
-            let start = parts[0].parse::<u64>().unwrap_or(0);
-            let end = if parts[1].is_empty() {
-                file_len - 1
-            } else {
-                parts[1].parse::<u64>().unwrap_or(file_len - 1)
-            };
-            return (start, end.min(file_len - 1));
-        }
-    }
-    (0, file_len - 1)
-}
 
 fn load_mappings_from_disk(cache_dir: &str) -> HashMap<String, String> {
     let path = format!("{}/youtube_mappings.json", cache_dir);

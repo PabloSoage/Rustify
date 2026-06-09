@@ -1,29 +1,57 @@
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import com.varuna.rustify.ui.components.TrackRowItem
-import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
-import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
-import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import com.varuna.rustify.bridge.*
-import kotlinx.coroutines.launch
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.gestures.detectDragGestures
+import com.varuna.rustify.bridge.FullAlbum
+import com.varuna.rustify.bridge.FullArtist
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SimplePlaylist
+import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
+import com.varuna.rustify.ui.components.TrackRowItem
+import kotlinx.coroutines.launch
 
 enum class LibraryTab(val title: String) {
     PLAYLISTS("Playlists"),
@@ -441,7 +469,7 @@ fun formatAddedAt(addedAt: String?): String {
             }
             return if (monthName.isNotEmpty()) "$monthName $year" else year
         }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         // ignore
     }
     return ""
@@ -458,8 +486,8 @@ fun VerticalScrollbarWithTooltip(
     if (itemsCount <= 0) return
 
     var isDragging by remember { mutableStateOf(false) }
-    var dragOffset by remember { mutableStateOf(0f) }
-    var scrollbarHeight by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var scrollbarHeight by remember { mutableFloatStateOf(0f) }
     var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -468,7 +496,7 @@ fun VerticalScrollbarWithTooltip(
         onDragStateChanged(isDragging)
     }
 
-    val firstVisibleIndex = lazyListState.firstVisibleItemIndex
+    val firstVisibleIndex by remember { derivedStateOf { lazyListState.firstVisibleItemIndex } }
     val scrollFraction = if (itemsCount > 1) firstVisibleIndex.toFloat() / (itemsCount - 1) else 0f
 
     val dragFraction = if (scrollbarHeight > 0) (dragOffset / scrollbarHeight).coerceIn(0f, 1f) else 0f

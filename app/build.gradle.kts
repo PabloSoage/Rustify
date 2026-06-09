@@ -21,8 +21,15 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -74,8 +81,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.androidx.compose.material.icons.extended)
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
@@ -83,13 +90,13 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
-    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation(libs.youtubedl.android)
 }
 
 // --- RUST CORE INTEGRATION ---
 
 // Define the target architectures to compile (64-bit physical devices and modern emulators)
-val targets = listOf(/*"arm64-v8a",*/ "x86_64")
+val targets = listOf("arm64-v8a", "x86_64")
 
 // Detect the host operating system to invoke the correct executable file for Cargo
 val cargoCommand = if (System.getProperty("os.name").lowercase().contains("windows")) "cargo.exe" else "cargo"

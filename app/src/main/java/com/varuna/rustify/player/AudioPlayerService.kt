@@ -12,11 +12,11 @@ import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URL
 
 data class AudioPlayerState(
@@ -33,7 +33,8 @@ data class AudioPlayerState(
     val bufferPercent: Int = 0
 )
 
-class AudioPlayerService(private val context: Context) {
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+class AudioPlayerService(context: Context) {
     private val _state = MutableStateFlow(AudioPlayerState())
     val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
 
@@ -88,6 +89,7 @@ class AudioPlayerService(private val context: Context) {
 
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.e("AudioPlayerService", "ExoPlayer error: ${error.message}")
+                
                 _state.value = _state.value.copy(
                     isBuffering = false,
                     isPlaying = false,
@@ -139,67 +141,46 @@ class AudioPlayerService(private val context: Context) {
             try {
                 exoPlayer.stop()
 
-                // Resolve the actual YouTube stream URL via the Rust proxy /resolve endpoint
                 var streamUrl = preResolvedUrls[trackId]
                 if (streamUrl.isNullOrBlank()) {
+                    android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
+
                     val resolveUrl = if (youtubeId != null)
                         "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId&youtube_id=$youtubeId"
                     else
                         "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId"
 
-                    android.util.Log.d("AudioPlayerService", "Resolving: $resolveUrl")
-
                     val resolvedYoutubeId = withContext(Dispatchers.IO) {
                         try {
                             val conn = URL(resolveUrl).openConnection() as java.net.HttpURLConnection
-                            conn.connectTimeout = 30_000
-                            conn.readTimeout = 60_000   // resolution can take ~10s on first hit
+                            conn.connectTimeout = 15_000
+                            conn.readTimeout = 20_000
                             conn.connect()
-                            val code = conn.responseCode
-                            if (code == 200) {
+                            if (conn.responseCode == 200) {
                                 conn.inputStream.bufferedReader().readText().trim()
-                            } else {
-                                android.util.Log.e("AudioPlayerService", "Resolve HTTP $code for $trackId")
-                                null
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("AudioPlayerService", "Resolve error: ${e.message}")
+                            } else null
+                        } catch (_: Exception) {
                             null
                         }
                     }
 
-                    if (resolvedYoutubeId.isNullOrBlank()) {
-                        android.util.Log.e("AudioPlayerService", "Could not resolve stream for $trackId")
-                        _state.value = _state.value.copy(
-                            isBuffering = false,
-                            isError = true,
-                            errorMessage = "No se encontró el stream en YouTube Music"
-                        )
-                        return@launch
-                    }
+                    if (!resolvedYoutubeId.isNullOrBlank()) {
+                        android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
+                        streamUrl = withContext(Dispatchers.IO) {
+                            try {
+                                val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedYoutubeId")
+                                request.addOption("-g")
+                                request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
+                                // Optimization flags (Safe ones only)
+                                request.addOption("--no-check-certificate")
+                                request.addOption("--no-warnings")
 
-                    android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId")
-
-                    // Use YoutubeDL to extract the direct stream URL
-                    streamUrl = withContext(Dispatchers.IO) {
-                        try {
-                            val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedYoutubeId")
-                            request.addOption("-g") // get URL
-                            request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio") // Best audio
-                            
-                            val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                            val url = response.out?.trim()
-                            
-                            if (url.isNullOrBlank()) {
-                                android.util.Log.e("AudioPlayerService", "YoutubeDL returned empty URL")
+                                val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
+                                response.out.trim().lines().firstOrNull()?.trim()
+                            } catch (e: Exception) {
+                                android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed", e)
                                 null
-                            } else {
-                                // yt-dlp might return multiple URLs (e.g. video and audio separated). Take the first one.
-                                url.lines().firstOrNull()?.trim()
                             }
-                        } catch (e: Exception) {
-                            android.util.Log.e("AudioPlayerService", "YoutubeDL extraction error", e)
-                            null
                         }
                     }
                 } else {
@@ -208,9 +189,10 @@ class AudioPlayerService(private val context: Context) {
                 }
 
                 if (streamUrl.isNullOrBlank()) {
-                    android.util.Log.e("AudioPlayerService", "Could not extract stream URL via yt-dlp")
+                    android.util.Log.e("AudioPlayerService", "Could not extract stream URL")
                     _state.value = _state.value.copy(
                         isBuffering = false,
+                        isPlaying = false,
                         isError = true,
                         errorMessage = "Error al extraer el audio"
                     )
@@ -220,12 +202,12 @@ class AudioPlayerService(private val context: Context) {
                 android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
 
                 val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                val dataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setUserAgent(userAgent)
                     .setAllowCrossProtocolRedirects(true)
                 
-                val mediaSource = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
-                    .createMediaSource(androidx.media3.common.MediaItem.fromUri(streamUrl))
+                val mediaSource = DefaultMediaSourceFactory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(streamUrl))
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
@@ -262,30 +244,41 @@ class AudioPlayerService(private val context: Context) {
                     nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
                 )
 
-                val resolvedUrl = withContext(Dispatchers.IO) {
+                var resolvedUrl: String? = null
+                val youtubeId = withContext(Dispatchers.IO) {
                     try {
                         val resolveUrl = "http://127.0.0.1:$proxyPort/resolve?track_id=$nextTrackId"
                         val conn = URL(resolveUrl).openConnection() as java.net.HttpURLConnection
-                        conn.connectTimeout = 15_000
-                        conn.readTimeout = 20_000
+                        conn.connectTimeout = 10_000
+                        conn.readTimeout = 15_000
                         conn.connect()
-                        val code = conn.responseCode
-                        val youtubeId = if (code == 200) {
+                        if (conn.responseCode == 200) {
                             conn.inputStream.bufferedReader().readText().trim()
                         } else null
-
-                        if (youtubeId.isNullOrBlank()) return@withContext null
-
-                        val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId")
-                        request.addOption("-g")
-                        request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                        val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                        response.out?.trim()?.lines()?.firstOrNull()?.trim()
-                    } catch (e: Exception) {
-                        android.util.Log.e("AudioPlayerService", "Pre-buffer error for $nextTrackId", e)
+                    } catch (_: Exception) {
                         null
                     }
                 }
+
+                if (!youtubeId.isNullOrBlank()) {
+                    resolvedUrl = withContext(Dispatchers.IO) {
+                        try {
+                            val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId")
+                            request.addOption("-g")
+                            request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
+                            // Optimization flags (Safe ones only)
+                            request.addOption("--no-check-certificate")
+                            request.addOption("--no-warnings")
+
+                            val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
+                            response.out.trim().lines().firstOrNull()?.trim()
+                        } catch (e: Exception) {
+                            android.util.Log.e("AudioPlayerService", "Pre-buffer YoutubeDL fallback error for $nextTrackId", e)
+                            null
+                        }
+                    }
+                }
+                
                 if (!resolvedUrl.isNullOrBlank()) {
                     preResolvedUrls[nextTrackId] = resolvedUrl
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
@@ -359,12 +352,12 @@ class AudioPlayerService(private val context: Context) {
             val current = st.currentTrack
             val remaining = st.queue.filter { it.id != current?.id }.shuffled()
             val newQueue = if (current != null) listOf(current) + remaining else remaining
-            _state.value = st.copy(isShuffle = newShuffle, queue = newQueue)
+            _state.value = st.copy(isShuffle = true, queue = newQueue)
             preResolvedUrls.clear()
             preBufferNextTrack()
             notifyQueueChanged(newQueue)
         } else {
-            _state.value = st.copy(isShuffle = newShuffle, queue = st.originalQueue)
+            _state.value = st.copy(isShuffle = false, queue = st.originalQueue)
             preResolvedUrls.clear()
             preBufferNextTrack()
             notifyQueueChanged(st.originalQueue)
@@ -395,6 +388,7 @@ class AudioPlayerService(private val context: Context) {
         notifyQueueChanged(list)
     }
 
+    @Suppress("unused")
     fun play() {
         if (_state.value.currentTrack != null) exoPlayer.play()
     }
@@ -474,6 +468,7 @@ class AudioPlayerService(private val context: Context) {
         notifyQueueChanged(q)
     }
 
+    @Suppress("unused")
     fun enqueueAll(tracks: List<FullTrack>) {
         var currentQueue = _state.value.queue
         var currentOrig = _state.value.originalQueue

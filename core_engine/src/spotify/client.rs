@@ -1103,7 +1103,7 @@ pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyRes
     let js_content = resp.text().await?;
 
     // Step 6: Extract chunk mappings
-    let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)\}"#).unwrap();
+    let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)}"#).unwrap();
     let matches: Vec<_> = re_obj.find_iter(&js_content).map(|m| m.as_str()).collect();
 
     if matches.len() < 5 {
