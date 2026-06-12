@@ -1,8 +1,11 @@
 // app/src/main/java/com/varuna/rustify/MainActivity.kt
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -11,7 +14,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,8 +75,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -106,8 +111,51 @@ sealed class Screen {
 }
 
 class MainActivity : ComponentActivity() {
+    private var initialDeepLinkTrackId: String? = null
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val prefs = newBase.getSharedPreferences("rustify_settings", MODE_PRIVATE)
+        val appLang = prefs.getString("app_language", "system") ?: "system"
+        if (appLang != "system" && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            val locale = java.util.Locale(appLang)
+            java.util.Locale.setDefault(locale)
+            val config = android.content.res.Configuration(newBase.resources.configuration)
+            config.setLocale(locale)
+            val newContext = newBase.createConfigurationContext(config)
+            super.attachBaseContext(newContext)
+        } else {
+            super.attachBaseContext(newBase)
+        }
+    }
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        // Si se deniega, la notificación del reproductor no se verá en Android 13+
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
+        if (intent?.action == android.content.Intent.ACTION_VIEW) {
+            val uri = intent?.data
+            if (uri?.host == "open.spotify.com") {
+                val pathSegments = uri.pathSegments
+                val trackIndex = pathSegments.indexOf("track")
+                if (trackIndex != -1 && trackIndex + 1 < pathSegments.size) {
+                    initialDeepLinkTrackId = pathSegments[trackIndex + 1]
+                }
+            }
+        }
+        
+        val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
+        val appLang = prefs.getString("app_language", "system") ?: "system"
+        val langCode = if (appLang == "system") java.util.Locale.getDefault().language else appLang
+        com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
         
         // Initialize YoutubeDL
         try {
@@ -157,7 +205,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF121212)
                 ) {
-                    EngineTester()
+                    EngineTester(initialDeepLinkTrackId = initialDeepLinkTrackId)
                 }
             }
         }
@@ -166,7 +214,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EngineTester(modifier: Modifier = Modifier) {
+fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? = null) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -187,6 +235,12 @@ fun EngineTester(modifier: Modifier = Modifier) {
 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
+
+    LaunchedEffect(Unit) {
+        if (initialDeepLinkTrackId != null) {
+            navigationStack.add(Screen.TrackDetail(initialDeepLinkTrackId))
+        }
+    }
 
     // Physical / Gesture Back Button handling
     BackHandler(enabled = navigationStack.size > 1) {
@@ -286,6 +340,7 @@ fun EngineTester(modifier: Modifier = Modifier) {
                     MiniPlayer(
                         track = currentTrack,
                         isPlaying = playerState.isPlaying,
+                        isBuffering = playerState.isBuffering,
                         positionMs = playerState.positionMs,
                         durationMs = playerState.durationMs,
                         hasPrevious = hasPrevious,
@@ -313,8 +368,8 @@ fun EngineTester(modifier: Modifier = Modifier) {
                                     navigationStack.add(Screen.Home)
                                 }
                             },
-                            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                            label = { Text("Home") },
+                            icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home)) },
+                            label = { Text(stringResource(R.string.nav_home)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -331,8 +386,8 @@ fun EngineTester(modifier: Modifier = Modifier) {
                                     navigationStack.add(Screen.Search)
                                 }
                             },
-                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                            label = { Text("Search") },
+                            icon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search)) },
+                            label = { Text(stringResource(R.string.nav_search)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -349,8 +404,8 @@ fun EngineTester(modifier: Modifier = Modifier) {
                                     navigationStack.add(Screen.Library)
                                 }
                             },
-                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                            label = { Text("Library") },
+                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(R.string.nav_library)) },
+                            label = { Text(stringResource(R.string.nav_library)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -675,6 +730,7 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
 fun MiniPlayer(
     track: FullTrack,
     isPlaying: Boolean,
+    isBuffering: Boolean,
     positionMs: Long,
     durationMs: Long,
     hasPrevious: Boolean,
@@ -745,14 +801,14 @@ fun MiniPlayer(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                 )
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     color = Color.LightGray,
                     fontSize = 12.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                 )
             }
 
@@ -771,12 +827,20 @@ fun MiniPlayer(
 
             // Play/Pause button
             IconButton(onClick = onTogglePlayPause) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "Play/Pause",
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
+                if (isBuffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = spotifyGreen,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Play/Pause",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
 
             // Next Button

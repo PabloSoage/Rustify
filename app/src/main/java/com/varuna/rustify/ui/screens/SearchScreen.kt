@@ -2,6 +2,7 @@ package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -30,6 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -44,11 +48,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NormalizedSearchResults
 import com.varuna.rustify.bridge.SpotifyImage
@@ -58,6 +64,7 @@ import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 enum class SearchFilter {
     ALL, TRACKS, ALBUMS, ARTISTS, PLAYLISTS
@@ -102,7 +109,7 @@ fun SearchScreen(
             isLoading = true
             errorMessage = null
             // Debounce
-            delay(500)
+            delay(500.milliseconds)
             try {
                 // To keep it simple, we use searchAll for ALL filter and specific ones for others.
                 // Or we can just use searchAll and filter locally for demonstration.
@@ -137,7 +144,7 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp)),
-                placeholder = { Text("What do you want to listen to?", color = Color.Gray) },
+                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
                 },
@@ -170,26 +177,31 @@ fun SearchScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Filter Chips
-            PrimaryScrollableTabRow(
-                selectedTabIndex = activeFilter.ordinal,
-                containerColor = Color.Transparent,
-                edgePadding = 0.dp
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                SearchFilter.entries.forEach { filter ->
+                items(SearchFilter.entries) { filter ->
                     val isSelected = activeFilter == filter
+                    val filterName = when (filter) {
+                        SearchFilter.ALL -> stringResource(R.string.search_filter_all)
+                        SearchFilter.TRACKS -> stringResource(R.string.search_filter_tracks)
+                        SearchFilter.ALBUMS -> stringResource(R.string.search_filter_albums)
+                        SearchFilter.ARTISTS -> stringResource(R.string.search_filter_artists)
+                        SearchFilter.PLAYLISTS -> stringResource(R.string.search_filter_playlists)
+                    }
+                    
                     Surface(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .clickable { activeFilter = filter },
                         color = if (isSelected) spotifyGreen else Color(0xFF2A2A2A),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.clickable { activeFilter = filter }
                     ) {
                         Text(
-                            text = filter.name.lowercase().replaceFirstChar { it.uppercase() },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            text = filterName,
                             color = if (isSelected) Color.Black else Color.White,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
                 }
@@ -211,7 +223,7 @@ fun SearchScreen(
                 )
             } else if (searchResults == null && searchQuery.isEmpty()) {
                 Text(
-                    text = "Search for tracks, albums, artists or playlists.",
+                    text = stringResource(R.string.search_empty_prompt),
                     color = Color.Gray,
                     modifier = Modifier.align(Alignment.Center)
                 )
@@ -222,13 +234,13 @@ fun SearchScreen(
                 ) {
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.TRACKS) {
                         if (results.tracks.isNotEmpty()) {
-                            item { SectionHeader("Tracks") }
+                            item { SectionHeader(stringResource(R.string.search_header_tracks)) }
                             items(results.tracks) { track ->
                                 val trackId = track.id ?: ""
                                 val isLiked = spotifyRepo.isTrackLiked(trackId)
                                 SearchResultRow(
                                     title = track.name,
-                                    subtitle = "Track • ${track.artists.joinToString(", ") { it.name }}",
+                                    subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
                                     imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { onTrackClick(track) },
                                     isLiked = isLiked,
@@ -247,11 +259,11 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.ALBUMS) {
                         if (results.albums.isNotEmpty()) {
-                            item { SectionHeader("Albums") }
+                            item { SectionHeader(stringResource(R.string.search_header_albums)) }
                             items(results.albums) { album ->
                                 SearchResultRow(
                                     title = album.name,
-                                    subtitle = "Album • ${album.artists.joinToString(", ") { it.name }}",
+                                    subtitle = stringResource(R.string.search_subtitle_album, album.artists.joinToString(", ") { it.name }),
                                     imageUrl = album.images.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { onAlbumClick(album.id, album.name, album.images) }
                                 )
@@ -261,11 +273,11 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.PLAYLISTS) {
                         if (results.playlists.isNotEmpty()) {
-                            item { SectionHeader("Playlists") }
+                            item { SectionHeader(stringResource(R.string.search_header_playlists)) }
                             items(results.playlists) { playlist ->
                                 SearchResultRow(
                                     title = playlist.name,
-                                    subtitle = "Playlist • ${playlist.owner?.name ?: "Spotify"}",
+                                    subtitle = stringResource(R.string.search_subtitle_playlist, playlist.owner?.name ?: "Spotify"),
                                     imageUrl = playlist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { onPlaylistClick(playlist.id, playlist.name, playlist.images) }
                                 )
@@ -275,11 +287,11 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.ARTISTS) {
                         if (results.artists.isNotEmpty()) {
-                            item { SectionHeader("Artists") }
+                            item { SectionHeader(stringResource(R.string.search_header_artists)) }
                             items(results.artists) { artist ->
                                 SearchResultRow(
                                     title = artist.name,
-                                    subtitle = "Artist",
+                                    subtitle = stringResource(R.string.search_subtitle_artist),
                                     imageUrl = artist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     isCircle = true,
                                     onClick = { onArtistClick(artist.id) }

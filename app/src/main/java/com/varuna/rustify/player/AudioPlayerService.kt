@@ -1,10 +1,19 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify.player
 
 import android.content.Context
+import android.content.Intent
+import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
@@ -12,6 +21,7 @@ import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,9 +44,28 @@ data class AudioPlayerState(
 )
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class AudioPlayerService(context: Context) {
+class AudioPlayerService(private val context: Context) {
     private val _state = MutableStateFlow(AudioPlayerState())
     val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
+
+    companion object {
+        @Volatile
+        private var downloadCache: SimpleCache? = null
+
+        @Volatile
+        var exoPlayerInstance: ExoPlayer? = null
+
+        fun getCache(context: Context): SimpleCache {
+            return downloadCache ?: synchronized(this) {
+                downloadCache ?: run {
+                    val cacheDir = java.io.File(context.cacheDir, "audio_cache")
+                    val evictor = LeastRecentlyUsedCacheEvictor(200L * 1024 * 1024) // 200MB max
+                    val databaseProvider = StandaloneDatabaseProvider(context)
+                    SimpleCache(cacheDir, evictor, databaseProvider).also { downloadCache = it }
+                }
+            }
+        }
+    }
 
     private val preResolvedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var preBufferingJob: kotlinx.coroutines.Job? = null
@@ -48,11 +77,22 @@ class AudioPlayerService(context: Context) {
         .setUserAgent("com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip")
         .setAllowCrossProtocolRedirects(true)
 
+    private val cacheDataSourceFactory = CacheDataSource.Factory()
+        .setCache(getCache(context))
+        .setUpstreamDataSourceFactory(dataSourceFactory)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
         .build()
+
+    init {
+        exoPlayerInstance = exoPlayer
+    }
+
     private var proxyPort: Int = 0
     private val mainScope = CoroutineScope(Dispatchers.Main)
+    private var mediaControllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
 
     init {
         // Start Rust audio proxy server
@@ -110,7 +150,7 @@ class AudioPlayerService(context: Context) {
                         bufferPercent = exoPlayer.bufferedPercentage.coerceIn(0, 100)
                     )
                 }
-                delay(500)
+                delay(500.milliseconds)
             }
         }
     }
@@ -123,13 +163,15 @@ class AudioPlayerService(context: Context) {
         val trackId = track.id ?: return
         userQueueIds.remove(trackId)
 
-        // Register metadata in Rust so the resolver can match the track
-        val artistsJson = "[" + track.artists.joinToString(",") {
-            "\"" + it.name.replace("\"", "\\\"") + "\""
-        } + "]"
-        NativeEngine.registerTrackMetadataNative(
-            trackId, track.name, artistsJson, track.durationMs, track.isrc
-        )
+        // Register metadata in Rust so the resolver can match the track (only if not local)
+        if (!trackId.startsWith("local:")) {
+            val artistsJson = "[" + track.artists.joinToString(",") {
+                "\"" + it.name.replace("\"", "\\\"") + "\""
+            } + "]"
+            NativeEngine.registerTrackMetadataNative(
+                trackId, track.name, artistsJson, track.durationMs, track.isrc
+            )
+        }
 
         // Show buffering spinner immediately (resolver can take a few seconds)
         isResolving = true
@@ -138,54 +180,68 @@ class AudioPlayerService(context: Context) {
         playJob?.cancel()
         playJob = mainScope.launch {
             val thisJob = coroutineContext[kotlinx.coroutines.Job]
+            
+            // Prevent background termination by binding a MediaController if not already bound
+            if (mediaControllerFuture == null) {
+                val sessionToken = androidx.media3.session.SessionToken(context, android.content.ComponentName(context, RustifyForegroundService::class.java))
+                mediaControllerFuture = androidx.media3.session.MediaController.Builder(context, sessionToken).buildAsync()
+            }
+            
             try {
                 exoPlayer.stop()
 
-                var streamUrl = preResolvedUrls[trackId]
-                if (streamUrl.isNullOrBlank()) {
-                    android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
+                var streamUrl: String?
+                
+                if (trackId.startsWith("local:")) {
+                    streamUrl = trackId.removePrefix("local:")
+                    android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
+                } else {
+                    streamUrl = preResolvedUrls[trackId]
+                    if (streamUrl.isNullOrBlank()) {
+                        android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
 
-                    val resolveUrl = if (youtubeId != null)
-                        "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId&youtube_id=$youtubeId"
-                    else
-                        "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId"
+                        val resolveUrl = if (youtubeId != null)
+                            "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId&youtube_id=$youtubeId"
+                        else
+                            "http://127.0.0.1:$proxyPort/resolve?track_id=$trackId"
 
-                    val resolvedYoutubeId = withContext(Dispatchers.IO) {
-                        try {
-                            val conn = URL(resolveUrl).openConnection() as java.net.HttpURLConnection
-                            conn.connectTimeout = 15_000
-                            conn.readTimeout = 20_000
-                            conn.connect()
-                            if (conn.responseCode == 200) {
-                                conn.inputStream.bufferedReader().readText().trim()
-                            } else null
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
-
-                    if (!resolvedYoutubeId.isNullOrBlank()) {
-                        android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
-                        streamUrl = withContext(Dispatchers.IO) {
+                        val resolvedYoutubeId = withContext(Dispatchers.IO) {
                             try {
-                                val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedYoutubeId")
-                                request.addOption("-g")
-                                request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                                // Optimization flags (Safe ones only)
-                                request.addOption("--no-check-certificate")
-                                request.addOption("--no-warnings")
-
-                                val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                                response.out.trim().lines().firstOrNull()?.trim()
-                            } catch (e: Exception) {
-                                android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed", e)
+                                val conn = URL(resolveUrl).openConnection() as java.net.HttpURLConnection
+                                conn.connectTimeout = 15_000
+                                conn.readTimeout = 20_000
+                                conn.connect()
+                                if (conn.responseCode == 200) {
+                                    conn.inputStream.bufferedReader().readText().trim()
+                                } else null
+                            } catch (_: Exception) {
                                 null
                             }
                         }
+
+                        if (!resolvedYoutubeId.isNullOrBlank()) {
+                            android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
+                            streamUrl = withContext(Dispatchers.IO) {
+                                try {
+                                    val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedYoutubeId")
+                                    request.addOption("-g")
+                                    request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
+                                    // Optimization flags (Safe ones only)
+                                    request.addOption("--no-check-certificate")
+                                    request.addOption("--no-warnings")
+
+                                    val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
+                                    response.out.trim().lines().firstOrNull()?.trim()
+                                } catch (e: Exception) {
+                                    android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed", e)
+                                    null
+                                }
+                            }
+                        }
+                    } else {
+                        android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
+                        preResolvedUrls.remove(trackId)
                     }
-                } else {
-                    android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
-                    preResolvedUrls.remove(trackId)
                 }
 
                 if (streamUrl.isNullOrBlank()) {
@@ -202,12 +258,28 @@ class AudioPlayerService(context: Context) {
                 android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
 
                 val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                val dataSourceFactory = DefaultHttpDataSource.Factory()
+                val httpFactory = DefaultHttpDataSource.Factory()
                     .setUserAgent(userAgent)
                     .setAllowCrossProtocolRedirects(true)
+                    
+                val cacheFactory = CacheDataSource.Factory()
+                    .setCache(getCache(context))
+                    .setUpstreamDataSourceFactory(httpFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 
-                val mediaSource = DefaultMediaSourceFactory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(streamUrl))
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(track.name)
+                    .setArtist(track.artists.joinToString(", ") { it.name })
+                    .setArtworkUri((track.album?.images?.firstOrNull()?.url ?: "").toUri())
+                    .build()
+                    
+                val mediaItem = MediaItem.Builder()
+                    .setUri(streamUrl)
+                    .setMediaMetadata(metadata)
+                    .build()
+                
+                val mediaSource = DefaultMediaSourceFactory(cacheFactory)
+                    .createMediaSource(mediaItem)
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
@@ -487,6 +559,11 @@ class AudioPlayerService(context: Context) {
     }
 
     fun release() {
+        val stopIntent = Intent(context, RustifyForegroundService::class.java).apply {
+            action = "STOP_SERVICE"
+        }
+        context.startService(stopIntent)
         exoPlayer.release()
+        exoPlayerInstance = null
     }
 }

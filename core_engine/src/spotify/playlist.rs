@@ -4,9 +4,9 @@
 // GET requests now use 100% GraphQL via api-partner.spotify.com.
 // Write/mutation operations remain REST since they don't encounter Envoy blocks.
 
-use serde_json::{json, Value};
 use crate::spotify::client::*;
 use crate::spotify::models::*;
+use serde_json::{json, Value};
 
 impl SpotifyClient {
     /// Fetch full playlist details via GraphQL API.

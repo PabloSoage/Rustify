@@ -48,10 +48,11 @@ fun TrackRowItem(
     isLiked: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     isScrollbarDragging: Boolean = false,
-    onMoreClick: (() -> Unit)? = null
+    onMoreClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),

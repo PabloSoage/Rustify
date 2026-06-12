@@ -12,7 +12,7 @@ pub mod spotify;
 pub mod youtube;
 
 use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jint, jstring, jlong, JNI_FALSE, JNI_TRUE};
+use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::{EnvUnowned, Outcome};
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -144,6 +144,21 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setAlternativ
         let s_id = spotify_id.mutf8_chars(env)?.to_string();
         let y_id = youtube_id.mutf8_chars(env)?.to_string();
         youtube::server::set_alternative_track(s_id, y_id);
+        Ok(())
+    });
+}
+
+/// JNI Bridge: Set language for Spotify Client
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setLanguageNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    lang: JString<'local>,
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let lang_str = lang.mutf8_chars(env)?.to_string();
+        let client = spotify::client::get_spotify_client().read().unwrap();
+        client.set_accept_language(&lang_str);
         Ok(())
     });
 }

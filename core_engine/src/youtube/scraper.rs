@@ -9,8 +9,8 @@
 //   - Stream URL extraction
 //   - Caching of player JS / client versions on disk
 
-use rustypipe::client::RustyPipeBuilder;
 use crate::youtube::models::YouTubeTrack;
+use rustypipe::client::RustyPipeBuilder;
 
 use std::sync::OnceLock;
 
@@ -54,6 +54,17 @@ impl YouTubeScraper {
     /// Search YouTube Music for tracks matching `query`.
     /// Returns a list of `YouTubeTrack` metadata structs.
     pub async fn search(&self, query: &str) -> Result<Vec<YouTubeTrack>, Box<dyn std::error::Error>> {
+        let is_id = query.len() == 11 && query.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if is_id {
+            return Ok(vec![YouTubeTrack {
+                id: query.to_string(),
+                title: "URL Directa (YouTube ID)".to_string(),
+                author: "Coincidencia Exacta".to_string(),
+                duration_sec: 0,
+                thumbnail_url: format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", query),
+            }]);
+        }
+
         let rp = get_client(&self.cache_dir)?;
 
         // Use YouTube Music search (WEB_REMIX client)

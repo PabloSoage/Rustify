@@ -1,6 +1,7 @@
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -113,36 +114,6 @@ fun PlaylistScreen(
     val gradientColor = Color(0xFF2E2E2E)
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        text = playlistName, 
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    ) 
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = Color.White
-                ),
-                modifier = Modifier.background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)
-                    )
-                )
-            )
-        },
         containerColor = darkBackground,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
@@ -215,7 +186,7 @@ fun PlaylistScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = 32.dp)
+                    contentPadding = PaddingValues(top = 80.dp, bottom = 32.dp)
                 ) {
                     item {
                         Column(
@@ -274,17 +245,20 @@ fun PlaylistScreen(
                                     style = MaterialTheme.typography.headlineMedium.copy(
                                         fontWeight = FontWeight.ExtraBold
                                     ),
-                                    color = Color.White
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-
+                                
                                 val descriptionText = playlistDetails?.description ?: "Spotify Playlist"
+
                                 Text(
                                     text = descriptionText,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.LightGray,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 1,
+                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                                 )
 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -414,6 +388,19 @@ fun PlaylistScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // Custom floating top bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 40.dp, start = 8.dp, end = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBackClick) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
             }
         }

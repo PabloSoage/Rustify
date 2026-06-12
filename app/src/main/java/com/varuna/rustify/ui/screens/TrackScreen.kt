@@ -1,7 +1,10 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -350,34 +353,6 @@ fun TrackScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                    }
-                },
-                actions = {
-                    trackToShow?.let {
-                        IconButton(onClick = { showOptionsMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More options",
-                                tint = Color.White
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                )
-            )
-        },
         containerColor = darkBackground,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
@@ -432,7 +407,7 @@ fun TrackScreen(
                                     endY = 1500f
                                 )
                             )
-                            .padding(innerPadding)
+                            .padding(bottom = innerPadding.calculateBottomPadding(), top = 80.dp)
                             .padding(horizontal = 24.dp, vertical = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -480,15 +455,15 @@ fun TrackScreen(
                                     text = track.name,
                                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                                     color = Color.White,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 1,
+                                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = track.artists.joinToString(", ") { it.name },
                                     style = MaterialTheme.typography.titleMedium,
                                     color = spotifyGreen,
-                                    modifier = Modifier.clickable {
+                                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE).clickable {
                                         if (track.artists.isNotEmpty()) {
                                             onArtistClick(track.artists.first().id)
                                         }
@@ -515,7 +490,8 @@ fun TrackScreen(
                             text = track.album?.name ?: "",
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color.LightGray,
-                            modifier = Modifier.clickable {
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE).clickable {
                                 track.album?.let {
                                     onAlbumClick(it.id, it.name, it.images)
                                 }
@@ -721,6 +697,24 @@ fun TrackScreen(
                         }) {
                             Text("Reintentar", color = Color.White, fontSize = 12.sp)
                         }
+                    }
+                }
+            }
+
+            // Custom floating top bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 40.dp, start = 8.dp, end = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBackClick) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                trackToShow?.let {
+                    IconButton(onClick = { showOptionsMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
                     }
                 }
             }

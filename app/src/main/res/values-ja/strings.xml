@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Rustify</string>
+
+    <!-- Bottom Nav -->
+    <string name="nav_home">ホーム</string>
+    <string name="nav_search">検索</string>
+    <string name="nav_library">ライブラリ</string>
+
+    <!-- Settings -->
+    <string name="settings_title">設定</string>
+    <string name="settings_extraction_engine">抽出エンジン</string>
+    <string name="settings_ytdlp_desc">ブロックなしで直接リンクを取得するための内部エンジン。曲のエラーが発生した場合は更新してください。</string>
+    <string name="settings_ytdlp_current_version">現在のバージョン: %1$s</string>
+    <string name="settings_ytdlp_updated">yt-dlp を更新しました</string>
+    <string name="settings_nightly_version">Nightly バージョン</string>
+    <string name="settings_nightly_desc">最新のブロック解除修正を含むデイリービルド。不安定な場合があります。</string>
+    
+    <string name="settings_cache_storage">キャッシュとストレージ</string>
+    <string name="settings_download_dir">ダウンロード先</string>
+    <string name="settings_no_dir_configured">未設定</string>
+    <string name="settings_select_folder">フォルダを選択</string>
+    <string name="settings_local_music">ローカル音楽</string>
+    <string name="settings_enable_local_music">ローカル音楽を有効にする</string>
+    <string name="settings_enable_local_music_desc">ライブラリにタブを表示します</string>
+    <string name="settings_added_folders">追加されたフォルダ：</string>
+    <string name="settings_no_folder_configured">フォルダが設定されていません</string>
+    <string name="settings_remove">削除</string>
+    <string name="settings_add_folder">フォルダを追加</string>
+    
+    <string name="settings_cleanup">クリーンアップ</string>
+    <string name="settings_cleanup_audio">オーディオ</string>
+    <string name="settings_cleanup_images">画像</string>
+    <string name="settings_cache_audio_cleared">オーディオキャッシュを消去しました</string>
+    <string name="settings_cache_images_cleared">画像キャッシュを消去しました</string>
+    
+    <string name="settings_advanced_data">データ（詳細）</string>
+    <string name="settings_youtube_mappings">YouTube マッピング</string>
+    <string name="settings_export">エクスポート</string>
+    <string name="settings_import">インポート</string>
+    <string name="settings_export_success">エクスポートに成功しました</string>
+    <string name="settings_no_mappings_export">エクスポートするマッピングがありません</string>
+    <string name="settings_export_error">エクスポート エラー</string>
+    <string name="settings_import_success">インポートに成功しました。アプリを再起動してください。</string>
+    <string name="settings_import_error">インポート エラー</string>
+    
+    <string name="settings_language">言語</string>
+    <string name="settings_lang_system">システム</string>
+    <string name="settings_lang_en">英語</string>
+    <string name="settings_lang_es">スペイン語</string>
+    <string name="settings_lang_ja">日本語</string>
+    
+    <string name="settings_session">セッション</string>
+    <string name="settings_logout">ログアウト</string>
+
+    <!-- Track Options Menu -->
+    <string name="track_menu_add_playlist">プレイリストに追加</string>
+    <string name="track_menu_remove_playlist">プレイリストから削除</string>
+    <string name="track_menu_go_queue">キューに追加</string>
+    <string name="track_menu_go_album">アルバムを表示</string>
+    <string name="track_options_view_artist">アーティストを見る</string>
+    
+    <!-- HomeScreen -->
+    <string name="home_greeting_morning">おはようございます</string>
+    <string name="home_greeting_afternoon">こんにちは</string>
+    <string name="home_greeting_evening">こんばんは</string>
+    
+    <!-- SearchScreen -->
+    <string name="search_placeholder">何を聴きたいですか？</string>
+    <string name="search_filter_all">すべて</string>
+    <string name="search_filter_tracks">曲</string>
+    <string name="search_filter_albums">アルバム</string>
+    <string name="search_filter_artists">アーティスト</string>
+    <string name="search_filter_playlists">プレイリスト</string>
+    <string name="search_empty_prompt">曲、アルバム、アーティスト、プレイリストを検索</string>
+    <string name="search_header_tracks">曲</string>
+    <string name="search_header_albums">アルバム</string>
+    <string name="search_header_playlists">プレイリスト</string>
+    <string name="search_header_artists">アーティスト</string>
+    <string name="search_subtitle_track">曲 • %1$s</string>
+    <string name="search_subtitle_album">アルバム • %1$s</string>
+    <string name="search_subtitle_playlist">プレイリスト • %1$s</string>
+    <string name="search_subtitle_artist">アーティスト</string>
+    
+    <!-- LibraryScreen extras -->
+    <string name="library_tab_liked_tracks">お気に入りの曲</string>
+
+    <string name="track_menu_download">ダウンロード</string>
+    <string name="track_menu_getting_url">URLを取得中...</string>
+    <string name="track_menu_url_not_found">オーディオが見つかりませんでした</string>
+    <string name="track_menu_downloading">ダウンロード中: %1$s</string>
+    <string name="track_menu_connecting">接続中...</string>
+    <string name="track_menu_download_progress">ダウンロード中: %1$d%%</string>
+    <string name="track_menu_download_complete">ダウンロード完了</string>
+    <string name="track_menu_download_error">ダウンロード エラー</string>
+    <string name="track_menu_downloaded_toast">ダウンロード完了: %1$s</string>
+    
+    <!-- Library -->
+    <string name="library_tab_playlists">プレイリスト</string>
+    <string name="library_tab_albums">アルバム</string>
+    <string name="library_tab_artists">アーティスト</string>
+    <string name="library_tab_local_music">ローカル音楽</string>
+    
+    <!-- General -->
+    <string name="general_error">エラー</string>
+</resources>

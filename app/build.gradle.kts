@@ -33,6 +33,12 @@ android {
         }
     }
 
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -91,6 +97,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
     implementation(libs.youtubedl.android)
+    implementation("androidx.documentfile:documentfile:1.0.1")
 }
 
 // --- RUST CORE INTEGRATION ---

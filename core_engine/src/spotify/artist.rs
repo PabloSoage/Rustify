@@ -4,9 +4,9 @@
 // GET requests now use 100% GraphQL via api-partner.spotify.com,
 // completely bypassing REST blocks for Free accounts.
 
-use serde_json::json;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
+use serde_json::json;
 
 impl SpotifyClient {
     /// Fetch artist details via GraphQL API.

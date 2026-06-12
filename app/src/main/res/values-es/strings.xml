@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Rustify</string>
+
+    <!-- Bottom Nav -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_search">Buscar</string>
+    <string name="nav_library">Biblioteca</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_extraction_engine">Motor de Extracción</string>
+    <string name="settings_ytdlp_desc">El motor interno encargado de obtener los enlaces directos sin cortes ni bloqueos. Actualízalo si alguna canción empieza a dar error.</string>
+    <string name="settings_ytdlp_current_version">Versión actual: %1$s</string>
+    <string name="settings_ytdlp_updated">yt-dlp actualizado</string>
+    <string name="settings_nightly_version">Versión Nightly</string>
+    <string name="settings_nightly_desc">Versión diaria con las últimas correcciones antibloqueo. Puede ser inestable.</string>
+    
+    <string name="settings_cache_storage">Caché y Almacenamiento</string>
+    <string name="settings_download_dir">Directorio de Descargas</string>
+    <string name="settings_no_dir_configured">No configurado</string>
+    <string name="settings_select_folder">Seleccionar Carpeta</string>
+    <string name="settings_local_music">Música Local</string>
+    <string name="settings_enable_local_music">Habilitar Música Local</string>
+    <string name="settings_enable_local_music_desc">Muestra la pestaña en tu biblioteca</string>
+    <string name="settings_added_folders">Carpetas añadidas:</string>
+    <string name="settings_no_folder_configured">Ninguna carpeta configurada</string>
+    <string name="settings_remove">Eliminar</string>
+    <string name="settings_add_folder">Añadir Carpeta</string>
+    
+    <string name="settings_cleanup">Limpieza</string>
+    <string name="settings_cleanup_audio">Audio</string>
+    <string name="settings_cleanup_images">Imágenes</string>
+    <string name="settings_cache_audio_cleared">Caché de audio borrada</string>
+    <string name="settings_cache_images_cleared">Caché de imágenes borrada</string>
+    
+    <string name="settings_advanced_data">Datos (Avanzado)</string>
+    <string name="settings_youtube_mappings">Mapeos de YouTube</string>
+    <string name="settings_export">Exportar</string>
+    <string name="settings_import">Importar</string>
+    <string name="settings_export_success">Exportación exitosa</string>
+    <string name="settings_no_mappings_export">No hay mapeos que exportar</string>
+    <string name="settings_export_error">Error al exportar</string>
+    <string name="settings_import_success">Importación exitosa. Reinicia la app.</string>
+    <string name="settings_import_error">Error al importar</string>
+    
+    <string name="settings_language">Idioma</string>
+    <string name="settings_lang_system">Sistema</string>
+    <string name="settings_lang_en">Inglés</string>
+    <string name="settings_lang_es">Español</string>
+    <string name="settings_lang_ja">Japonés</string>
+    
+    <string name="settings_session">Sesión</string>
+    <string name="settings_logout">Cerrar Sesión</string>
+
+    <!-- Track Options Menu -->
+    <string name="track_menu_add_playlist">Añadir a Playlist</string>
+    <string name="track_menu_remove_playlist">Quitar de esta Playlist</string>
+    <string name="track_menu_go_queue">Ir a la cola</string>
+    <string name="track_menu_go_album">Ir al Álbum</string>
+    <string name="track_options_view_artist">Ver artista</string>
+    <string name="track_menu_download">Descargar canción</string>
+    <string name="track_menu_getting_url">Obteniendo URL...</string>
+    <string name="track_menu_url_not_found">No se pudo encontrar el audio</string>
+    <string name="track_menu_downloading">Descargando: %1$s</string>
+    <string name="track_menu_connecting">Conectando...</string>
+    <string name="track_menu_download_progress">Descargando: %1$d%%</string>
+    <string name="track_menu_download_complete">Descarga completada</string>
+    <string name="track_menu_download_error">Error en la descarga</string>
+    <string name="track_menu_downloaded_toast">Canción descargada: %1$s</string>
+    
+    <!-- Library -->
+    <string name="library_tab_playlists">Playlists</string>
+    <string name="library_tab_albums">Álbumes</string>
+    <string name="library_tab_artists">Artistas</string>
+    <string name="library_tab_local_music">Música Local</string>
+    
+    <!-- General -->
+    <string name="general_error">Error</string>
+</resources>

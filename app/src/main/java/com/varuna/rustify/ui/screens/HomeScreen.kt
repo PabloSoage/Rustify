@@ -95,8 +95,14 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                        val greeting = when (currentHour) {
+                            in 5..11 -> androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_greeting_morning)
+                            in 12..17 -> androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_greeting_afternoon)
+                            else -> androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_greeting_evening)
+                        }
                         Text(
-                            text = "Good Evening", // In a real app, calculate based on time
+                            text = greeting,
                             style = MaterialTheme.typography.headlineMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White

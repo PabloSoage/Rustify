@@ -5,9 +5,9 @@
 // which now correctly uses RestBatchTracksResponse).
 // Albums, artists, and playlists are parsed inline from GQL.
 
-use serde_json::json;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
+use serde_json::json;
 
 const HASH_SEARCH_DESKTOP: &str = "4801118d4a100f756e833d33984436a3899cff359c532f8fd3aaf174b60b3b49";
 const HASH_SEARCH_TRACKS: &str = "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428";

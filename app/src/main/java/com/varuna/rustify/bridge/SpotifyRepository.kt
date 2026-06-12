@@ -1,16 +1,20 @@
 // app/src/main/java/com/varuna/rustify/bridge/SpotifyRepository.kt
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify.bridge
 
 import android.content.Context
-import androidx.core.content.edit
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -55,29 +59,55 @@ class SpotifyRepository(context: Context) {
         private set
 
     private fun getLikedTracksCacheFile(): java.io.File {
-        return java.io.File(appCtx.cacheDir, "spotify_liked_tracks_cache.json")
+        return java.io.File(appCtx.filesDir, "spotify_liked_tracks_cache.json")
     }
 
     private fun loadLikedTracksFromCache() {
         val file = getLikedTracksCacheFile()
         if (!file.exists()) return
-        try {
-            val jsonStr = file.readText()
-            val array = JSONArray(jsonStr)
-            val loadedTracks = mutableListOf<FullTrack>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                loadedTracks.add(FullTrack.fromJson(obj))
-            }
-            repositoryScope.launch(Dispatchers.Main) {
-                likedTracks.clear()
-                likedTracks.addAll(loadedTracks)
-                loadedTracks.forEach { track ->
-                    track.id?.let { likedTrackIds[it] = true }
+        repositoryScope.launch(Dispatchers.IO) {
+            try {
+                val jsonStr = file.readText()
+                val array = JSONArray(jsonStr)
+                
+                // Fast path for first 50 items
+                val initialBatchSize = kotlin.math.min(50, array.length())
+                val initialTracks = mutableListOf<FullTrack>()
+                for (i in 0 until initialBatchSize) {
+                    initialTracks.add(FullTrack.fromJson(array.getJSONObject(i)))
                 }
+                
+                withContext(Dispatchers.Main) {
+                    likedTracks.clear()
+                    likedTracks.addAll(initialTracks)
+                    initialTracks.forEach { track ->
+                        track.id?.let { likedTrackIds[it] = true }
+                    }
+                }
+                
+                // Lazy load the rest in batches
+                if (array.length() > initialBatchSize) {
+                    var currentIdx = initialBatchSize
+                    while (currentIdx < array.length()) {
+                        val batchSize = kotlin.math.min(200, array.length() - currentIdx)
+                        val batchTracks = mutableListOf<FullTrack>()
+                        for (i in 0 until batchSize) {
+                            batchTracks.add(FullTrack.fromJson(array.getJSONObject(currentIdx + i)))
+                        }
+                        
+                        withContext(Dispatchers.Main) {
+                            likedTracks.addAll(batchTracks)
+                            batchTracks.forEach { track ->
+                                track.id?.let { likedTrackIds[it] = true }
+                            }
+                        }
+                        currentIdx += batchSize
+                        delay(10.milliseconds) // Yield UI thread
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -209,8 +239,8 @@ class SpotifyRepository(context: Context) {
     }
 
     init {
-        // Initialize cache directory in Rust engine
-        val cacheDirPath = context.cacheDir.absolutePath
+        // Initialize cache directory in Rust engine (now using filesDir for persistence)
+        val cacheDirPath = context.filesDir.absolutePath
         NativeEngine.initSpotifyCacheDirNative(cacheDirPath)
 
         // Trigger background hash check/warmup
@@ -267,7 +297,7 @@ class SpotifyRepository(context: Context) {
     // =========================================================================
 
     /**
-     * Login with an sp_dc cookie intercepted from the WebView.
+     * Login with a sp_dc cookie intercepted from the WebView.
      * Persists the cookie for future session restoration.
      */
     suspend fun login(spDcCookie: String): LoginResult = withContext(Dispatchers.IO) {

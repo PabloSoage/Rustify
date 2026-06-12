@@ -1,4 +1,6 @@
 // app/src/main/java/com/varuna/rustify/bridge/NativeEngine.kt
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify.bridge
 
 /**
@@ -6,7 +8,6 @@ package com.varuna.rustify.bridge
  * All functions delegate to native Rust implementations for maximum performance.
  * Strings are passed as JSON for complex data structures.
  */
-@Suppress("unused", "MemberVisibilityCanBePrivate")
 object NativeEngine {
     init {
         System.loadLibrary("core_engine")
@@ -23,12 +24,7 @@ object NativeEngine {
      */
     external fun searchYouTubeNative(query: String): String
 
-    /**
-     * Extracts direct audio stream URLs (.m4a/.webm) from a YouTube Video.
-     * @param videoId The alphanumeric ID of the video.
-     * @return A JSON string containing a list of AudioStream objects sorted by bitrate.
-     */
-    external fun getAudioStreamsNative(videoId: String): String
+
 
     /**
      * Starts the audio proxy HTTP server in the background.
@@ -47,16 +43,18 @@ object NativeEngine {
      */
     external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
 
-    /**
-     * Retrieves the manual YouTube video ID override for a given Spotify track ID, if any.
-     */
-    external fun getAlternativeTrackNative(spotifyId: String): String
+
 
     /**
      * Notifies the Rust engine of the current playback queue to schedule pre-buffering.
      * @param trackIdsJson JSON array of Spotify track IDs.
      */
     external fun updateQueueNative(trackIdsJson: String)
+
+    /**
+     * Sets the Accept-Language header for the Spotify Client
+     */
+    external fun setLanguageNative(langCode: String)
 
     // =====================================================================
     // SPOTIFY — AUTHENTICATION
@@ -105,15 +103,7 @@ object NativeEngine {
      */
     external fun loginSpotifyWithAuthCodeNative(code: String, redirectUri: String): String
 
-    /**
-     * Sets the Spotify Developer Credentials (Client ID & Client Secret) in the Rust engine.
-     * These credentials will be used for REST API requests to bypass 429 errors.
-     */
-    fun setDeveloperCredentials(clientId: String, clientSecret: String): Boolean {
-        return setSpotifyDeveloperCredentialsNative(clientId, clientSecret)
-    }
 
-    private external fun setSpotifyDeveloperCredentialsNative(clientId: String, clientSecret: String): Boolean
 
     // =====================================================================
     // SPOTIFY — USER / LIBRARY
@@ -389,10 +379,4 @@ object NativeEngine {
      */
     external fun warmupSpotifyHashesNative()
 
-    /**
-     * Checks if a batch of tracks are liked in the user's library.
-     * @param idsJson JSON array of track IDs.
-     * @return JSON string of the booleans array.
-     */
-    external fun checkSpotifySavedTracksNative(idsJson: String): String
 }

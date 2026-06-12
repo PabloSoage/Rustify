@@ -1,6 +1,10 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.varuna.rustify.ui.components
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,16 +48,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +83,15 @@ fun TrackOptionsMenuBottomSheet(
     var playlists by remember { mutableStateOf<List<SimplePlaylist>>(emptyList()) }
     var isLoadingPlaylists by remember { mutableStateOf(false) }
 
+    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val downloadUriStr = prefs.getString("download_directory", null)
+    
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        // Handle if needed
+    }
+
     if (showPlaylistSelector) {
         // Nested Playlist Selection Bottom Sheet
         ModalBottomSheet(
@@ -85,7 +105,7 @@ fun TrackOptionsMenuBottomSheet(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(
-                    text = "Añadir a Playlist",
+                    text = stringResource(R.string.track_menu_add_playlist),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -212,7 +232,7 @@ fun TrackOptionsMenuBottomSheet(
                 // Menu items
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Añadir a la cola",
+                    label = stringResource(R.string.track_menu_go_queue),
                     onClick = {
                         onAddToQueue()
                         Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
@@ -221,7 +241,7 @@ fun TrackOptionsMenuBottomSheet(
 
                 MenuOptionItem(
                     icon = Icons.Default.Add,
-                    label = "Añadir a Playlist",
+                    label = stringResource(R.string.track_menu_add_playlist),
                     onClick = {
                         showPlaylistSelector = true
                         isLoadingPlaylists = true
@@ -240,7 +260,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (onRemoveFromPlaylist != null) {
                     MenuOptionItem(
                         icon = Icons.Default.RemoveCircleOutline,
-                        label = "Quitar de esta Playlist",
+                        label = stringResource(R.string.track_menu_remove_playlist),
                         iconColor = Color(0xFFCC2200),
                         labelColor = Color(0xFFCC2200),
                         onClick = onRemoveFromPlaylist
@@ -249,14 +269,15 @@ fun TrackOptionsMenuBottomSheet(
 
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistPlay,
-                    label = "Ir a la cola",
+                    label = stringResource(R.string.track_menu_go_queue),
                     onClick = onGoToQueue
                 )
 
-                track.album?.let { album ->
+                if (track.album != null) {
+                    val album = track.album
                     MenuOptionItem(
                         icon = Icons.Default.Album,
-                        label = "Ir al Álbum",
+                        label = stringResource(R.string.track_menu_go_album),
                         onClick = {
                             onGoToAlbum(album.id, album.name, album.images)
                         }
@@ -266,11 +287,160 @@ fun TrackOptionsMenuBottomSheet(
                 if (track.artists.isNotEmpty()) {
                     MenuOptionItem(
                         icon = Icons.Default.Person,
-                        label = "Ir al Artista",
+                        label = stringResource(R.string.track_menu_go_artist),
                         onClick = {
                             onGoToArtist(track.artists.first().id)
                         }
                     )
+                }
+
+                if (downloadUriStr != null) {
+                    val downloadingStr = stringResource(R.string.track_menu_getting_url)
+                    val errorUrlStr = stringResource(R.string.track_menu_url_not_found)
+                    val notificationTitle = stringResource(R.string.track_menu_downloading, track.name ?: "")
+                    val notificationConnecting = stringResource(R.string.track_menu_connecting)
+                    val notificationComplete = stringResource(R.string.track_menu_download_complete)
+                    val notificationError = stringResource(R.string.track_menu_download_error)
+                    val toastComplete = stringResource(R.string.track_menu_downloaded_toast, track.name ?: "")
+                    val downloadProgressFormat = stringResource(R.string.track_menu_download_progress)
+                    
+                    MenuOptionItem(
+                        icon = Icons.Default.Download,
+                        label = stringResource(R.string.track_menu_download),
+                        onClick = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
+                            coroutineScope.launch(Dispatchers.IO) {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
+                                }
+                                try {
+                                    val searchStr = "${track.name} ${track.artists.joinToString(" ") { it.name }}"
+                                    
+                                    val streamUrl = withContext(Dispatchers.IO) {
+                                        try {
+                                            val request = com.yausername.youtubedl_android.YoutubeDLRequest("ytsearch1:$searchStr")
+                                            request.addOption("-g")
+                                            request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
+                                            request.addOption("--no-check-certificate")
+                                            request.addOption("--no-warnings")
+                                            val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
+                                            response.out.trim().lines().firstOrNull()?.trim()
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                }
+                                
+                                    if (streamUrl.isNullOrBlank()) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, errorUrlStr, Toast.LENGTH_SHORT).show()
+                                        }
+                                        return@launch
+                                    }
+                                    
+                                    val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
+                                    val notificationId = track.id.hashCode()
+    
+                                    val builder = androidx.core.app.NotificationCompat.Builder(context, "download_channel")
+                                        .setContentTitle(notificationTitle)
+                                        .setContentText(notificationConnecting)
+                                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+                                    .setOngoing(true)
+                                    .setOnlyAlertOnce(true)
+
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    val channel = android.app.NotificationChannel("download_channel", "Descargas", android.app.NotificationManager.IMPORTANCE_LOW)
+                                    notificationManager.createNotificationChannel(channel)
+                                    notificationManager.notify(notificationId, builder.build())
+                                }
+
+                                    try {
+                                        val url = java.net.URL(streamUrl)
+                                        val connection = url.openConnection() as java.net.HttpURLConnection
+                                        connection.connect()
+                                        
+                                        val fileLength = connection.contentLength
+                                        val input = java.io.BufferedInputStream(connection.inputStream)
+                                        
+                                        val outputStream: java.io.OutputStream? = run {
+                                            val treeUri = downloadUriStr.toUri()
+                                            val docFile = DocumentFile.fromTreeUri(context, treeUri)
+                                            val newFile = docFile?.createFile("audio/mp4", "${track.name}.m4a")
+                                            if (newFile != null) context.contentResolver.openOutputStream(newFile.uri) else null
+                                        }
+                                    
+                                    if (outputStream == null) {
+                                        throw Exception("No se pudo crear el archivo de destino")
+                                    }
+                                    
+                                    val data = ByteArray(1024 * 8)
+                                    var total: Long = 0
+                                    var count = 0
+                                    var lastUpdate = System.currentTimeMillis()
+                                    
+                                    while (input.read(data).also { count = it } != -1) {
+                                        total += count
+                                        outputStream?.write(data, 0, count)
+                                        
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastUpdate > 500) {
+                                            lastUpdate = now
+                                            if (fileLength > 0) {
+                                                val progress = (total * 100 / fileLength).toInt()
+                                                builder.setProgress(100, progress, false)
+                                                    .setContentText(String.format(downloadProgressFormat, progress))
+                                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                                    notificationManager.notify(notificationId, builder.build())
+                                                }
+                                            }
+                                        }
+                                    }
+                                    outputStream?.flush()
+                                    outputStream?.close()
+                                    input.close()
+                                    
+                                    builder.setContentText(notificationComplete)
+                                        .setProgress(0, 0, false)
+                                        .setOngoing(false)
+                                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        notificationManager.notify(notificationId, builder.build())
+                                    }
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, toastComplete, Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    builder.setContentText(notificationError)
+                                        .setProgress(0, 0, false)
+                                        .setOngoing(false)
+                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        notificationManager.notify(notificationId, builder.build())
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, notificationError, Toast.LENGTH_SHORT).show()
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        onDismiss()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, notificationError, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            
+                            withContext(Dispatchers.Main) {
+                                onDismiss()
+                            }
+                        }
+                    }
+                )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

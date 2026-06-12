@@ -5,14 +5,14 @@
 // Data operations use BOTH GraphQL (for pagination/IDs) and REST (for details)
 // exactly replicating the spotify-gql-client behavior.
 
-use reqwest::{Client, header};
-use std::sync::{OnceLock, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use regex::Regex;
+use reqwest::{header, Client};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
-use totp_rs::{Algorithm, TOTP, Secret};
-use regex::Regex;
 use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::spotify::models::*;
 
@@ -123,6 +123,7 @@ pub struct SpotifyClient {
     developer_client_secret: RwLock<Option<String>>,
     gql_hashes: RwLock<HashMap<String, String>>,
     cache_dir: RwLock<Option<String>>,
+    accept_language: RwLock<Option<String>>,
 }
 
 impl SpotifyClient {
@@ -141,7 +142,12 @@ impl SpotifyClient {
             developer_client_secret: RwLock::new(None),
             gql_hashes: RwLock::new(HashMap::new()),
             cache_dir: RwLock::new(None),
+            accept_language: RwLock::new(None),
         }
+    }
+
+    pub fn set_accept_language(&self, lang: &str) {
+        *self.accept_language.write().unwrap() = Some(lang.to_string());
     }
 
     // =========================================================================
@@ -656,10 +662,14 @@ impl SpotifyClient {
         };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let res = self.http.get(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .send()
-            .await?;
+        let mut req = self.http.get(&url)
+            .header(header::AUTHORIZATION, format!("Bearer {}", token));
+
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header(header::ACCEPT_LANGUAGE, lang);
+        }
+
+        let res = req.send().await?;
 
         let res = Self::check_response_success(res).await?;
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
@@ -673,11 +683,15 @@ impl SpotifyClient {
         };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let res = self.http.post(&url)
+        let mut req = self.http.post(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body)
-            .send()
-            .await?;
+            .json(body);
+
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header(header::ACCEPT_LANGUAGE, lang);
+        }
+
+        let res = req.send().await?;
 
         let res = Self::check_response_success(res).await?;
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
@@ -691,11 +705,15 @@ impl SpotifyClient {
         };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let res = self.http.put(&url)
+        let mut req = self.http.put(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body)
-            .send()
-            .await?;
+            .json(body);
+
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header(header::ACCEPT_LANGUAGE, lang);
+        }
+
+        let res = req.send().await?;
 
         Self::check_response_success(res).await?;
         Ok(())
@@ -709,11 +727,15 @@ impl SpotifyClient {
         };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let res = self.http.delete(&url)
+        let mut req = self.http.delete(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body)
-            .send()
-            .await?;
+            .json(body);
+
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header(header::ACCEPT_LANGUAGE, lang);
+        }
+
+        let res = req.send().await?;
 
         Self::check_response_success(res).await?;
         Ok(())
@@ -806,13 +828,17 @@ impl SpotifyClient {
             },
         };
 
-        let res = self.http.post(SPOTIFY_GQL_BASE)
+        let mut req = self.http.post(SPOTIFY_GQL_BASE)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
             .header(header::CONTENT_TYPE, "application/json")
             .header("App-Platform", "WebPlayer")
-            .json(&body)
-            .send()
-            .await?;
+            .json(&body);
+
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header(header::ACCEPT_LANGUAGE, lang);
+        }
+
+        let res = req.send().await?;
 
         let res = Self::check_response_success(res).await?;
 
