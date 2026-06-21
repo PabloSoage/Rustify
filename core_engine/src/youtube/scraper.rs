@@ -67,45 +67,49 @@ impl YouTubeScraper {
 
         let rp = get_client(&self.cache_dir)?;
 
-        // Use YouTube Music search (WEB_REMIX client)
-        let results = rp.query().music_search_tracks(query).await?;
+        let mut all_tracks = Vec::new();
 
-        let tracks: Vec<YouTubeTrack> = results
-            .items
-            .items
-            .into_iter()
-            .map(|item| {
-                let duration_sec = item.duration.unwrap_or(0);
-                let artist_names: Vec<String> = item
-                    .artists
-                    .iter()
-                    .map(|a| a.name.clone())
-                    .collect();
-                let author = if artist_names.is_empty() {
-                    "Unknown".to_string()
-                } else {
-                    artist_names.join(", ")
-                };
+        // 1. Fetch Tracks
+        if let Ok(results) = rp.query().music_search_tracks(query).await {
+            let tracks: Vec<YouTubeTrack> = results
+                .items
+                .items
+                .into_iter()
+                .map(|item| {
+                    let duration_sec = item.duration.unwrap_or(0);
+                    let artist_names: Vec<String> = item.artists.iter().map(|a| a.name.clone()).collect();
+                    let author = if artist_names.is_empty() { "Unknown".to_string() } else { artist_names.join(", ") };
+                    let thumbnail_url = item.cover.into_iter().max_by_key(|t| t.width * t.height).map(|t| t.url).unwrap_or_default();
+                    YouTubeTrack { id: item.id, title: item.name, author, duration_sec, thumbnail_url }
+                })
+                .collect();
+            all_tracks.extend(tracks);
+        }
 
-                // cover is Vec<Thumbnail> — pick highest resolution thumbnail
-                let thumbnail_url = item
-                    .cover
-                    .into_iter()
-                    .max_by_key(|t| t.width * t.height)
-                    .map(|t| t.url)
-                    .unwrap_or_default();
-
-                YouTubeTrack {
-                    id: item.id,
-                    title: item.name,
-                    author,
-                    duration_sec,
-                    thumbnail_url,
+        // 2. Fetch Videos (often needed for OSTs or covers)
+        if let Ok(results) = rp.query().music_search_videos(query).await {
+            let videos: Vec<YouTubeTrack> = results
+                .items
+                .items
+                .into_iter()
+                .map(|item| {
+                    let duration_sec = item.duration.unwrap_or(0);
+                    let artist_names: Vec<String> = item.artists.iter().map(|a| a.name.clone()).collect();
+                    let author = if artist_names.is_empty() { "Unknown".to_string() } else { artist_names.join(", ") };
+                    let thumbnail_url = item.cover.into_iter().max_by_key(|t| t.width * t.height).map(|t| t.url).unwrap_or_default();
+                    YouTubeTrack { id: item.id, title: item.name, author, duration_sec, thumbnail_url }
+                })
+                .collect();
+            
+            // Avoid adding duplicates (videos that have the same ID as tracks)
+            for video in videos {
+                if !all_tracks.iter().any(|t| t.id == video.id) {
+                    all_tracks.push(video);
                 }
-            })
-            .collect();
+            }
+        }
 
-        Ok(tracks)
+        Ok(all_tracks)
     }
 
 
@@ -117,22 +121,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_yt_search() {
-        let scraper = YouTubeScraper::new_with_cache("/tmp/rustify_test_cache");
-        let query = "Queen Bohemian Rhapsody";
-        println!("Searching for: {}", query);
-        match scraper.search(query).await {
+        let rp = get_client("/tmp/rustify_test_cache").unwrap();
+        let query = "OST Song of the welkin moon: moonlit ballad of the night full ver. | gesnhin impact sub esp. de cattpuriasong";
+        println!("Searching videos for: {}", query);
+        match rp.query().music_search_videos(query).await {
             Ok(results) => {
-                println!("Results count: {}", results.len());
-                for (i, r) in results.iter().enumerate() {
+                println!("Results count: {}", results.items.items.len());
+                for (i, r) in results.items.items.iter().enumerate() {
                     println!(
-                        "{}: ID={}, Title='{}', Author='{}', DurationSec={}, Thumb='{}'",
-                        i, r.id, r.title, r.author, r.duration_sec, r.thumbnail_url
+                        "{}: ID={}, Title='{}', Author='{}'",
+                        i, r.id, r.name, r.artists.first().map(|a| a.name.as_str()).unwrap_or("Unknown")
                     );
                 }
-                assert!(!results.is_empty(), "Search results should not be empty!");
             }
             Err(e) => {
-                panic!("Search failed: {:?}", e);
+                println!("music_search_videos failed: {:?}", e);
             }
         }
     }

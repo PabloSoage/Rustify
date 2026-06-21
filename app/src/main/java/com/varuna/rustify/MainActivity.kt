@@ -53,7 +53,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,6 +83,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
@@ -329,6 +337,18 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    val view = LocalView.current
+    val window = (context as ComponentActivity).window
+    SideEffect {
+        val windowInsetsController = WindowCompat.getInsetsController(window, view)
+        if (isLandscape) {
+            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     Scaffold(
         bottomBar = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -418,7 +438,8 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                 }
             }
         },
-        containerColor = Color(0xFF121212)
+        containerColor = Color(0xFF121212),
+        contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets
     ) { paddingValues ->
         val contentModifier = if (isLandscape) {
             modifier.fillMaxSize()
@@ -593,7 +614,8 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                 NavigationRail(
                     containerColor = Color(0xFF121212),
                     contentColor = Color(0xFF1DB954),
-                    modifier = Modifier.fillMaxHeight()
+                    modifier = Modifier.fillMaxHeight(),
+                    windowInsets = WindowInsets(0, 0, 0, 0)
                 ) {
                     Spacer(modifier = Modifier.weight(1f))
                     NavigationRailItem(

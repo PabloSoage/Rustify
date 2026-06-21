@@ -358,6 +358,7 @@ fun LibraryTracks(
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
     var isScrollbarDragging by remember { mutableStateOf(false) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
@@ -429,17 +430,23 @@ fun LibraryTracks(
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
                         val dismissState = rememberSwipeToDismissBoxState(
+                            positionalThreshold = { it * 0.4f },
                             confirmValueChange = { dismissValue ->
                                 if (dismissValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
-                                    coroutineScope.launch {
-                                        delay(200)
-                                        // No action needed to reset, just returning false bounces it back automatically.
-                                    }
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@rememberSwipeToDismissBoxState true
                                 }
-                                false // Always return false so the item bounces back and is never actually dismissed
+                                false
                             }
                         )
+
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                delay(200)
+                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                            }
+                        }
 
                         @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                         SwipeToDismissBox(

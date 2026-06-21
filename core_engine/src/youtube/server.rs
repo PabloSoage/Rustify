@@ -241,25 +241,56 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
     }
 
     let clean_spotify_name = clean_text(&meta.name);
+    let spotify_words: Vec<&str> = clean_spotify_name.split_whitespace().collect();
+    
     let mut best_track: Option<YouTubeTrack> = None;
     let mut best_score = -1;
 
     for yt_track in results {
         let mut score = 0;
         let clean_yt_title = clean_text(&yt_track.title);
+        let yt_words: Vec<&str> = clean_yt_title.split_whitespace().collect();
 
+        // Exact match
         if clean_yt_title.contains(&clean_spotify_name) {
-            score += 10;
+            score += 50;
         }
 
+        // Word overlap for title
+        for word in &spotify_words {
+            if yt_words.contains(word) {
+                score += 5;
+            } else if clean_yt_title.contains(word) {
+                score += 2;
+            }
+        }
+
+        // Artist matching
         for artist in &meta.artists {
             let clean_artist = clean_text(artist);
+            let artist_words: Vec<&str> = clean_artist.split_whitespace().collect();
+            
+            // Check if artist name is in title
             if clean_yt_title.contains(&clean_artist) {
-                score += 5;
+                score += 20;
+            } else {
+                for word in &artist_words {
+                    if yt_words.contains(word) {
+                        score += 3;
+                    }
+                }
             }
+            
+            // Check if artist name is in channel name
             let clean_author = clean_text(&yt_track.author);
             if clean_author.contains(&clean_artist) {
-                score += 5;
+                score += 20;
+            } else {
+                for word in &artist_words {
+                    if clean_author.contains(word) {
+                        score += 3;
+                    }
+                }
             }
         }
 
@@ -268,8 +299,24 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
                           clean_yt_title.contains("lyric") ||
                           clean_yt_title.contains("music video");
         if is_official {
-            score += 2;
+            score += 10;
         }
+
+        // Penalty for things that are likely covers or karaoke if not in original name
+        let is_cover = clean_yt_title.contains("cover") || clean_yt_title.contains("karaoke");
+        let orig_has_cover = clean_spotify_name.contains("cover") || clean_spotify_name.contains("karaoke");
+        if is_cover && !orig_has_cover {
+            score -= 30;
+        }
+
+        // Penalty for 1-hour or extended versions
+        let is_extended = clean_yt_title.contains("1 hour") || clean_yt_title.contains("extended") || clean_yt_title.contains("loop");
+        let orig_has_extended = clean_spotify_name.contains("extended") || clean_spotify_name.contains("loop");
+        if is_extended && !orig_has_extended {
+            score -= 30;
+        }
+        
+        log_info!("[Resolver] Scoring: '{}' by '{}' -> Score: {}", yt_track.title, yt_track.author, score);
 
         if score > best_score {
             best_score = score;
@@ -277,7 +324,7 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
         }
     }
 
-    best_track
+    best_track.or_else(|| results.first().cloned())
 }
 
 fn clean_text(text: &str) -> String {

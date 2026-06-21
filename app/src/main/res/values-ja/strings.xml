@@ -57,8 +57,9 @@
     <string name="track_menu_add_playlist">プレイリストに追加</string>
     <string name="track_menu_remove_playlist">プレイリストから削除</string>
     <string name="track_menu_go_queue">キューに追加</string>
-    <string name="track_menu_go_album">アルバムを表示</string>
+    <string name="track_menu_go_album">アルバムへ移動</string>
     <string name="track_options_view_artist">アーティストを見る</string>
+    <string name="track_menu_view_youtube">別のYouTubeバージョン</string>
     
     <!-- HomeScreen -->
     <string name="home_greeting_morning">おはようございます</string>
@@ -103,4 +104,5 @@
     
     <!-- General -->
     <string name="general_error">エラー</string>
+
 </resources>

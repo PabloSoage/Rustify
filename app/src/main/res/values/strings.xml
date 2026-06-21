@@ -59,6 +59,7 @@
     <string name="track_menu_go_queue">Go to Queue</string>
     <string name="track_menu_go_album">Go to Album</string>
     <string name="track_options_view_artist">View Artist</string>
+    <string name="track_menu_view_youtube">Alternative YouTube version</string>
     
     <!-- HomeScreen -->
     <string name="home_greeting_morning">Good Morning</string>

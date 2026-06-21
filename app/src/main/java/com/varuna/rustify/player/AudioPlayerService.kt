@@ -82,9 +82,17 @@ class AudioPlayerService(private val context: Context) {
         .setUpstreamDataSourceFactory(dataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
+    private val retryCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
-        .build()
+        .build().apply {
+            val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build()
+            setAudioAttributes(audioAttributes, true)
+        }
 
     init {
         exoPlayerInstance = exoPlayer
@@ -113,6 +121,7 @@ class AudioPlayerService(private val context: Context) {
                     }
                     Player.STATE_READY -> {
                         _state.value = _state.value.copy(isBuffering = false, isError = false)
+                        _state.value.currentTrack?.id?.let { retryCountMap.remove(it) }
                     }
                     Player.STATE_ENDED -> {
                         _state.value = _state.value.copy(isBuffering = false)
@@ -136,6 +145,26 @@ class AudioPlayerService(private val context: Context) {
                     isError = true,
                     errorMessage = error.message ?: "Playback error"
                 )
+
+                val currentTrackId = _state.value.currentTrack?.id
+                if (currentTrackId != null && !currentTrackId.startsWith("local:")) {
+                    val retries = retryCountMap[currentTrackId] ?: 0
+                    if (retries < 2) {
+                        retryCountMap[currentTrackId] = retries + 1
+                        android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}/2) in 3s")
+                        mainScope.launch {
+                            delay(3000)
+                            retryCurrentTrack()
+                        }
+                    } else {
+                        android.util.Log.e("AudioPlayerService", "Track $currentTrackId failed after 2 retries, skipping.")
+                        retryCountMap.remove(currentTrackId)
+                        mainScope.launch {
+                            delay(2000)
+                            skipToNext()
+                        }
+                    }
+                }
             }
         })
 
@@ -255,18 +284,6 @@ class AudioPlayerService(private val context: Context) {
                     return@launch
                 }
                 
-                android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
-
-                val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                val httpFactory = DefaultHttpDataSource.Factory()
-                    .setUserAgent(userAgent)
-                    .setAllowCrossProtocolRedirects(true)
-                    
-                val cacheFactory = CacheDataSource.Factory()
-                    .setCache(getCache(context))
-                    .setUpstreamDataSourceFactory(httpFactory)
-                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-                
                 val metadata = MediaMetadata.Builder()
                     .setTitle(track.name)
                     .setArtist(track.artists.joinToString(", ") { it.name })
@@ -278,8 +295,25 @@ class AudioPlayerService(private val context: Context) {
                     .setMediaMetadata(metadata)
                     .build()
                 
-                val mediaSource = DefaultMediaSourceFactory(cacheFactory)
-                    .createMediaSource(mediaItem)
+                val mediaSource = if (trackId.startsWith("local:")) {
+                    android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
+                    DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
+                        .createMediaSource(mediaItem)
+                } else {
+                    android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
+                    val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    val httpFactory = DefaultHttpDataSource.Factory()
+                        .setUserAgent(userAgent)
+                        .setAllowCrossProtocolRedirects(true)
+                        
+                    val cacheFactory = CacheDataSource.Factory()
+                        .setCache(getCache(context))
+                        .setUpstreamDataSourceFactory(httpFactory)
+                        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                    
+                    DefaultMediaSourceFactory(cacheFactory)
+                        .createMediaSource(mediaItem)
+                }
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
@@ -489,6 +523,34 @@ class AudioPlayerService(private val context: Context) {
                 positionMs = 0L, durationMs = next.durationMs.toLong()
             )
             playTrack(next)
+        } else if (idx == st.queue.lastIndex && st.currentTrack != null) {
+            // Autoplay radio
+            mainScope.launch(Dispatchers.IO) {
+                try {
+                    val currentTrackId = st.currentTrack.id ?: return@launch
+                    if (currentTrackId.startsWith("local:")) return@launch
+                    val radioJson = NativeEngine.getSpotifyTrackRadioNative(currentTrackId)
+                    val array = org.json.JSONArray(radioJson)
+                    val newTracks = mutableListOf<FullTrack>()
+                    val existingIds = st.queue.mapNotNull { it.id }.toSet()
+                    for (i in 0 until array.length()) {
+                        val track = FullTrack.fromJson(array.getJSONObject(i))
+                        if (track.id != null && !existingIds.contains(track.id)) {
+                            newTracks.add(track)
+                        }
+                    }
+                    if (newTracks.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            val newQueue = st.queue + newTracks
+                            _state.value = _state.value.copy(queue = newQueue, originalQueue = st.originalQueue + newTracks)
+                            notifyQueueChanged(newQueue)
+                            skipToNext()
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AudioPlayerService", "Error loading radio tracks", e)
+                }
+            }
         }
     }
 
@@ -503,6 +565,11 @@ class AudioPlayerService(private val context: Context) {
             )
             playTrack(prev)
         }
+    }
+
+    fun retryCurrentTrack(youtubeId: String? = null) {
+        val track = _state.value.currentTrack ?: return
+        playTrack(track, youtubeId)
     }
 
     private fun insertTrackAfterUserQueue(list: List<FullTrack>, currentTrack: FullTrack?, trackToInsert: FullTrack): List<FullTrack> {
