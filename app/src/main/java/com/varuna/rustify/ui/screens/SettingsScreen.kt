@@ -64,7 +64,8 @@ import java.io.File
 @Composable
 fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onLocaleChanged: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -548,6 +549,7 @@ fun SettingsScreen(
                                         }
                                     }
                                     applyLanguage(code)
+                                    onLocaleChanged?.invoke()
                                 }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically

@@ -46,6 +46,7 @@ fun TrackRowItem(
     fallbackCoverUrl: String?,
     onClick: () -> Unit,
     isLiked: Boolean = false,
+    isCurrentTrack: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     isScrollbarDragging: Boolean = false,
     onMoreClick: (() -> Unit)? = null,
@@ -115,7 +116,7 @@ fun TrackRowItem(
             Text(
                 text = track.name,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = Color.White,
+                color = if (isCurrentTrack) Color(0xFF1DB954) else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

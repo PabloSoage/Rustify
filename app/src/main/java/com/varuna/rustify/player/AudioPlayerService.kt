@@ -55,6 +55,9 @@ class AudioPlayerService(private val context: Context) {
         @Volatile
         var exoPlayerInstance: ExoPlayer? = null
 
+        @Volatile
+        var instance: AudioPlayerService? = null
+
         fun getCache(context: Context): SimpleCache {
             return downloadCache ?: synchronized(this) {
                 downloadCache ?: run {
@@ -96,6 +99,7 @@ class AudioPlayerService(private val context: Context) {
 
     init {
         exoPlayerInstance = exoPlayer
+        instance = this
     }
 
     private var proxyPort: Int = 0
@@ -284,10 +288,11 @@ class AudioPlayerService(private val context: Context) {
                     return@launch
                 }
                 
+                val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
                 val metadata = MediaMetadata.Builder()
                     .setTitle(track.name)
                     .setArtist(track.artists.joinToString(", ") { it.name })
-                    .setArtworkUri((track.album?.images?.firstOrNull()?.url ?: "").toUri())
+                    .setArtworkUri(if (artworkUrl.isNotBlank()) artworkUrl.toUri() else null)
                     .build()
                     
                 val mediaItem = MediaItem.Builder()
@@ -567,9 +572,34 @@ class AudioPlayerService(private val context: Context) {
         }
     }
 
-    fun retryCurrentTrack(youtubeId: String? = null) {
-        val track = _state.value.currentTrack ?: return
+    fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null) {
+        val st = _state.value
+        val track = if (fallbackTrackId != null) {
+            st.queue.find { it.id == fallbackTrackId } ?: st.currentTrack
+        } else {
+            st.currentTrack
+        } ?: return
+        
+        if (track.id != st.currentTrack?.id) {
+            _state.value = st.copy(currentTrack = track, positionMs = 0L, isPlaying = false)
+        }
         playTrack(track, youtubeId)
+    }
+
+    fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null) {
+        val st = _state.value
+        val track = st.queue.find { it.id == trackId }
+        if (track != null) {
+            _state.value = st.copy(
+                currentTrack = track, 
+                isPlaying = false,
+                positionMs = 0L, 
+                durationMs = track.durationMs.toLong()
+            )
+            playTrack(track, youtubeId)
+        } else {
+            // Should not happen normally, but fallback just in case
+        }
     }
 
     private fun insertTrackAfterUserQueue(list: List<FullTrack>, currentTrack: FullTrack?, trackToInsert: FullTrack): List<FullTrack> {
@@ -632,5 +662,6 @@ class AudioPlayerService(private val context: Context) {
         context.startService(stopIntent)
         exoPlayer.release()
         exoPlayerInstance = null
+        instance = null
     }
 }

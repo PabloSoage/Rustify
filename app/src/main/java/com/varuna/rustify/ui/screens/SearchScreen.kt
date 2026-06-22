@@ -80,6 +80,7 @@ fun SearchScreen(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -116,6 +117,9 @@ fun SearchScreen(
                 val results = spotifyRepo.searchAll(query, limit = 20)
                 searchResults = results
 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Ignore cancellation exceptions
+                throw e
             } catch (e: Exception) {
                 errorMessage = e.message
             } finally {
@@ -244,6 +248,7 @@ fun SearchScreen(
                                     imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { onTrackClick(track) },
                                     isLiked = isLiked,
+                                    isCurrentTrack = track.id == currentTrackId,
                                     onLikeToggle = {
                                         coroutineScope.launch {
                                             spotifyRepo.toggleLikeTrack(track)
@@ -351,6 +356,7 @@ fun SearchResultRow(
     isCircle: Boolean = false,
     onClick: () -> Unit,
     isLiked: Boolean = false,
+    isCurrentTrack: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     onMoreClick: (() -> Unit)? = null
 ) {
@@ -393,7 +399,7 @@ fun SearchResultRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = Color.White,
+                color = if (isCurrentTrack) Color(0xFF1DB954) else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

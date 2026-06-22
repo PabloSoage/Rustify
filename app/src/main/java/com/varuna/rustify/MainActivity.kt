@@ -157,6 +157,26 @@ class MainActivity : ComponentActivity() {
                 if (trackIndex != -1 && trackIndex + 1 < pathSegments.size) {
                     initialDeepLinkTrackId = pathSegments[trackIndex + 1]
                 }
+            } else if (uri?.scheme == "rustify" && uri.host == "track") {
+                val pathSegments = uri.pathSegments
+                if (pathSegments.isNotEmpty()) {
+                    initialDeepLinkTrackId = pathSegments[0]
+                }
+            } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
+                val v = uri.getQueryParameter("v")
+                if (v != null) {
+                    // For now, open the search screen with the ID or video URL so the user can see it
+                    // The best way would be to create a fake track, but we don't have metadata.
+                    // If we pass the ytId as a spotify ID, getTrack will fail.
+                    // We'll leave it to just print a log or handle it by searching.
+                    android.util.Log.d("MainActivity", "Received YouTube Deep Link: $v")
+                    // initialDeepLinkTrackId = "yt:$v" // Future feature: native YTM playing without Spotify ID
+                }
+            } else if (uri?.host == "youtu.be") {
+                val v = uri.lastPathSegment
+                if (v != null) {
+                    android.util.Log.d("MainActivity", "Received YouTube Short Deep Link: $v")
+                }
             }
         }
         
@@ -498,7 +518,7 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                 is Screen.Search -> {
                     SearchScreen(
                         spotifyRepo = spotifyRepo,
-                        onTrackClick = { track -> audioPlayerService.loadAndPlay(track) },
+                        onTrackClick = { track -> audioPlayerService.loadPlaylist(listOf(track), 0) },
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
@@ -511,7 +531,8 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                         onPlaylistClick = { id, name, images ->
                             navigationStack.add(Screen.PlaylistDetail(id, name, images))
                         },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.Library -> {
@@ -530,7 +551,9 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                                 navigationStack.add(Screen.TrackDetail(id))
                             }
                         },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onOpenSettings = { navigationStack.add(Screen.Settings) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.PlaylistDetail -> {
@@ -550,7 +573,8 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.AlbumDetail -> {
@@ -586,7 +610,8 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                             }
                         },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.TrackDetail -> {
@@ -602,7 +627,16 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                 is Screen.Settings -> {
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onLocaleChanged = {
+                            coroutineScope.launch {
+                                try {
+                                    browseSections = spotifyRepo.getBrowseSections(10)
+                                } catch (e: Exception) {
+                                    android.util.Log.w("MainActivity", "Failed to refresh browse sections after locale change", e)
+                                }
+                            }
+                        }
                     )
                 }
             }

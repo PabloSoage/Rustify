@@ -101,6 +101,9 @@
     <string name="library_tab_albums">アルバム</string>
     <string name="library_tab_artists">アーティスト</string>
     <string name="library_tab_local_music">ローカル音楽</string>
+    <string name="library_local_not_configured">ローカル音楽が設定されていません</string>
+    <string name="library_local_configure_btn">設定を開く</string>
+    <string name="library_local_no_tracks">ローカル トラックが見つかりません。</string>
     
     <!-- General -->
     <string name="general_error">エラー</string>

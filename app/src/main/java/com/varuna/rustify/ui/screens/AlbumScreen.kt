@@ -74,6 +74,7 @@ fun AlbumScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
@@ -365,6 +366,7 @@ fun AlbumScreen(
                                 fallbackCoverUrl = primaryImageUrl,
                                 onClick = { onTrackClick(tracks, index) },
                                 isLiked = isLiked,
+                                isCurrentTrack = track.id == currentTrackId,
                                 onLikeToggle = {
                                     coroutineScope.launch {
                                         spotifyRepo.toggleLikeTrack(track)

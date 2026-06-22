@@ -90,6 +90,9 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.LyricsRepository
+import com.varuna.rustify.bridge.LyricsResult
+import com.varuna.rustify.bridge.LyricLine
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
@@ -98,6 +101,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextAlign
 
 data class YouTubeTrack(
     val id: String,
@@ -495,7 +504,12 @@ fun TrackScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             TextButton(onClick = {
-                                audioPlayerService.retryCurrentTrack()
+                                val inQueue = playerState.queue.any { it.id == trackToShow?.id }
+                                if (inQueue && trackToShow?.id != null) {
+                                    audioPlayerService.playSpecificTrackInQueue(trackToShow.id!!)
+                                } else {
+                                    audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow?.id)
+                                }
                             }) {
                                 Text("Reintentar", color = Color.White, fontSize = 12.sp)
                             }
@@ -534,7 +548,13 @@ fun TrackScreen(
                     showMappingDialog = false
                     track.id?.let { tid ->
                         NativeEngine.setAlternativeTrackNative(tid, ytId)
+                        val inQueue = playerState.queue.any { it.id == tid }
                         if (isCurrentTrack) {
+                            audioPlayerService.retryCurrentTrack(ytId, fallbackTrackId = tid)
+                        } else if (inQueue) {
+                            audioPlayerService.playSpecificTrackInQueue(tid, ytId)
+                        } else {
+                            audioPlayerService.loadAndPlay(track)
                             audioPlayerService.retryCurrentTrack(ytId)
                         }
                     }
@@ -783,6 +803,40 @@ fun TrackScreenControls(
     onArtistClick: (String) -> Unit,
     coroutineScope: kotlinx.coroutines.CoroutineScope
 ) {
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
+    var lyricsResult by remember(track.id) { mutableStateOf<LyricsResult?>(null) }
+    var lyricsLoading by remember(track.id) { mutableStateOf(false) }
+    val lyricsListState = rememberLazyListState()
+    
+    // Load lyrics whenever track changes
+    LaunchedEffect(track.id) {
+        if (track.id == null) return@LaunchedEffect
+        lyricsLoading = true
+        lyricsResult = null
+        val artist = track.artists.firstOrNull()?.name ?: ""
+        val durationSec = track.durationMs / 1000
+        try {
+            lyricsResult = LyricsRepository.getLyrics(
+                trackId = track.id!!,
+                artist = artist,
+                title = track.name,
+                durationSec = durationSec
+            )
+        } catch (_: Exception) {}
+        lyricsLoading = false
+    }
+
+    // Auto-scroll to current lyric line
+    LaunchedEffect(currentPosition, showLyrics) {
+        if (!showLyrics) return@LaunchedEffect
+        val synced = lyricsResult?.synced ?: return@LaunchedEffect
+        if (synced.isEmpty()) return@LaunchedEffect
+        val idx = synced.indexOfLast { it.timeMs <= currentPosition }.coerceAtLeast(0)
+        try {
+            lyricsListState.animateScrollToItem(idx)
+        } catch (_: Exception) {}
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         if (isBuffering) {
             LinearProgressIndicator(
@@ -955,7 +1009,12 @@ fun TrackScreenControls(
                             if (isCurrentTrack) {
                                 audioPlayerService.togglePlayPause()
                             } else {
-                                audioPlayerService.loadAndPlay(track)
+                                val inQueue = playerState.queue.any { it.id == track.id }
+                                if (inQueue && track.id != null) {
+                                    audioPlayerService.playSpecificTrackInQueue(track.id!!)
+                                } else {
+                                    audioPlayerService.loadAndPlay(track)
+                                }
                             }
                         },
                     shape = CircleShape,
@@ -1022,6 +1081,109 @@ fun TrackScreenControls(
                     tint = Color.White,
                     modifier = Modifier.size(32.dp)
                 )
+            }
+
+            // Lyrics Button
+            IconButton(onClick = { showLyrics = !showLyrics }) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = "Lyrics",
+                    tint = if (showLyrics) Color(0xFF1DB954) else Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+        
+        // Lyrics Panel
+        if (showLyrics) {
+            Spacer(modifier = Modifier.height(16.dp))
+            LyricsView(
+                lyricsResult = lyricsResult,
+                isLoading = lyricsLoading,
+                currentPositionMs = currentPosition,
+                listState = lyricsListState
+            )
+        }
+    }
+}
+
+@Composable
+fun LyricsView(
+    lyricsResult: LyricsResult?,
+    isLoading: Boolean,
+    currentPositionMs: Long,
+    listState: LazyListState
+) {
+    val spotifyGreen = Color(0xFF1DB954)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 200.dp, max = 350.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        when {
+            isLoading -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = spotifyGreen, modifier = Modifier.size(32.dp))
+                }
+            }
+            lyricsResult == null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "No se encontraron letras",
+                        color = Color.Gray,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            lyricsResult.synced.isNotEmpty() -> {
+                val synced = lyricsResult.synced
+                val currentIdx = synced.indexOfLast { it.timeMs <= currentPositionMs }.coerceAtLeast(0)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    itemsIndexed(synced) { index, line ->
+                        val isActive = index == currentIdx
+                        Text(
+                            text = line.text.ifBlank { "♪" },
+                            color = if (isActive) Color.White else Color.Gray.copy(alpha = 0.5f),
+                            fontSize = if (isActive) 18.sp else 15.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = if (isActive) 8.dp else 4.dp)
+                        )
+                    }
+                }
+            }
+            lyricsResult.plain != null -> {
+                val scrollState = androidx.compose.foundation.rememberScrollState()
+                Text(
+                    text = lyricsResult.plain,
+                    color = Color.LightGray,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                )
+            }
+            else -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "No se encontraron letras",
+                        color = Color.Gray,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }

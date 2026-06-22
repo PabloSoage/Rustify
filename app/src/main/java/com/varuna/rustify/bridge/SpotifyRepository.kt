@@ -11,6 +11,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -208,25 +211,42 @@ class SpotifyRepository(context: Context) {
         }
     }
 
-    private suspend fun fetchAllSavedTracks() {
+    private suspend fun fetchAllSavedTracks() = withContext(Dispatchers.IO) {
+        val firstPage = getSavedTracks(limit = 50, offset = 0)
         val allTracks = mutableListOf<FullTrack>()
-        var currentOffset = 0
-        var hasMore = true
-        while (hasMore) {
-            val page = getSavedTracks(limit = 50, offset = currentOffset)
-            allTracks.addAll(page.items)
-            if (page.hasMore && page.items.isNotEmpty()) {
-                currentOffset += page.items.size
-            } else {
-                hasMore = false
-            }
-        }
+        allTracks.addAll(firstPage.items)
+
         withContext(Dispatchers.Main) {
             likedTracks.clear()
             likedTracks.addAll(allTracks)
             likedTrackIds.clear()
             allTracks.forEach { track ->
                 track.id?.let { likedTrackIds[it] = true }
+            }
+        }
+
+        val total = firstPage.total
+        if (total > 50) {
+            val offsets = (50 until total step 50).toList()
+            val chunks = offsets.chunked(5) // Fetch in batches of 5 parallel requests to avoid 429
+            for (chunk in chunks) {
+                val pages = coroutineScope {
+                    chunk.map { offset ->
+                        async { getSavedTracks(limit = 50, offset = offset) }
+                    }.awaitAll()
+                }
+                for (page in pages) {
+                    allTracks.addAll(page.items)
+                }
+
+                // Update UI progressively
+                withContext(Dispatchers.Main) {
+                    likedTracks.clear()
+                    likedTracks.addAll(allTracks)
+                    allTracks.forEach { track ->
+                        track.id?.let { likedTrackIds[it] = true }
+                    }
+                }
             }
         }
         saveLikedTracksToCache()

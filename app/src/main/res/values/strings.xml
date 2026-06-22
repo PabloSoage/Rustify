@@ -102,6 +102,9 @@
     <string name="library_tab_albums">Albums</string>
     <string name="library_tab_artists">Artists</string>
     <string name="library_tab_local_music">Local Music</string>
+    <string name="library_local_not_configured">Local Music not configured</string>
+    <string name="library_local_configure_btn">Configure in Settings</string>
+    <string name="library_local_no_tracks">No local tracks found.</string>
     
     <!-- General -->
     <string name="general_error">Error</string>

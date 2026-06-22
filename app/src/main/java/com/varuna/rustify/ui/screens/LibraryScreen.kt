@@ -91,6 +91,8 @@ fun LibraryScreen(
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onArtistClick: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+    currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -166,12 +168,15 @@ fun LibraryScreen(
                     onAddToQueue = onAddToQueue,
                     onGoToQueue = onGoToQueue,
                     onAlbumClick = onAlbumClick,
-                    onArtistClick = onArtistClick
+                    onArtistClick = onArtistClick,
+                    currentTrackId = currentTrackId
                 )
                 LibraryTab.LOCAL -> LibraryLocalMusic(
                     onTrackClick = onTrackClick,
                     onAddToQueue = onAddToQueue,
-                    onGoToQueue = onGoToQueue
+                    onGoToQueue = onGoToQueue,
+                    onOpenSettings = onOpenSettings,
+                    currentTrackId = currentTrackId
                 )
             }
         }
@@ -353,7 +358,8 @@ fun LibraryTracks(
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
-    onArtistClick: (String) -> Unit
+    onArtistClick: (String) -> Unit,
+    currentTrackId: String? = null
 ) {
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
@@ -480,6 +486,7 @@ fun LibraryTracks(
                                     fallbackCoverUrl = null,
                                     onClick = { onTrackClick(filteredTracks, index) },
                                     isLiked = isLiked,
+                                    isCurrentTrack = track.id == currentTrackId,
                                     onLikeToggle = {
                                         coroutineScope.launch {
                                             spotifyRepo.toggleLikeTrack(track)
@@ -543,7 +550,9 @@ fun LibraryTracks(
 fun LibraryLocalMusic(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onAddToQueue: (FullTrack) -> Unit,
-    onGoToQueue: () -> Unit
+    onGoToQueue: () -> Unit,
+    onOpenSettings: () -> Unit,
+    currentTrackId: String? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -579,6 +588,24 @@ fun LibraryLocalMusic(
                                         val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                                         val durationMs = durationStr?.toLongOrNull() ?: 0L
                                         
+                                        var coverUri = ""
+                                        try {
+                                            val cacheFile = java.io.File(context.cacheDir, "cover_${file.uri.lastPathSegment}.jpg")
+                                            if (!cacheFile.exists()) {
+                                                val picture = retriever.embeddedPicture
+                                                if (picture != null) {
+                                                    val fos = java.io.FileOutputStream(cacheFile)
+                                                    fos.write(picture)
+                                                    fos.close()
+                                                }
+                                            }
+                                            if (cacheFile.exists()) {
+                                                coverUri = "file://" + cacheFile.absolutePath
+                                            }
+                                        } catch (e: Exception) {
+                                            // Ignored cover error
+                                        }
+
                                         localTracks.add(
                                             FullTrack(
                                                 id = "local:${file.uri}",
@@ -589,7 +616,7 @@ fun LibraryLocalMusic(
                                                 explicit = false,
                                                 isrc = "",
                                                 addedAt = "",
-                                                externalUri = ""
+                                                externalUri = coverUri
                                             )
                                         )
                                     } catch (e: Exception) { e.printStackTrace() }
@@ -659,15 +686,13 @@ fun LibraryLocalMusic(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Local Music not configured", color = Color.Gray)
+                    Text(stringResource(R.string.library_local_not_configured), color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
-                        onClick = {
-                            // Let the user know they need to configure it in settings
-                        },
+                        onClick = onOpenSettings,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                     ) {
-                        Text("Configure in Settings", color = Color.White)
+                        Text(stringResource(R.string.library_local_configure_btn), color = Color.White)
                     }
                 }
             } else if (isLoading && tracks == null) {
@@ -687,19 +712,23 @@ fun LibraryLocalMusic(
                 } else {
                     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
                     val bottomPadding = if (isLandscape) 16.dp else 100.dp
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(filteredTracks) { index, track ->
+                            val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
-                                fallbackCoverUrl = null,
+                                fallbackCoverUrl = cover,
                                 onClick = { onTrackClick(filteredTracks, index) },
                                 isLiked = false,
-                                onLikeToggle = {},
+                                isCurrentTrack = track.id == currentTrackId,
+                                onLikeToggle = null, // Do not show save button for local tracks
                                 onMoreClick = { selectedTrackForMenu = track }
                             )
                         }

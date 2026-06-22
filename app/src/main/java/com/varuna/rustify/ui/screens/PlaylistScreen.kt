@@ -74,6 +74,7 @@ fun PlaylistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
@@ -363,9 +364,10 @@ fun PlaylistScreen(
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
-                                fallbackCoverUrl = primaryImageUrl,
+                                fallbackCoverUrl = playlistImages?.firstOrNull()?.url,
                                 onClick = { onTrackClick(tracks, index) },
                                 isLiked = isLiked,
+                                isCurrentTrack = track.id == currentTrackId,
                                 onLikeToggle = {
                                     coroutineScope.launch {
                                         spotifyRepo.toggleLikeTrack(track)

@@ -68,6 +68,7 @@ fun ArtistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var artistDetails by remember { mutableStateOf<FullArtist?>(null) }
@@ -207,12 +208,14 @@ fun ArtistScreen(
                         items(topTracks.take(5).withIndex().toList()) { (index, track) ->
                             val trackId = track.id ?: ""
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
+                            val coverUrl = artist.images.minByOrNull { it.width ?: 999 }?.url
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
-                                fallbackCoverUrl = artist.images.minByOrNull { it.width ?: 999 }?.url,
+                                fallbackCoverUrl = coverUrl,
                                 onClick = { onTrackClick(topTracks.take(5), index) },
                                 isLiked = isLiked,
+                                isCurrentTrack = track.id == currentTrackId,
                                 onLikeToggle = {
                                     coroutineScope.launch {
                                         spotifyRepo.toggleLikeTrack(track)

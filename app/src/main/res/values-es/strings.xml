@@ -75,6 +75,9 @@
     <string name="library_tab_albums">Álbumes</string>
     <string name="library_tab_artists">Artistas</string>
     <string name="library_tab_local_music">Música Local</string>
+    <string name="library_local_not_configured">Música local no configurada</string>
+    <string name="library_local_configure_btn">Configurar en Ajustes</string>
+    <string name="library_local_no_tracks">No se encontraron pistas locales.</string>
     
     <!-- General -->
     <string name="general_error">Error</string>
