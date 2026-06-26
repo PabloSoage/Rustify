@@ -52,6 +52,18 @@ pub fn init_cache_dir(dir: &str) {
     }
 }
 
+pub fn get_cache_dir() -> Option<String> {
+    CACHE_DIR.get().cloned()
+}
+
+pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&str>, cache_dir: &str) -> Option<String> {
+    if let Some(yt_id) = youtube_id_opt {
+        set_alternative_track(track_id.to_string(), yt_id.to_string());
+        return Some(yt_id.to_string());
+    }
+    resolve_youtube_id(track_id, cache_dir).await
+}
+
 pub fn get_server_port() -> u16 {
     *SERVER_PORT.get().unwrap_or(&0)
 }
@@ -190,7 +202,7 @@ async fn handle_connection(socket: &mut tokio::net::TcpStream, cache_dir: &str) 
     Ok(())
 }
 
-async fn resolve_youtube_id(track_id: &str, cache_dir: &str) -> Option<String> {
+pub async fn resolve_youtube_id(track_id: &str, cache_dir: &str) -> Option<String> {
     // Check if we already have an alternative YT ID mapped
     let alt = get_alternative_track(track_id);
     if let Some(yt_id) = alt {
@@ -246,7 +258,7 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
     let mut best_track: Option<YouTubeTrack> = None;
     let mut best_score = -1;
 
-    for yt_track in results {
+    for (i, yt_track) in results.iter().enumerate() {
         let mut score = 0;
         let clean_yt_title = clean_text(&yt_track.title);
         let yt_words: Vec<&str> = clean_yt_title.split_whitespace().collect();
@@ -314,6 +326,31 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
         let orig_has_extended = clean_spotify_name.contains("extended") || clean_spotify_name.contains("loop");
         if is_extended && !orig_has_extended {
             score -= 30;
+        }
+
+        // Duration matching
+        if meta.duration_ms > 0 && yt_track.duration_sec > 0 {
+            let spotify_dur_sec = meta.duration_ms / 1000;
+            let yt_dur_sec = yt_track.duration_sec;
+            let diff = (spotify_dur_sec as i32 - yt_dur_sec as i32).abs();
+            if diff <= 4 {
+                score += 35;
+            } else if diff <= 10 {
+                score += 15;
+            } else if diff > 60 {
+                score -= 100;
+            } else if diff > 30 {
+                score -= 50;
+            }
+        }
+
+        // Search rank baseline bonus
+        if i == 0 {
+            score += 20;
+        } else if i == 1 {
+            score += 10;
+        } else if i == 2 {
+            score += 5;
         }
         
         log_info!("[Resolver] Scoring: '{}' by '{}' -> Score: {}", yt_track.title, yt_track.author, score);

@@ -14,12 +14,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.milliseconds
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Exception thrown when a Rust engine operation fails.
@@ -60,6 +60,14 @@ class SpotifyRepository(context: Context) {
     val likedTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
     var isSyncingLikedTracks by mutableStateOf(false)
         private set
+
+    val localTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
+    var isScanningLocalTracks by mutableStateOf(false)
+        private set
+
+    private fun getLocalTracksCacheFile(): java.io.File {
+        return java.io.File(appCtx.filesDir, "local_music_cache.json")
+    }
 
     private fun getLikedTracksCacheFile(): java.io.File {
         return java.io.File(appCtx.filesDir, "spotify_liked_tracks_cache.json")
@@ -270,9 +278,134 @@ class SpotifyRepository(context: Context) {
         repositoryScope.launch {
             withContext(Dispatchers.IO) {
                 loadLikedTracksFromCache()
+                loadLocalTracksFromCache()
             }
             if (isAuthenticated()) {
                 syncLikedTracks()
+            }
+            scanLocalMusic()
+        }
+    }
+
+    private fun loadLocalTracksFromCache() {
+        val file = getLocalTracksCacheFile()
+        if (!file.exists()) return
+        try {
+            val jsonStr = file.readText()
+            val array = JSONArray(jsonStr)
+            val initialTracks = mutableListOf<FullTrack>()
+            for (i in 0 until array.length()) {
+                initialTracks.add(FullTrack.fromJson(array.getJSONObject(i)))
+            }
+            repositoryScope.launch(Dispatchers.Main) {
+                localTracks.clear()
+                localTracks.addAll(initialTracks)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun saveLocalTracksToCache(tracks: List<FullTrack>) {
+        val file = getLocalTracksCacheFile()
+        try {
+            val array = JSONArray()
+            tracks.forEach { track ->
+                array.put(track.toJson())
+            }
+            file.writeText(array.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun scanLocalMusic() {
+        if (isScanningLocalTracks) return
+        repositoryScope.launch(Dispatchers.IO) {
+            isScanningLocalTracks = true
+            try {
+                val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
+                if (localMusicDirs.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        localTracks.clear()
+                    }
+                    saveLocalTracksToCache(emptyList())
+                    return@launch
+                }
+
+                val existingTracks = localTracks.associateBy { it.id }
+                val newLocalTracks = mutableListOf<FullTrack>()
+                val retriever = android.media.MediaMetadataRetriever()
+
+                for (dirUriStr in localMusicDirs) {
+                    try {
+                        val treeUri = android.net.Uri.parse(dirUriStr)
+                        val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(appCtx, treeUri)
+                        dirFile?.listFiles()?.forEach { file ->
+                            val mime = file.type
+                            if (mime?.startsWith("audio/") == true) {
+                                val trackId = "local:${file.uri}"
+                                val lastModifiedStr = file.lastModified().toString()
+                                val existingTrack = existingTracks[trackId]
+
+                                // Use cache if modification date matches (using addedAt to store lastModified for local tracks)
+                                if (existingTrack != null && existingTrack.addedAt == lastModifiedStr) {
+                                    newLocalTracks.add(existingTrack)
+                                } else {
+                                    try {
+                                        retriever.setDataSource(appCtx, file.uri)
+                                        val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
+                                        val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
+                                        val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
+                                        val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                        val durationMs = durationStr?.toLongOrNull() ?: 0L
+
+                                        var coverUri = ""
+                                        try {
+                                            val cacheFile = java.io.File(appCtx.cacheDir, "cover_${file.uri.lastPathSegment}.jpg")
+                                            if (!cacheFile.exists()) {
+                                                val picture = retriever.embeddedPicture
+                                                if (picture != null) {
+                                                    val fos = java.io.FileOutputStream(cacheFile)
+                                                    fos.write(picture)
+                                                    fos.close()
+                                                }
+                                            }
+                                            if (cacheFile.exists()) {
+                                                coverUri = "file://" + cacheFile.absolutePath
+                                            }
+                                        } catch (e: Exception) {}
+
+                                        newLocalTracks.add(
+                                            FullTrack(
+                                                id = trackId,
+                                                name = title,
+                                                artists = listOf(com.varuna.rustify.bridge.SimpleArtist("local_artist", artist, "", emptyList())),
+                                                album = com.varuna.rustify.bridge.SimpleAlbum("local_album", album, "", null, null, emptyList(), emptyList(), null),
+                                                durationMs = durationMs.toInt(),
+                                                explicit = false,
+                                                isrc = "",
+                                                addedAt = lastModifiedStr, // use addedAt to store last modified time
+                                                externalUri = coverUri
+                                            )
+                                        )
+                                    } catch (e: Exception) {}
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {}
+                }
+                
+                withContext(Dispatchers.Main) {
+                    localTracks.clear()
+                    localTracks.addAll(newLocalTracks)
+                }
+                saveLocalTracksToCache(newLocalTracks)
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isScanningLocalTracks = false
             }
         }
     }

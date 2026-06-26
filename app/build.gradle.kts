@@ -66,6 +66,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols.add("**/libpython.zip.so")
         }
     }
 }
@@ -98,6 +99,7 @@ dependencies {
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
     implementation(libs.youtubedl.android)
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 }
 
 // --- RUST CORE INTEGRATION ---

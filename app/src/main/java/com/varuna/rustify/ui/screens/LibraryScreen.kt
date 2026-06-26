@@ -2,18 +2,19 @@
 
 package com.varuna.rustify.ui.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,14 +22,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -45,9 +57,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullAlbum
 import com.varuna.rustify.bridge.FullArtist
 import com.varuna.rustify.bridge.FullTrack
@@ -56,23 +70,8 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
-import kotlinx.coroutines.launch
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
-import com.varuna.rustify.R
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.animation.animateColorAsState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class LibraryTab {
     PLAYLISTS,
@@ -111,14 +110,36 @@ fun LibraryScreen(
             .fillMaxSize()
             .background(darkBackground)
     ) {
-        // Header
-        Text(
-            text = androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.nav_library),
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+        var globalSearchQuery by rememberSaveable { mutableStateOf("") }
+
+        // Global Search Bar
+        OutlinedTextField(
+            value = globalSearchQuery,
+            onValueChange = { globalSearchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .heightIn(min = 50.dp),
+            shape = RoundedCornerShape(24.dp),
+            placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
+            leadingIcon = {
+                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+            },
+            trailingIcon = {
+                if (globalSearchQuery.isNotEmpty()) {
+                    IconButton(onClick = { globalSearchQuery = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                    }
+                }
+            },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFF242424),
+                unfocusedContainerColor = Color(0xFF242424),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Color(0xFF1DB954)
             ),
-            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
+            singleLine = true
         )
 
         PrimaryScrollableTabRow(
@@ -159,9 +180,9 @@ fun LibraryScreen(
 
         Box(modifier = Modifier.fillMaxSize()) {
             when (selectedTab) {
-                LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick)
-                LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick)
-                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick)
+                LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
+                LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
+                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
                 LibraryTab.TRACKS -> LibraryTracks(
                     spotifyRepo = spotifyRepo,
                     onTrackClick = onTrackClick,
@@ -169,14 +190,17 @@ fun LibraryScreen(
                     onGoToQueue = onGoToQueue,
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
-                    currentTrackId = currentTrackId
+                    currentTrackId = currentTrackId,
+                    searchQuery = globalSearchQuery
                 )
                 LibraryTab.LOCAL -> LibraryLocalMusic(
+                    spotifyRepo = spotifyRepo,
                     onTrackClick = onTrackClick,
                     onAddToQueue = onAddToQueue,
                     onGoToQueue = onGoToQueue,
                     onOpenSettings = onOpenSettings,
-                    currentTrackId = currentTrackId
+                    currentTrackId = currentTrackId,
+                    searchQuery = globalSearchQuery
                 )
             }
         }
@@ -186,7 +210,8 @@ fun LibraryScreen(
 @Composable
 fun LibraryPlaylists(
     spotifyRepo: SpotifyRepository,
-    onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit
+    onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
+    searchQuery: String = ""
 ) {
     var playlists by remember { mutableStateOf<List<SimplePlaylist>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -233,8 +258,10 @@ fun LibraryPlaylists(
         },
         emptyMessage = "No playlists found.",
         filterPredicate = { playlist, query ->
-            playlist.name.contains(query, ignoreCase = true) || 
-            (playlist.owner?.name?.contains(query, ignoreCase = true) == true)
+            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
+            if (combinedQuery.isBlank()) true
+            else playlist.name.contains(combinedQuery, ignoreCase = true) || 
+            (playlist.owner?.name?.contains(combinedQuery, ignoreCase = true) == true)
         }
     )
 }
@@ -242,7 +269,8 @@ fun LibraryPlaylists(
 @Composable
 fun LibraryAlbums(
     spotifyRepo: SpotifyRepository,
-    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    searchQuery: String = ""
 ) {
     var albums by remember { mutableStateOf<List<FullAlbum>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -289,8 +317,10 @@ fun LibraryAlbums(
         },
         emptyMessage = "No albums found.",
         filterPredicate = { album, query ->
-            album.name.contains(query, ignoreCase = true) || 
-            album.artists.any { it.name.contains(query, ignoreCase = true) }
+            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
+            if (combinedQuery.isBlank()) true
+            else album.name.contains(combinedQuery, ignoreCase = true) || 
+            album.artists.any { it.name.contains(combinedQuery, ignoreCase = true) }
         }
     )
 }
@@ -298,7 +328,8 @@ fun LibraryAlbums(
 @Composable
 fun LibraryArtists(
     spotifyRepo: SpotifyRepository,
-    onArtistClick: (String) -> Unit
+    onArtistClick: (String) -> Unit,
+    searchQuery: String = ""
 ) {
     var artists by remember { mutableStateOf<List<FullArtist>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -346,7 +377,9 @@ fun LibraryArtists(
         },
         emptyMessage = "No artists found.",
         filterPredicate = { artist, query ->
-            artist.name.contains(query, ignoreCase = true)
+            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
+            if (combinedQuery.isBlank()) true
+            else artist.name.contains(combinedQuery, ignoreCase = true)
         }
     )
 }
@@ -359,7 +392,8 @@ fun LibraryTracks(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String? = null,
+    searchQuery: String = ""
 ) {
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
@@ -371,7 +405,6 @@ fun LibraryTracks(
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
-    var searchQuery by remember { mutableStateOf("") }
     val filteredTracks = remember(tracks, searchQuery) {
         if (searchQuery.isBlank()) tracks
         else tracks.filter { 
@@ -381,33 +414,6 @@ fun LibraryTracks(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .clip(RoundedCornerShape(24.dp)),
-            placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
-                    }
-                }
-            },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF242424),
-                unfocusedContainerColor = Color(0xFF242424),
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color(0xFF1DB954)
-            ),
-            singleLine = true
-        )
 
         if (tracks.isEmpty() && isSyncing) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -436,19 +442,13 @@ fun LibraryTracks(
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
                         val dismissState = rememberSwipeToDismissBoxState(
-                            positionalThreshold = { it * 0.4f },
-                            confirmValueChange = { dismissValue ->
-                                if (dismissValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                    return@rememberSwipeToDismissBoxState true
-                                }
-                                false
-                            }
+                            positionalThreshold = { it * 0.4f }
                         )
 
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                onAddToQueue(track)
+                                android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
                                 delay(200)
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
@@ -548,137 +548,37 @@ fun LibraryTracks(
 
 @Composable
 fun LibraryLocalMusic(
+    spotifyRepo: SpotifyRepository,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onOpenSettings: () -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String? = null,
+    searchQuery: String = ""
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-
-    var tracks by remember { mutableStateOf<List<FullTrack>?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    val tracks = spotifyRepo.localTracks
+    val isLoading = spotifyRepo.isScanningLocalTracks
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
 
     val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
-
+    
+    // Scan if directories changed (repository will ignore if already scanning)
     LaunchedEffect(localMusicDirs) {
-        if (localMusicDirs.isNotEmpty() && tracks == null) {
-            isLoading = true
-            errorMessage = null
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    val localTracks = mutableListOf<FullTrack>()
-                    val retriever = android.media.MediaMetadataRetriever()
-                    
-                    for (dirUriStr in localMusicDirs) {
-                        try {
-                            val treeUri = android.net.Uri.parse(dirUriStr)
-                            val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
-                            dirFile?.listFiles()?.forEach { file ->
-                                val mime = file.type
-                                if (mime?.startsWith("audio/") == true) {
-                                    try {
-                                        retriever.setDataSource(context, file.uri)
-                                        val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
-                                        val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                                        val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
-                                        val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                        val durationMs = durationStr?.toLongOrNull() ?: 0L
-                                        
-                                        var coverUri = ""
-                                        try {
-                                            val cacheFile = java.io.File(context.cacheDir, "cover_${file.uri.lastPathSegment}.jpg")
-                                            if (!cacheFile.exists()) {
-                                                val picture = retriever.embeddedPicture
-                                                if (picture != null) {
-                                                    val fos = java.io.FileOutputStream(cacheFile)
-                                                    fos.write(picture)
-                                                    fos.close()
-                                                }
-                                            }
-                                            if (cacheFile.exists()) {
-                                                coverUri = "file://" + cacheFile.absolutePath
-                                            }
-                                        } catch (e: Exception) {
-                                            // Ignored cover error
-                                        }
-
-                                        localTracks.add(
-                                            FullTrack(
-                                                id = "local:${file.uri}",
-                                                name = title,
-                                                artists = listOf(com.varuna.rustify.bridge.SimpleArtist("local_artist", artist, "", emptyList())),
-                                                album = com.varuna.rustify.bridge.SimpleAlbum("local_album", album, "", null, null, emptyList(), emptyList(), null),
-                                                durationMs = durationMs.toInt(),
-                                                explicit = false,
-                                                isrc = "",
-                                                addedAt = "",
-                                                externalUri = coverUri
-                                            )
-                                        )
-                                    } catch (e: Exception) { e.printStackTrace() }
-                                }
-                            }
-                        } catch (e: Exception) { e.printStackTrace() }
-                    }
-                    retriever.release()
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        tracks = localTracks
-                        isLoading = false
-                    }
-                } catch (e: Exception) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        errorMessage = e.message
-                        isLoading = false
-                    }
-                }
-            }
-        }
+        spotifyRepo.scanLocalMusic()
     }
 
-    var searchQuery by remember { mutableStateOf("") }
     val filteredTracks = remember(tracks, searchQuery) {
-        if (tracks == null) null
-        else if (searchQuery.isBlank()) tracks
-        else tracks!!.filter { 
+        if (searchQuery.isBlank()) tracks
+        else tracks.filter { 
             it.name.contains(searchQuery, ignoreCase = true) || 
             it.artists.any { artist -> artist.name.contains(searchQuery, ignoreCase = true) }
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (localMusicDirs.isNotEmpty()) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(24.dp)),
-                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
-                        }
-                    }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF242424),
-                    unfocusedContainerColor = Color(0xFF242424),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color(0xFF1DB954)
-                ),
-                singleLine = true
-            )
-        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             if (localMusicDirs.isEmpty()) {
@@ -695,14 +595,14 @@ fun LibraryLocalMusic(
                         Text(stringResource(R.string.library_local_configure_btn), color = Color.White)
                     }
                 }
-            } else if (isLoading && tracks == null) {
+            } else if (isLoading && tracks.isEmpty()) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = Color(0xFF1DB954)
                 )
-            } else if (errorMessage != null && tracks == null) {
+            } else if (errorMessage != null && tracks.isEmpty()) {
                 Text(errorMessage!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center))
-            } else if (filteredTracks != null) {
+            } else {
                 if (filteredTracks.isEmpty()) {
                     Text(
                         text = "No local tracks found.",
@@ -714,23 +614,104 @@ fun LibraryLocalMusic(
                     val bottomPadding = if (isLandscape) 16.dp else 100.dp
                     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(filteredTracks) { index, track ->
-                            val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
-                            TrackRowItem(
-                                index = index + 1,
-                                track = track,
-                                fallbackCoverUrl = cover,
-                                onClick = { onTrackClick(filteredTracks, index) },
-                                isLiked = false,
-                                isCurrentTrack = track.id == currentTrackId,
-                                onLikeToggle = null, // Do not show save button for local tracks
-                                onMoreClick = { selectedTrackForMenu = track }
-                            )
+                    var selectedGroup by remember { mutableStateOf("Tracks") }
+                    val groupOptions = listOf(
+                        stringResource(R.string.local_group_tracks) to "Tracks",
+                        stringResource(R.string.local_group_albums) to "Albums",
+                        stringResource(R.string.local_group_artists) to "Artists"
+                    )
+
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        androidx.compose.foundation.lazy.LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(groupOptions.size) { i ->
+                                val (label, key) = groupOptions[i]
+                                androidx.compose.material3.FilterChip(
+                                    selected = selectedGroup == key,
+                                    onClick = { selectedGroup = key },
+                                    label = { Text(label) },
+                                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFF1DB954),
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+
+                        if (selectedGroup == "Tracks") {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(filteredTracks) { index, track ->
+                                    val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                                    TrackRowItem(
+                                        index = index + 1,
+                                        track = track,
+                                        fallbackCoverUrl = cover,
+                                        onClick = { onTrackClick(filteredTracks, index) },
+                                        isLiked = false,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        onLikeToggle = null,
+                                        onMoreClick = { selectedTrackForMenu = track }
+                                    )
+                                }
+                            }
+                        } else if (selectedGroup == "Albums") {
+                            val albums = filteredTracks.groupBy { it.album?.name ?: "Unknown Album" }
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                albums.forEach { (albumName, albumTracks) ->
+                                    item {
+                                        Text(albumName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp), color = Color.White)
+                                    }
+                                    itemsIndexed(albumTracks) { index, track ->
+                                        val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                                        TrackRowItem(
+                                            index = index + 1,
+                                            track = track,
+                                            fallbackCoverUrl = cover,
+                                            onClick = { onTrackClick(albumTracks, index) },
+                                            isLiked = false,
+                                            isCurrentTrack = track.id == currentTrackId,
+                                            onLikeToggle = null,
+                                            onMoreClick = { selectedTrackForMenu = track }
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (selectedGroup == "Artists") {
+                            val artists = filteredTracks.groupBy { it.artists.firstOrNull()?.name ?: "Unknown Artist" }
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                artists.forEach { (artistName, artistTracks) ->
+                                    item {
+                                        Text(artistName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp), color = Color.White)
+                                    }
+                                    itemsIndexed(artistTracks) { index, track ->
+                                        val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                                        TrackRowItem(
+                                            index = index + 1,
+                                            track = track,
+                                            fallbackCoverUrl = cover,
+                                            onClick = { onTrackClick(artistTracks, index) },
+                                            isLiked = false,
+                                            isCurrentTrack = track.id == currentTrackId,
+                                            onLikeToggle = null,
+                                            onMoreClick = { selectedTrackForMenu = track }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -785,8 +766,8 @@ fun <T> LibraryContentList(
                 onValueChange = { searchQuery = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(24.dp)),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(24.dp),
                 placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)

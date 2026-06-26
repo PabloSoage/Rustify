@@ -24,8 +24,10 @@ object NativeEngine {
      */
     external fun searchYouTubeNative(query: String): String
 
-
-
+    /**
+     * Resolves a Spotify track ID to a YouTube video ID.
+     */
+    external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
     /**
      * Starts the audio proxy HTTP server in the background.
      * @param cacheDir Absolute path of the application cache directory.

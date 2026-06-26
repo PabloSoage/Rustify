@@ -131,6 +131,8 @@ impl SpotifyClient {
         Self {
             http: Client::builder()
                 .user_agent(generate_user_agent())
+                .timeout(std::time::Duration::from_secs(15))
+                .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .unwrap(),
             credentials: None,

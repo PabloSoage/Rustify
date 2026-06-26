@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,18 +35,21 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -60,8 +65,6 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,17 +86,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LyricsRepository
+import com.varuna.rustify.bridge.LyricsResult
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
-import com.varuna.rustify.bridge.LyricsRepository
-import com.varuna.rustify.bridge.LyricsResult
-import com.varuna.rustify.bridge.LyricLine
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
@@ -101,12 +105,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.text.style.TextAlign
 
 data class YouTubeTrack(
     val id: String,
@@ -279,6 +277,7 @@ fun TrackScreen(
 
     val playerState by audioPlayerService.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val isCurrentTrack = playerState.currentTrack?.id == trackId
     val trackToShow = if (isCurrentTrack) playerState.currentTrack else trackDetails
@@ -548,6 +547,14 @@ fun TrackScreen(
                     showMappingDialog = false
                     track.id?.let { tid ->
                         NativeEngine.setAlternativeTrackNative(tid, ytId)
+                        LyricsRepository.invalidateLyrics(tid)
+                        
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(com.varuna.rustify.R.string.track_alternative_changed),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        
                         val inQueue = playerState.queue.any { it.id == tid }
                         if (isCurrentTrack) {
                             audioPlayerService.retryCurrentTrack(ytId, fallbackTrackId = tid)
@@ -907,26 +914,8 @@ fun TrackScreenControls(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // YouTube Mapping Override Trigger
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.08f))
-                .clickable { onShowMappingDialog() }
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Edit,
-                contentDescription = "Edit YouTube Mapping",
-                tint = Color.LightGray,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Versión alternativa de YouTube", color = Color.LightGray, fontSize = 12.sp)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
+        // YouTube Mapping Override Trigger removed from here
+        val isLocalTrack = track.id?.startsWith("local:") == true
 
         // Premium Seek Slider
         var sliderPosition by remember { mutableStateOf<Float?>(null) }
@@ -973,12 +962,29 @@ fun TrackScreenControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         ) {
-            // Shuffle Button
-            IconButton(onClick = { audioPlayerService.toggleShuffle() }) {
+            // Bifurcation (YouTube mapping)
+            val isLocal = track.id?.startsWith("local:") == true
+            if (!isLocal) {
+                IconButton(onClick = onShowMappingDialog) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CallSplit,
+                        contentDescription = "Alternative YouTube version",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.size(48.dp))
+            }
+
+            // Shuffle / Repeat Mode Button
+            IconButton(onClick = { audioPlayerService.cyclePlaybackMode() }) {
+                val icon = if (playerState.isRepeat) Icons.Default.Repeat else Icons.Default.Shuffle
+                val tint = if (playerState.isShuffle || playerState.isRepeat) Color(0xFF1DB954) else Color.White
                 Icon(
-                    imageVector = Icons.Default.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (playerState.isShuffle) Color(0xFF1DB954) else Color.White,
+                    imageVector = icon,
+                    contentDescription = "Playback Mode",
+                    tint = tint,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -1083,10 +1089,10 @@ fun TrackScreenControls(
                 )
             }
 
-            // Lyrics Button
+            // Lyrics Button (Far Right)
             IconButton(onClick = { showLyrics = !showLyrics }) {
                 Icon(
-                    imageVector = Icons.Default.Mic,
+                    imageVector = Icons.AutoMirrored.Filled.Subject,
                     contentDescription = "Lyrics",
                     tint = if (showLyrics) Color(0xFF1DB954) else Color.White,
                     modifier = Modifier.size(28.dp)

@@ -78,6 +78,7 @@ fun SettingsScreen(
     var downloadUriString by remember { mutableStateOf(prefs.getString("download_directory", null)) }
     
     var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
+    var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
     var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
 
     val addLocalMusicDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -357,6 +358,29 @@ fun SettingsScreen(
                     }
 
                     if (enableLocalMusic) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                                Text(stringResource(R.string.settings_match_local_first), color = Color.White, fontSize = 14.sp)
+                                Text(stringResource(R.string.settings_match_local_first_desc), color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Switch(
+                                checked = matchLocalFirst,
+                                onCheckedChange = { checked ->
+                                    matchLocalFirst = checked
+                                    prefs.edit { putBoolean("settings_match_local_first", checked) }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF1DB954)
+                                )
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(4.dp))

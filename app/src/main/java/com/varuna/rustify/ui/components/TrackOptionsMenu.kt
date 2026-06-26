@@ -232,7 +232,7 @@ fun TrackOptionsMenuBottomSheet(
                 // Menu items
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = stringResource(R.string.track_menu_go_queue),
+                    label = stringResource(R.string.track_menu_add_queue),
                     onClick = {
                         onAddToQueue()
                         Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
@@ -294,7 +294,8 @@ fun TrackOptionsMenuBottomSheet(
                     )
                 }
 
-                if (downloadUriStr != null) {
+                val isLocalTrack = track.id?.startsWith("local:") == true
+                if (!isLocalTrack && downloadUriStr != null) {
                     val downloadingStr = stringResource(R.string.track_menu_getting_url)
                     val errorUrlStr = stringResource(R.string.track_menu_url_not_found)
                     val notificationTitle = stringResource(R.string.track_menu_downloading, track.name ?: "")

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,7 +54,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
@@ -62,6 +62,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -77,18 +78,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import coil.compose.AsyncImage
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
@@ -125,7 +124,7 @@ class MainActivity : ComponentActivity() {
         val prefs = newBase.getSharedPreferences("rustify_settings", MODE_PRIVATE)
         val appLang = prefs.getString("app_language", "system") ?: "system"
         if (appLang != "system" && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            val locale = java.util.Locale(appLang)
+            val locale = java.util.Locale.forLanguageTag(appLang)
             java.util.Locale.setDefault(locale)
             val config = android.content.res.Configuration(newBase.resources.configuration)
             config.setLocale(locale)
@@ -178,6 +177,8 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.d("MainActivity", "Received YouTube Short Deep Link: $v")
                 }
             }
+        } else if (intent?.action == "com.varuna.rustify.action.VIEW_NOW_PLAYING") {
+            initialDeepLinkTrackId = "NOW_PLAYING"
         }
         
         val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
@@ -247,7 +248,7 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
     val spotifyRepo = remember { SpotifyRepository(context) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
-    val audioPlayerService = remember { AudioPlayerService(context) }
+    val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
     DisposableEffect(audioPlayerService) {
         onDispose {
             audioPlayerService.release()
@@ -266,7 +267,14 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
 
     LaunchedEffect(Unit) {
         if (initialDeepLinkTrackId != null) {
-            navigationStack.add(Screen.TrackDetail(initialDeepLinkTrackId))
+            if (initialDeepLinkTrackId == "NOW_PLAYING") {
+                val currentTrackId = audioPlayerService.state.value.currentTrack?.id
+                if (currentTrackId != null) {
+                    navigationStack.add(Screen.TrackDetail(currentTrackId))
+                }
+            } else {
+                navigationStack.add(Screen.TrackDetail(initialDeepLinkTrackId))
+            }
         }
     }
 
@@ -353,6 +361,15 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
 
     val playerState by audioPlayerService.state.collectAsState()
     val currentTrack = playerState.currentTrack
+
+    LaunchedEffect(currentTrack?.id) {
+        val current = currentTrack?.id
+        if (current != null && currentScreen is Screen.TrackDetail) {
+            if (currentScreen.id != current) {
+                navigationStack[navigationStack.lastIndex] = Screen.TrackDetail(current)
+            }
+        }
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE

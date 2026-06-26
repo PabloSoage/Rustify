@@ -2,9 +2,9 @@ package com.varuna.rustify.bridge
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
-import org.json.JSONObject
 
 /**
  * Represents a single synchronized lyric line.
@@ -127,5 +127,9 @@ object LyricsRepository {
 
     fun clearCache() {
         cache.clear()
+    }
+
+    fun invalidateLyrics(trackId: String) {
+        cache.remove(trackId)
     }
 }

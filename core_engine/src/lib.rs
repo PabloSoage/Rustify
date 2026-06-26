@@ -178,6 +178,32 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativ
     })
 }
 
+/// JNI Bridge: Resolve Spotify Track ID to YouTube Video ID directly without local HTTP proxy
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveYouTubeIdNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+    youtube_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let tid_mutf8 = track_id.mutf8_chars(env)?;
+        let tid = tid_mutf8.to_string();
+
+        let yid_mutf8 = youtube_id.mutf8_chars(env)?;
+        let yid_str = yid_mutf8.to_string();
+        let yid_opt = if yid_str.is_empty() { None } else { Some(yid_str) };
+
+        let async_result = get_runtime().block_on(async {
+            let cache_dir = match youtube::server::get_cache_dir() {
+                Some(dir) => dir,
+                None => "/data/data/com.varuna.rustify/cache".to_string(),
+            };
+            youtube::server::resolve_youtube_id_direct(&tid, yid_opt.as_deref(), &cache_dir).await
+        });
+        async_result.unwrap_or_default()
+    })
+}
 /// JNI Bridge: Send queue of track IDs for caching/buffering
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateQueueNative<'local>(

@@ -1,0 +1,3 @@
+Lcom/varuna/rustify/**;
+Landroidx/compose/**;
+Landroidx/media3/**;
