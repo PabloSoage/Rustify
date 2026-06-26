@@ -67,6 +67,12 @@ adb install-multiple app/release/app-x86_64-release.apk app/release/baselineProf
 
 Rustify supports multiple languages. Strings are managed in `app/src/main/res/values/strings.xml` (and `-es`, `-ja` suffixes). The app forces locale updates internally if the user overrides the system language from the Settings screen.
 
-## 📝 License
+## ⚖️ License
 
-This project is proprietary and confidential. All rights reserved.
+Copyright (C) 2026 Pablo Soage Rodas
+
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the `LICENSE` file for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not, see https://www.gnu.org/licenses/.
