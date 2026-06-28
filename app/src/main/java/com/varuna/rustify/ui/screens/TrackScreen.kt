@@ -97,6 +97,7 @@ import com.varuna.rustify.bridge.LyricsResult
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
@@ -311,10 +312,31 @@ fun TrackScreen(
         }
     }
 
+    var lyricsResult by remember(trackToShow?.id) { mutableStateOf<LyricsResult?>(null) }
+    var lyricsLoading by remember(trackToShow?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(trackToShow?.id) {
+        val track = trackToShow ?: return@LaunchedEffect
+        if (track.id == null) return@LaunchedEffect
+        lyricsLoading = true
+        lyricsResult = null
+        val artist = track.artists.firstOrNull()?.name ?: ""
+        val durationSec = track.durationMs / 1000
+        try {
+            lyricsResult = LyricsRepository.getLyrics(
+                trackId = track.id!!,
+                artist = artist,
+                title = track.name,
+                durationSec = durationSec
+            )
+        } catch (_: Exception) {}
+        lyricsLoading = false
+    }
+
     val spotifyGreen = Color(0xFF1DB954)
     val darkBackground = Color(0xFF121212)
 
-    val imgUrl = trackToShow?.album?.images?.maxByOrNull { it.width ?: 0 }?.url
+    val imgUrl = trackToShow?.effectiveCoverUrl()
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(
@@ -410,6 +432,8 @@ fun TrackScreen(
                                     ) {
                                         TrackScreenControls(
                                             track = track,
+                                            lyricsResult = lyricsResult,
+                                            lyricsLoading = lyricsLoading,
                                             isBuffering = isBuffering,
                                             isPlaying = isPlaying,
                                             bufferPercent = bufferPercent,
@@ -460,6 +484,8 @@ fun TrackScreen(
                                     
                                     TrackScreenControls(
                                         track = track,
+                                        lyricsResult = lyricsResult,
+                                        lyricsLoading = lyricsLoading,
                                         isBuffering = isBuffering,
                                         isPlaying = isPlaying,
                                         bufferPercent = bufferPercent,
@@ -689,16 +715,23 @@ fun QueueBottomSheet(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    itemsIndexed(nextUpTracks, key = { index, track -> "${track.id}_$index" }) { indexInNextUp, track ->
+                    itemsIndexed(nextUpTracks, key = { _, track -> System.identityHashCode(track) }) { indexInNextUp, track ->
                         val originalIndex = nextUpStartIndex + indexInNextUp
                         
                         val dismissState = rememberSwipeToDismissBoxState(
                             positionalThreshold = { it * 0.4f }
                         )
+                        var handled by remember { mutableStateOf(false) }
+
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                audioPlayerService.removeFromQueue(originalIndex)
+                                if (!handled) {
+                                    handled = true
+                                    audioPlayerService.removeFromQueue(originalIndex)
+                                }
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                            } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+                                handled = false
                             }
                         }
 
@@ -792,6 +825,8 @@ fun QueueBottomSheet(
 @Composable
 fun TrackScreenControls(
     track: FullTrack,
+    lyricsResult: LyricsResult?,
+    lyricsLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
     bufferPercent: Int,
@@ -810,27 +845,7 @@ fun TrackScreenControls(
     coroutineScope: kotlinx.coroutines.CoroutineScope
 ) {
     var showLyrics by rememberSaveable { mutableStateOf(false) }
-    var lyricsResult by remember(track.id) { mutableStateOf<LyricsResult?>(null) }
-    var lyricsLoading by remember(track.id) { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
-    
-    // Load lyrics whenever track changes
-    LaunchedEffect(track.id) {
-        if (track.id == null) return@LaunchedEffect
-        lyricsLoading = true
-        lyricsResult = null
-        val artist = track.artists.firstOrNull()?.name ?: ""
-        val durationSec = track.durationMs / 1000
-        try {
-            lyricsResult = LyricsRepository.getLyrics(
-                trackId = track.id!!,
-                artist = artist,
-                title = track.name,
-                durationSec = durationSec
-            )
-        } catch (_: Exception) {}
-        lyricsLoading = false
-    }
 
     // Auto-scroll to current lyric line
     LaunchedEffect(currentPosition, showLyrics) {

@@ -240,39 +240,23 @@ fun LibraryPlaylists(
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     searchQuery: String = ""
 ) {
-    var playlists by remember { mutableStateOf<List<SimplePlaylist>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val playlists = spotifyRepo.savedPlaylists
+    val isLoading = spotifyRepo.isSyncingPlaylists
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (playlists == null) {
-            isLoading = true
-            try {
-                playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
-            } catch (e: Exception) {
-                errorMessage = e.message
-            } finally {
-                isLoading = false
-            }
+        if (playlists.isEmpty() && !isLoading) {
+            spotifyRepo.syncPlaylists()
         }
     }
 
     LibraryContentList(
         isLoading = isLoading,
-        errorMessage = errorMessage,
-        items = playlists,
+        errorMessage = null,
+        items = if (isLoading && playlists.isEmpty()) null else playlists.toList(),
         onRetry = {
             coroutineScope.launch {
-                isLoading = true
-                errorMessage = null
-                try {
-                    playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
-                } catch (e: Exception) {
-                    errorMessage = e.message
-                } finally {
-                    isLoading = false
-                }
+                spotifyRepo.syncPlaylists()
             }
         },
         itemContent = { _, playlist ->
@@ -300,39 +284,23 @@ fun LibraryAlbums(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     searchQuery: String = ""
 ) {
-    var albums by remember { mutableStateOf<List<FullAlbum>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val albums = spotifyRepo.savedAlbums
+    val isLoading = spotifyRepo.isSyncingAlbums
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (albums == null) {
-            isLoading = true
-            try {
-                albums = spotifyRepo.getSavedAlbums(limit = 50).items
-            } catch (e: Exception) {
-                errorMessage = e.message
-            } finally {
-                isLoading = false
-            }
+        if (albums.isEmpty() && !isLoading) {
+            spotifyRepo.syncAlbums()
         }
     }
 
     LibraryContentList(
         isLoading = isLoading,
-        errorMessage = errorMessage,
-        items = albums,
+        errorMessage = null,
+        items = if (isLoading && albums.isEmpty()) null else albums.toList(),
         onRetry = {
             coroutineScope.launch {
-                isLoading = true
-                errorMessage = null
-                try {
-                    albums = spotifyRepo.getSavedAlbums(limit = 50).items
-                } catch (e: Exception) {
-                    errorMessage = e.message
-                } finally {
-                    isLoading = false
-                }
+                spotifyRepo.syncAlbums()
             }
         },
         itemContent = { _, album ->
@@ -360,39 +328,23 @@ fun LibraryArtists(
     onArtistClick: (String) -> Unit,
     searchQuery: String = ""
 ) {
-    var artists by remember { mutableStateOf<List<FullArtist>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val artists = spotifyRepo.followedArtists
+    val isLoading = spotifyRepo.isSyncingArtists
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (artists == null) {
-            isLoading = true
-            try {
-                artists = spotifyRepo.getFollowedArtists(limit = 50).items
-            } catch (e: Exception) {
-                errorMessage = e.message
-            } finally {
-                isLoading = false
-            }
+        if (artists.isEmpty() && !isLoading) {
+            spotifyRepo.syncArtists()
         }
     }
 
     LibraryContentList(
         isLoading = isLoading,
-        errorMessage = errorMessage,
-        items = artists,
+        errorMessage = null,
+        items = if (isLoading && artists.isEmpty()) null else artists.toList(),
         onRetry = {
             coroutineScope.launch {
-                isLoading = true
-                errorMessage = null
-                try {
-                    artists = spotifyRepo.getFollowedArtists(limit = 50).items
-                } catch (e: Exception) {
-                    errorMessage = e.message
-                } finally {
-                    isLoading = false
-                }
+                spotifyRepo.syncArtists()
             }
         },
         itemContent = { _, artist ->
@@ -471,15 +423,21 @@ fun LibraryTracks(
                         val trackId = track.id ?: ""
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
-                        @Suppress("DEPRECATION")
                         val dismissState = rememberSwipeToDismissBoxState(
                             positionalThreshold = { it * 0.4f }
                         )
+                        var handled by remember { mutableStateOf(false) }
+                        
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                onAddToQueue(track)
-                                android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                if (!handled) {
+                                    handled = true
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                dismissState.reset()
+                            } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+                                handled = false
                             }
                         }
 

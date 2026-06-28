@@ -516,6 +516,40 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             Text(
+                text = "Storage / Tools",
+                color = Color(0xFF1DB954),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Button(
+                        onClick = {
+                            val ffmpegFile = java.io.File(context.filesDir, "ffmpeg")
+                            if (ffmpegFile.exists()) {
+                                ffmpegFile.delete()
+                                Toast.makeText(context, "FFmpeg binary deleted", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "FFmpeg binary not found", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Clear FFmpeg binary", color = Color.White)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text(
                 text = stringResource(R.string.settings_language),
                 color = Color(0xFF1DB954),
                 fontSize = 14.sp,

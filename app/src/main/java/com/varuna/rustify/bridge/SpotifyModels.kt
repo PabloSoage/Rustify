@@ -149,6 +149,20 @@ data class FullArtist(
     val genres: List<String>,
     val followersTotal: Int?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        val imgArr = JSONArray()
+        images.forEach { imgArr.put(it.toJson()) }
+        json.put("images", imgArr)
+        val genreArr = JSONArray()
+        genres.forEach { genreArr.put(it) }
+        json.put("genres", genreArr)
+        followersTotal?.let { json.put("followers", it) }
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): FullArtist = FullArtist(
             id = json.optString("id", ""),
@@ -228,6 +242,27 @@ data class FullAlbum(
     val recordLabel: String?,
     val genres: List<String>
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        json.put("releaseDate", releaseDate)
+        json.put("releaseDatePrecision", releaseDatePrecision)
+        val imgArr = JSONArray()
+        images.forEach { imgArr.put(it.toJson()) }
+        json.put("images", imgArr)
+        val artArr = JSONArray()
+        artists.forEach { artArr.put(it.toJson()) }
+        json.put("artists", artArr)
+        json.put("albumType", albumType)
+        totalTracks?.let { json.put("totalTracks", it) }
+        json.put("recordLabel", recordLabel)
+        val genreArr = JSONArray()
+        genres.forEach { genreArr.put(it) }
+        json.put("genres", genreArr)
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): FullAlbum = FullAlbum(
             id = json.optString("id", ""),
@@ -350,6 +385,23 @@ data class SimplePlaylist(
     val owner: PlaylistOwner?,
     val totalTracks: Int?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("description", description)
+        val imgArr = JSONArray()
+        images.forEach { imgArr.put(it.toJson()) }
+        json.put("images", imgArr)
+        json.put("externalUri", externalUri)
+        owner?.let { json.put("owner", it.toJson()) }
+        totalTracks?.let { 
+            val tracksObj = JSONObject()
+            tracksObj.put("total", it)
+            json.put("tracks", tracksObj)
+        }
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): SimplePlaylist = SimplePlaylist(
             id = json.optString("id", ""),
@@ -407,6 +459,19 @@ data class SpotifyUser(
     val country: String?,
     val product: String?
 ) {
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        json.put("id", id)
+        json.put("name", name)
+        json.put("externalUri", externalUri)
+        val imgArr = JSONArray()
+        images.forEach { imgArr.put(it.toJson()) }
+        json.put("images", imgArr)
+        followersTotal?.let { json.put("followers", it) }
+        json.put("country", country)
+        json.put("product", product)
+        return json
+    }
     companion object {
         fun fromJson(json: JSONObject): SpotifyUser = SpotifyUser(
             id = json.optString("id", ""),
@@ -529,4 +594,13 @@ fun String.cleanHtml(): String {
         .replace("&#39;", "'")
         .trim()
 }
+
+/**
+ * Returns the best available cover URL for this track.
+ * For Spotify tracks: the largest album image URL.
+ * For local tracks: the file:// URI of the cached cover jpg (stored in externalUri).
+ */
+fun FullTrack.effectiveCoverUrl(): String? =
+    album?.images?.maxByOrNull { it.width ?: 0 }?.url
+        ?: externalUri.takeIf { it.isNotBlank() }
 

@@ -72,7 +72,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             return downloadCache ?: synchronized(this) {
                 downloadCache ?: run {
                     val cacheDir = java.io.File(context.cacheDir, "audio_cache")
-                    val evictor = LeastRecentlyUsedCacheEvictor(200L * 1024 * 1024) // 200MB max
+                    val evictor = androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(500L * 1024 * 1024) // 500MB max
                     val databaseProvider = StandaloneDatabaseProvider(context)
                     SimpleCache(cacheDir, evictor, databaseProvider).also { downloadCache = it }
                 }
@@ -87,7 +87,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             return androidx.media3.datasource.cache.CacheDataSource.Factory()
                 .setCache(getCache(context))
                 .setUpstreamDataSourceFactory(dataSourceFactory)
-                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .setEventListener(object : androidx.media3.datasource.cache.CacheDataSource.EventListener {
+                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                        android.util.Log.d("AudioCache", "Read from cache: $cachedBytesRead bytes")
+                    }
+                    override fun onCacheIgnored(reason: Int) {
+                        android.util.Log.d("AudioCache", "Cache ignored, reason: $reason")
+                    }
+                })
         }
     }
 
@@ -104,7 +111,14 @@ class AudioPlayerService private constructor(private val context: Context) {
     private val cacheDataSourceFactory = CacheDataSource.Factory()
         .setCache(getCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
-        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        .setEventListener(object : CacheDataSource.EventListener {
+            override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                android.util.Log.d("AudioCache", "Read from cache: $cachedBytesRead bytes")
+            }
+            override fun onCacheIgnored(reason: Int) {
+                android.util.Log.d("AudioCache", "Cache ignored, reason: $reason")
+            }
+        })
 
     private val retryCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
@@ -266,10 +280,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                     
                 val dummyItem = androidx.media3.common.MediaItem.Builder()
                     .setMediaId("loading")
-                    .setUri("https://example.com/dummy.mp3")
+                    .setUri("dummy://loading")
                     .setMediaMetadata(metadata)
                     .build()
                     
+                exoPlayer.pause()
                 exoPlayer.setMediaItem(dummyItem)
                 // Don't call prepare yet, just let the media session update its state
                 // This keeps the player from clearing the notification
@@ -287,21 +302,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
                     
                     if (matchLocalFirst && localMusicDirs.isNotEmpty()) {
-                        val localCacheFile = java.io.File(context.filesDir, "local_music_cache.json")
-                        if (localCacheFile.exists()) {
-                            try {
-                                val jsonStr = localCacheFile.readText()
-                                val array = org.json.JSONArray(jsonStr)
-                                for (i in 0 until array.length()) {
-                                    val localTrack = com.varuna.rustify.bridge.FullTrack.fromJson(array.getJSONObject(i))
-                                    if (localTrack.name.equals(track.name, ignoreCase = true) && 
-                                        localTrack.artists.firstOrNull()?.name.equals(track.artists.firstOrNull()?.name, ignoreCase = true)) {
-                                        streamUrl = localTrack.id?.removePrefix("local:")
-                                        android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $streamUrl")
-                                        break
-                                    }
-                                }
-                            } catch (e: Exception) { e.printStackTrace() }
+                        val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
+                        if (match != null) {
+                            streamUrl = match.id?.removePrefix("local:")
+                            android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $streamUrl")
                         }
                     }
 

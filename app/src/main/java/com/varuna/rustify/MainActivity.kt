@@ -93,6 +93,7 @@ import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
@@ -862,7 +863,7 @@ fun MiniPlayer(
 ) {
     val spotifyGreen = Color(0xFF1DB954)
     val progress = if (durationMs > 0) positionMs.toFloat() / durationMs.toFloat() else 0f
-    val imgUrl = track.album?.images?.minByOrNull { it.width ?: 9999 }?.url
+    val imgUrl = track.effectiveCoverUrl()
 
     Column(
         modifier = modifier

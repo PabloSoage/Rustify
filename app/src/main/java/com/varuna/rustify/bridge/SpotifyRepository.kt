@@ -51,6 +51,27 @@ class SpotifyRepository(context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
+
+        fun findLocalMatch(context: Context, track: FullTrack): FullTrack? {
+            val localCacheFile = java.io.File(context.filesDir, "local_music_cache.json")
+            if (!localCacheFile.exists()) return null
+            try {
+                val jsonStr = localCacheFile.readText()
+                val array = org.json.JSONArray(jsonStr)
+                for (i in 0 until array.length()) {
+                    val localTrack = FullTrack.fromJson(array.getJSONObject(i))
+                    if (localTrack.name.equals(track.name, ignoreCase = true)) {
+                        val localArtist = localTrack.artists.firstOrNull()?.name ?: ""
+                        val spotifyArtist = track.artists.firstOrNull()?.name ?: ""
+                        if (localArtist.contains(spotifyArtist, ignoreCase = true) || 
+                            spotifyArtist.contains(localArtist, ignoreCase = true)) {
+                            return localTrack
+                        }
+                    }
+                }
+            } catch (e: Exception) {}
+            return null
+        }
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -65,6 +86,18 @@ class SpotifyRepository(context: Context) {
 
     val localTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
     var isScanningLocalTracks by mutableStateOf(false)
+        private set
+
+    val savedPlaylists = androidx.compose.runtime.mutableStateListOf<SimplePlaylist>()
+    var isSyncingPlaylists by mutableStateOf(false)
+        private set
+
+    val savedAlbums = androidx.compose.runtime.mutableStateListOf<FullAlbum>()
+    var isSyncingAlbums by mutableStateOf(false)
+        private set
+
+    val followedArtists = androidx.compose.runtime.mutableStateListOf<FullArtist>()
+    var isSyncingArtists by mutableStateOf(false)
         private set
 
     private fun getLocalTracksCacheFile(): java.io.File {
@@ -141,6 +174,9 @@ class SpotifyRepository(context: Context) {
         repositoryScope.launch {
             if (isAuthenticated()) {
                 syncLikedTracks()
+                syncPlaylists()
+                syncAlbums()
+                syncArtists()
             }
         }
     }
@@ -262,6 +298,99 @@ class SpotifyRepository(context: Context) {
         saveLikedTracksToCache()
     }
 
+    private fun <T> loadLibraryItemsFromCache(
+        cacheFile: java.io.File,
+        stateList: androidx.compose.runtime.snapshots.SnapshotStateList<T>,
+        fromJson: (JSONObject) -> T
+    ) {
+        if (!cacheFile.exists()) return
+        repositoryScope.launch(Dispatchers.IO) {
+            try {
+                val array = JSONArray(cacheFile.readText())
+                val items = mutableListOf<T>()
+                for (i in 0 until array.length()) {
+                    items.add(fromJson(array.getJSONObject(i)))
+                }
+                withContext(Dispatchers.Main) {
+                    stateList.clear()
+                    stateList.addAll(items)
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    private suspend fun <T> syncLibraryItems(
+        fetchItems: suspend (limit: Int, offset: Int) -> PaginatedResponse<T>,
+        stateList: androidx.compose.runtime.snapshots.SnapshotStateList<T>,
+        cacheFile: java.io.File,
+        toJson: (T) -> JSONObject,
+        setSyncingFlag: (Boolean) -> Unit
+    ) {
+        setSyncingFlag(true)
+        try {
+            withContext(Dispatchers.IO) {
+                val allItems = mutableListOf<T>()
+                var offset = 0
+                val limit = 50
+                while (true) {
+                    val page = fetchItems(limit, offset)
+                    allItems.addAll(page.items)
+                    if (page.hasMore) {
+                        offset += page.items.size
+                    } else {
+                        break
+                    }
+                }
+                
+                withContext(Dispatchers.Main) {
+                    stateList.clear()
+                    stateList.addAll(allItems)
+                }
+                
+                val array = JSONArray()
+                allItems.forEach { array.put(toJson(it)) }
+                cacheFile.writeText(array.toString())
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            withContext(Dispatchers.Main) { setSyncingFlag(false) }
+        }
+    }
+
+    suspend fun syncPlaylists() {
+        if (isSyncingPlaylists) return
+        syncLibraryItems(
+            fetchItems = { limit, offset -> getSavedPlaylists(limit, offset) },
+            stateList = savedPlaylists,
+            cacheFile = java.io.File(appCtx.filesDir, "spotify_saved_playlists_cache.json"),
+            toJson = { it.toJson() },
+            setSyncingFlag = { isSyncingPlaylists = it }
+        )
+    }
+
+    suspend fun syncAlbums() {
+        if (isSyncingAlbums) return
+        syncLibraryItems(
+            fetchItems = { limit, offset -> getSavedAlbums(limit, offset) },
+            stateList = savedAlbums,
+            cacheFile = java.io.File(appCtx.filesDir, "spotify_saved_albums_cache.json"),
+            toJson = { it.toJson() },
+            setSyncingFlag = { isSyncingAlbums = it }
+        )
+    }
+
+    suspend fun syncArtists() {
+        if (isSyncingArtists) return
+        syncLibraryItems(
+            fetchItems = { limit, offset -> getFollowedArtists(limit, offset) },
+            stateList = followedArtists,
+            cacheFile = java.io.File(appCtx.filesDir, "spotify_followed_artists_cache.json"),
+            toJson = { it.toJson() },
+            setSyncingFlag = { isSyncingArtists = it }
+        )
+    }
+
     fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
 
     fun setTrackLikedState(id: String, liked: Boolean) {
@@ -281,9 +410,15 @@ class SpotifyRepository(context: Context) {
             withContext(Dispatchers.IO) {
                 loadLikedTracksFromCache()
                 loadLocalTracksFromCache()
+                loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_playlists_cache.json"), savedPlaylists) { SimplePlaylist.fromJson(it) }
+                loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_albums_cache.json"), savedAlbums) { FullAlbum.fromJson(it) }
+                loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_followed_artists_cache.json"), followedArtists) { FullArtist.fromJson(it) }
             }
             if (isAuthenticated()) {
                 syncLikedTracks()
+                syncPlaylists()
+                syncAlbums()
+                syncArtists()
             }
             scanLocalMusic()
         }
@@ -338,23 +473,28 @@ class SpotifyRepository(context: Context) {
 
                 val existingTracks = localTracks.associateBy { it.id }
                 val newLocalTracks = mutableListOf<FullTrack>()
-                val retriever = android.media.MediaMetadataRetriever()
 
-                for (dirUriStr in localMusicDirs) {
-                    try {
-                        val treeUri = android.net.Uri.parse(dirUriStr)
-                        val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(appCtx, treeUri)
-                        dirFile?.listFiles()?.forEach { file ->
+                val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "webm", "aac")
+                
+                suspend fun processDirectory(dirFile: androidx.documentfile.provider.DocumentFile?) {
+                    if (dirFile == null) return
+                    val files = dirFile.listFiles()
+                    for (file in files) {
+                        if (file.isDirectory) {
+                            processDirectory(file)
+                        } else {
                             val mime = file.type
-                            if (mime?.startsWith("audio/") == true) {
+                            val name = file.name?.lowercase() ?: ""
+                            val hasAudioExtension = supportedExtensions.any { name.endsWith(".$it") }
+                            if (mime?.startsWith("audio/") == true || hasAudioExtension) {
                                 val trackId = "local:${file.uri}"
                                 val lastModifiedStr = file.lastModified().toString()
                                 val existingTrack = existingTracks[trackId]
 
-                                // Use cache if modification date matches (using addedAt to store lastModified for local tracks)
                                 if (existingTrack != null && existingTrack.addedAt == lastModifiedStr) {
                                     newLocalTracks.add(existingTrack)
                                 } else {
+                                    val retriever = android.media.MediaMetadataRetriever()
                                     try {
                                         retriever.setDataSource(appCtx, file.uri)
                                         val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
@@ -393,10 +533,21 @@ class SpotifyRepository(context: Context) {
                                                 externalUri = coverUri
                                             )
                                         )
-                                    } catch (e: Exception) {}
+                                    } catch (e: Exception) {
+                                    } finally {
+                                        try { retriever.release() } catch (e: Exception) {}
+                                    }
                                 }
                             }
                         }
+                    }
+                }
+
+                for (dirUriStr in localMusicDirs) {
+                    try {
+                        val treeUri = android.net.Uri.parse(dirUriStr)
+                        val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(appCtx, treeUri)
+                        processDirectory(dirFile)
                     } catch (e: Exception) {}
                 }
                 
@@ -944,5 +1095,18 @@ class SpotifyRepository(context: Context) {
     suspend fun getBrowseSections(limit: Int = 20): List<BrowseSection> = withContext(Dispatchers.IO) {
         val json = NativeEngine.getSpotifyBrowseNative(limit)
         BrowseSection.listFromJsonArray(checkForErrorArray(json))
+    }
+
+    /**
+     * Find a local music track that matches the given Spotify track.
+     */
+    fun findLocalMatch(track: FullTrack): FullTrack? {
+        val trackName = track.name
+        val artistName = track.artists.firstOrNull()?.name
+        
+        return localTracks.firstOrNull { localTrack ->
+            localTrack.name.equals(trackName, ignoreCase = true) &&
+            localTrack.artists.firstOrNull()?.name.equals(artistName, ignoreCase = true)
+        }
     }
 }
