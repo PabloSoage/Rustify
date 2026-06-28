@@ -72,6 +72,13 @@ import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.animation.expandVertically
 
 enum class LibraryTab {
     PLAYLISTS,
@@ -80,6 +87,7 @@ enum class LibraryTab {
     TRACKS,
     LOCAL
 }
+
 
 @Composable
 fun LibraryScreen(
@@ -105,42 +113,61 @@ fun LibraryScreen(
         if (enableLocalMusic) LibraryTab.entries else LibraryTab.entries.filter { it != LibraryTab.LOCAL }
     }
 
+    var isSearchBarVisible by remember { mutableStateOf(true) }
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -10f) {
+                    isSearchBarVisible = false
+                } else if (available.y > 10f) {
+                    isSearchBarVisible = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(darkBackground)
+            .nestedScroll(nestedScrollConnection)
     ) {
         var globalSearchQuery by rememberSaveable { mutableStateOf("") }
 
-        // Global Search Bar
-        OutlinedTextField(
-            value = globalSearchQuery,
-            onValueChange = { globalSearchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .heightIn(min = 50.dp),
-            shape = RoundedCornerShape(24.dp),
-            placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-            },
-            trailingIcon = {
-                if (globalSearchQuery.isNotEmpty()) {
-                    IconButton(onClick = { globalSearchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+        AnimatedVisibility(
+            visible = isSearchBarVisible,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            OutlinedTextField(
+                value = globalSearchQuery,
+                onValueChange = { globalSearchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                },
+                trailingIcon = {
+                    if (globalSearchQuery.isNotEmpty()) {
+                        IconButton(onClick = { globalSearchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                        }
                     }
-                }
-            },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF242424),
-                unfocusedContainerColor = Color(0xFF242424),
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color(0xFF1DB954)
-            ),
-            singleLine = true
-        )
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color(0xFF242424),
+                    unfocusedContainerColor = Color(0xFF242424),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = Color(0xFF1DB954)
+                ),
+                singleLine = true
+            )
+        }
 
         PrimaryScrollableTabRow(
             selectedTabIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
@@ -257,6 +284,7 @@ fun LibraryPlaylists(
             )
         },
         emptyMessage = "No playlists found.",
+        searchQuery = searchQuery,
         filterPredicate = { playlist, query ->
             val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
             if (combinedQuery.isBlank()) true
@@ -316,6 +344,7 @@ fun LibraryAlbums(
             )
         },
         emptyMessage = "No albums found.",
+        searchQuery = searchQuery,
         filterPredicate = { album, query ->
             val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
             if (combinedQuery.isBlank()) true
@@ -376,6 +405,7 @@ fun LibraryArtists(
             )
         },
         emptyMessage = "No artists found.",
+        searchQuery = searchQuery,
         filterPredicate = { artist, query ->
             val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
             if (combinedQuery.isBlank()) true
@@ -441,15 +471,14 @@ fun LibraryTracks(
                         val trackId = track.id ?: ""
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
+                        @Suppress("DEPRECATION")
                         val dismissState = rememberSwipeToDismissBoxState(
                             positionalThreshold = { it * 0.4f }
                         )
-
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                 onAddToQueue(track)
                                 android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                delay(200)
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
                         }
@@ -717,7 +746,6 @@ fun LibraryLocalMusic(
                 }
             }
         }
-    }
         
         if (selectedTrackForMenu != null) {
             TrackOptionsMenuBottomSheet(
@@ -738,6 +766,7 @@ fun LibraryLocalMusic(
             )
         }
     }
+}
 
 @Composable
 fun <T> LibraryContentList(
@@ -747,9 +776,9 @@ fun <T> LibraryContentList(
     onRetry: () -> Unit,
     itemContent: @Composable (Int, T) -> Unit,
     emptyMessage: String,
-    filterPredicate: ((T, String) -> Boolean)? = null
+    filterPredicate: ((T, String) -> Boolean)? = null,
+    searchQuery: String = ""
 ) {
-    var searchQuery by remember { mutableStateOf("") }
     val filteredItems = remember(items, searchQuery) {
         if (items == null) null
         else if (searchQuery.isBlank() || filterPredicate == null) items
@@ -760,74 +789,45 @@ fun <T> LibraryContentList(
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     
     Column(modifier = Modifier.fillMaxSize()) {
-        if (filterPredicate != null) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(24.dp),
-                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isLoading && items == null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color(0xFF1DB954)
+                )
+            } else if (errorMessage != null && items == null) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                    ) {
+                        Text("Retry", color = Color.White)
+                    }
+                }
+            } else if (filteredItems != null) {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = bottomPadding)
+                ) {
+                    
+                    if (filteredItems.isEmpty()) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                Text(text = emptyMessage, color = Color.Gray)
+                            }
+                        }
+                    } else {
+                        itemsIndexed(filteredItems) { index, item ->
+                            itemContent(index, item)
                         }
                     }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF242424),
-                    unfocusedContainerColor = Color(0xFF242424),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color(0xFF1DB954)
-                ),
-                singleLine = true
-            )
-        }
-        
-        Box(modifier = Modifier.fillMaxSize()) {
-        if (isLoading && items == null) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color(0xFF1DB954)
-            )
-        } else if (errorMessage != null && items == null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(errorMessage, color = MaterialTheme.colorScheme.error)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
-                ) {
-                    Text("Retry", color = Color.White)
-                }
-            }
-        } else if (filteredItems != null) {
-            if (filteredItems.isEmpty()) {
-                Text(
-                    text = emptyMessage,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding)
-                ) {
-                    itemsIndexed(filteredItems) { index, item ->
-                        itemContent(index, item)
-                    }
                 }
             }
         }
-    }
 }
 }
 

@@ -1,9 +1,11 @@
 // app/src/main/java/com/varuna/rustify/bridge/SpotifyRepository.kt
 @file:Suppress("SpellCheckingInspection")
+@file:SuppressLint("UseKtx")
 
 package com.varuna.rustify.bridge
 
 import android.content.Context
+import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -324,7 +326,8 @@ class SpotifyRepository(context: Context) {
         repositoryScope.launch(Dispatchers.IO) {
             isScanningLocalTracks = true
             try {
-                val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
+                val settingsPrefs = appCtx.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+                val localMusicDirs = settingsPrefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
                 if (localMusicDirs.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         localTracks.clear()
@@ -362,7 +365,8 @@ class SpotifyRepository(context: Context) {
 
                                         var coverUri = ""
                                         try {
-                                            val cacheFile = java.io.File(appCtx.cacheDir, "cover_${file.uri.lastPathSegment}.jpg")
+                                            val safeName = file.uri.lastPathSegment?.replace(Regex("[^a-zA-Z0-9.-]"), "_") ?: "unknown"
+                                            val cacheFile = java.io.File(appCtx.cacheDir, "cover_$safeName.jpg")
                                             if (!cacheFile.exists()) {
                                                 val picture = retriever.embeddedPicture
                                                 if (picture != null) {

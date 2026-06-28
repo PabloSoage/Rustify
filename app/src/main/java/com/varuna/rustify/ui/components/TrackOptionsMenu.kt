@@ -122,7 +122,7 @@ fun TrackOptionsMenuBottomSheet(
                         modifier = Modifier.fillMaxWidth().height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No se encontraron playlists", color = Color.Gray)
+                        Text(stringResource(R.string.playlist_not_found), color = Color.Gray)
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
@@ -135,7 +135,7 @@ fun TrackOptionsMenuBottomSheet(
                                             track.id?.let { trackId ->
                                                 val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
                                                 if (res.success) {
-                                                    Toast.makeText(context, "Añadido a ${playlist.name}", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, context.getString(R.string.added_to_playlist, playlist.name), Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     Toast.makeText(context, "Error: ${res.error}", Toast.LENGTH_SHORT).show()
                                                 }
@@ -235,7 +235,7 @@ fun TrackOptionsMenuBottomSheet(
                     label = stringResource(R.string.track_menu_add_queue),
                     onClick = {
                         onAddToQueue()
-                        Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.queue_added), Toast.LENGTH_SHORT).show()
                     }
                 )
 
@@ -314,134 +314,24 @@ fun TrackOptionsMenuBottomSheet(
                                     permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                                 }
                             }
-                            coroutineScope.launch(Dispatchers.IO) {
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
-                                }
-                                try {
-                                    val searchStr = "${track.name} ${track.artists.joinToString(" ") { it.name }}"
-                                    
-                                    val streamUrl = withContext(Dispatchers.IO) {
-                                        try {
-                                            val request = com.yausername.youtubedl_android.YoutubeDLRequest("ytsearch1:$searchStr")
-                                            request.addOption("-g")
-                                            request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                                            request.addOption("--no-check-certificate")
-                                            request.addOption("--no-warnings")
-                                            val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                                            response.out.trim().lines().firstOrNull()?.trim()
-                                    } catch (e: Exception) {
-                                        null
-                                    }
-                                }
-                                
-                                    if (streamUrl.isNullOrBlank()) {
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, errorUrlStr, Toast.LENGTH_SHORT).show()
-                                        }
-                                        return@launch
-                                    }
-                                    
-                                    val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
-                                    val notificationId = track.id.hashCode()
-    
-                                    val builder = androidx.core.app.NotificationCompat.Builder(context, "download_channel")
-                                        .setContentTitle(notificationTitle)
-                                        .setContentText(notificationConnecting)
-                                        .setSmallIcon(android.R.drawable.stat_sys_download)
-                                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
-                                    .setOngoing(true)
-                                    .setOnlyAlertOnce(true)
-
-                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    val channel = android.app.NotificationChannel("download_channel", "Descargas", android.app.NotificationManager.IMPORTANCE_LOW)
-                                    notificationManager.createNotificationChannel(channel)
-                                    notificationManager.notify(notificationId, builder.build())
-                                }
-
-                                    try {
-                                        val url = java.net.URL(streamUrl)
-                                        val connection = url.openConnection() as java.net.HttpURLConnection
-                                        connection.connect()
-                                        
-                                        val fileLength = connection.contentLength
-                                        val input = java.io.BufferedInputStream(connection.inputStream)
-                                        
-                                        val outputStream: java.io.OutputStream? = run {
-                                            val treeUri = downloadUriStr.toUri()
-                                            val docFile = DocumentFile.fromTreeUri(context, treeUri)
-                                            val newFile = docFile?.createFile("audio/mp4", "${track.name}.m4a")
-                                            if (newFile != null) context.contentResolver.openOutputStream(newFile.uri) else null
-                                        }
-                                    
-                                    if (outputStream == null) {
-                                        throw Exception("No se pudo crear el archivo de destino")
-                                    }
-                                    
-                                    val data = ByteArray(1024 * 8)
-                                    var total: Long = 0
-                                    var count = 0
-                                    var lastUpdate = System.currentTimeMillis()
-                                    
-                                    while (input.read(data).also { count = it } != -1) {
-                                        total += count
-                                        outputStream?.write(data, 0, count)
-                                        
-                                        val now = System.currentTimeMillis()
-                                        if (now - lastUpdate > 500) {
-                                            lastUpdate = now
-                                            if (fileLength > 0) {
-                                                val progress = (total * 100 / fileLength).toInt()
-                                                builder.setProgress(100, progress, false)
-                                                    .setContentText(String.format(downloadProgressFormat, progress))
-                                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                                    notificationManager.notify(notificationId, builder.build())
-                                                }
-                                            }
-                                        }
-                                    }
-                                    outputStream?.flush()
-                                    outputStream?.close()
-                                    input.close()
-                                    
-                                    builder.setContentText(notificationComplete)
-                                        .setProgress(0, 0, false)
-                                        .setOngoing(false)
-                                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        notificationManager.notify(notificationId, builder.build())
-                                    }
-                                    
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, toastComplete, Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    builder.setContentText(notificationError)
-                                        .setProgress(0, 0, false)
-                                        .setOngoing(false)
-                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        notificationManager.notify(notificationId, builder.build())
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, notificationError, Toast.LENGTH_SHORT).show()
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        onDismiss()
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, notificationError, Toast.LENGTH_SHORT).show()
-                                }
-                            }
                             
-                            withContext(Dispatchers.Main) {
-                                onDismiss()
-                            }
+                            val trackId = track.id ?: return@MenuOptionItem
+                            val trackName = track.name ?: "Unknown"
+                            val trackArtist = track.artists.joinToString(", ") { it.name }
+                            
+                            com.varuna.rustify.bridge.DownloadManager.enqueueDownload(
+                                context = context,
+                                trackId = trackId,
+                                trackName = trackName,
+                                trackArtist = trackArtist,
+                                spotifyRepo = spotifyRepo,
+                                downloadUriStr = downloadUriStr
+                            )
+                            
+                            Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
+                            onDismiss()
                         }
-                    }
-                )
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

@@ -28,6 +28,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -358,19 +363,54 @@ fun PlaylistScreen(
                             
                             val trackId = track.id ?: ""
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
-                            TrackRowItem(
-                                index = index + 1,
-                                track = track,
-                                fallbackCoverUrl = playlistImages?.firstOrNull()?.url,
-                                onClick = { onTrackClick(tracks, index) },
-                                isLiked = isLiked,
-                                isCurrentTrack = track.id == currentTrackId,
-                                onLikeToggle = {
-                                    coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(track)
+                            
+                            @Suppress("DEPRECATION")
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                positionalThreshold = { it * 0.4f }
+                            )
+                            LaunchedEffect(dismissState.currentValue) {
+                                if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                    onAddToQueue(track)
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                }
+                            }
+
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                backgroundContent = {
+                                    androidx.compose.foundation.layout.Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) Color(0xFF1DB954) else Color.Transparent)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+                                            androidx.compose.material3.Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                                contentDescription = "Add to Queue",
+                                                tint = Color.White
+                                            )
+                                        }
                                     }
                                 },
-                                onMoreClick = { selectedTrackForMenu = track }
+                                enableDismissFromEndToStart = false,
+                                content = {
+                                    TrackRowItem(
+                                        index = index + 1,
+                                        track = track,
+                                        fallbackCoverUrl = playlistImages?.firstOrNull()?.url,
+                                        onClick = { onTrackClick(tracks, index) },
+                                        isLiked = isLiked,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        onLikeToggle = {
+                                            coroutineScope.launch {
+                                                spotifyRepo.toggleLikeTrack(track)
+                                            }
+                                        },
+                                        onMoreClick = { selectedTrackForMenu = track }
+                                    )
+                                }
                             )
                         }
                         
@@ -444,3 +484,4 @@ fun PlaylistScreen(
         )
     }
 }
+

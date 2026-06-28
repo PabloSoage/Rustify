@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -87,10 +87,10 @@
     <string name="library_tab_liked_tracks">お気に入りの曲</string>
 
     <string name="track_menu_download">ダウンロード</string>
-    <string name="track_menu_getting_url">URLを取得中...</string>
+    <string name="track_menu_getting_url">URLを取得中…</string>
     <string name="track_menu_url_not_found">オーディオが見つかりませんでした</string>
     <string name="track_menu_downloading">ダウンロード中: %1$s</string>
-    <string name="track_menu_connecting">接続中...</string>
+    <string name="track_menu_connecting">接続中…</string>
     <string name="track_menu_download_progress">ダウンロード中: %1$d%%</string>
     <string name="track_menu_download_complete">ダウンロード完了</string>
     <string name="track_menu_download_error">ダウンロード エラー</string>

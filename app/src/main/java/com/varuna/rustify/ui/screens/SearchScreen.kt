@@ -29,11 +29,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -239,6 +245,18 @@ fun SearchScreen(
                             items(results.tracks) { track ->
                                 val trackId = track.id ?: ""
                                 val isLiked = spotifyRepo.isTrackLiked(trackId)
+                                
+                                @Suppress("DEPRECATION")
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    positionalThreshold = { it * 0.4f }
+                                )
+                                LaunchedEffect(dismissState.currentValue) {
+                                    if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                        onAddToQueue(track)
+                                        dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                    }
+                                }
+
                                 SearchResultRow(
                                     title = track.name,
                                     subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
@@ -432,3 +450,5 @@ fun SearchResultRow(
         }
     }
 }
+
+

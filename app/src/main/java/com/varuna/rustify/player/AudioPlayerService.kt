@@ -1,8 +1,10 @@
 @file:Suppress("SpellCheckingInspection")
+@file:SuppressLint("StaticFieldLeak", "UseKtx")
 
 package com.varuna.rustify.player
 
 import android.content.Context
+import android.annotation.SuppressLint
 import android.content.Intent
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
@@ -57,6 +59,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         @Volatile
         var instance: AudioPlayerService? = null
+        
+        val resolvedStreamUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
 
         fun getInstance(context: Context): AudioPlayerService {
             return instance ?: synchronized(this) {
@@ -73,6 +77,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                     SimpleCache(cacheDir, evictor, databaseProvider).also { downloadCache = it }
                 }
             }
+        }
+
+        fun getCacheDataSourceFactory(context: Context): CacheDataSource.Factory {
+            val dataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setUserAgent("com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip")
+                .setAllowCrossProtocolRedirects(true)
+                
+            return androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(getCache(context))
+                .setUpstreamDataSourceFactory(dataSourceFactory)
+                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         }
     }
 
@@ -165,6 +180,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 val currentTrackId = _state.value.currentTrack?.id
                 if (currentTrackId != null && !currentTrackId.startsWith("local:")) {
+                    resolvedStreamUrls.remove(currentTrackId)
                     val retries = retryCountMap[currentTrackId] ?: 0
                     if (retries < 2) {
                         retryCountMap[currentTrackId] = retries + 1
@@ -240,9 +256,24 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
             
             try {
-                exoPlayer.stop()
-                exoPlayer.clearMediaItems()
-
+                // Set dummy item with new metadata so the notification persists while resolving
+                val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
+                val metadata = androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(track.name)
+                    .setArtist(track.artists.joinToString(", ") { it.name })
+                    .setArtworkUri(if (artworkUrl.isNotBlank()) android.net.Uri.parse(artworkUrl) else null)
+                    .build()
+                    
+                val dummyItem = androidx.media3.common.MediaItem.Builder()
+                    .setMediaId("loading")
+                    .setUri("https://example.com/dummy.mp3")
+                    .setMediaMetadata(metadata)
+                    .build()
+                    
+                exoPlayer.setMediaItem(dummyItem)
+                // Don't call prepare yet, just let the media session update its state
+                // This keeps the player from clearing the notification
+                
                 var streamUrl: String? = null
                 var finalYoutubeId: String? = null
                 
@@ -321,34 +352,24 @@ class AudioPlayerService private constructor(private val context: Context) {
                     return@launch
                 }
                 
-                val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(track.name)
-                    .setArtist(track.artists.joinToString(", ") { it.name })
-                    .setArtworkUri(if (artworkUrl.isNotBlank()) artworkUrl.toUri() else null)
-                    .build()
-                    
+
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata)
                     .apply { setCustomCacheKey(trackId) }
                     .build()
+                    
+                resolvedStreamUrls[trackId] = streamUrl
                 
-                val mediaSource = if (trackId.startsWith("local:")) {
+                val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
+                
+                val mediaSource = if (isLocalStream) {
                     android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
                     DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
                         .createMediaSource(mediaItem)
                 } else {
                     android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
-                    val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    val httpFactory = DefaultHttpDataSource.Factory()
-                        .setUserAgent(userAgent)
-                        .setAllowCrossProtocolRedirects(true)
-                        
-                    val cacheFactory = CacheDataSource.Factory()
-                        .setCache(getCache(context))
-                        .setUpstreamDataSourceFactory(httpFactory)
-                        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                    val cacheFactory = cacheDataSourceFactory
                     
                     DefaultMediaSourceFactory(cacheFactory)
                         .createMediaSource(mediaItem)
@@ -419,6 +440,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 
                 if (!resolvedUrl.isNullOrBlank()) {
                     preResolvedUrls[nextTrackId] = resolvedUrl
+                    resolvedStreamUrls[nextTrackId] = resolvedUrl
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
                 }
             }
@@ -529,9 +551,16 @@ class AudioPlayerService private constructor(private val context: Context) {
     fun removeFromQueue(index: Int) {
         val st = _state.value
         if (index !in st.queue.indices) return
+        
         val list = st.queue.toMutableList()
-        val removedTrack = list.removeAt(index)
-        removedTrack.id?.let { id -> userQueue.removeAll { it.id == id } }
+        list.removeAt(index)
+        
+        // Remove from userQueue based on relative position to avoid removing duplicates
+        val hasCurrent = if (st.currentTrack != null && st.queue.firstOrNull()?.id == st.currentTrack.id) 1 else 0
+        if (index >= hasCurrent && index < hasCurrent + userQueue.size) {
+            userQueue.removeAt(index - hasCurrent)
+        }
+        
         _state.value = st.copy(queue = list)
         preResolvedUrls.clear()
         preBufferNextTrack()

@@ -689,31 +689,30 @@ fun QueueBottomSheet(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    itemsIndexed(nextUpTracks, key = { indexInNextUp, track -> "${track.id ?: ""}_$indexInNextUp" }) { indexInNextUp, track ->
+                    itemsIndexed(nextUpTracks, key = { index, track -> "${track.id}_$index" }) { indexInNextUp, track ->
                         val originalIndex = nextUpStartIndex + indexInNextUp
                         
-                        @Suppress("DEPRECATION")
                         val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { value ->
-                                if (value == SwipeToDismissBoxValue.EndToStart) {
-                                    audioPlayerService.removeFromQueue(originalIndex)
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
+                            positionalThreshold = { it * 0.4f }
                         )
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                audioPlayerService.removeFromQueue(originalIndex)
+                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                            }
+                        }
 
                         SwipeToDismissBox(
                             state = dismissState,
-                            enableDismissFromStartToEnd = false,
+                            enableDismissFromStartToEnd = true,
                             backgroundContent = {
+                                val direction = dismissState.dismissDirection
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .background(Color(0xFFCC2200))
                                         .padding(horizontal = 20.dp),
-                                    contentAlignment = Alignment.CenterEnd
+                                    contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
@@ -959,9 +958,14 @@ fun TrackScreenControls(
         // Playback Controls Row
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
         ) {
+            // Left Group
+            Row(
+                modifier = Modifier.weight(1f), 
+                horizontalArrangement = Arrangement.SpaceEvenly, 
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Bifurcation (YouTube mapping)
             val isLocal = track.id?.startsWith("local:") == true
             if (!isLocal) {
@@ -1001,6 +1005,7 @@ fun TrackScreenControls(
                     modifier = Modifier.size(36.dp)
                 )
             }
+            } // End Left Group
 
             // Play/Pause button with buffering indicator
             Box(
@@ -1066,6 +1071,12 @@ fun TrackScreenControls(
                 }
             }
 
+            // Right Group
+            Row(
+                modifier = Modifier.weight(1f), 
+                horizontalArrangement = Arrangement.SpaceEvenly, 
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Next button
             IconButton(
                 onClick = { audioPlayerService.skipToNext() },
@@ -1098,6 +1109,7 @@ fun TrackScreenControls(
                     modifier = Modifier.size(28.dp)
                 )
             }
+            } // End Right Group
         }
         
         // Lyrics Panel

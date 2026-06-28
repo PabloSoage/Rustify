@@ -28,6 +28,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -86,6 +91,7 @@ fun AlbumScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(albumId) {
         isLoading = true
@@ -343,7 +349,6 @@ fun AlbumScreen(
                                             tracks = tracks + response.items
                                             offset += response.items.size
                                             hasMore = response.hasMore
-
                                         } else {
                                             hasMore = false
                                         }
@@ -354,22 +359,61 @@ fun AlbumScreen(
                                     }
                                 }
                             }
-                            
+
+                            @Suppress("DEPRECATION")
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                positionalThreshold = { it * 0.4f }
+                            )
+                            LaunchedEffect(dismissState.currentValue) {
+                                if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                }
+                            }
                             val trackId = track.id ?: ""
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
-                            TrackRowItem(
-                                index = index + 1,
-                                track = track,
-                                fallbackCoverUrl = primaryImageUrl,
-                                onClick = { onTrackClick(tracks, index) },
-                                isLiked = isLiked,
-                                isCurrentTrack = track.id == currentTrackId,
-                                onLikeToggle = {
-                                    coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(track)
+                            
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromEndToStart = false,
+                                backgroundContent = {
+                                    val color by androidx.compose.animation.animateColorAsState(
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) spotifyGreen else Color.Transparent,
+                                        label = "SwipeBackgroundColor"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(color)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                                contentDescription = "Add to Queue",
+                                                tint = Color.White
+                                            )
+                                        }
                                     }
                                 },
-                                onMoreClick = { selectedTrackForMenu = track }
+                                content = {
+                                    TrackRowItem(
+                                        index = index + 1,
+                                        track = track,
+                                        fallbackCoverUrl = primaryImageUrl,
+                                        onClick = { onTrackClick(tracks, index) },
+                                        isLiked = isLiked,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        onLikeToggle = {
+                                            coroutineScope.launch {
+                                                spotifyRepo.toggleLikeTrack(track)
+                                            }
+                                        },
+                                        onMoreClick = { selectedTrackForMenu = track }
+                                    )
+                                }
                             )
                         }
                         
@@ -429,3 +473,5 @@ fun AlbumScreen(
         )
     }
 }
+
+

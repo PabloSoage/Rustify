@@ -3,6 +3,9 @@ package com.varuna.rustify.ui.screens
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,6 +86,7 @@ fun ArtistScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     fun loadData() {
         coroutineScope.launch {
@@ -207,19 +215,59 @@ fun ArtistScreen(
                             val trackId = track.id ?: ""
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
                             val coverUrl = artist.images.minByOrNull { it.width ?: 999 }?.url
-                            TrackRowItem(
-                                index = index + 1,
-                                track = track,
-                                fallbackCoverUrl = coverUrl,
-                                onClick = { onTrackClick(topTracks.take(5), index) },
-                                isLiked = isLiked,
-                                isCurrentTrack = track.id == currentTrackId,
-                                onLikeToggle = {
-                                    coroutineScope.launch {
-                                        spotifyRepo.toggleLikeTrack(track)
+                            
+                            @Suppress("DEPRECATION")
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                positionalThreshold = { it * 0.4f }
+                            )
+                            LaunchedEffect(dismissState.currentValue) {
+                                if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                }
+                            }
+                            
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromEndToStart = false,
+                                backgroundContent = {
+                                    val color by androidx.compose.animation.animateColorAsState(
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) Color(0xFF1DB954) else Color.Transparent,
+                                        label = "SwipeBackgroundColor"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(color)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                                contentDescription = "Add to Queue",
+                                                tint = Color.White
+                                            )
+                                        }
                                     }
                                 },
-                                onMoreClick = { selectedTrackForMenu = track }
+                                content = {
+                                    TrackRowItem(
+                                        index = index + 1,
+                                        track = track,
+                                        fallbackCoverUrl = coverUrl,
+                                        onClick = { onTrackClick(topTracks.take(5), index) },
+                                        isLiked = isLiked,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        onLikeToggle = {
+                                            coroutineScope.launch {
+                                                spotifyRepo.toggleLikeTrack(track)
+                                            }
+                                        },
+                                        onMoreClick = { selectedTrackForMenu = track }
+                                    )
+                                }
                             )
                         }
                         item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -321,3 +369,8 @@ fun ArtistScreen(
         )
     }
 }
+
+
+
+
+

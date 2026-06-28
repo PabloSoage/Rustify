@@ -115,6 +115,7 @@ sealed class Screen {
     data class ArtistDetail(val id: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
     object Settings : Screen()
+    object Downloads : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -186,10 +187,11 @@ class MainActivity : ComponentActivity() {
         val langCode = if (appLang == "system") java.util.Locale.getDefault().language else appLang
         com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
         
-        // Initialize YoutubeDL
+        // Initialize YoutubeDL and FFmpeg
         try {
             com.yausername.youtubedl_android.YoutubeDL.getInstance().init(application)
-            android.util.Log.d("YoutubeDL", "YoutubeDL initialized successfully.")
+            com.yausername.ffmpeg.FFmpeg.getInstance().init(application)
+            android.util.Log.d("YoutubeDL", "YoutubeDL & FFmpeg initialized successfully.")
             // Auto-update in background
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
@@ -229,12 +231,29 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            RustifyTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF121212)
-                ) {
-                    EngineTester(initialDeepLinkTrackId = initialDeepLinkTrackId)
+            var appLanguage by remember { mutableStateOf(prefs.getString("app_language", "system") ?: "system") }
+            val context = LocalContext.current
+            val localizedContext = remember(context, appLanguage) {
+                val newConfig = android.content.res.Configuration(context.resources.configuration)
+                val locale = if (appLanguage == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLanguage)
+                newConfig.setLocale(locale)
+                context.createConfigurationContext(newConfig)
+            }
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalContext provides localizedContext,
+                LocalConfiguration provides localizedContext.resources.configuration,
+                androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity
+            ) {
+                RustifyTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color(0xFF121212)
+                    ) {
+                        EngineTester(
+                            initialDeepLinkTrackId = initialDeepLinkTrackId,
+                            onLanguageChanged = { newLang -> appLanguage = newLang }
+                        )
+                    }
                 }
             }
         }
@@ -243,7 +262,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? = null) {
+fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? = null, onLanguageChanged: (String) -> Unit = {}) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -373,16 +392,18 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     val view = LocalView.current
-    val window = (context as ComponentActivity).window
+    val activity = context.findActivity()
     SideEffect {
-        val windowInsetsController = WindowCompat.getInsetsController(window, view)
-        if (isLandscape) {
-            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-            windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+        val window = activity?.window
+        if (window != null) {
+            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+            if (isLandscape) {
+                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -425,7 +446,22 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                                     navigationStack.add(Screen.Home)
                                 }
                             },
-                            icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home)) },
+                            icon = { 
+                                val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
+                                if (activeDownloads > 0 && currentScreen != Screen.Home) {
+                                    androidx.compose.material3.BadgedBox(
+                                        badge = {
+                                            androidx.compose.material3.Badge(containerColor = Color.Red) {
+                                                Text(activeDownloads.toString(), color = Color.White)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home))
+                                    }
+                                } else {
+                                    Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home))
+                                }
+                            },
                             label = { Text(stringResource(R.string.nav_home)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
@@ -492,6 +528,7 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
             is Screen.ArtistDetail -> "ArtistDetail_${currentScreen.id}"
             is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
             is Screen.Settings -> "Settings"
+            is Screen.Downloads -> "Downloads"
         }
 
         val screenContent = @Composable {
@@ -529,6 +566,9 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                         },
                         onSettingsClick = {
                             navigationStack.add(Screen.Settings)
+                        },
+                        onDownloadsClick = {
+                            navigationStack.add(Screen.Downloads)
                         }
                     )
                 }
@@ -645,15 +685,21 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onLocaleChanged = {
+                        onLocaleChanged = { newCode ->
+                            onLanguageChanged(newCode)
                             coroutineScope.launch {
                                 try {
                                     browseSections = spotifyRepo.getBrowseSections(10)
                                 } catch (e: Exception) {
-                                    android.util.Log.w("MainActivity", "Failed to refresh browse sections after locale change", e)
+                                    android.util.Log.w("MainActivity", "Failed to refresh", e)
                                 }
                             }
                         }
+                    )
+                }
+                is Screen.Downloads -> {
+                    com.varuna.rustify.ui.screens.DownloadsScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
             }
@@ -930,4 +976,10 @@ fun MiniPlayer(
             }
         }
     }
+}
+
+tailrec fun android.content.Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

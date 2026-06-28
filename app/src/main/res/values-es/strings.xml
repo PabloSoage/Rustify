@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -61,10 +61,10 @@
     <string name="track_options_view_artist">Ver artista</string>
     <string name="track_menu_view_youtube">Versión alternativa de YouTube</string>
     <string name="track_menu_download">Descargar canción</string>
-    <string name="track_menu_getting_url">Obteniendo URL...</string>
+    <string name="track_menu_getting_url">Obteniendo URL…</string>
     <string name="track_menu_url_not_found">No se pudo encontrar el audio</string>
     <string name="track_menu_downloading">Descargando: %1$s</string>
-    <string name="track_menu_connecting">Conectando...</string>
+    <string name="track_menu_connecting">Conectando…</string>
     <string name="track_menu_download_progress">Descargando: %1$d%%</string>
     <string name="track_menu_download_complete">Descarga completada</string>
     <string name="track_menu_download_error">Error en la descarga</string>
@@ -106,4 +106,21 @@
     
     <!-- LibraryScreen extras -->
     <string name="library_tab_liked_tracks">Canciones que te gustan</string>
+    
+    <!-- Queue and Lyrics -->
+    <string name="queue_next_up">Siguiente en la cola</string>
+    <string name="queue_empty">La cola está vacía</string>
+    <string name="queue_added">Añadido a la cola</string>
+    <string name="lyrics_not_found">No se encontraron letras</string>
+    <string name="track_menu_add_queue">Añadir a la cola</string>
+    <string name="track_menu_go_artist">Ir al artista</string>
+    <string name="settings_match_local_first">Priorizar música local</string>
+    <string name="settings_match_local_first_desc">Reproduce archivos locales antes que streams de YouTube si coinciden título y artista.</string>
+    <string name="local_group_tracks">Canciones</string>
+    <string name="local_group_albums">Álbumes</string>
+    <string name="local_group_artists">Artistas</string>
+    <string name="added_to_queue">Añadido a la cola</string>
+    <string name="track_alternative_changed">Alternativa confirmada</string>
+    <string name="playlist_not_found">No se encontraron playlists</string>
+    <string name="added_to_playlist">Añadido a %1$s</string>
 </resources>

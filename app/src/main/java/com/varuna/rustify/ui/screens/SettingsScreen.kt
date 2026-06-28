@@ -1,8 +1,10 @@
 @file:Suppress("SpellCheckingInspection")
+@file:SuppressLint("UseKtx")
 
 package com.varuna.rustify.ui.screens
 
 import android.content.Intent
+import android.annotation.SuppressLint
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,7 +67,7 @@ import java.io.File
 fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
     onBack: () -> Unit,
-    onLocaleChanged: (() -> Unit)? = null
+    onLocaleChanged: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -551,29 +553,14 @@ fun SettingsScreen(
                                         val langCode = if (code == "system") java.util.Locale.getDefault().language else code
                                         com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
                                         
-                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                            val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
-                                            if (code == "system") {
-                                                localeManager.applicationLocales = android.os.LocaleList.getEmptyLocaleList()
-                                            } else {
-                                                localeManager.applicationLocales = android.os.LocaleList.forLanguageTags(code)
-                                            }
+                                        if (code == "system") {
+                                            androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.getEmptyLocaleList())
                                         } else {
-                                            val locale = if (code == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(code)
-                                            java.util.Locale.setDefault(locale)
-                                            val config = android.content.res.Configuration(currentConfig)
-                                            config.setLocale(locale)
-                                            @Suppress("DEPRECATION")
-                                            (context as? android.app.Activity)?.resources?.let { res ->
-                                                res.updateConfiguration(config, res.displayMetrics)
-                                            }
-                                            if (context is android.app.Activity) {
-                                                context.recreate()
-                                            }
+                                            androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.forLanguageTags(code))
                                         }
                                     }
                                     applyLanguage(code)
-                                    onLocaleChanged?.invoke()
+                                    onLocaleChanged?.invoke(code)
                                 }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically

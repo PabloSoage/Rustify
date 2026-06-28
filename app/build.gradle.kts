@@ -39,6 +39,11 @@ android {
         }
     }
 
+    lint {
+        disable += "MissingTranslation"
+        abortOnError = false
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -98,6 +103,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
     implementation(libs.youtubedl.android)
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 }

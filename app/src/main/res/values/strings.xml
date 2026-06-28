@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -65,6 +65,8 @@
     <string name="track_menu_add_queue">Add to Queue</string>
     <string name="added_to_queue">Added to queue</string>
     <string name="track_alternative_changed">Alternative track confirmed</string>
+    <string name="playlist_not_found">No playlists found</string>
+    <string name="added_to_playlist">Added to %1$s</string>
     
     <!-- HomeScreen -->
     <string name="home_greeting_morning">Good Morning</string>
@@ -93,10 +95,10 @@
 
     <string name="track_menu_go_artist">Go to Artist</string>
     <string name="track_menu_download">Download track</string>
-    <string name="track_menu_getting_url">Getting URL...</string>
+    <string name="track_menu_getting_url">Getting URL…</string>
     <string name="track_menu_url_not_found">Could not find audio</string>
     <string name="track_menu_downloading">Downloading: %1$s</string>
-    <string name="track_menu_connecting">Connecting...</string>
+    <string name="track_menu_connecting">Connecting…</string>
     <string name="track_menu_download_progress">Downloading: %1$d%%</string>
     <string name="track_menu_download_complete">Download complete</string>
     <string name="track_menu_download_error">Download error</string>
@@ -116,4 +118,11 @@
     
     <!-- General -->
     <string name="general_error">Error</string>
+    
+    <!-- Queue and Lyrics -->
+    <string name="queue_next_up">Next up</string>
+    <string name="queue_empty">Queue is empty</string>
+    <string name="queue_added">Added to queue</string>
+    <string name="lyrics_not_found">Lyrics not found</string>
+
 </resources>

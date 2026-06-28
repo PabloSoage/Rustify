@@ -45,10 +45,32 @@ object LyricsRepository {
         title: String,
         durationSec: Int
     ): LyricsResult? = withContext(Dispatchers.IO) {
-        try {
+        // Strip featuring and parenthetical content from title to improve matches
+        val cleanTitle = title.replace(Regex("\\(.*?\\)|\\[.*?\\]"), "").trim()
+        val cleanArtist = artist.split(",").firstOrNull()?.trim() ?: artist
+
+        if (durationSec > 0) {
+            val res = fetchFromGetApi(cleanArtist, cleanTitle, durationSec)
+            if (res != null) return@withContext res
+        }
+
+        // Try /get without duration
+        val resNoDuration = fetchFromGetApi(cleanArtist, cleanTitle, null)
+        if (resNoDuration != null) return@withContext resNoDuration
+
+        // Try /search API as last resort
+        fetchFromSearchApi(cleanArtist, cleanTitle)
+    }
+
+    private suspend fun fetchFromGetApi(artist: String, title: String, durationSec: Int?): LyricsResult? {
+        return try {
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val encodedTitle = URLEncoder.encode(title, "UTF-8")
-            val urlStr = "https://lrclib.net/api/get?artist_name=$encodedArtist&track_name=$encodedTitle&duration=$durationSec"
+            val urlStr = if (durationSec != null) {
+                "https://lrclib.net/api/get?artist_name=$encodedArtist&track_name=$encodedTitle&duration=$durationSec"
+            } else {
+                "https://lrclib.net/api/get?artist_name=$encodedArtist&track_name=$encodedTitle"
+            }
 
             val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
             conn.setRequestProperty("User-Agent", "Rustify/1.0 (Android)")
@@ -58,40 +80,39 @@ object LyricsRepository {
             if (conn.responseCode == 200) {
                 val body = conn.inputStream.bufferedReader().readText()
                 parseResponse(body)
-            } else if (conn.responseCode == 404) {
-                // Try without duration as fallback
-                fetchLyricsNoDuration(artist, title)
             } else {
                 null
             }
         } catch (e: Exception) {
-            android.util.Log.w("LyricsRepository", "Failed to fetch lyrics", e)
             null
         }
     }
 
-    private suspend fun fetchLyricsNoDuration(artist: String, title: String): LyricsResult? =
-        withContext(Dispatchers.IO) {
-            try {
-                val encodedArtist = URLEncoder.encode(artist, "UTF-8")
-                val encodedTitle = URLEncoder.encode(title, "UTF-8")
-                val urlStr = "https://lrclib.net/api/get?artist_name=$encodedArtist&track_name=$encodedTitle"
+    private suspend fun fetchFromSearchApi(artist: String, title: String): LyricsResult? {
+        return try {
+            val query = "$artist $title"
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val urlStr = "https://lrclib.net/api/search?q=$encodedQuery"
 
-                val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
-                conn.setRequestProperty("User-Agent", "Rustify/1.0 (Android)")
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 10_000
+            val conn = URL(urlStr).openConnection() as java.net.HttpURLConnection
+            conn.setRequestProperty("User-Agent", "Rustify/1.0 (Android)")
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
 
-                if (conn.responseCode == 200) {
-                    val body = conn.inputStream.bufferedReader().readText()
-                    parseResponse(body)
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                val array = org.json.JSONArray(body)
+                if (array.length() > 0) {
+                    val firstItem = array.getJSONObject(0)
+                    parseResponse(firstItem.toString())
+                } else null
+            } else {
                 null
             }
+        } catch (e: Exception) {
+            null
         }
+    }
 
     private fun parseResponse(body: String): LyricsResult? {
         return try {
