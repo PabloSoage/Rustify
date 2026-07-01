@@ -368,10 +368,16 @@ fun PlaylistScreen(
                             val dismissState = rememberSwipeToDismissBoxState(
                                 positionalThreshold = { it * 0.4f }
                             )
+                            var handled by remember { mutableStateOf(false) }
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    onAddToQueue(track)
+                                    if (!handled) {
+                                        handled = true
+                                        onAddToQueue(track)
+                                    }
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+                                    handled = false
                                 }
                             }
 

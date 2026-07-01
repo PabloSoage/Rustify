@@ -364,11 +364,17 @@ fun AlbumScreen(
                             val dismissState = rememberSwipeToDismissBoxState(
                                 positionalThreshold = { it * 0.4f }
                             )
+                            var handled by remember { mutableStateOf(false) }
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    if (!handled) {
+                                        handled = true
+                                        onAddToQueue(track)
+                                        android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
+                                    handled = false
                                 }
                             }
                             val trackId = track.id ?: ""

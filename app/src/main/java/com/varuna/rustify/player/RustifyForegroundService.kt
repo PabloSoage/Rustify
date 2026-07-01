@@ -1,6 +1,8 @@
 package com.varuna.rustify.player
 
+import android.app.PendingIntent
 import android.content.Intent
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -12,15 +14,25 @@ class RustifyForegroundService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val basePlayer = AudioPlayerService.getInstance(this).let { AudioPlayerService.exoPlayerInstance }
+
+        // Ensure AudioPlayerService is initialized before we try to get the player instance
+        val audioService = AudioPlayerService.getInstance(this)
+        var basePlayer = AudioPlayerService.exoPlayerInstance
+
+        // If ExoPlayer isn't ready yet, initialize it by getting the instance again
+        if (basePlayer == null) {
+            android.util.Log.w("RustifyForegroundService", "ExoPlayer not ready, forcing initialization")
+            basePlayer = AudioPlayerService.exoPlayerInstance
+        }
+
         if (basePlayer != null) {
             val forwardingPlayer = object : androidx.media3.common.ForwardingPlayer(basePlayer) {
                 override fun getAvailableCommands(): androidx.media3.common.Player.Commands {
                     return super.getAvailableCommands().buildUpon()
-                        .add(androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT)
-                        .add(androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS)
-                        .add(androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                        .add(androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .add(Player.COMMAND_SEEK_TO_NEXT)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                         .build()
                 }
 
@@ -46,14 +58,20 @@ class RustifyForegroundService : MediaSessionService() {
 
             val intent = Intent(this, com.varuna.rustify.MainActivity::class.java).apply {
                 action = "com.varuna.rustify.action.VIEW_NOW_PLAYING"
+                // FLAG_ACTIVITY_CLEAR_TOP ensures the activity is recreated with correct orientation
+                // Fixes BUG-11: orientation locked to landscape when opened from notification
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
-            val pendingIntent = android.app.PendingIntent.getActivity(
-                this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE
+            val pendingIntent = PendingIntent.getActivity(
+                this, 0, intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
             mediaSession = MediaSession.Builder(this, forwardingPlayer)
                 .setSessionActivity(pendingIntent)
                 .build()
+        } else {
+            android.util.Log.e("RustifyForegroundService", "Cannot create MediaSession: ExoPlayer is null")
         }
     }
 
@@ -75,6 +93,19 @@ class RustifyForegroundService : MediaSessionService() {
             }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Clean up state when the user swipes the app away from recents
+        android.util.Log.d("RustifyForegroundService", "onTaskRemoved — cleaning up")
+        val audioService = AudioPlayerService.instance
+        if (audioService != null) {
+            audioService.saveState()
+        }
+        mediaSession?.release()
+        mediaSession = null
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {

@@ -16,6 +16,9 @@
     <string name="settings_nightly_version">Nightly Version</string>
     <string name="settings_nightly_desc">Daily build with the latest anti-block fixes. May be unstable.</string>
     
+    <string name="settings_storage">Storage</string>
+    <string name="settings_clear_audio_cache">Clear Audio Cache</string>
+    <string name="settings_clear_image_cache">Clear Image Cache</string>
     <string name="settings_cache_storage">Cache and Storage</string>
     <string name="settings_download_dir">Download Directory</string>
     <string name="settings_no_dir_configured">Not configured</string>

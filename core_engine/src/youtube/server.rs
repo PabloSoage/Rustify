@@ -1,6 +1,6 @@
 use crate::youtube::models::YouTubeTrack;
 // core_engine/src/youtube/server.rs
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -253,22 +253,23 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
     }
 
     let clean_spotify_name = clean_text(&meta.name);
-    let spotify_words: Vec<&str> = clean_spotify_name.split_whitespace().collect();
-    
+    // Pre-compute HashSet for O(1) word lookup (BUG-16 optimization)
+    let spotify_words: HashSet<&str> = clean_spotify_name.split_whitespace().collect();
+
     let mut best_track: Option<YouTubeTrack> = None;
     let mut best_score = -1;
 
     for (i, yt_track) in results.iter().enumerate() {
         let mut score = 0;
         let clean_yt_title = clean_text(&yt_track.title);
-        let yt_words: Vec<&str> = clean_yt_title.split_whitespace().collect();
+        let yt_words: HashSet<&str> = clean_yt_title.split_whitespace().collect();
 
         // Exact match
         if clean_yt_title.contains(&clean_spotify_name) {
             score += 50;
         }
 
-        // Word overlap for title
+        // Word overlap for title (O(1) lookup with HashSet)
         for word in &spotify_words {
             if yt_words.contains(word) {
                 score += 5;
@@ -281,7 +282,7 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
         for artist in &meta.artists {
             let clean_artist = clean_text(artist);
             let artist_words: Vec<&str> = clean_artist.split_whitespace().collect();
-            
+
             // Check if artist name is in title
             if clean_yt_title.contains(&clean_artist) {
                 score += 20;
@@ -292,7 +293,7 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
                     }
                 }
             }
-            
+
             // Check if artist name is in channel name
             let clean_author = clean_text(&yt_track.author);
             if clean_author.contains(&clean_artist) {
@@ -306,8 +307,8 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
             }
         }
 
-        let is_official = clean_yt_title.contains("official") || 
-                          clean_yt_title.contains("audio") || 
+        let is_official = clean_yt_title.contains("official") ||
+                          clean_yt_title.contains("audio") ||
                           clean_yt_title.contains("lyric") ||
                           clean_yt_title.contains("music video");
         if is_official {
@@ -352,7 +353,7 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
         } else if i == 2 {
             score += 5;
         }
-        
+
         log_info!("[Resolver] Scoring: '{}' by '{}' -> Score: {}", yt_track.title, yt_track.author, score);
 
         if score > best_score {

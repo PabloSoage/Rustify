@@ -19,6 +19,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,10 +100,15 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     private val preResolvedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val persistedUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var preBufferingJob: kotlinx.coroutines.Job? = null
     private var playJob: kotlinx.coroutines.Job? = null
     private var isResolving = false
+    private var isRetrying = false
     private val userQueue = mutableListOf<FullTrack>()
+
+    // Max age for cached stream URLs (YouTube URLs last ~6h)
+    private val maxUrlCacheAge = 6 * 60 * 60 * 1000L
 
     private val dataSourceFactory = DefaultHttpDataSource.Factory()
         .setUserAgent("com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip")
@@ -147,6 +153,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         proxyPort = NativeEngine.startAudioServerNative(cachePath)
         android.util.Log.d("AudioPlayerService", "Rust proxy started on port $proxyPort")
 
+        loadUrlCache()
         loadState()
 
         // ExoPlayer state listeners
@@ -195,13 +202,16 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val currentTrackId = _state.value.currentTrack?.id
                 if (currentTrackId != null && !currentTrackId.startsWith("local:")) {
                     resolvedStreamUrls.remove(currentTrackId)
+                    preResolvedUrls.remove(currentTrackId)
                     val retries = retryCountMap[currentTrackId] ?: 0
                     if (retries < 2) {
                         retryCountMap[currentTrackId] = retries + 1
+                        isRetrying = true
                         android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}/2) in 3s")
                         mainScope.launch {
                             delay(3000)
                             retryCurrentTrack()
+                            isRetrying = false
                         }
                     } else {
                         android.util.Log.e("AudioPlayerService", "Track $currentTrackId failed after 2 retries, skipping.")
@@ -229,7 +239,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                 }
                 val now = System.currentTimeMillis()
                 if (now - lastSaveTime > 5000) {
-                    saveState()
+                    if (!_state.value.isError && !isRetrying) {
+                        saveState()
+                    }
                     lastSaveTime = now
                 }
                 delay(500.milliseconds)
@@ -254,6 +266,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                 trackId, track.name, artistsJson, track.durationMs, track.isrc
             )
         }
+
+        // Preload lyrics asynchronously so they're cached when user opens TrackScreen
+        preloadLyrics(track)
 
         // Show buffering spinner immediately (resolver can take a few seconds)
         isResolving = true
@@ -310,6 +325,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
 
                     if (streamUrl == null) {
+                        // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
+                        val cachedUrl = getCachedStreamUrl(trackId)
+                        if (!cachedUrl.isNullOrBlank()) {
+                            streamUrl = cachedUrl
+                            android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                        }
+                    }
+                    if (streamUrl == null) {
                         streamUrl = preResolvedUrls[trackId]
                         if (streamUrl.isNullOrBlank()) {
                             android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
@@ -364,7 +387,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                     .build()
                     
                 resolvedStreamUrls[trackId] = streamUrl
-                
+                // Persist URL for next session so we can skip yt-dlp resolution
+                if (!trackId.startsWith("local:")) {
+                    putCachedStreamUrl(trackId, streamUrl)
+                }
+
                 val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
                 
                 val mediaSource = if (isLocalStream) {
@@ -385,7 +412,6 @@ class AudioPlayerService private constructor(private val context: Context) {
                     exoPlayer.seekTo(_state.value.positionMs)
                 }
                 exoPlayer.play()
-                saveState()
 
                 // Pre-buffer the next track in the queue
                 preBufferNextTrack()
@@ -447,6 +473,26 @@ class AudioPlayerService private constructor(private val context: Context) {
                     resolvedStreamUrls[nextTrackId] = resolvedUrl
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
                 }
+            }
+        }
+    }
+
+    private fun preloadLyrics(track: FullTrack) {
+        val trackId = track.id ?: return
+        if (trackId.startsWith("local:")) return
+        mainScope.launch(Dispatchers.IO) {
+            try {
+                val artist = track.artists.firstOrNull()?.name ?: return@launch
+                val durationSec = track.durationMs / 1000
+                LyricsRepository.getLyrics(
+                    trackId = trackId,
+                    artist = artist,
+                    title = track.name,
+                    durationSec = durationSec
+                )
+                android.util.Log.d("AudioPlayerService", "Lyrics preloaded for: ${track.name}")
+            } catch (_: Exception) {
+                android.util.Log.d("AudioPlayerService", "Lyrics preload skipped for: ${track.name}")
             }
         }
     }
@@ -666,10 +712,20 @@ class AudioPlayerService private constructor(private val context: Context) {
         } else {
             st.currentTrack
         } ?: return
-        
-        if (track.id != st.currentTrack?.id) {
-            _state.value = st.copy(currentTrack = track, positionMs = 0L, isPlaying = false)
+
+        // Force full re-resolution: clear all cached URLs for this track
+        track.id?.let {
+            resolvedStreamUrls.remove(it)
+            preResolvedUrls.remove(it)
         }
+
+        _state.value = st.copy(
+            currentTrack = track,
+            positionMs = 0L,
+            isPlaying = false,
+            isError = false,
+            errorMessage = ""
+        )
         playTrack(track, youtubeId)
     }
 
@@ -740,35 +796,99 @@ class AudioPlayerService private constructor(private val context: Context) {
             action = "STOP_SERVICE"
         }
         context.startService(stopIntent)
+        mediaControllerFuture = null
         exoPlayer.release()
         exoPlayerInstance = null
         instance = null
     }
 
-    private fun saveState() {
+    // -------------------------------------------------------------------
+    // Stream URL cache persistence (BUG-01: avoid re-resolving ephemeral URLs)
+    // -------------------------------------------------------------------
+
+    private fun getCachedStreamUrl(trackId: String): String? {
+        return persistedUrlCache[trackId]
+    }
+
+    private fun putCachedStreamUrl(trackId: String, url: String) {
+        persistedUrlCache[trackId] = url
+        // Save async to disk
+        mainScope.launch(Dispatchers.IO) {
+            saveUrlCache()
+        }
+    }
+
+    private fun loadUrlCache() {
+        try {
+            val file = java.io.File(context.filesDir, "stream_url_cache.json")
+            if (file.exists()) {
+                val json = org.json.JSONObject(file.readText())
+                val timestamp = json.optLong("savedAt", 0L)
+                // Discard URL cache older than 6 hours (YouTube URLs expire)
+                if (System.currentTimeMillis() - timestamp > maxUrlCacheAge) {
+                    android.util.Log.d("AudioPlayerService", "Discarding stale URL cache (>6h old)")
+                    file.delete()
+                    return
+                }
+                val urls = json.optJSONObject("urls")
+                if (urls != null) {
+                    val keys = urls.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        persistedUrlCache[key] = urls.getString(key)
+                    }
+                }
+                android.util.Log.d("AudioPlayerService", "Loaded ${persistedUrlCache.size} cached stream URLs")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AudioPlayerService", "Error loading URL cache", e)
+        }
+    }
+
+    private fun saveUrlCache() {
+        try {
+            val file = java.io.File(context.filesDir, "stream_url_cache.json")
+            val json = org.json.JSONObject()
+            json.put("savedAt", System.currentTimeMillis())
+            val urls = org.json.JSONObject()
+            for ((key, value) in persistedUrlCache) {
+                urls.put(key, value)
+            }
+            json.put("urls", urls)
+            file.writeText(json.toString())
+        } catch (e: Exception) {
+            android.util.Log.e("AudioPlayerService", "Error saving URL cache", e)
+        }
+    }
+
+    internal fun saveState() {
+        val st = _state.value
+        // Never persist error state — it contaminates the next session
+        if (st.isError) return
+
         mainScope.launch(Dispatchers.IO) {
             try {
                 val file = java.io.File(context.filesDir, "playback_state.json")
                 val json = org.json.JSONObject()
-                val st = _state.value
                 st.currentTrack?.let { json.put("currentTrack", it.toJson()) }
-                
+
                 val qArr = org.json.JSONArray()
                 st.queue.forEach { qArr.put(it.toJson()) }
                 json.put("queue", qArr)
-                
+
                 val origArr = org.json.JSONArray()
                 st.originalQueue.forEach { origArr.put(it.toJson()) }
                 json.put("originalQueue", origArr)
-                
+
                 val uqArr = org.json.JSONArray()
                 userQueue.forEach { uqArr.put(it.toJson()) }
                 json.put("userQueue", uqArr)
-                
+
                 json.put("positionMs", st.positionMs)
                 json.put("durationMs", st.durationMs)
                 json.put("isShuffle", st.isShuffle)
-                
+                json.put("lastSavedTimestamp", System.currentTimeMillis())
+
                 file.writeText(json.toString())
             } catch (e: Exception) {
                 android.util.Log.e("AudioPlayerService", "Error saving state", e)
@@ -781,24 +901,34 @@ class AudioPlayerService private constructor(private val context: Context) {
             val file = java.io.File(context.filesDir, "playback_state.json")
             if (file.exists()) {
                 val json = org.json.JSONObject(file.readText())
+
+                // Discard state older than 24 hours — stale URLs and positions
+                val lastSaved = json.optLong("lastSavedTimestamp", 0L)
+                val maxAge = 24 * 60 * 60 * 1000L  // 24 hours
+                if (lastSaved > 0 && System.currentTimeMillis() - lastSaved > maxAge) {
+                    android.util.Log.d("AudioPlayerService", "Discarding stale saved state (>24h old)")
+                    file.delete()
+                    return
+                }
+
                 val trackObj = json.optJSONObject("currentTrack")
                 val track = if (trackObj != null) FullTrack.fromJson(trackObj) else null
-                
+
                 val qArr = json.optJSONArray("queue")
                 val queue = FullTrack.listFromJsonArray(qArr)
 
                 val origArr = json.optJSONArray("originalQueue")
                 val origQueue = FullTrack.listFromJsonArray(origArr)
-                
+
                 val uqArr = json.optJSONArray("userQueue")
                 val uqList = FullTrack.listFromJsonArray(uqArr)
                 userQueue.clear()
                 userQueue.addAll(uqList)
-                
+
                 val positionMs = json.optLong("positionMs", 0L)
                 val durationMs = json.optLong("durationMs", 0L)
                 val isShuffle = json.optBoolean("isShuffle", false)
-                
+
                 _state.value = _state.value.copy(
                     currentTrack = track,
                     originalQueue = origQueue,

@@ -17,6 +17,9 @@
     <string name="settings_nightly_desc">最新のブロック解除修正を含むデイリービルド。不安定な場合があります。</string>
     
     <string name="settings_cache_storage">キャッシュとストレージ</string>
+    <string name="settings_storage">ストレージ</string>
+    <string name="settings_clear_audio_cache">オーディオキャッシュを消去</string>
+    <string name="settings_clear_image_cache">画像キャッシュを消去</string>
     <string name="settings_download_dir">ダウンロード先</string>
     <string name="settings_no_dir_configured">未設定</string>
     <string name="settings_select_folder">フォルダを選択</string>

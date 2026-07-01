@@ -16,3 +16,9 @@ local.properties
 .idea/
 keystore/
 Inspection/
+.aider*
+.claude/
+
+# APK builds (too large for GitHub)
+app/release/*.apk
+*.apk

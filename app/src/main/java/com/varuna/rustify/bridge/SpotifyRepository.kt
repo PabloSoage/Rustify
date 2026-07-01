@@ -52,7 +52,28 @@ class SpotifyRepository(context: Context) {
         private const val KEY_EXPIRATION = "expiration_timestamp"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
 
+        @Volatile
+        private var instance: SpotifyRepository? = null
+
+        /**
+         * Normalize a name for comparison: trim, lowercase, strip featuring tags.
+         */
+        private fun normalizeName(name: String): String {
+            return name.trim().lowercase()
+                .replace(Regex("""\s*[\(\[].*?feat\..*?[\)\]]""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*[\(\[].*?featuring.*?[\)\]]""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*feat\..*$""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*ft\..*$""", RegexOption.IGNORE_CASE), "")
+                .trim()
+        }
+
         fun findLocalMatch(context: Context, track: FullTrack): FullTrack? {
+            // First try the in-memory localTracks from the repository instance
+            val repo = instance ?: return findLocalMatchFromDisk(context, track)
+            return repo.findLocalMatch(track)
+        }
+
+        private fun findLocalMatchFromDisk(context: Context, track: FullTrack): FullTrack? {
             val localCacheFile = java.io.File(context.filesDir, "local_music_cache.json")
             if (!localCacheFile.exists()) return null
             try {
@@ -60,17 +81,53 @@ class SpotifyRepository(context: Context) {
                 val array = org.json.JSONArray(jsonStr)
                 for (i in 0 until array.length()) {
                     val localTrack = FullTrack.fromJson(array.getJSONObject(i))
-                    if (localTrack.name.equals(track.name, ignoreCase = true)) {
-                        val localArtist = localTrack.artists.firstOrNull()?.name ?: ""
-                        val spotifyArtist = track.artists.firstOrNull()?.name ?: ""
-                        if (localArtist.contains(spotifyArtist, ignoreCase = true) || 
-                            spotifyArtist.contains(localArtist, ignoreCase = true)) {
-                            return localTrack
-                        }
-                    }
+                    if (isLocalMatch(track, localTrack)) return localTrack
                 }
             } catch (e: Exception) {}
             return null
+        }
+
+        /**
+         * Conservative local match: high certainty only.
+         */
+        private fun isLocalMatch(spotifyTrack: FullTrack, localTrack: FullTrack): Boolean {
+            // 1. ISRC match (maximum certainty)
+            val spotifyIsrc = spotifyTrack.isrc.trim()
+            val localIsrc = localTrack.isrc.trim()
+            if (spotifyIsrc.isNotBlank() && localIsrc.isNotBlank() && spotifyIsrc == localIsrc) {
+                return true
+            }
+
+            // 2. Name must match (after normalization)
+            val spotifyName = normalizeName(spotifyTrack.name)
+            val localName = normalizeName(localTrack.name)
+            if (spotifyName.isBlank() || localName.isBlank()) return false
+            if (spotifyName != localName) return false
+
+            // 3. Duration validation: if both have duration, they must be within ±5s
+            if (spotifyTrack.durationMs > 0 && localTrack.durationMs > 0) {
+                val diff = kotlin.math.abs(spotifyTrack.durationMs - localTrack.durationMs)
+                if (diff > 5000) return false
+            }
+
+            // 4. Artist matching: at least one artist must match across all artists
+            val spotifyArtists = spotifyTrack.artists.map { normalizeName(it.name) }.toSet()
+            val localArtists = localTrack.artists.map { normalizeName(it.name) }.toSet()
+
+            if (spotifyArtists.isEmpty() || localArtists.isEmpty()) return false
+
+            // Check intersection of all artists
+            val intersection = spotifyArtists.intersect(localArtists)
+            if (intersection.isNotEmpty()) return true
+
+            // Fallback: check if any spotify artist contains or is contained by any local artist
+            for (sa in spotifyArtists) {
+                for (la in localArtists) {
+                    if (sa.contains(la) || la.contains(sa)) return true
+                }
+            }
+
+            return false
         }
     }
 
@@ -298,25 +355,23 @@ class SpotifyRepository(context: Context) {
         saveLikedTracksToCache()
     }
 
-    private fun <T> loadLibraryItemsFromCache(
+    private suspend fun <T> loadLibraryItemsFromCache(
         cacheFile: java.io.File,
         stateList: androidx.compose.runtime.snapshots.SnapshotStateList<T>,
         fromJson: (JSONObject) -> T
-    ) {
-        if (!cacheFile.exists()) return
-        repositoryScope.launch(Dispatchers.IO) {
-            try {
-                val array = JSONArray(cacheFile.readText())
-                val items = mutableListOf<T>()
-                for (i in 0 until array.length()) {
-                    items.add(fromJson(array.getJSONObject(i)))
-                }
-                withContext(Dispatchers.Main) {
-                    stateList.clear()
-                    stateList.addAll(items)
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
+    ) = withContext(Dispatchers.IO) {
+        if (!cacheFile.exists()) return@withContext
+        try {
+            val array = JSONArray(cacheFile.readText())
+            val items = mutableListOf<T>()
+            for (i in 0 until array.length()) {
+                items.add(fromJson(array.getJSONObject(i)))
+            }
+            withContext(Dispatchers.Main) {
+                stateList.clear()
+                stateList.addAll(items)
+            }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     private suspend fun <T> syncLibraryItems(
@@ -341,18 +396,20 @@ class SpotifyRepository(context: Context) {
                         break
                     }
                 }
-                
+
+                // Only replace cached data after successful API call (BUG-05: VPN resilience)
                 withContext(Dispatchers.Main) {
                     stateList.clear()
                     stateList.addAll(allItems)
                 }
-                
+
                 val array = JSONArray()
                 allItems.forEach { array.put(toJson(it)) }
                 cacheFile.writeText(array.toString())
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // API failed — keep existing cached data, don't clear the list (BUG-05)
+            android.util.Log.w("SpotifyRepository", "Sync failed, keeping cached data: ${e.message}")
         } finally {
             withContext(Dispatchers.Main) { setSyncingFlag(false) }
         }
@@ -398,6 +455,8 @@ class SpotifyRepository(context: Context) {
     }
 
     init {
+        instance = this
+
         // Initialize cache directory in Rust engine (now using filesDir for persistence)
         val cacheDirPath = context.filesDir.absolutePath
         NativeEngine.initSpotifyCacheDirNative(cacheDirPath)
@@ -491,52 +550,64 @@ class SpotifyRepository(context: Context) {
                                 val lastModifiedStr = file.lastModified().toString()
                                 val existingTrack = existingTracks[trackId]
 
-                                if (existingTrack != null && existingTrack.addedAt == lastModifiedStr) {
-                                    newLocalTracks.add(existingTrack)
-                                } else {
-                                    val retriever = android.media.MediaMetadataRetriever()
-                                    try {
-                                        retriever.setDataSource(appCtx, file.uri)
-                                        val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
-                                        val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                                        val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
-                                        val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                        val durationMs = durationStr?.toLongOrNull() ?: 0L
-
-                                        var coverUri = ""
-                                        try {
-                                            val safeName = file.uri.lastPathSegment?.replace(Regex("[^a-zA-Z0-9.-]"), "_") ?: "unknown"
-                                            val cacheFile = java.io.File(appCtx.cacheDir, "cover_$safeName.jpg")
-                                            if (!cacheFile.exists()) {
-                                                val picture = retriever.embeddedPicture
-                                                if (picture != null) {
-                                                    val fos = java.io.FileOutputStream(cacheFile)
-                                                    fos.write(picture)
-                                                    fos.close()
-                                                }
-                                            }
-                                            if (cacheFile.exists()) {
-                                                coverUri = "file://" + cacheFile.absolutePath
-                                            }
-                                        } catch (e: Exception) {}
-
-                                        newLocalTracks.add(
-                                            FullTrack(
-                                                id = trackId,
-                                                name = title,
-                                                artists = listOf(com.varuna.rustify.bridge.SimpleArtist("local_artist", artist, "", emptyList())),
-                                                album = com.varuna.rustify.bridge.SimpleAlbum("local_album", album, "", null, null, emptyList(), emptyList(), null),
-                                                durationMs = durationMs.toInt(),
-                                                explicit = false,
-                                                isrc = "",
-                                                addedAt = lastModifiedStr, // use addedAt to store last modified time
-                                                externalUri = coverUri
-                                            )
-                                        )
-                                    } catch (e: Exception) {
-                                    } finally {
-                                        try { retriever.release() } catch (e: Exception) {}
+                                // Verify cover still exists for unchanged existing tracks (BUG-07)
+                                var needsExtraction = existingTrack == null || existingTrack.addedAt != lastModifiedStr
+                                if (!needsExtraction && existingTrack != null) {
+                                    val existingCoverPath = existingTrack.externalUri.removePrefix("file://")
+                                    if (existingCoverPath.isNotBlank() && !java.io.File(existingCoverPath).exists()) {
+                                        android.util.Log.d("SpotifyRepository", "Cover missing for ${existingTrack.name}, re-extracting")
+                                        needsExtraction = true
                                     }
+                                }
+                                if (!needsExtraction && existingTrack != null) {
+                                    newLocalTracks.add(existingTrack)
+                                    continue
+                                }
+
+                                // Extract metadata (new or re-extract)
+                                val retriever = android.media.MediaMetadataRetriever()
+                                try {
+                                    retriever.setDataSource(appCtx, file.uri)
+                                    val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
+                                    val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
+                                    val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
+                                    val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                    val durationMs = durationStr?.toLongOrNull() ?: 0L
+
+                                    var coverUri = ""
+                                    try {
+                                        val safeName = file.uri.lastPathSegment?.replace(Regex("[^a-zA-Z0-9.-]"), "_") ?: "unknown"
+                                        // BUG-07: Use filesDir/covers/ instead of cacheDir (Android can clear cacheDir)
+                                        val coversDir = java.io.File(appCtx.filesDir, "covers")
+                                        if (!coversDir.exists()) coversDir.mkdirs()
+                                        val coverFile = java.io.File(coversDir, "cover_$safeName.jpg")
+                                        if (!coverFile.exists()) {
+                                            val picture = retriever.embeddedPicture
+                                            if (picture != null) {
+                                                java.io.FileOutputStream(coverFile).use { fos -> fos.write(picture) }
+                                            }
+                                        }
+                                        if (coverFile.exists()) {
+                                            coverUri = "file://" + coverFile.absolutePath
+                                        }
+                                    } catch (e: Exception) {}
+
+                                    newLocalTracks.add(
+                                        FullTrack(
+                                            id = trackId,
+                                            name = title,
+                                            artists = listOf(com.varuna.rustify.bridge.SimpleArtist("local_artist", artist, "", emptyList())),
+                                            album = com.varuna.rustify.bridge.SimpleAlbum("local_album", album, "", null, null, emptyList(), emptyList(), null),
+                                            durationMs = durationMs.toInt(),
+                                            explicit = false,
+                                            isrc = "",
+                                            addedAt = lastModifiedStr,
+                                            externalUri = coverUri
+                                        )
+                                    )
+                                } catch (e: Exception) {
+                                } finally {
+                                    try { retriever.release() } catch (e: Exception) {}
                                 }
                             }
                         }
@@ -1099,14 +1170,11 @@ class SpotifyRepository(context: Context) {
 
     /**
      * Find a local music track that matches the given Spotify track.
+     * Uses conservative matching: ISRC, normalized name + artist + duration.
      */
     fun findLocalMatch(track: FullTrack): FullTrack? {
-        val trackName = track.name
-        val artistName = track.artists.firstOrNull()?.name
-        
         return localTracks.firstOrNull { localTrack ->
-            localTrack.name.equals(trackName, ignoreCase = true) &&
-            localTrack.artists.firstOrNull()?.name.equals(artistName, ignoreCase = true)
+            isLocalMatch(track, localTrack)
         }
     }
 }

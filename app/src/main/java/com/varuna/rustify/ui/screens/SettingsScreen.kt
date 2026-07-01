@@ -9,18 +9,23 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -297,6 +302,25 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // FFmpeg section (BUG-15)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("FFmpeg", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "FFmpeg is used for audio format conversion. The binary is included with the app and managed automatically.",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text(
                 text = stringResource(R.string.settings_cache_storage),
                 color = Color(0xFF1DB954),
@@ -514,9 +538,10 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            
+
+            // Storage breakdown section (BUG-12+17)
             Text(
-                text = "Storage / Tools",
+                text = stringResource(R.string.settings_storage),
                 color = Color(0xFF1DB954),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -529,20 +554,87 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Button(
-                        onClick = {
-                            val ffmpegFile = java.io.File(context.filesDir, "ffmpeg")
-                            if (ffmpegFile.exists()) {
-                                ffmpegFile.delete()
-                                Toast.makeText(context, "FFmpeg binary deleted", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "FFmpeg binary not found", Toast.LENGTH_SHORT).show()
+                    // Calculate storage sizes
+                    val filesDir = context.filesDir
+                    val cacheDir = context.cacheDir
+
+                    fun java.io.File.dirSize(): Long {
+                        if (!exists()) return 0L
+                        return if (isDirectory) {
+                            listFiles()?.sumOf { it.dirSize() } ?: 0L
+                        } else {
+                            length()
+                        }
+                    }
+
+                    val userDataBytes = filesDir.dirSize()
+                    val audioCacheDir = java.io.File(cacheDir, "audio_cache")
+                    val imageCacheDir = java.io.File(cacheDir, "image_cache")
+                    val audioCacheBytes = audioCacheDir.dirSize()
+                    val imageCacheBytes = imageCacheDir.dirSize()
+                    val totalBytes = userDataBytes + audioCacheBytes + imageCacheBytes
+
+                    fun formatBytes(bytes: Long): String = when {
+                        bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
+                        bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
+                        bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
+                        else -> "$bytes B"
+                    }
+
+                    // Storage breakdown rows
+                    @Composable
+                    fun StorageRow(label: String, bytes: Long, color: Color) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(color))
+                                Spacer(modifier = Modifier.padding(start = 8.dp).width(8.dp))
+                                Text(label, color = Color.LightGray, fontSize = 13.sp)
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Clear FFmpeg binary", color = Color.White)
+                            Text(formatBytes(bytes), color = Color.White, fontSize = 13.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    StorageRow("User Data", userDataBytes, Color(0xFF1DB954))
+                    StorageRow("Audio Cache", audioCacheBytes, Color(0xFFFF9800))
+                    StorageRow("Image Cache", imageCacheBytes, Color(0xFF2196F3))
+                    StorageRow("Total", totalBytes, Color.White)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Clear buttons
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                try {
+                                    if (audioCacheDir.exists()) audioCacheDir.deleteRecursively()
+                                    Toast.makeText(context, "Audio cache cleared", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to clear audio cache", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear Audio Cache", color = Color.White, fontSize = 12.sp)
+                        }
+                        Button(
+                            onClick = {
+                                try {
+                                    if (imageCacheDir.exists()) imageCacheDir.deleteRecursively()
+                                    Toast.makeText(context, "Image cache cleared", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to clear image cache", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear Image Cache", color = Color.White, fontSize = 12.sp)
+                        }
                     }
                 }
             }

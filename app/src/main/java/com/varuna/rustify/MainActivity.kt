@@ -122,6 +122,25 @@ sealed class Screen {
 class MainActivity : ComponentActivity() {
     private var initialDeepLinkTrackId: String? = null
 
+    /**
+     * Extract a Spotify track/album/playlist ID from a shared URL.
+     * Supports: open.spotify.com/track/ID, /album/ID, /playlist/ID, /intl-es/track/ID
+     */
+    private fun extractSpotifyIdFromUrl(text: String): String? {
+        val patterns = listOf(
+            Regex("""open\.spotify\.com/track/([a-zA-Z0-9]+)"""),
+            Regex("""open\.spotify\.com/intl-[a-z]{2}/track/([a-zA-Z0-9]+)"""),
+            Regex("""spotify\.link/([a-zA-Z0-9]+)""")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        }
+        return null
+    }
+
     override fun attachBaseContext(newBase: android.content.Context) {
         val prefs = newBase.getSharedPreferences("rustify_settings", MODE_PRIVATE)
         val appLang = prefs.getString("app_language", "system") ?: "system"
@@ -177,6 +196,17 @@ class MainActivity : ComponentActivity() {
                 val v = uri.lastPathSegment
                 if (v != null) {
                     android.util.Log.d("MainActivity", "Received YouTube Short Deep Link: $v")
+                }
+            }
+        } else if (intent?.action == android.content.Intent.ACTION_SEND) {
+            if (intent.type == "text/plain") {
+                val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+                if (sharedText != null) {
+                    val extractedId = extractSpotifyIdFromUrl(sharedText)
+                    if (extractedId != null) {
+                        initialDeepLinkTrackId = extractedId
+                        android.util.Log.d("MainActivity", "Extracted Spotify track ID from shared link: $extractedId")
+                    }
                 }
             }
         } else if (intent?.action == "com.varuna.rustify.action.VIEW_NOW_PLAYING") {

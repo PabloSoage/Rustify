@@ -88,6 +88,7 @@ fun SearchScreen(
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
+    val context = androidx.compose.ui.platform.LocalContext.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -157,11 +158,57 @@ fun SearchScreen(
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { 
-                            searchQuery = "" 
+                        IconButton(onClick = {
+                            searchQuery = ""
                             searchResults = null
                         }) {
                             Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                        }
+                    } else {
+                        // Paste Spotify link from clipboard (BUG-10)
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            val clip = clipboard?.primaryClip
+                            if (clip != null && clip.itemCount > 0) {
+                                val pastedText = clip.getItemAt(0).text?.toString()
+                                if (pastedText != null) {
+                                    val trackRegex = Regex("""open\.spotify\.com/track/([a-zA-Z0-9]+)""")
+                                    val trackMatch = trackRegex.find(pastedText)
+                                    if (trackMatch != null) {
+                                        val trackId = trackMatch.groupValues[1]
+                                        android.util.Log.d("SearchScreen", "Pasted Spotify track: $trackId")
+                                        // Navigate to track via callback
+                                        onTrackClick(
+                                            com.varuna.rustify.bridge.FullTrack(
+                                                id = trackId, name = "", externalUri = "",
+                                                explicit = false, durationMs = 0, isrc = "",
+                                                artists = emptyList(), album = null
+                                            )
+                                        )
+                                        return@IconButton
+                                    }
+                                    // Try album
+                                    val albumRegex = Regex("""open\.spotify\.com/album/([a-zA-Z0-9]+)""")
+                                    val albumMatch = albumRegex.find(pastedText)
+                                    if (albumMatch != null) {
+                                        val albumId = albumMatch.groupValues[1]
+                                        onAlbumClick(albumId, "", emptyList())
+                                        return@IconButton
+                                    }
+                                    // Try playlist
+                                    val playlistRegex = Regex("""open\.spotify\.com/playlist/([a-zA-Z0-9]+)""")
+                                    val playlistMatch = playlistRegex.find(pastedText)
+                                    if (playlistMatch != null) {
+                                        val playlistId = playlistMatch.groupValues[1]
+                                        onPlaylistClick(playlistId, "", emptyList())
+                                        return@IconButton
+                                    }
+                                    // No match found — show toast
+                                    android.widget.Toast.makeText(context, "No Spotify link found in clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "Paste Spotify link", tint = Color.White)
                         }
                     }
                 },
