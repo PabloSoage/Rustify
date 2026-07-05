@@ -46,6 +46,5 @@
 -keepclassmembers class org.apache.commons.io.** { *; }
 -dontwarn org.apache.commons.io.**
 
-# Media3 (just in case)
--keep class androidx.media3.** { *; }
--keepclassmembers class androidx.media3.** { *; }
+# Media3 has its own consumer rules
+# -keep class androidx.media3.** { *; }

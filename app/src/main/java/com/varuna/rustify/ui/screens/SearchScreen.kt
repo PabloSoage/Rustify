@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -29,15 +31,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,15 +83,16 @@ fun SearchScreen(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    currentTrackId: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTrackId: String? = null
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
     val context = androidx.compose.ui.platform.LocalContext.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
-    val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
     var searchQuery by remember { mutableStateOf("") }
@@ -172,14 +173,14 @@ fun SearchScreen(
                             if (clip != null && clip.itemCount > 0) {
                                 val pastedText = clip.getItemAt(0).text?.toString()
                                 if (pastedText != null) {
-                                    val trackRegex = Regex("""open\.spotify\.com/track/([a-zA-Z0-9]+)""")
+                                    val trackRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?track/([a-zA-Z0-9]+)""")
                                     val trackMatch = trackRegex.find(pastedText)
                                     if (trackMatch != null) {
                                         val trackId = trackMatch.groupValues[1]
                                         android.util.Log.d("SearchScreen", "Pasted Spotify track: $trackId")
                                         // Navigate to track via callback
                                         onTrackClick(
-                                            com.varuna.rustify.bridge.FullTrack(
+                                            FullTrack(
                                                 id = trackId, name = "", externalUri = "",
                                                 explicit = false, durationMs = 0, isrc = "",
                                                 artists = emptyList(), album = null
@@ -188,7 +189,7 @@ fun SearchScreen(
                                         return@IconButton
                                     }
                                     // Try album
-                                    val albumRegex = Regex("""open\.spotify\.com/album/([a-zA-Z0-9]+)""")
+                                    val albumRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?album/([a-zA-Z0-9]+)""")
                                     val albumMatch = albumRegex.find(pastedText)
                                     if (albumMatch != null) {
                                         val albumId = albumMatch.groupValues[1]
@@ -196,7 +197,7 @@ fun SearchScreen(
                                         return@IconButton
                                     }
                                     // Try playlist
-                                    val playlistRegex = Regex("""open\.spotify\.com/playlist/([a-zA-Z0-9]+)""")
+                                    val playlistRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?playlist/([a-zA-Z0-9]+)""")
                                     val playlistMatch = playlistRegex.find(pastedText)
                                     if (playlistMatch != null) {
                                         val playlistId = playlistMatch.groupValues[1]
@@ -297,27 +298,59 @@ fun SearchScreen(
                                 val dismissState = rememberSwipeToDismissBoxState(
                                     positionalThreshold = { it * 0.4f }
                                 )
+
                                 LaunchedEffect(dismissState.currentValue) {
                                     if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                         onAddToQueue(track)
-                                        dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                        android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                        delay(150.milliseconds)
+                                        dismissState.reset()
                                     }
                                 }
 
-                                SearchResultRow(
-                                    title = track.name,
-                                    subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
-                                    imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
-                                    onClick = { onTrackClick(track) },
-                                    isLiked = isLiked,
-                                    isCurrentTrack = track.id == currentTrackId,
-                                    onLikeToggle = {
-                                        coroutineScope.launch {
-                                            spotifyRepo.toggleLikeTrack(track)
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    enableDismissFromEndToStart = false,
+                                    backgroundContent = {
+                                        val color by androidx.compose.animation.animateColorAsState(
+                                            if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) Color(0xFF1DB954) else Color.Transparent,
+                                            animationSpec = androidx.compose.animation.core.tween(300),
+                                            label = "SwipeBackgroundColor"
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(color)
+                                                .padding(horizontal = 20.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                                    contentDescription = "Add to Queue",
+                                                    tint = Color.White
+                                                )
+                                            }
                                         }
                                     },
-                                    onMoreClick = {
-                                        selectedTrackForMenu = track
+                                    content = {
+                                        SearchResultRow(
+                                            title = track.name,
+                                            subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
+                                            imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
+                                            onClick = { onTrackClick(track) },
+                                            isLiked = isLiked,
+                                            isCurrentTrack = track.id == currentTrackId,
+                                            onLikeToggle = {
+                                                coroutineScope.launch {
+                                                    spotifyRepo.toggleLikeTrack(track)
+                                                }
+                                            },
+                                            onMoreClick = {
+                                                selectedTrackForMenu = track
+                                            },
+                                            modifier = Modifier.background(Color(0xFF121212))
+                                        )
                                     }
                                 )
                             }
@@ -415,15 +448,16 @@ fun SearchResultRow(
     title: String,
     subtitle: String,
     imageUrl: String?,
-    isCircle: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isCircle: Boolean = false,
     isLiked: Boolean = false,
     isCurrentTrack: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     onMoreClick: (() -> Unit)? = null
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),

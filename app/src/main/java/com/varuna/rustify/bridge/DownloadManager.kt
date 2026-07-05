@@ -3,20 +3,21 @@
 package com.varuna.rustify.bridge
 
 import android.content.Context
-import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
-import kotlinx.coroutines.*
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import androidx.media3.datasource.DataSpec
-import com.varuna.rustify.player.AudioPlayerService
-import java.io.OutputStream
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class DownloadStatus {
     QUEUED, RESOLVING, DOWNLOADING, COMPLETE, ERROR
@@ -39,6 +40,8 @@ object DownloadManager {
     val activeDownloadCount: StateFlow<Int> = _activeDownloadCount.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    val initDeferred = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     fun enqueueDownload(
         context: Context,
@@ -79,7 +82,7 @@ object DownloadManager {
         _activeDownloadCount.value = _downloads.value.count { it.status in listOf(DownloadStatus.QUEUED, DownloadStatus.RESOLVING, DownloadStatus.DOWNLOADING) }
     }
 
-    private suspend fun updateStatus(trackId: String, status: DownloadStatus, progress: Int = 0, error: String? = null) {
+    private fun updateStatus(trackId: String, status: DownloadStatus, progress: Int = 0, error: String? = null) {
         _downloads.update { list ->
             list.map { if (it.id == trackId) it.copy(status = status, progress = progress, errorMessage = error) else it }
         }
@@ -108,7 +111,7 @@ object DownloadManager {
                 e.printStackTrace()
             }
             if (resolvedId.isNullOrBlank()) {
-                updateStatus(trackId, DownloadStatus.ERROR, error = "Stream URL not found")
+                updateStatus(trackId, DownloadStatus.ERROR, error = context.getString(com.varuna.rustify.R.string.track_menu_url_not_found))
                 return
             }
 
@@ -117,26 +120,50 @@ object DownloadManager {
             val safeName = "${trackArtist.replace("/", "_")} - ${trackName.replace("/", "_")}"
             
             withContext(Dispatchers.IO) {
+                // Wait for yt-dlp update
+                try {
+                    initDeferred.await()
+                } catch (e: Exception) {}
+
                 val tempDir = java.io.File(context.cacheDir, "downloads")
                 tempDir.mkdirs()
                 val tempFile = java.io.File(tempDir, "$safeName.mp3")
                 if (tempFile.exists()) tempFile.delete()
-                
-                val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedId")
-                request.addOption("-f", "bestaudio")
-                request.addOption("-x")
-                request.addOption("--audio-format", "mp3")
-                request.addOption("--audio-quality", "320K")
-                request.addOption("--embed-thumbnail")
-                request.addOption("--add-metadata")
-                request.addOption("-o", tempFile.absolutePath)
-                request.addOption("--no-check-certificate")
-                request.addOption("--no-warnings")
 
-                YoutubeDL.getInstance().execute(request, trackId) { progress, etaInSeconds, line ->
-                    if (scope.isActive) {
-                        scope.launch {
-                            updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress.toInt())
+                try {
+                    val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedId")
+                    request.addOption("-f", "bestaudio")
+                    request.addOption("-x")
+                    request.addOption("--audio-format", "mp3")
+                    request.addOption("--audio-quality", "320K")
+                    request.addOption("--embed-thumbnail")
+                    request.addOption("--add-metadata")
+                    request.addOption("-o", tempFile.absolutePath)
+                    request.addOption("--no-check-certificate")
+                    request.addOption("--no-warnings")
+
+                    YoutubeDL.getInstance().execute(request, trackId) { progress, etaInSeconds, line ->
+                        if (scope.isActive) {
+                            scope.launch {
+                                updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress.toInt())
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DownloadManager", "FFmpeg mp3 extraction failed, falling back to m4a", e)
+                    if (tempFile.exists()) tempFile.delete()
+                    
+                    val fallbackRequest = YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedId")
+                    fallbackRequest.addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+                    fallbackRequest.addOption("-o", tempFile.absolutePath)
+                    fallbackRequest.addOption("--no-check-certificate")
+                    fallbackRequest.addOption("--no-warnings")
+                    
+                    YoutubeDL.getInstance().execute(fallbackRequest, trackId) { progress, etaInSeconds, line ->
+                        if (scope.isActive) {
+                            scope.launch {
+                                updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress.toInt())
+                            }
                         }
                     }
                 }
@@ -160,10 +187,14 @@ object DownloadManager {
                 }
             }
 
-            if (kotlin.coroutines.coroutineContext.isActive) {
+            if (currentCoroutineContext().isActive) {
                 updateStatus(trackId, DownloadStatus.COMPLETE, progress = 100)
+                val toastMsg = context.getString(com.varuna.rustify.R.string.track_menu_downloaded_toast, trackName)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
+                }
             } else {
-                updateStatus(trackId, DownloadStatus.ERROR, error = "Cancelled")
+                updateStatus(trackId, DownloadStatus.ERROR, error = context.getString(com.varuna.rustify.R.string.track_menu_download_error))
             }
 
         } catch (e: Exception) {

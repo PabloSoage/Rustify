@@ -32,11 +32,10 @@ object LyricsRepository {
         title: String,
         durationSec: Int
     ): LyricsResult? {
-        val key = trackId
-        if (cache.containsKey(key)) return cache[key]
-
+        if (cache.containsKey(trackId)) return cache[trackId]
+        
         val result = fetchLyrics(artist, title, durationSec)
-        cache[key] = result
+        cache[trackId] = result
         return result
     }
 
@@ -46,7 +45,7 @@ object LyricsRepository {
         durationSec: Int
     ): LyricsResult? = withContext(Dispatchers.IO) {
         // Strip featuring and parenthetical content from title to improve matches
-        val cleanTitle = title.replace(Regex("\\(.*?\\)|\\[.*?\\]"), "").trim()
+        val cleanTitle = title.replace(Regex("\\(.*?\\)|\\[.*?]"), "").trim()
         val cleanArtist = artist.split(",").firstOrNull()?.trim() ?: artist
 
         if (durationSec > 0) {
@@ -62,8 +61,8 @@ object LyricsRepository {
         fetchFromSearchApi(cleanArtist, cleanTitle)
     }
 
-    private suspend fun fetchFromGetApi(artist: String, title: String, durationSec: Int?): LyricsResult? {
-        return try {
+    private suspend fun fetchFromGetApi(artist: String, title: String, durationSec: Int?): LyricsResult? = withContext(Dispatchers.IO) {
+        try {
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val encodedTitle = URLEncoder.encode(title, "UTF-8")
             val urlStr = if (durationSec != null) {
@@ -88,8 +87,8 @@ object LyricsRepository {
         }
     }
 
-    private suspend fun fetchFromSearchApi(artist: String, title: String): LyricsResult? {
-        return try {
+    private suspend fun fetchFromSearchApi(artist: String, title: String): LyricsResult? = withContext(Dispatchers.IO) {
+        try {
             val query = "$artist $title"
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val urlStr = "https://lrclib.net/api/search?q=$encodedQuery"
@@ -132,7 +131,7 @@ object LyricsRepository {
      */
     private fun parseLrc(lrc: String): List<LyricLine> {
         val lines = mutableListOf<LyricLine>()
-        val pattern = Regex("""^\[(\d{2}):(\d{2})\.(\d{2,3})\]\s*(.*)$""")
+        val pattern = Regex("""^\[(\d{2}):(\d{2})\.(\d{2,3})]\s*(.*)$""")
         for (line in lrc.lines()) {
             val match = pattern.matchEntire(line.trim()) ?: continue
             val (mm, ss, cs, text) = match.destructured
@@ -146,9 +145,6 @@ object LyricsRepository {
         return lines.sortedBy { it.timeMs }
     }
 
-    fun clearCache() {
-        cache.clear()
-    }
 
     fun invalidateLyrics(trackId: String) {
         cache.remove(trackId)

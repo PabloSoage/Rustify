@@ -254,7 +254,17 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
 
     let clean_spotify_name = clean_text(&meta.name);
     // Pre-compute HashSet for O(1) word lookup (BUG-16 optimization)
-    let spotify_words: HashSet<&str> = clean_spotify_name.split_whitespace().collect();
+    let spotify_words: std::collections::HashSet<&str> = clean_spotify_name.split_whitespace().collect();
+
+    struct ArtistMeta {
+        clean: String,
+        words: Vec<String>,
+    }
+    let precomputed_artists: Vec<ArtistMeta> = meta.artists.iter().map(|artist| {
+        let clean = clean_text(artist);
+        let words = clean.split_whitespace().map(|s| s.to_string()).collect();
+        ArtistMeta { clean, words }
+    }).collect();
 
     let mut best_track: Option<YouTubeTrack> = None;
     let mut best_score = -1;
@@ -279,16 +289,13 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
         }
 
         // Artist matching
-        for artist in &meta.artists {
-            let clean_artist = clean_text(artist);
-            let artist_words: Vec<&str> = clean_artist.split_whitespace().collect();
-
+        for artist_meta in &precomputed_artists {
             // Check if artist name is in title
-            if clean_yt_title.contains(&clean_artist) {
+            if clean_yt_title.contains(&artist_meta.clean) {
                 score += 20;
             } else {
-                for word in &artist_words {
-                    if yt_words.contains(word) {
+                for word in &artist_meta.words {
+                    if yt_words.contains(word.as_str()) {
                         score += 3;
                     }
                 }
@@ -296,11 +303,11 @@ fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option
 
             // Check if artist name is in channel name
             let clean_author = clean_text(&yt_track.author);
-            if clean_author.contains(&clean_artist) {
+            if clean_author.contains(&artist_meta.clean) {
                 score += 20;
             } else {
-                for word in &artist_words {
-                    if clean_author.contains(word) {
+                for word in &artist_meta.words {
+                    if clean_author.contains(word.as_str()) {
                         score += 3;
                     }
                 }

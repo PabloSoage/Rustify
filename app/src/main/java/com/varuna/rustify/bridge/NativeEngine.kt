@@ -1,5 +1,4 @@
 // app/src/main/java/com/varuna/rustify/bridge/NativeEngine.kt
-@file:Suppress("SpellCheckingInspection")
 
 package com.varuna.rustify.bridge
 

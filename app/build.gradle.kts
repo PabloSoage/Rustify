@@ -35,12 +35,23 @@ android {
 
     bundle {
         language {
+            @Suppress("UnstableApiUsage")
             enableSplit = false
+        }
+    }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/libffmpeg.zip.so")
+            keepDebugSymbols.add("**/libffprobe.zip.so")
+            keepDebugSymbols.add("**/libytdlp.zip.so")
         }
     }
 
     lint {
         disable += "MissingTranslation"
+        disable += "OldTargetApi"
+        disable += "IconDuplicates"
         abortOnError = false
     }
 
@@ -104,10 +115,12 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
     implementation(libs.youtubedl.android)
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    // FFmpeg AAR tells youtubedl-android to look for native ffmpeg/ffprobe.
+    // Static replacements in jniLibs/ override the AAR's dynamic libs.
+    implementation(libs.youtubedl.ffmpeg)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.profileinstaller)
 }
 
 // --- RUST CORE INTEGRATION ---

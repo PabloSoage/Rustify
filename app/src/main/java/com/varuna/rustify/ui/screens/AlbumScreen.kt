@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,14 +29,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,8 +75,8 @@ fun AlbumScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    currentTrackId: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTrackId: String? = null
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
@@ -97,11 +96,38 @@ fun AlbumScreen(
         isLoading = true
         errorMessage = null
         try {
-            albumDetails = spotifyRepo.getAlbum(albumId)
-            val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
-            tracks = response.items
-            hasMore = response.hasMore
-            offset = tracks.size
+            // Support local albums (navigated from LibraryLocalMusic)
+            if (albumId.startsWith("local_album:")) {
+                var localTracks = SpotifyRepository.localAlbumTracks[albumId]
+                if (localTracks.isNullOrEmpty()) {
+                    localTracks = spotifyRepo.localTracks.filter { it.album?.name == albumName }
+                    SpotifyRepository.localAlbumTracks[albumId] = localTracks
+                }
+                val coverUri = localTracks.firstOrNull()?.externalUri
+                val images = if (coverUri.isNullOrBlank()) emptyList() else listOf(SpotifyImage(coverUri, null, null))
+                albumDetails = FullAlbum(
+                    id = albumId,
+                    name = albumName,
+                    externalUri = "",
+                    releaseDate = null,
+                    releaseDatePrecision = null,
+                    images = images,
+                    artists = localTracks.firstOrNull()?.artists ?: emptyList(),
+                    albumType = "album",
+                    totalTracks = localTracks.size,
+                    recordLabel = null,
+                    genres = emptyList()
+                )
+                tracks = localTracks
+                hasMore = false
+                offset = localTracks.size
+            } else {
+                albumDetails = spotifyRepo.getAlbum(albumId)
+                val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
+                tracks = response.items
+                hasMore = response.hasMore
+                offset = tracks.size
+            }
 
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load details"
@@ -170,11 +196,35 @@ fun AlbumScreen(
                                 isLoading = true
                                 errorMessage = null
                                 try {
-                                    albumDetails = spotifyRepo.getAlbum(albumId)
-                                    val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
-                                    tracks = response.items
-                                    hasMore = response.hasMore
-                                    offset = tracks.size
+                                    if (albumId.startsWith("local_album:")) {
+                                        var localTracks = SpotifyRepository.localAlbumTracks[albumId]
+                                        if (localTracks.isNullOrEmpty()) {
+                                            localTracks = spotifyRepo.localTracks.filter { it.album?.name == albumName }
+                                            SpotifyRepository.localAlbumTracks[albumId] = localTracks
+                                        }
+                                        albumDetails = FullAlbum(
+                                            id = albumId,
+                                            name = albumName,
+                                            externalUri = "",
+                                            releaseDate = null,
+                                            releaseDatePrecision = null,
+                                            images = emptyList(),
+                                            artists = localTracks.firstOrNull()?.artists ?: emptyList(),
+                                            albumType = "album",
+                                            totalTracks = localTracks.size,
+                                            recordLabel = null,
+                                            genres = emptyList()
+                                        )
+                                        tracks = localTracks
+                                        hasMore = false
+                                        offset = localTracks.size
+                                    } else {
+                                        albumDetails = spotifyRepo.getAlbum(albumId)
+                                        val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
+                                        tracks = response.items
+                                        hasMore = response.hasMore
+                                        offset = tracks.size
+                                    }
                                 } catch (e: Exception) {
                                     errorMessage = e.message
                                 } finally {
@@ -338,7 +388,7 @@ fun AlbumScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(tracks) { index, track ->
+                        itemsIndexed(tracks, key = { index, track -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
                             // Request more data when we reach near the end of the list
                             if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
                                 LaunchedEffect(index) {
@@ -360,21 +410,16 @@ fun AlbumScreen(
                                 }
                             }
 
-                            @Suppress("DEPRECATION")
                             val dismissState = rememberSwipeToDismissBoxState(
                                 positionalThreshold = { it * 0.4f }
                             )
-                            var handled by remember { mutableStateOf(false) }
+
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    if (!handled) {
-                                        handled = true
-                                        onAddToQueue(track)
-                                        android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
-                                } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
-                                    handled = false
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    kotlinx.coroutines.delay(100L)
+                                    dismissState.reset()
                                 }
                             }
                             val trackId = track.id ?: ""
@@ -386,6 +431,7 @@ fun AlbumScreen(
                                 backgroundContent = {
                                     val color by androidx.compose.animation.animateColorAsState(
                                         if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) spotifyGreen else Color.Transparent,
+                                        animationSpec = androidx.compose.animation.core.tween(300),
                                         label = "SwipeBackgroundColor"
                                     )
                                     Box(
@@ -410,13 +456,13 @@ fun AlbumScreen(
                                         track = track,
                                         fallbackCoverUrl = primaryImageUrl,
                                         onClick = { onTrackClick(tracks, index) },
-                                        isLiked = isLiked,
+                                        isLiked = if (albumId.startsWith("local_album:")) false else isLiked,
                                         isCurrentTrack = track.id == currentTrackId,
-                                        onLikeToggle = {
+                                        onLikeToggle = if (albumId.startsWith("local_album:")) null else { {
                                             coroutineScope.launch {
                                                 spotifyRepo.toggleLikeTrack(track)
                                             }
-                                        },
+                                        } },
                                         onMoreClick = { selectedTrackForMenu = track }
                                     )
                                 }

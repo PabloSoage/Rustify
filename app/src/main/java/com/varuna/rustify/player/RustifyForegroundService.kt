@@ -2,6 +2,7 @@ package com.varuna.rustify.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
@@ -16,7 +17,7 @@ class RustifyForegroundService : MediaSessionService() {
         super.onCreate()
 
         // Ensure AudioPlayerService is initialized before we try to get the player instance
-        val audioService = AudioPlayerService.getInstance(this)
+        AudioPlayerService.getInstance(this)
         var basePlayer = AudioPlayerService.exoPlayerInstance
 
         // If ExoPlayer isn't ready yet, initialize it by getting the instance again
@@ -26,13 +27,13 @@ class RustifyForegroundService : MediaSessionService() {
         }
 
         if (basePlayer != null) {
-            val forwardingPlayer = object : androidx.media3.common.ForwardingPlayer(basePlayer) {
-                override fun getAvailableCommands(): androidx.media3.common.Player.Commands {
+            val forwardingPlayer = object : ForwardingPlayer(basePlayer) {
+                override fun getAvailableCommands(): Player.Commands {
                     return super.getAvailableCommands().buildUpon()
-                        .add(Player.COMMAND_SEEK_TO_NEXT)
-                        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .add(COMMAND_SEEK_TO_NEXT)
+                        .add(COMMAND_SEEK_TO_PREVIOUS)
+                        .add(COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                        .add(COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                         .build()
                 }
 
@@ -99,9 +100,8 @@ class RustifyForegroundService : MediaSessionService() {
         // Clean up state when the user swipes the app away from recents
         android.util.Log.d("RustifyForegroundService", "onTaskRemoved — cleaning up")
         val audioService = AudioPlayerService.instance
-        if (audioService != null) {
-            audioService.saveState()
-        }
+        audioService?.stopPlayerAndRelease()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         mediaSession?.release()
         mediaSession = null
         stopSelf()

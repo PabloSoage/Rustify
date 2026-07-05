@@ -1,7 +1,7 @@
-@file:Suppress("SpellCheckingInspection")
 
 package com.varuna.rustify.ui.components
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -53,17 +56,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
-import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,6 +126,7 @@ fun TrackOptionsMenuBottomSheet(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
                         items(playlists) { playlist ->
+                            val addedMessage = stringResource(R.string.added_to_playlist, playlist.name)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -135,7 +135,7 @@ fun TrackOptionsMenuBottomSheet(
                                             track.id?.let { trackId ->
                                                 val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
                                                 if (res.success) {
-                                                    Toast.makeText(context, context.getString(R.string.added_to_playlist, playlist.name), Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, addedMessage, Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     Toast.makeText(context, "Error: ${res.error}", Toast.LENGTH_SHORT).show()
                                                 }
@@ -183,6 +183,7 @@ fun TrackOptionsMenuBottomSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 // Header: Track Artwork, Title, Artist
@@ -230,12 +231,13 @@ fun TrackOptionsMenuBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Menu items
+                val queueAddedMsg = stringResource(R.string.added_to_queue)
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                     label = stringResource(R.string.track_menu_add_queue),
                     onClick = {
                         onAddToQueue()
-                        Toast.makeText(context, context.getString(R.string.queue_added), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, queueAddedMsg, Toast.LENGTH_SHORT).show()
                     }
                 )
 
@@ -287,7 +289,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (track.artists.isNotEmpty()) {
                     MenuOptionItem(
                         icon = Icons.Default.Person,
-                        label = stringResource(R.string.track_menu_go_artist),
+                        label = stringResource(R.string.track_options_view_artist),
                         onClick = {
                             onGoToArtist(track.artists.first().id)
                         }
@@ -295,15 +297,24 @@ fun TrackOptionsMenuBottomSheet(
                 }
 
                 val isLocalTrack = track.id?.startsWith("local:") == true
+
+                if (!isLocalTrack) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Share,
+                        label = stringResource(R.string.track_menu_share),
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "https://open.spotify.com/track/${track.id}")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
+                            onDismiss()
+                        }
+                    )
+                }
+
                 if (!isLocalTrack && downloadUriStr != null) {
                     val downloadingStr = stringResource(R.string.track_menu_getting_url)
-                    val errorUrlStr = stringResource(R.string.track_menu_url_not_found)
-                    val notificationTitle = stringResource(R.string.track_menu_downloading, track.name ?: "")
-                    val notificationConnecting = stringResource(R.string.track_menu_connecting)
-                    val notificationComplete = stringResource(R.string.track_menu_download_complete)
-                    val notificationError = stringResource(R.string.track_menu_download_error)
-                    val toastComplete = stringResource(R.string.track_menu_downloaded_toast, track.name ?: "")
-                    val downloadProgressFormat = stringResource(R.string.track_menu_download_progress)
                     
                     MenuOptionItem(
                         icon = Icons.Default.Download,

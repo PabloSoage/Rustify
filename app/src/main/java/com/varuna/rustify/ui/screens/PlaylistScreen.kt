@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,14 +29,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,9 +75,10 @@ fun PlaylistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    currentTrackId: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTrackId: String? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
@@ -338,7 +338,7 @@ fun PlaylistScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(tracks) { index, track ->
+                        itemsIndexed(tracks, key = { index, track -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
                             // Request more data when we reach near the end of the list
                             if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
                                 LaunchedEffect(index) {
@@ -349,7 +349,6 @@ fun PlaylistScreen(
                                             tracks = tracks + response.items
                                             offset += response.items.size
                                             hasMore = response.hasMore
-
                                         } else {
                                             hasMore = false
                                         }
@@ -364,27 +363,23 @@ fun PlaylistScreen(
                             val trackId = track.id ?: ""
                             val isLiked = spotifyRepo.isTrackLiked(trackId)
                             
-                            @Suppress("DEPRECATION")
                             val dismissState = rememberSwipeToDismissBoxState(
                                 positionalThreshold = { it * 0.4f }
                             )
-                            var handled by remember { mutableStateOf(false) }
+
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    if (!handled) {
-                                        handled = true
-                                        onAddToQueue(track)
-                                    }
-                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
-                                } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
-                                    handled = false
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    kotlinx.coroutines.delay(100L)
+                                    dismissState.reset()
                                 }
                             }
 
                             SwipeToDismissBox(
                                 state = dismissState,
                                 backgroundContent = {
-                                    androidx.compose.foundation.layout.Box(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .background(if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) Color(0xFF1DB954) else Color.Transparent)
@@ -392,7 +387,7 @@ fun PlaylistScreen(
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
-                                            androidx.compose.material3.Icon(
+                                            Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                                                 contentDescription = "Add to Queue",
                                                 tint = Color.White

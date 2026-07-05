@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -66,6 +66,7 @@
     <string name="track_options_view_artist">View Artist</string>
     <string name="track_menu_view_youtube">Alternative YouTube version</string>
     <string name="track_menu_add_queue">Add to Queue</string>
+    <string name="track_menu_share">Share</string>
     <string name="added_to_queue">Added to queue</string>
     <string name="track_alternative_changed">Alternative track confirmed</string>
     <string name="playlist_not_found">No playlists found</string>

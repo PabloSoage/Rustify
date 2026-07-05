@@ -1,5 +1,4 @@
 // app/src/main/java/com/varuna/rustify/MainActivity.kt
-@file:Suppress("SpellCheckingInspection")
 
 package com.varuna.rustify
 
@@ -62,14 +61,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -141,13 +141,14 @@ class MainActivity : ComponentActivity() {
         return null
     }
 
+    @SuppressLint("AppBundleLocaleChanges")
     override fun attachBaseContext(newBase: android.content.Context) {
         val prefs = newBase.getSharedPreferences("rustify_settings", MODE_PRIVATE)
         val appLang = prefs.getString("app_language", "system") ?: "system"
         if (appLang != "system" && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             val locale = java.util.Locale.forLanguageTag(appLang)
             java.util.Locale.setDefault(locale)
-            val config = android.content.res.Configuration(newBase.resources.configuration)
+            val config = Configuration(newBase.resources.configuration)
             config.setLocale(locale)
             val newContext = newBase.createConfigurationContext(config)
             super.attachBaseContext(newContext)
@@ -158,39 +159,30 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
+    ) { _: Boolean ->
         // Si se deniega, la notificación del reproductor no se verá en Android 13+
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        
+    private val intentFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    private fun extractDeepLink(intent: android.content.Intent?): String? {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
-            val uri = intent?.data
+            val uri = intent.data
             if (uri?.host == "open.spotify.com") {
                 val pathSegments = uri.pathSegments
                 val trackIndex = pathSegments.indexOf("track")
                 if (trackIndex != -1 && trackIndex + 1 < pathSegments.size) {
-                    initialDeepLinkTrackId = pathSegments[trackIndex + 1]
+                    return pathSegments[trackIndex + 1]
                 }
             } else if (uri?.scheme == "rustify" && uri.host == "track") {
                 val pathSegments = uri.pathSegments
                 if (pathSegments.isNotEmpty()) {
-                    initialDeepLinkTrackId = pathSegments[0]
+                    return pathSegments[0]
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
                 val v = uri.getQueryParameter("v")
                 if (v != null) {
-                    // For now, open the search screen with the ID or video URL so the user can see it
-                    // The best way would be to create a fake track, but we don't have metadata.
-                    // If we pass the ytId as a spotify ID, getTrack will fail.
-                    // We'll leave it to just print a log or handle it by searching.
                     android.util.Log.d("MainActivity", "Received YouTube Deep Link: $v")
-                    // initialDeepLinkTrackId = "yt:$v" // Future feature: native YTM playing without Spotify ID
                 }
             } else if (uri?.host == "youtu.be") {
                 val v = uri.lastPathSegment
@@ -204,25 +196,43 @@ class MainActivity : ComponentActivity() {
                 if (sharedText != null) {
                     val extractedId = extractSpotifyIdFromUrl(sharedText)
                     if (extractedId != null) {
-                        initialDeepLinkTrackId = extractedId
                         android.util.Log.d("MainActivity", "Extracted Spotify track ID from shared link: $extractedId")
+                        return extractedId
                     }
                 }
             }
         } else if (intent?.action == "com.varuna.rustify.action.VIEW_NOW_PLAYING") {
-            initialDeepLinkTrackId = "NOW_PLAYING"
+            return "NOW_PLAYING"
         }
+        return null
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractDeepLink(intent)?.let { intentFlow.tryEmit(it) }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
+        initialDeepLinkTrackId = extractDeepLink(intent)
+
         
         val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
         val appLang = prefs.getString("app_language", "system") ?: "system"
         val langCode = if (appLang == "system") java.util.Locale.getDefault().language else appLang
         com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
         
-        // Initialize YoutubeDL and FFmpeg
+        // Initialize YoutubeDL
         try {
             com.yausername.youtubedl_android.YoutubeDL.getInstance().init(application)
             com.yausername.ffmpeg.FFmpeg.getInstance().init(application)
-            android.util.Log.d("YoutubeDL", "YoutubeDL & FFmpeg initialized successfully.")
+            android.util.Log.d("YoutubeDL", "YoutubeDL and FFmpeg initialized successfully.")
             // Auto-update in background
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
@@ -235,9 +245,12 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     android.util.Log.e("YoutubeDL", "Failed to update YoutubeDL", e)
                 }
+
+                com.varuna.rustify.bridge.DownloadManager.initDeferred.complete(Unit)
             }
         } catch (e: Exception) {
             android.util.Log.e("YoutubeDL", "Failed to initialize YoutubeDL", e)
+            com.varuna.rustify.bridge.DownloadManager.initDeferred.complete(Unit)
         }
 
         window.attributes.layoutInDisplayCutoutMode =
@@ -264,15 +277,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             var appLanguage by remember { mutableStateOf(prefs.getString("app_language", "system") ?: "system") }
             val context = LocalContext.current
-            val localizedContext = remember(context, appLanguage) {
-                val newConfig = android.content.res.Configuration(context.resources.configuration)
+            val currentConfig = LocalConfiguration.current
+            val localizedContext = remember(context, appLanguage, currentConfig) {
+                val newConfig = Configuration(currentConfig)
                 val locale = if (appLanguage == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLanguage)
                 newConfig.setLocale(locale)
                 context.createConfigurationContext(newConfig)
             }
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalContext provides localizedContext,
-                LocalConfiguration provides localizedContext.resources.configuration,
+                // NOT overriding LocalConfiguration — let it flow from the framework
+                // so orientation changes are tracked correctly by Compose.
                 androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity
             ) {
                 RustifyTheme {
@@ -282,6 +297,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         EngineTester(
                             initialDeepLinkTrackId = initialDeepLinkTrackId,
+                            intentFlow = intentFlow,
                             onLanguageChanged = { newLang -> appLanguage = newLang }
                         )
                     }
@@ -293,7 +309,12 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? = null, onLanguageChanged: (String) -> Unit = {}) {
+fun EngineTester(
+    modifier: Modifier = Modifier, 
+    initialDeepLinkTrackId: String? = null, 
+    intentFlow: kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.emptyFlow(),
+    onLanguageChanged: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -315,6 +336,10 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
 
+    // Hoisted state for LibraryScreen to survive rotation and navigation pops
+    var librarySelectedTab by rememberSaveable { mutableStateOf(com.varuna.rustify.ui.screens.LibraryTab.PLAYLISTS) }
+    var librarySelectedGroup by rememberSaveable { mutableStateOf("Tracks") }
+
     LaunchedEffect(Unit) {
         if (initialDeepLinkTrackId != null) {
             if (initialDeepLinkTrackId == "NOW_PLAYING") {
@@ -324,6 +349,21 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                 }
             } else {
                 navigationStack.add(Screen.TrackDetail(initialDeepLinkTrackId))
+            }
+        }
+    }
+
+    LaunchedEffect(intentFlow) {
+        intentFlow.collect { deepLink ->
+            if (deepLink == "NOW_PLAYING") {
+                val currentTrackId = audioPlayerService.state.value.currentTrack?.id
+                if (currentTrackId != null) {
+                    if (navigationStack.lastOrNull() !is Screen.TrackDetail || (navigationStack.last() as Screen.TrackDetail).id != currentTrackId) {
+                        navigationStack.add(Screen.TrackDetail(currentTrackId))
+                    }
+                }
+            } else {
+                navigationStack.add(Screen.TrackDetail(deepLink))
             }
         }
     }
@@ -424,18 +464,19 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val view = LocalView.current
-    val activity = context.findActivity()
-    SideEffect {
-        val window = activity?.window
-        if (window != null) {
-            val windowInsetsController = WindowCompat.getInsetsController(window, view)
+    
+    DisposableEffect(isLandscape) {
+        val window = (view.context as? ComponentActivity)?.window
+        val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+        if (insetsController != null) {
             if (isLandscape) {
-                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
-                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
             }
         }
+        onDispose { }
     }
 
     Scaffold(
@@ -562,88 +603,93 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
             is Screen.Downloads -> "Downloads"
         }
 
-        val screenContent = @Composable {
-            saveableStateHolder.SaveableStateProvider(screenKey) {
-                when (currentScreen) {
-                is Screen.Home -> {
-                    HomeScreen(
-                        browseSections = browseSections,
-                        isRunning = isRunning,
-                        errorMessage = errorMessage,
-                        onRetry = {
-                            coroutineScope.launch {
-                                isRunning = true
-                                errorMessage = null
-                                try {
-                                    browseSections = spotifyRepo.getBrowseSections(10)
-                                } catch (e: Exception) {
-                                    errorMessage = e.message
+        val screenContent = remember(currentScreen) {
+            movableContentOf {
+                saveableStateHolder.SaveableStateProvider(screenKey) {
+                    when (currentScreen) {
+                    is Screen.Home -> {
+                        HomeScreen(
+                            browseSections = browseSections,
+                            isRunning = isRunning,
+                            errorMessage = errorMessage,
+                            onRetry = {
+                                coroutineScope.launch {
+                                    isRunning = true
+                                    errorMessage = null
+                                    try {
+                                        browseSections = spotifyRepo.getBrowseSections(10)
+                                    } catch (e: Exception) {
+                                        errorMessage = e.message
+                                    }
+                                    isRunning = false
                                 }
-                                isRunning = false
-                            }
-                        },
-                        onItemClick = { item ->
-                            when (item) {
-                                is BrowseSectionItem.PlaylistItem -> {
-                                    navigationStack.add(Screen.PlaylistDetail(item.playlist.id, item.playlist.name, item.playlist.images))
+                            },
+                            onItemClick = { item ->
+                                when (item) {
+                                    is BrowseSectionItem.PlaylistItem -> {
+                                        navigationStack.add(Screen.PlaylistDetail(item.playlist.id, item.playlist.name, item.playlist.images))
+                                    }
+                                    is BrowseSectionItem.AlbumItem -> {
+                                        navigationStack.add(Screen.AlbumDetail(item.album.id, item.album.name, item.album.images))
+                                    }
+                                    is BrowseSectionItem.ArtistItem -> {
+                                        navigationStack.add(Screen.ArtistDetail(item.artist.id))
+                                    }
                                 }
-                                is BrowseSectionItem.AlbumItem -> {
-                                    navigationStack.add(Screen.AlbumDetail(item.album.id, item.album.name, item.album.images))
+                            },
+                            onSettingsClick = {
+                                navigationStack.add(Screen.Settings)
+                            },
+                            onDownloadsClick = {
+                                navigationStack.add(Screen.Downloads)
+                            }
+                        )
+                    }
+                    is Screen.Search -> {
+                        SearchScreen(
+                            spotifyRepo = spotifyRepo,
+                            onTrackClick = { track -> audioPlayerService.loadPlaylist(listOf(track), 0) },
+                            onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                            onGoToQueue = {
+                                currentTrack?.id?.let { id ->
+                                    navigationStack.add(Screen.TrackDetail(id))
                                 }
-                                is BrowseSectionItem.ArtistItem -> {
-                                    navigationStack.add(Screen.ArtistDetail(item.artist.id))
+                            },
+                            onAlbumClick = { id, name, images ->
+                                navigationStack.add(Screen.AlbumDetail(id, name, images))
+                            },
+                            onPlaylistClick = { id, name, images ->
+                                navigationStack.add(Screen.PlaylistDetail(id, name, images))
+                            },
+                            onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                            currentTrackId = currentTrack?.id
+                        )
+                    }
+                    is Screen.Library -> {
+                        LibraryScreen(
+                            spotifyRepo = spotifyRepo,
+                            selectedTab = librarySelectedTab,
+                            onTabSelected = { librarySelectedTab = it },
+                            selectedGroup = librarySelectedGroup,
+                            onGroupSelected = { librarySelectedGroup = it },
+                            onPlaylistClick = { id, name, images ->
+                                navigationStack.add(Screen.PlaylistDetail(id, name, images))
+                            },
+                            onAlbumClick = { id, name, images ->
+                                navigationStack.add(Screen.AlbumDetail(id, name, images))
+                            },
+                            onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                            onAddToQueue = { track -> audioPlayerService.enqueue(track) },
+                            onGoToQueue = {
+                                currentTrack?.id?.let { id ->
+                                    navigationStack.add(Screen.TrackDetail(id))
                                 }
-                            }
-                        },
-                        onSettingsClick = {
-                            navigationStack.add(Screen.Settings)
-                        },
-                        onDownloadsClick = {
-                            navigationStack.add(Screen.Downloads)
-                        }
-                    )
-                }
-                is Screen.Search -> {
-                    SearchScreen(
-                        spotifyRepo = spotifyRepo,
-                        onTrackClick = { track -> audioPlayerService.loadPlaylist(listOf(track), 0) },
-                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
-                        onGoToQueue = {
-                            currentTrack?.id?.let { id ->
-                                navigationStack.add(Screen.TrackDetail(id))
-                            }
-                        },
-                        onAlbumClick = { id, name, images ->
-                            navigationStack.add(Screen.AlbumDetail(id, name, images))
-                        },
-                        onPlaylistClick = { id, name, images ->
-                            navigationStack.add(Screen.PlaylistDetail(id, name, images))
-                        },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
-                        currentTrackId = currentTrack?.id
-                    )
-                }
-                is Screen.Library -> {
-                    LibraryScreen(
-                        spotifyRepo = spotifyRepo,
-                        onPlaylistClick = { id, name, images ->
-                            navigationStack.add(Screen.PlaylistDetail(id, name, images))
-                        },
-                        onAlbumClick = { id, name, images ->
-                            navigationStack.add(Screen.AlbumDetail(id, name, images))
-                        },
-                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
-                        onAddToQueue = { track -> audioPlayerService.enqueue(track) },
-                        onGoToQueue = {
-                            currentTrack?.id?.let { id ->
-                                navigationStack.add(Screen.TrackDetail(id))
-                            }
-                        },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
-                        onOpenSettings = { navigationStack.add(Screen.Settings) },
-                        currentTrackId = currentTrack?.id
-                    )
-                }
+                            },
+                            onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                            onOpenSettings = { navigationStack.add(Screen.Settings) },
+                            currentTrackId = currentTrack?.id
+                        )
+                    }
                 is Screen.PlaylistDetail -> {
                     PlaylistScreen(
                         playlistId = currentScreen.id,
@@ -734,8 +780,9 @@ fun EngineTester(modifier: Modifier = Modifier, initialDeepLinkTrackId: String? 
                     )
                 }
             }
+                }
+            }
         }
-    }
 
         if (isLandscape && isBottomNavScreen) {
             Row(modifier = contentModifier) {
@@ -1009,8 +1056,3 @@ fun MiniPlayer(
     }
 }
 
-tailrec fun android.content.Context.findActivity(): android.app.Activity? = when (this) {
-    is android.app.Activity -> this
-    is android.content.ContextWrapper -> baseContext.findActivity()
-    else -> null
-}

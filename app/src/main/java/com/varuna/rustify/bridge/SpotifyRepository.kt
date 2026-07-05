@@ -4,8 +4,8 @@
 
 package com.varuna.rustify.bridge
 
-import android.content.Context
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -44,6 +44,7 @@ class SpotifyEngineException(message: String) : Exception(message)
  *   val tracks = repo.getSavedTracks(20, 0)
  */
 @Suppress("unused", "MemberVisibilityCanBePrivate")
+@SuppressLint("StaticFieldLeak")
 class SpotifyRepository(context: Context) {
     companion object {
         private const val PREFS_NAME = "rustify_spotify_prefs"
@@ -55,13 +56,18 @@ class SpotifyRepository(context: Context) {
         @Volatile
         private var instance: SpotifyRepository? = null
 
+        // Local music bridge: temporary storage for local album/artist tracks
+        // Used to pass local track data to AlbumScreen/ArtistScreen without API calls
+        val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
+        val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
+
         /**
          * Normalize a name for comparison: trim, lowercase, strip featuring tags.
          */
         private fun normalizeName(name: String): String {
             return name.trim().lowercase()
-                .replace(Regex("""\s*[\(\[].*?feat\..*?[\)\]]""", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("""\s*[\(\[].*?featuring.*?[\)\]]""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*[(\[].*?feat\..*?[)\]]""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*[(\[].*?featuring.*?[)\]]""", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("""\s*feat\..*$""", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("""\s*ft\..*$""", RegexOption.IGNORE_CASE), "")
                 .trim()
@@ -73,18 +79,25 @@ class SpotifyRepository(context: Context) {
             return repo.findLocalMatch(track)
         }
 
+        private var memoryCacheLocalTracks: List<FullTrack>? = null
+
         private fun findLocalMatchFromDisk(context: Context, track: FullTrack): FullTrack? {
-            val localCacheFile = java.io.File(context.filesDir, "local_music_cache.json")
-            if (!localCacheFile.exists()) return null
-            try {
-                val jsonStr = localCacheFile.readText()
-                val array = org.json.JSONArray(jsonStr)
-                for (i in 0 until array.length()) {
-                    val localTrack = FullTrack.fromJson(array.getJSONObject(i))
-                    if (isLocalMatch(track, localTrack)) return localTrack
+            if (memoryCacheLocalTracks == null) {
+                val localCacheFile = java.io.File(context.filesDir, "local_music_cache.json")
+                if (!localCacheFile.exists()) return null
+                try {
+                    val jsonStr = localCacheFile.readText()
+                    val array = org.json.JSONArray(jsonStr)
+                    val tracks = mutableListOf<FullTrack>()
+                    for (i in 0 until array.length()) {
+                        tracks.add(FullTrack.fromJson(array.getJSONObject(i)))
+                    }
+                    memoryCacheLocalTracks = tracks
+                } catch (e: Exception) {
+                    return null
                 }
-            } catch (e: Exception) {}
-            return null
+            }
+            return memoryCacheLocalTracks?.find { isLocalMatch(track, it) }
         }
 
         /**
@@ -531,97 +544,137 @@ class SpotifyRepository(context: Context) {
                 }
 
                 val existingTracks = localTracks.associateBy { it.id }
-                val newLocalTracks = mutableListOf<FullTrack>()
-
                 val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "webm", "aac")
-                
-                suspend fun processDirectory(dirFile: androidx.documentfile.provider.DocumentFile?) {
-                    if (dirFile == null) return
-                    val files = dirFile.listFiles()
-                    for (file in files) {
-                        if (file.isDirectory) {
-                            processDirectory(file)
-                        } else {
-                            val mime = file.type
-                            val name = file.name?.lowercase() ?: ""
-                            val hasAudioExtension = supportedExtensions.any { name.endsWith(".$it") }
-                            if (mime?.startsWith("audio/") == true || hasAudioExtension) {
-                                val trackId = "local:${file.uri}"
-                                val lastModifiedStr = file.lastModified().toString()
-                                val existingTrack = existingTracks[trackId]
+                val coversDir = java.io.File(appCtx.filesDir, "covers").also { it.mkdirs() }
+                val newLocalTracks = java.util.Collections.synchronizedList(mutableListOf<FullTrack>())
+                val totalFileCount = java.util.concurrent.atomic.AtomicInteger(0)
 
-                                // Verify cover still exists for unchanged existing tracks (BUG-07)
-                                var needsExtraction = existingTrack == null || existingTrack.addedAt != lastModifiedStr
-                                if (!needsExtraction && existingTrack != null) {
-                                    val existingCoverPath = existingTrack.externalUri.removePrefix("file://")
-                                    if (existingCoverPath.isNotBlank() && !java.io.File(existingCoverPath).exists()) {
-                                        android.util.Log.d("SpotifyRepository", "Cover missing for ${existingTrack.name}, re-extracting")
-                                        needsExtraction = true
-                                    }
-                                }
-                                if (!needsExtraction && existingTrack != null) {
-                                    newLocalTracks.add(existingTrack)
-                                    continue
-                                }
+                // Extract metadata + optional cover for a single file
+                fun extractTrack(
+                    file: androidx.documentfile.provider.DocumentFile,
+                    existingTrack: FullTrack?
+                ): FullTrack? {
+                    val trackId = "local:${file.uri}"
+                    val lastModifiedStr = file.lastModified().toString()
+                    val name = file.name ?: return null
 
-                                // Extract metadata (new or re-extract)
-                                val retriever = android.media.MediaMetadataRetriever()
-                                try {
-                                    retriever.setDataSource(appCtx, file.uri)
-                                    val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.name ?: "Unknown"
-                                    val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                                    val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
-                                    val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                    val durationMs = durationStr?.toLongOrNull() ?: 0L
-
-                                    var coverUri = ""
-                                    try {
-                                        val safeName = file.uri.lastPathSegment?.replace(Regex("[^a-zA-Z0-9.-]"), "_") ?: "unknown"
-                                        // BUG-07: Use filesDir/covers/ instead of cacheDir (Android can clear cacheDir)
-                                        val coversDir = java.io.File(appCtx.filesDir, "covers")
-                                        if (!coversDir.exists()) coversDir.mkdirs()
-                                        val coverFile = java.io.File(coversDir, "cover_$safeName.jpg")
-                                        if (!coverFile.exists()) {
-                                            val picture = retriever.embeddedPicture
-                                            if (picture != null) {
-                                                java.io.FileOutputStream(coverFile).use { fos -> fos.write(picture) }
-                                            }
-                                        }
-                                        if (coverFile.exists()) {
-                                            coverUri = "file://" + coverFile.absolutePath
-                                        }
-                                    } catch (e: Exception) {}
-
-                                    newLocalTracks.add(
-                                        FullTrack(
-                                            id = trackId,
-                                            name = title,
-                                            artists = listOf(com.varuna.rustify.bridge.SimpleArtist("local_artist", artist, "", emptyList())),
-                                            album = com.varuna.rustify.bridge.SimpleAlbum("local_album", album, "", null, null, emptyList(), emptyList(), null),
-                                            durationMs = durationMs.toInt(),
-                                            explicit = false,
-                                            isrc = "",
-                                            addedAt = lastModifiedStr,
-                                            externalUri = coverUri
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                } finally {
-                                    try { retriever.release() } catch (e: Exception) {}
-                                }
-                            }
+                    // Fast path: unchanged existing track with valid cover
+                    if (existingTrack != null && existingTrack.addedAt == lastModifiedStr) {
+                        val existingCoverPath = existingTrack.externalUri.removePrefix("file://")
+                        if (existingCoverPath.isBlank() || java.io.File(existingCoverPath).exists()) {
+                            return existingTrack
                         }
+                    }
+
+                    val retriever = android.media.MediaMetadataRetriever()
+                    return try {
+                        retriever.setDataSource(appCtx, file.uri)
+                        val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE) ?: name
+                        val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
+                        val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
+                        val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        val durationMs = durationStr?.toLongOrNull() ?: 0L
+
+                        // Extract cover art to dedicated directory
+                        var coverUri = existingTrack?.externalUri?.takeIf {
+                            it.isNotBlank() && java.io.File(it.removePrefix("file://")).exists()
+                        } ?: ""
+                        if (coverUri.isBlank()) {
+                            try {
+                                val coverBytes = retriever.embeddedPicture
+                                if (coverBytes != null && coverBytes.isNotEmpty()) {
+                                    val coverFile = java.io.File(coversDir, "${trackId.hashCode()}.jpg")
+                                    coverFile.writeBytes(coverBytes)
+                                    coverUri = "file://${coverFile.absolutePath}"
+                                }
+                            } catch (_: Exception) { }
+                        }
+
+                        FullTrack(
+                            id = trackId,
+                            name = title,
+                            artists = listOf(SimpleArtist("local_artist:$artist", artist, "", emptyList())),
+                            album = SimpleAlbum(
+                                "local_album:$album", album, "", null, null, 
+                                if (coverUri.isNotBlank()) listOf(SpotifyImage(coverUri, null, null)) else emptyList(), 
+                                emptyList(), null
+                            ),
+                            durationMs = durationMs.toInt(),
+                            explicit = false,
+                            isrc = "",
+                            addedAt = lastModifiedStr,
+                            externalUri = coverUri
+                        )
+                    } catch (e: Exception) {
+                        null
+                    } finally {
+                        try { retriever.release() } catch (_: Exception) {}
                     }
                 }
 
-                for (dirUriStr in localMusicDirs) {
-                    try {
-                        val treeUri = android.net.Uri.parse(dirUriStr)
-                        val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(appCtx, treeUri)
-                        processDirectory(dirFile)
-                    } catch (e: Exception) {}
+                // Process directories in parallel: one coroutine per root directory
+                val scanDispatcher = Dispatchers.IO.limitedParallelism(32)
+                coroutineScope {
+                    localMusicDirs.map { dirUriStr ->
+                        async(Dispatchers.IO) {
+                            val dirTracks = java.util.Collections.synchronizedList(mutableListOf<FullTrack>())
+                            try {
+                                val treeUri = android.net.Uri.parse(dirUriStr)
+                                val dirFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(appCtx, treeUri)
+
+                                // Recursive directory scanner
+                                suspend fun processDirectory(df: androidx.documentfile.provider.DocumentFile?) {
+                                    if (df == null) return
+                                    val files = df.listFiles()
+                                    
+                                    val audioFiles = mutableListOf<androidx.documentfile.provider.DocumentFile>()
+                                    val subdirs = mutableListOf<androidx.documentfile.provider.DocumentFile>()
+                                    
+                                    for (file in files) {
+                                        if (file.isDirectory) {
+                                            subdirs.add(file)
+                                        } else {
+                                            val mime = file.type
+                                            val fname = file.name?.lowercase() ?: ""
+                                            val hasAudioExtension = supportedExtensions.any { fname.endsWith(".$it") }
+                                            if (mime?.startsWith("audio/") == true || hasAudioExtension) {
+                                                audioFiles.add(file)
+                                            }
+                                        }
+                                    }
+                                    
+                                    coroutineScope {
+                                        val fileJob = async(scanDispatcher) {
+                                            for (file in audioFiles) {
+                                                if (totalFileCount.incrementAndGet() % 16 == 0) {
+                                                    delay(1.milliseconds)
+                                                }
+                                                val trackId = "local:${file.uri}"
+                                                val existing = existingTracks[trackId]
+                                                val track = extractTrack(file, existing)
+                                                if (track != null) dirTracks.add(track)
+                                            }
+                                        }
+                                        
+                                        val subdirJobs = subdirs.map { subdir ->
+                                            async(scanDispatcher) {
+                                                processDirectory(subdir)
+                                            }
+                                        }
+                                        
+                                        fileJob.await()
+                                        subdirJobs.awaitAll()
+                                    }
+                                }
+                                processDirectory(dirFile)
+                            } catch (_: Exception) { }
+                            dirTracks
+                        }
+                    }.awaitAll().forEach { dirTracks ->
+                        newLocalTracks.addAll(dirTracks)
+                    }
                 }
-                
+
                 withContext(Dispatchers.Main) {
                     localTracks.clear()
                     localTracks.addAll(newLocalTracks)

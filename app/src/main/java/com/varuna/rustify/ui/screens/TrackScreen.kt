@@ -4,6 +4,9 @@ package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.varuna.rustify.R
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -31,11 +34,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -43,8 +46,6 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.automirrored.filled.Subject
-import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -278,7 +279,7 @@ fun TrackScreen(
 
     val playerState by audioPlayerService.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
 
     val isCurrentTrack = playerState.currentTrack?.id == trackId
     val trackToShow = if (isCurrentTrack) playerState.currentTrack else trackDetails
@@ -312,12 +313,23 @@ fun TrackScreen(
         }
     }
 
+    // Observe preloaded lyrics from AudioPlayerService (BUG-20 fix)
+    val preloadedLyrics by audioPlayerService.preloadedLyrics.collectAsState()
     var lyricsResult by remember(trackToShow?.id) { mutableStateOf<LyricsResult?>(null) }
     var lyricsLoading by remember(trackToShow?.id) { mutableStateOf(false) }
 
     LaunchedEffect(trackToShow?.id) {
         val track = trackToShow ?: return@LaunchedEffect
         if (track.id == null) return@LaunchedEffect
+
+        // First check if preloaded lyrics are already available for this track
+        val cached = preloadedLyrics
+        if (cached != null && audioPlayerService.preloadedLyricsTrackId == track.id) {
+            lyricsResult = cached
+            lyricsLoading = false
+            return@LaunchedEffect
+        }
+
         lyricsLoading = true
         lyricsResult = null
         val artist = track.artists.firstOrNull()?.name ?: ""
@@ -333,11 +345,22 @@ fun TrackScreen(
         lyricsLoading = false
     }
 
+    // React to preloaded lyrics arriving asynchronously (skip-to-next scenario)
+    LaunchedEffect(preloadedLyrics) {
+        val track = trackToShow ?: return@LaunchedEffect
+        val trackId = track.id ?: return@LaunchedEffect
+        if (preloadedLyrics != null && audioPlayerService.preloadedLyricsTrackId == trackId) {
+            lyricsResult = preloadedLyrics
+            lyricsLoading = false
+        }
+    }
+
     val spotifyGreen = Color(0xFF1DB954)
     val darkBackground = Color(0xFF121212)
 
     val imgUrl = trackToShow?.effectiveCoverUrl()
-    val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(
         containerColor = darkBackground,
@@ -565,6 +588,7 @@ fun TrackScreen(
 
     if (showMappingDialog) {
         trackToShow?.let { track ->
+            val alternativeChangedMsg = stringResource(com.varuna.rustify.R.string.track_alternative_changed)
             YouTubeMappingDialog(
                 track = track,
                 audioPlayerService = audioPlayerService,
@@ -576,8 +600,8 @@ fun TrackScreen(
                         LyricsRepository.invalidateLyrics(tid)
                         
                         android.widget.Toast.makeText(
-                            context,
-                            context.getString(com.varuna.rustify.R.string.track_alternative_changed),
+                            context.applicationContext,
+                            alternativeChangedMsg,
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                         
@@ -691,7 +715,7 @@ fun QueueBottomSheet(
 
             // Next Up Section
             Text(
-                text = "Siguiente en la cola",
+                text = stringResource(R.string.queue_next_up),
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.Gray,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -707,7 +731,7 @@ fun QueueBottomSheet(
                     modifier = Modifier.fillMaxWidth().height(100.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("La cola está vacía", color = Color.Gray)
+                    Text(stringResource(R.string.queue_empty), color = Color.Gray)
                 }
             } else {
                 LazyColumn(
@@ -715,23 +739,18 @@ fun QueueBottomSheet(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    itemsIndexed(nextUpTracks, key = { _, track -> System.identityHashCode(track) }) { indexInNextUp, track ->
+                    itemsIndexed(nextUpTracks, key = { index, track -> "${track.id ?: "unknown"}_$index" }) { indexInNextUp, track ->
                         val originalIndex = nextUpStartIndex + indexInNextUp
                         
                         val dismissState = rememberSwipeToDismissBoxState(
                             positionalThreshold = { it * 0.4f }
                         )
-                        var handled by remember { mutableStateOf(false) }
 
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                if (!handled) {
-                                    handled = true
+                                if (originalIndex in queue.indices) {
                                     audioPlayerService.removeFromQueue(originalIndex)
                                 }
-                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
-                            } else if (dismissState.currentValue == SwipeToDismissBoxValue.Settled) {
-                                handled = false
                             }
                         }
 
@@ -759,6 +778,11 @@ fun QueueBottomSheet(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(Color(0xFF1E1E1E))
+                                        .clickable {
+                                            track.id?.let { id ->
+                                                audioPlayerService.playSpecificTrackInQueue(id)
+                                            }
+                                        }
                                         .padding(vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -928,8 +952,6 @@ fun TrackScreenControls(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // YouTube Mapping Override Trigger removed from here
-        val isLocalTrack = track.id?.startsWith("local:") == true
 
         // Premium Seek Slider
         var sliderPosition by remember { mutableStateOf<Float?>(null) }
@@ -987,7 +1009,7 @@ fun TrackScreenControls(
                 IconButton(onClick = onShowMappingDialog) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.CallSplit,
-                        contentDescription = "Alternative YouTube version",
+                        contentDescription = stringResource(R.string.track_menu_view_youtube),
                         tint = Color.White,
                         modifier = Modifier.size(28.dp)
                     )
@@ -1196,7 +1218,7 @@ fun LyricsView(
                 }
             }
             lyricsResult.plain != null -> {
-                val scrollState = androidx.compose.foundation.rememberScrollState()
+                val scrollState = rememberScrollState()
                 Text(
                     text = lyricsResult.plain,
                     color = Color.LightGray,
@@ -1211,7 +1233,7 @@ fun LyricsView(
             else -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "No se encontraron letras",
+                        text = stringResource(R.string.lyrics_not_found),
                         color = Color.Gray,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center

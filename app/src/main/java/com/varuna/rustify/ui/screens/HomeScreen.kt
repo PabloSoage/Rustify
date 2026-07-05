@@ -87,7 +87,8 @@ fun HomeScreen(
                 }
             }
         } else {
-            val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val config = androidx.compose.ui.platform.LocalConfiguration.current
+            val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             val bottomPadding = if (isLandscape) 16.dp else 100.dp
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),

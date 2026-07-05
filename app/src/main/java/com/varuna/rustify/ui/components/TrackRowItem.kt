@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,12 +46,12 @@ fun TrackRowItem(
     track: FullTrack,
     fallbackCoverUrl: String?,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     isLiked: Boolean = false,
     isCurrentTrack: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     isScrollbarDragging: Boolean = false,
-    onMoreClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onMoreClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -107,11 +108,11 @@ fun TrackRowItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Title and Artists
+        // Title, and below: Artist + Duration
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 8.dp)
+                .padding(end = 4.dp)
         ) {
             Text(
                 text = track.name,
@@ -122,7 +123,8 @@ fun TrackRowItem(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 // Explicit Badge
                 if (track.explicit) {
@@ -145,7 +147,15 @@ fun TrackRowItem(
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.LightGray,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // Duration — pushed to the right, next to the like button
+                Text(
+                    text = formatDuration(track.durationMs),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray
                 )
             }
         }
@@ -160,25 +170,24 @@ fun TrackRowItem(
         }
 
         if (onMoreClick != null) {
-            IconButton(
-                onClick = onMoreClick,
-                modifier = Modifier.size(36.dp)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { onMoreClick() },
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "More options",
-                    tint = Color.LightGray
+                    tint = Color.LightGray,
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(4.dp))
         }
-
-        // Track Duration
-        Text(
-            text = formatDuration(track.durationMs),
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.Gray
-        )
     }
 }
 

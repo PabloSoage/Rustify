@@ -3,8 +3,9 @@
 
 package com.varuna.rustify.ui.screens
 
-import android.content.Intent
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,10 +37,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -52,8 +53,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.Canvas
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,7 +90,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
 
     var isUpdatingYtDlp by remember { mutableStateOf(false) }
     var ytDlpVersion by remember { mutableStateOf(YoutubeDL.getInstance().version(context) ?: "Unknown") }
@@ -108,8 +122,8 @@ fun SettingsScreen(
     val exportSuccessMsg = stringResource(R.string.settings_export_success)
     val exportNoDataMsg = stringResource(R.string.settings_no_mappings_export)
 
-    var audioCacheSize by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    var imageCacheSize by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var audioCacheSize by remember { mutableLongStateOf(0L) }
+    var imageCacheSize by remember { mutableLongStateOf(0L) }
 
     fun getDirSize(dir: File): Long {
         var size = 0L
@@ -132,7 +146,7 @@ fun SettingsScreen(
         }
     }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         updateCacheSizes()
     }
     val exportErrorMsg = stringResource(R.string.settings_export_error)
@@ -300,26 +314,7 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
 
-            // FFmpeg section (BUG-15)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("FFmpeg", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "FFmpeg is used for audio format conversion. The binary is included with the app and managed automatically.",
-                        color = Color.Gray,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = stringResource(R.string.settings_cache_storage),
@@ -518,21 +513,88 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { exportLauncher.launch("youtube_mappings.json") },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(stringResource(R.string.settings_export), color = Color.White)
+                            Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp)
                         }
                         Button(
                             onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(stringResource(R.string.settings_import), color = Color.White)
+                            Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp)
                         }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // View/Edit mappings button (BUG-24)
+                    var showMappingsDialog by remember { mutableStateOf(false) }
+                    val mappingsContent = remember {
+                        val file = File(context.filesDir, "youtube_mappings.json")
+                        if (file.exists()) file.readText() else null
+                    }
+                    Button(
+                        onClick = { showMappingsDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "View Mappings (${mappingsContent?.lines()?.size ?: 0} entries)",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (showMappingsDialog) {
+                        var editableContent by remember { mutableStateOf(mappingsContent ?: "") }
+                        AlertDialog(
+                            onDismissRequest = { showMappingsDialog = false },
+                            title = { Text("YouTube Mappings", color = Color.White) },
+                            text = {
+                                Column {
+                                    if (mappingsContent == null) {
+                                        Text("No mappings found.", color = Color.Gray)
+                                    } else {
+                                        rememberScrollState()
+                                        OutlinedTextField(
+                                            value = editableContent,
+                                            onValueChange = { editableContent = it },
+                                            modifier = Modifier.fillMaxWidth().height(300.dp),
+                                            colors = TextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedContainerColor = Color(0xFF121212),
+                                                unfocusedContainerColor = Color(0xFF121212)
+                                            ),
+                                            textStyle = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = {
+                                        val file = File(context.filesDir, "youtube_mappings.json")
+                                        try {
+                                            file.writeText(editableContent)
+                                            Toast.makeText(context, "Mappings saved", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
+                                        }
+                                        showMappingsDialog = false
+                                    }) {
+                                        Text("Save", color = Color(0xFF1DB954))
+                                    }
+                                    TextButton(onClick = { showMappingsDialog = false }) {
+                                        Text("Close", color = Color.Gray)
+                                    }
+                                }
+                            },
+                            containerColor = Color(0xFF1E1E1E)
+                        )
                     }
                 }
             }
@@ -555,10 +617,13 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Calculate storage sizes
+
+
                     val filesDir = context.filesDir
                     val cacheDir = context.cacheDir
+                    val noBackupDir = context.noBackupFilesDir
 
-                    fun java.io.File.dirSize(): Long {
+                    fun File.dirSize(): Long {
                         if (!exists()) return 0L
                         return if (isDirectory) {
                             listFiles()?.sumOf { it.dirSize() } ?: 0L
@@ -567,14 +632,46 @@ fun SettingsScreen(
                         }
                     }
 
-                    val userDataBytes = filesDir.dirSize()
-                    val audioCacheDir = java.io.File(cacheDir, "audio_cache")
-                    val imageCacheDir = java.io.File(cacheDir, "image_cache")
+                    // Yt-dlp and FFmpeg binaries
+                    val ytdlpDir = File(noBackupDir, "youtubedl-android")
+                    val ytdlpBinaryBytes = ytdlpDir.dirSize()
+                    
+                    var ffmpegBinaryBytes = 0L
+                    var ffprobeBinaryBytes = 0L
+                    try {
+                        val apkFile = java.util.zip.ZipFile(context.applicationInfo.sourceDir)
+                        for (entry in apkFile.entries()) {
+                            if (entry.name.endsWith("libffmpeg.zip.so")) ffmpegBinaryBytes = entry.size
+                            if (entry.name.endsWith("libffprobe.zip.so")) ffprobeBinaryBytes = entry.size
+                        }
+                        apkFile.close()
+                    } catch (e: Exception) {}
+
+                    // Local Music Cache (covers + local JSON)
+                    val localCoversBytes = File(filesDir, "covers").dirSize()
+                    val localJsonBytes = File(filesDir, "local_music_cache.json").length()
+                    val localMusicCacheBytes = localCoversBytes + localJsonBytes
+
+                    // Spotify Cache (JSONs)
+                    val spotifyLikedBytes = File(filesDir, "spotify_liked_tracks_cache.json").length()
+                    val spotifyPlaylistsBytes = File(filesDir, "spotify_saved_playlists_cache.json").length()
+                    val spotifyAlbumsBytes = File(filesDir, "spotify_saved_albums_cache.json").length()
+                    val spotifyArtistsBytes = File(filesDir, "spotify_followed_artists_cache.json").length()
+                    val spotifyCacheBytes = spotifyLikedBytes + spotifyPlaylistsBytes + spotifyAlbumsBytes + spotifyArtistsBytes
+
+                    // Rest of User Data
+                    val totalFilesDirBytes = filesDir.dirSize()
+                    val otherUserDataBytes = totalFilesDirBytes - (localMusicCacheBytes + spotifyCacheBytes)
+                    val userDataBytes = kotlin.math.max(0L, otherUserDataBytes)
+
+                    val audioCacheDir = File(cacheDir, "audio_cache")
+                    val imageCacheDir = File(cacheDir, "image_cache")
                     val audioCacheBytes = audioCacheDir.dirSize()
                     val imageCacheBytes = imageCacheDir.dirSize()
-                    val totalBytes = userDataBytes + audioCacheBytes + imageCacheBytes
+                    
+                    val totalBytes = totalFilesDirBytes + audioCacheBytes + imageCacheBytes + ytdlpBinaryBytes + ffmpegBinaryBytes
 
-                    fun formatBytes(bytes: Long): String = when {
+                    fun formatBytesLocal(bytes: Long): String = when {
                         bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
                         bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
                         bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
@@ -593,54 +690,105 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.padding(start = 8.dp).width(8.dp))
                                 Text(label, color = Color.LightGray, fontSize = 13.sp)
                             }
-                            Text(formatBytes(bytes), color = Color.White, fontSize = 13.sp)
+                            Text(formatBytesLocal(bytes), color = Color.White, fontSize = 13.sp)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
-                    StorageRow("User Data", userDataBytes, Color(0xFF1DB954))
+                    if (ytdlpBinaryBytes > 0) StorageRow("yt-dlp (Python Env)", ytdlpBinaryBytes, Color(0xFFE91E63))
+                    if (ffmpegBinaryBytes > 0) StorageRow("FFmpeg Binary", ffmpegBinaryBytes, Color(0xFF9C27B0))
+                    if (ffprobeBinaryBytes > 0) StorageRow("FFprobe Binary", ffprobeBinaryBytes, Color(0xFF673AB7))
+                    if (localMusicCacheBytes > 0) StorageRow("Local Music Cache", localMusicCacheBytes, Color(0xFF00BCD4))
+                    if (spotifyCacheBytes > 0) StorageRow("Spotify Cache", spotifyCacheBytes, Color(0xFF8BC34A))
+                    StorageRow("Other User Data", userDataBytes, Color(0xFF1DB954))
                     StorageRow("Audio Cache", audioCacheBytes, Color(0xFFFF9800))
                     StorageRow("Image Cache", imageCacheBytes, Color(0xFF2196F3))
+                    Spacer(modifier = Modifier.height(4.dp))
                     StorageRow("Total", totalBytes, Color.White)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // Storage donut chart (BUG-25)
+                    val chartColors = listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF00BCD4), Color(0xFF8BC34A), Color(0xFF1DB954), Color(0xFFFF9800), Color(0xFF2196F3))
+                    val chartValues = listOf(ytdlpBinaryBytes.toFloat(), ffmpegBinaryBytes.toFloat(), ffprobeBinaryBytes.toFloat(), localMusicCacheBytes.toFloat(), spotifyCacheBytes.toFloat(), userDataBytes.toFloat(), audioCacheBytes.toFloat(), imageCacheBytes.toFloat())
+                    val totalForChart = chartValues.sum()
+                    if (totalForChart > 0) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Canvas(modifier = Modifier.size(140.dp)) {
+                                val strokeWidth = 14.dp.toPx()
+                                val radius = (size.minDimension - strokeWidth) / 2
+                                val topLeft = Offset(
+                                    (size.width - radius * 2) / 2,
+                                    (size.height - radius * 2) / 2
+                                )
+                                val arcSize = Size(radius * 2, radius * 2)
+                                var startAngle = -90f
+                                for (i in chartValues.indices) {
+                                    if (chartValues[i] > 0) {
+                                        val sweep = (chartValues[i] / totalForChart) * 360f
+                                        drawArc(
+                                            color = chartColors[i],
+                                            startAngle = startAngle,
+                                            sweepAngle = sweep,
+                                            useCenter = false,
+                                            topLeft = topLeft,
+                                            size = arcSize,
+                                            style = Stroke(width = strokeWidth)
+                                        )
+                                        startAngle += sweep
+                                    }
+                                }
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(formatBytesLocal(totalBytes), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("Total", color = Color.Gray, fontSize = 11.sp)
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Clear buttons
+                    val audioClearedMsg = stringResource(R.string.settings_cache_audio_cleared)
+                    val imageClearedMsg = stringResource(R.string.settings_cache_images_cleared)
+                    val errorMsg = stringResource(R.string.general_error)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
                                 try {
                                     if (audioCacheDir.exists()) audioCacheDir.deleteRecursively()
-                                    Toast.makeText(context, "Audio cache cleared", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, audioClearedMsg, Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Failed to clear audio cache", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Clear Audio Cache", color = Color.White, fontSize = 12.sp)
+                            Text(stringResource(R.string.settings_clear_audio_cache), color = Color.White, fontSize = 12.sp)
                         }
                         Button(
                             onClick = {
                                 try {
                                     if (imageCacheDir.exists()) imageCacheDir.deleteRecursively()
-                                    Toast.makeText(context, "Image cache cleared", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, imageClearedMsg, Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Failed to clear image cache", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Clear Image Cache", color = Color.White, fontSize = 12.sp)
+                            Text(stringResource(R.string.settings_clear_image_cache), color = Color.White, fontSize = 12.sp)
                         }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             Text(
                 text = stringResource(R.string.settings_language),
                 color = Color(0xFF1DB954),
@@ -657,7 +805,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     val currentLang = prefs.getString("app_language", "system") ?: "system"
                     var selectedLang by remember { mutableStateOf(currentLang) }
-                    val currentConfig = androidx.compose.ui.platform.LocalConfiguration.current
+
                     
                     val languages = listOf(
                         "system" to stringResource(R.string.settings_lang_system), 
@@ -672,7 +820,7 @@ fun SettingsScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     selectedLang = code
-                                    @android.annotation.SuppressLint("AppBundleLocaleChanges")
+                                    @SuppressLint("AppBundleLocaleChanges")
                                     fun applyLanguage(code: String) {
                                         prefs.edit { putString("app_language", code) }
                                         
@@ -691,10 +839,10 @@ fun SettingsScreen(
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            androidx.compose.material3.RadioButton(
+                            RadioButton(
                                 selected = selectedLang == code,
                                 onClick = null,
-                                colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
                             )
                             Spacer(modifier = Modifier.padding(start = 12.dp))
                             Text(name, color = Color.White, fontSize = 16.sp)
