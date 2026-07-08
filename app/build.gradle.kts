@@ -129,7 +129,11 @@ dependencies {
 val targets = listOf("arm64-v8a", "x86_64")
 
 // Detect the host operating system to invoke the correct executable file for Cargo
-val cargoCommand = if (System.getProperty("os.name").lowercase().contains("windows")) "cargo.exe" else "cargo"
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+val cargoExecutableName = if (isWindows) "cargo.exe" else "cargo"
+val cargoHome = System.getenv("CARGO_HOME") ?: (System.getProperty("user.home") + "/.cargo")
+val cargoPath = file("$cargoHome/bin/$cargoExecutableName")
+val cargoCommand = if (cargoPath.exists()) cargoPath.absolutePath else cargoExecutableName
 
 // Get the number of CPU cores for parallel compilation
 val cpuCount = Runtime.getRuntime().availableProcessors()
@@ -146,9 +150,39 @@ targets.forEach { target ->
         val ndkDir = androidComponents.sdkComponents.ndkDirectory.get().asFile
         val sdkDir = androidComponents.sdkComponents.sdkDirectory.get().asFile
 
+        // Bindgen and cargo-ndk on Windows often fail if the NDK path contains spaces (e.g., in the user profile).
+        // To fix this universally, we create a Junction (symlink) in the build directory (which usually has no spaces).
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val noSpaceNdkDir = file("${project.layout.buildDirectory.get().asFile.absolutePath}/ndk_link")
+        val needsJunction = isWindows && ndkDir.absolutePath.contains(" ")
+        val effectiveNdkDir = if (needsJunction) noSpaceNdkDir else ndkDir
+
         // Set the environment variables required by cargo-ndk
-        environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
+        environment("ANDROID_NDK_HOME", effectiveNdkDir.absolutePath)
         environment("ANDROID_HOME", sdkDir.absolutePath)
+
+        // Find libclang statically to avoid I/O during Gradle's configuration phase (supports Configuration Cache)
+        val hostTag = if (isWindows) "windows-x86_64" else if (System.getProperty("os.name").lowercase().contains("mac")) "darwin-x86_64" else "linux-x86_64"
+        val clangDir = if (isWindows) {
+            file("${effectiveNdkDir.absolutePath}/toolchains/llvm/prebuilt/$hostTag/bin")
+        } else {
+            file("${effectiveNdkDir.absolutePath}/toolchains/llvm/prebuilt/$hostTag/lib64")
+        }
+
+        environment("LIBCLANG_PATH", clangDir.absolutePath)
+        if (isWindows) {
+            // On Windows, libclang.dll depends on other DLLs in the same folder. We append it to PATH.
+            val currentPath = System.getenv("PATH") ?: ""
+            environment("PATH", "${clangDir.absolutePath};$currentPath")
+        }
+
+        doFirst {
+            // Create the symlink right before the task executes (fully supports Configuration Cache)
+            if (needsJunction && !noSpaceNdkDir.exists()) {
+                noSpaceNdkDir.parentFile.mkdirs()
+                Runtime.getRuntime().exec(arrayOf("cmd", "/c", "mklink", "/J", noSpaceNdkDir.absolutePath, ndkDir.absolutePath)).waitFor()
+            }
+        }
 
         inputs.dir("../core_engine/src")
         outputs.dir("src/main/jniLibs/$target")

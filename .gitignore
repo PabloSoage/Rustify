@@ -22,3 +22,5 @@ Inspection/
 # APK builds (too large for GitHub)
 app/release/*.apk
 *.apk
+
+docs/

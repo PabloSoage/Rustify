@@ -116,6 +116,12 @@
     <string name="queue_added">Añadido a la cola</string>
     <string name="lyrics_not_found">No se encontraron letras</string>
     <string name="track_menu_add_queue">Añadir a la cola</string>
+    <string name="track_menu_share">Compartir</string>
+    <string name="share_track">Compartir pista</string>
+    <string name="share_no_link">No hay enlace disponible para esta pista</string>
+    <string name="share_no_target">No hay ninguna app para compartir</string>
+    <string name="paste_clipboard_empty">El portapapeles está vacío</string>
+    <string name="paste_no_spotify_link">No se encontró un enlace de Spotify en el portapapeles</string>
     <string name="track_menu_go_artist">Ir al artista</string>
     <string name="settings_match_local_first">Priorizar música local</string>
     <string name="settings_match_local_first_desc">Reproduce archivos locales antes que streams de YouTube si coinciden título y artista.</string>

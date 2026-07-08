@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ForegroundServicePermission">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:ignore="all" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -28,7 +29,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link para URLs de Spotify -->
+            <!-- Deep link para URLs de Spotify (E20: todos los tipos + intl-) -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -36,7 +37,10 @@
                 <data android:scheme="https" />
                 <data android:host="open.spotify.com" />
                 <data android:pathPrefix="/track/" />
-                <data android:pathPrefix="/intl-es/track/" />
+                <data android:pathPrefix="/album/" />
+                <data android:pathPrefix="/playlist/" />
+                <data android:pathPrefix="/artist/" />
+                <data android:pathPrefix="/intl-" />
             </intent-filter>
 
             <!-- Share Target: intercept shared Spotify links from other apps -->

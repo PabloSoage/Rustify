@@ -303,11 +303,21 @@ fun TrackOptionsMenuBottomSheet(
                         icon = Icons.Default.Share,
                         label = stringResource(R.string.track_menu_share),
                         onClick = {
+                            val id = track.id
+                            if (id.isNullOrBlank()) {
+                                android.widget.Toast.makeText(context, R.string.share_no_link, android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                                return@MenuOptionItem
+                            }
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "https://open.spotify.com/track/${track.id}")
+                                putExtra(Intent.EXTRA_TEXT, "https://open.spotify.com/track/$id")
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
+                            try {
+                                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.share_track)))
+                            } catch (e: android.content.ActivityNotFoundException) {
+                                android.widget.Toast.makeText(context, R.string.share_no_target, android.widget.Toast.LENGTH_SHORT).show()
+                            }
                             onDismiss()
                         }
                     )

@@ -656,6 +656,53 @@ impl SpotifyClient {
         Ok(res)
     }
 
+    /// Send a request with automatic retries on transient network failures and
+    /// rate-limiting / 5xx responses (E10 RC-3). Up to 3 attempts with exponential
+    /// backoff (400ms, 800ms, 1600ms) + jitter. Honours `Retry-After` when present.
+    /// AUTH/401 and other permanent errors are returned immediately so the caller
+    /// can refresh the session or surface the error.
+    async fn send_with_retry<F>(&self, build: F) -> SpotifyResult<reqwest::Response>
+    where
+        F: Fn() -> reqwest::RequestBuilder,
+    {
+        let mut delay = std::time::Duration::from_millis(400);
+        for attempt in 0..3u32 {
+            match build().send().await {
+                Ok(r) => {
+                    let code = r.status().as_u16();
+                    if code == 429 || (500..600).contains(&code) {
+                        if attempt == 2 {
+                            return Ok(r);
+                        }
+                        let wait = match r.headers().get(reqwest::header::RETRY_AFTER) {
+                            Some(v) => v.to_str().ok()
+                                .and_then(|s| s.parse::<u64>().ok())
+                                .map(std::time::Duration::from_secs)
+                                .unwrap_or(delay),
+                            None => delay,
+                        };
+                        tokio::time::sleep(wait).await;
+                        delay *= 2;
+                        continue;
+                    }
+                    return Ok(r);
+                }
+                Err(e) => {
+                    if e.is_timeout() || e.is_connect() || e.is_request() {
+                        if attempt == 2 {
+                            return Err(SpotifyError::from(e));
+                        }
+                        tokio::time::sleep(delay).await;
+                        delay *= 2;
+                        continue;
+                    }
+                    return Err(SpotifyError::from(e));
+                }
+            }
+        }
+        unreachable!()
+    }
+
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> SpotifyResult<T> {
         let token = if let Ok(user_token) = self.access_token() {
             user_token.to_string()
@@ -671,7 +718,7 @@ impl SpotifyClient {
             req = req.header(header::ACCEPT_LANGUAGE, lang);
         }
 
-        let res = req.send().await?;
+        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.get(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)))).await?;
 
         let res = Self::check_response_success(res).await?;
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
@@ -693,7 +740,7 @@ impl SpotifyClient {
             req = req.header(header::ACCEPT_LANGUAGE, lang);
         }
 
-        let res = req.send().await?;
+        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.post(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
 
         let res = Self::check_response_success(res).await?;
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
@@ -715,7 +762,7 @@ impl SpotifyClient {
             req = req.header(header::ACCEPT_LANGUAGE, lang);
         }
 
-        let res = req.send().await?;
+        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.put(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
 
         Self::check_response_success(res).await?;
         Ok(())
@@ -737,7 +784,7 @@ impl SpotifyClient {
             req = req.header(header::ACCEPT_LANGUAGE, lang);
         }
 
-        let res = req.send().await?;
+        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.delete(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
 
         Self::check_response_success(res).await?;
         Ok(())
@@ -840,7 +887,7 @@ impl SpotifyClient {
             req = req.header(header::ACCEPT_LANGUAGE, lang);
         }
 
-        let res = req.send().await?;
+        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.post(SPOTIFY_GQL_BASE).header(header::AUTHORIZATION, format!("Bearer {}", token)).header(header::CONTENT_TYPE, "application/json").header("App-Platform", "WebPlayer").json(&body))).await?;
 
         let res = Self::check_response_success(res).await?;
 

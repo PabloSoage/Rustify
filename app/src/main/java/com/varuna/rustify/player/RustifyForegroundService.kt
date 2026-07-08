@@ -16,15 +16,9 @@ class RustifyForegroundService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        // Ensure AudioPlayerService is initialized before we try to get the player instance
+        // E12: guarantee AudioPlayerService + ExoPlayer exist; the no-op re-read was removed.
         AudioPlayerService.getInstance(this)
-        var basePlayer = AudioPlayerService.exoPlayerInstance
-
-        // If ExoPlayer isn't ready yet, initialize it by getting the instance again
-        if (basePlayer == null) {
-            android.util.Log.w("RustifyForegroundService", "ExoPlayer not ready, forcing initialization")
-            basePlayer = AudioPlayerService.exoPlayerInstance
-        }
+        val basePlayer = AudioPlayerService.exoPlayerInstance
 
         if (basePlayer != null) {
             val forwardingPlayer = object : ForwardingPlayer(basePlayer) {
@@ -59,8 +53,6 @@ class RustifyForegroundService : MediaSessionService() {
 
             val intent = Intent(this, com.varuna.rustify.MainActivity::class.java).apply {
                 action = "com.varuna.rustify.action.VIEW_NOW_PLAYING"
-                // FLAG_ACTIVITY_CLEAR_TOP ensures the activity is recreated with correct orientation
-                // Fixes BUG-11: orientation locked to landscape when opened from notification
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
             val pendingIntent = PendingIntent.getActivity(
@@ -72,7 +64,9 @@ class RustifyForegroundService : MediaSessionService() {
                 .setSessionActivity(pendingIntent)
                 .build()
         } else {
-            android.util.Log.e("RustifyForegroundService", "Cannot create MediaSession: ExoPlayer is null")
+            // E12: if the ExoPlayer is gone (release() ran), don't keep a headless session alive.
+            android.util.Log.e("RustifyForegroundService", "ExoPlayer is null, cannot create MediaSession")
+            stopSelf()
         }
     }
 
@@ -109,6 +103,8 @@ class RustifyForegroundService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        // E13: persist the latest playback state synchronously before the session goes away.
+        AudioPlayerService.instance?.saveNow()
         mediaSession?.release()
         mediaSession = null
         super.onDestroy()

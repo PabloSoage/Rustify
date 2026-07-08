@@ -27,12 +27,13 @@ object NativeEngine {
      * Resolves a Spotify track ID to a YouTube video ID.
      */
     external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
+
     /**
-     * Starts the audio proxy HTTP server in the background.
+     * Initializes the YouTube resolver cache directory and loads persisted
+     * spotify-id -> youtube-id mappings. (Replaces the removed loopback HTTP server, E11.)
      * @param cacheDir Absolute path of the application cache directory.
-     * @return The dynamic port assigned by the OS (or 0 if failed).
      */
-    external fun startAudioServerNative(cacheDir: String): Int
+    external fun initCacheDirNative(cacheDir: String)
 
     /**
      * Registers a Spotify track's metadata to memory to enable automatic YouTube Music matching.

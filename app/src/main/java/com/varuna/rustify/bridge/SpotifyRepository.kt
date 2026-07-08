@@ -19,6 +19,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.varuna.rustify.util.classifyError
+import com.varuna.rustify.util.retrying
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
@@ -765,6 +767,19 @@ class SpotifyRepository(context: Context) {
     fun isAuthenticated(): Boolean = NativeEngine.isSpotifyAuthenticatedNative()
 
     /**
+     * Recover a hot Spotify session in-memory (token expired mid-session, E10 RC-2).
+     * Re-runs the native restore flow without wiping credentials on transient network errors.
+     * Safe to call from any coroutine; returns true if the session is (now) valid.
+     */
+    suspend fun ensureSession(): Boolean = withContext(Dispatchers.IO) {
+        if (NativeEngine.isSpotifyAuthenticatedNative()) return@withContext true
+        val savedCookie = prefs.getString(KEY_SP_DC, "") ?: ""
+        if (savedCookie.isEmpty()) return@withContext false
+        val result = restoreSession() ?: return@withContext false
+        result.success
+    }
+
+    /**
      * Login using OAuth Authorization Code obtained from redirect.
      */
     suspend fun loginWithAuthCode(code: String, redirectUri: String): LoginResult = withContext(Dispatchers.IO) {
@@ -798,7 +813,13 @@ class SpotifyRepository(context: Context) {
             return@withContext null
         }
         
-        val json = NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp, savedRefreshToken)
+        val json = try {
+            NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp, savedRefreshToken)
+        } catch (e: Exception) {
+            android.util.Log.w("SpotifyRepository", "restoreSession native threw: ${e.message}")
+            return@withContext LoginResult(success = false, user = null, error = e.message,
+                accessToken = null, expiration = null, refreshToken = null)
+        }
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
             prefs.edit {
@@ -810,12 +831,16 @@ class SpotifyRepository(context: Context) {
             }
             triggerBackgroundSync()
         } else {
-            // Cookie and tokens are no longer valid, clear session (preserve developer settings)
-            prefs.edit {
-                remove(KEY_SP_DC)
-                remove(KEY_ACCESS_TOKEN)
-                remove(KEY_EXPIRATION)
-                remove(KEY_REFRESH_TOKEN)
+            // Only wipe credentials when the failure is NOT a transient network problem.
+            // A network blip while restoring must not log the user out (E10 RC-2 / E11).
+            val errKind = classifyError(SpotifyEngineException(result.error ?: ""))
+            if (errKind != com.varuna.rustify.util.ErrorKind.TRANSIENT) {
+                prefs.edit {
+                    remove(KEY_SP_DC)
+                    remove(KEY_ACCESS_TOKEN)
+                    remove(KEY_EXPIRATION)
+                    remove(KEY_REFRESH_TOKEN)
+                }
             }
         }
         result
@@ -844,8 +869,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors (rate limit, auth, etc.)
      */
     suspend fun getMe(): SpotifyUser = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyMeNative()
-        SpotifyUser.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyMeNative()
+            SpotifyUser.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -854,16 +881,18 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getSavedTracks(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifySavedTracksNative(limit, offset)
-        val paginated = PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
-        withContext(Dispatchers.Main) {
-            paginated.items.forEach { track ->
-                track.id?.let { id ->
-                    likedTrackIds[id] = true
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifySavedTracksNative(limit, offset)
+            val paginated = PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            withContext(Dispatchers.Main) {
+                paginated.items.forEach { track ->
+                    track.id?.let { id ->
+                        likedTrackIds[id] = true
+                    }
                 }
             }
+            paginated
         }
-        paginated
     }
 
     // Removed REST-based checkSavedTracks and checkAndCacheLikedStates
@@ -924,8 +953,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getSavedAlbums(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullAlbum> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifySavedAlbumsNative(limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullAlbum.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifySavedAlbumsNative(limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullAlbum.fromJson(it) }
+        }
     }
 
     /**
@@ -933,8 +964,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getSavedPlaylists(limit: Int = 20, offset: Int = 0): PaginatedResponse<SimplePlaylist> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifySavedPlaylistsNative(limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifySavedPlaylistsNative(limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+        }
     }
 
     /**
@@ -943,8 +976,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getFollowedArtists(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyFollowedArtistsNative(limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyFollowedArtistsNative(limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        }
     }
 
     // =========================================================================
@@ -956,8 +991,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getAlbum(id: String): FullAlbum = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyAlbumNative(id)
-        FullAlbum.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyAlbumNative(id)
+            FullAlbum.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -965,8 +1002,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getAlbumTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyAlbumTracksNative(id, limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyAlbumTracksNative(id, limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        }
     }
 
     /**
@@ -974,8 +1013,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getNewReleases(limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyNewReleasesNative(limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyNewReleasesNative(limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        }
     }
 
     /**
@@ -1003,8 +1044,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getArtist(id: String): FullArtist = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyArtistNative(id)
-        FullArtist.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyArtistNative(id)
+            FullArtist.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -1012,8 +1055,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getArtistTopTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyArtistTopTracksNative(id, limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyArtistTopTracksNative(id, limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        }
     }
 
     /**
@@ -1021,8 +1066,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getArtistAlbums(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyArtistAlbumsNative(id, limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyArtistAlbumsNative(id, limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        }
     }
 
     /**
@@ -1030,8 +1077,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getRelatedArtists(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyRelatedArtistsNative(id, limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyRelatedArtistsNative(id, limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        }
     }
 
     /**
@@ -1059,8 +1108,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getPlaylist(id: String): FullPlaylist = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyPlaylistNative(id)
-        FullPlaylist.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyPlaylistNative(id)
+            FullPlaylist.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -1068,8 +1119,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getPlaylistTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyPlaylistTracksNative(id, limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyPlaylistTracksNative(id, limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        }
     }
 
     /**
@@ -1155,8 +1208,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getTrackRadio(trackId: String): List<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyTrackRadioNative(trackId)
-        FullTrack.listFromJsonArray(checkForErrorArray(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyTrackRadioNative(trackId)
+            FullTrack.listFromJsonArray(checkForErrorArray(json))
+        }
     }
 
     // =========================================================================
@@ -1168,8 +1223,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun searchAll(query: String, limit: Int = 20): NormalizedSearchResults = withContext(Dispatchers.IO) {
-        val json = NativeEngine.searchSpotifyNative(query, "all", limit, 0)
-        NormalizedSearchResults.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.searchSpotifyNative(query, "all", limit, 0)
+            NormalizedSearchResults.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -1217,8 +1274,10 @@ class SpotifyRepository(context: Context) {
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getBrowseSections(limit: Int = 20): List<BrowseSection> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyBrowseNative(limit)
-        BrowseSection.listFromJsonArray(checkForErrorArray(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyBrowseNative(limit)
+            BrowseSection.listFromJsonArray(checkForErrorArray(json))
+        }
     }
 
     /**

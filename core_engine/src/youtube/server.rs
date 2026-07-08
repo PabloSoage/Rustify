@@ -1,9 +1,12 @@
 use crate::youtube::models::YouTubeTrack;
 // core_engine/src/youtube/server.rs
+// NOTE: the standalone loopback HTTP server (`/resolve`, proxyPort) was removed (E11):
+// it was dead code — Kotlin resolves YouTube IDs directly via JNI (`resolveYouTubeIdNative`)
+// and ExoPlayer streams directly from googlevideo. Keeping it only added attack surface
+// (the 0.0.0.0 fallback exposed /resolve to the LAN). The cache-dir + mappings helpers
+// below are still required by the resolver.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
 
 macro_rules! log_info {
     ($($arg:tt)*) => {{
@@ -40,7 +43,6 @@ pub struct SpotifyTrackMeta {
 static TRACK_METADATA: OnceLock<Mutex<HashMap<String, SpotifyTrackMeta>>> = OnceLock::new();
 static YOUTUBE_MAPPINGS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static CACHE_DIR: OnceLock<String> = OnceLock::new();
-static SERVER_PORT: OnceLock<u16> = OnceLock::new();
 
 pub fn init_cache_dir(dir: &str) {
     let _ = CACHE_DIR.set(dir.to_string());
@@ -62,10 +64,6 @@ pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&s
         return Some(yt_id.to_string());
     }
     resolve_youtube_id(track_id, cache_dir).await
-}
-
-pub fn get_server_port() -> u16 {
-    *SERVER_PORT.get().unwrap_or(&0)
 }
 
 pub fn register_track_meta(id: String, name: String, artists: Vec<String>, duration_ms: u32, isrc: String) {
@@ -108,98 +106,6 @@ pub fn update_playback_queue(track_ids: Vec<String>) {
             let _ = resolve_youtube_id(track_id, &cache_dir).await;
         }
     });
-}
-
-// Start the HTTP server in background tokio task
-pub async fn start_server(cache_dir: String) -> Result<u16, Box<dyn std::error::Error>> {
-    init_cache_dir(&cache_dir);
-
-    // Bind to 127.0.0.1 on port 0 (OS allocates free port), fallback to 0.0.0.0 if IPv4 loopback fails
-    let listener = match TcpListener::bind("127.0.0.1:0").await {
-        Ok(l) => l,
-        Err(_) => TcpListener::bind("0.0.0.0:0").await?,
-    };
-    let port = listener.local_addr()?.port();
-    let _ = SERVER_PORT.set(port);
-
-    tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((mut socket, _)) => {
-                    let cache = cache_dir.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_connection(&mut socket, &cache).await {
-                            eprintln!("Proxy Connection error: {}", e);
-                        }
-                    });
-                }
-                Err(e) => {
-                    eprintln!("Proxy Server accept error: {}", e);
-                }
-            }
-        }
-    });
-
-    Ok(port)
-}
-
-async fn handle_connection(socket: &mut tokio::net::TcpStream, cache_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = [0u8; 4096];
-    let n = socket.read(&mut buf).await?;
-    if n == 0 {
-        return Ok(());
-    }
-
-    let req_str = String::from_utf8_lossy(&buf[..n]);
-    let first_line = req_str.lines().next().unwrap_or("");
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
-    if parts.len() < 2 || parts[0] != "GET" {
-        socket.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await?;
-        return Ok(());
-    }
-
-    let path = parts[1].to_string();
-
-    // --- /resolve endpoint: returns the YouTube ID as plain text ---
-    // Called from Kotlin before starting ExoPlayer so we can resolve the Spotify ID to a YouTube ID
-    if path.starts_with("/resolve") {
-        let track_id = match extract_query_param(&path, "track_id") {
-            Some(id) => id,
-            None => {
-                socket.write_all(b"HTTP/1.1 400 Missing track_id\r\n\r\n").await?;
-                return Ok(());
-            }
-        };
-        let youtube_id_opt = extract_query_param(&path, "youtube_id");
-        log_info!("[Resolve] Resolving track_id={} youtube_id={:?}", track_id, youtube_id_opt);
-
-        let final_yt_id = if let Some(yt_id) = youtube_id_opt {
-            Some(yt_id)
-        } else {
-            resolve_youtube_id(&track_id, cache_dir).await
-        };
-
-        if let Some(yt_id) = final_yt_id {
-            log_info!("[Resolve] OK youtube_id={}", yt_id);
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\n\
-                 Content-Type: text/plain; charset=utf-8\r\n\
-                 Content-Length: {}\r\n\
-                 Connection: close\r\n\r\n\
-                 {}",
-                yt_id.len(),
-                yt_id
-            );
-            socket.write_all(resp.as_bytes()).await?;
-        } else {
-            log_info!("[Resolve] FAIL for track_id={}", track_id);
-            socket.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await?;
-        }
-        return Ok(());
-    }
-
-    socket.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await?;
-    Ok(())
 }
 
 pub async fn resolve_youtube_id(track_id: &str, cache_dir: &str) -> Option<String> {
@@ -378,22 +284,6 @@ fn clean_text(text: &str) -> String {
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect::<String>()
 }
-
-// HTTP Helper parsers
-fn extract_query_param(path: &str, param: &str) -> Option<String> {
-    let query_start = path.find('?')?;
-    let query = &path[query_start + 1..];
-    for pair in query.split('&') {
-        let mut split = pair.splitn(2, '=');
-        let key = split.next()?;
-        let val = split.next()?;
-        if key == param {
-            return Some(urlencoding::decode(val).ok()?.into_owned());
-        }
-    }
-    None
-}
-
 
 fn load_mappings_from_disk(cache_dir: &str) -> HashMap<String, String> {
     let path = format!("{}/youtube_mappings.json", cache_dir);

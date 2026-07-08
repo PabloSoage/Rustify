@@ -95,6 +95,8 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.util.SpotifyLink
+import com.varuna.rustify.util.SpotifyLinkParser
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
@@ -119,26 +121,55 @@ sealed class Screen {
     object Downloads : Screen()
 }
 
-class MainActivity : ComponentActivity() {
-    private var initialDeepLinkTrackId: String? = null
-
-    /**
-     * Extract a Spotify track/album/playlist ID from a shared URL.
-     * Supports: open.spotify.com/track/ID, /album/ID, /playlist/ID, /intl-es/track/ID
-     */
-    private fun extractSpotifyIdFromUrl(text: String): String? {
-        val patterns = listOf(
-            Regex("""open\.spotify\.com/track/([a-zA-Z0-9]+)"""),
-            Regex("""open\.spotify\.com/intl-[a-z]{2}/track/([a-zA-Z0-9]+)"""),
-            Regex("""spotify\.link/([a-zA-Z0-9]+)""")
-        )
-        for (pattern in patterns) {
-            val match = pattern.find(text)
-            if (match != null) {
-                return match.groupValues[1]
+/**
+ * Route a deep-link token ("track:ID" / "album:ID" / "playlist:ID" / "artist:ID" /
+ * "NOW_PLAYING", or a legacy bare track id) onto the navigation stack (E20).
+ */
+private fun navigateDeepLink(
+    deepLink: String,
+    navigationStack: androidx.compose.runtime.snapshots.SnapshotStateList<Screen>,
+    audioPlayerService: AudioPlayerService
+) {
+    if (deepLink == "NOW_PLAYING") {
+        val currentTrackId = audioPlayerService.state.value.currentTrack?.id
+        if (currentTrackId != null) {
+            val last = navigationStack.lastOrNull()
+            if (last !is Screen.TrackDetail || last.id != currentTrackId) {
+                navigationStack.add(Screen.TrackDetail(currentTrackId))
             }
         }
-        return null
+        return
+    }
+    val parts = deepLink.split(":", limit = 2)
+    if (parts.size != 2) {
+        navigationStack.add(Screen.TrackDetail(deepLink))
+        return
+    }
+    when (parts[0]) {
+        "track" -> navigationStack.add(Screen.TrackDetail(parts[1]))
+        "album" -> navigationStack.add(Screen.AlbumDetail(parts[1], "", emptyList()))
+        "playlist" -> navigationStack.add(Screen.PlaylistDetail(parts[1], "", emptyList()))
+        "artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
+        else -> navigationStack.add(Screen.TrackDetail(deepLink))
+    }
+}
+
+class MainActivity : ComponentActivity() {
+    private var initialDeepLink: String? = null
+
+    /**
+     * Extract a Spotify link from a shared URL — unified parser (E20).
+     * Returns a tagged string like "track:ID", "album:ID", "playlist:ID", "artist:ID",
+     * or null if no Spotify link is found.
+     */
+    private fun extractSpotifyLink(text: String): String? {
+        return when (val link = SpotifyLinkParser.parse(text)) {
+            is SpotifyLink.Track -> "track:${link.id}"
+            is SpotifyLink.Album -> "album:${link.id}"
+            is SpotifyLink.Playlist -> "playlist:${link.id}"
+            is SpotifyLink.Artist -> "artist:${link.id}"
+            null -> null
+        }
     }
 
     @SuppressLint("AppBundleLocaleChanges")
@@ -169,15 +200,16 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
             if (uri?.host == "open.spotify.com") {
-                val pathSegments = uri.pathSegments
-                val trackIndex = pathSegments.indexOf("track")
-                if (trackIndex != -1 && trackIndex + 1 < pathSegments.size) {
-                    return pathSegments[trackIndex + 1]
+                // pathSegments ignores the intl-xx prefix automatically: look for the entity type.
+                val segs = uri.pathSegments
+                val i = segs.indexOfFirst { it in setOf("track", "album", "playlist", "artist") }
+                if (i != -1 && i + 1 < segs.size) {
+                    return "${segs[i]}:${segs[i + 1]}"
                 }
             } else if (uri?.scheme == "rustify" && uri.host == "track") {
                 val pathSegments = uri.pathSegments
                 if (pathSegments.isNotEmpty()) {
-                    return pathSegments[0]
+                    return "track:${pathSegments[0]}"
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
                 val v = uri.getQueryParameter("v")
@@ -194,10 +226,10 @@ class MainActivity : ComponentActivity() {
             if (intent.type == "text/plain") {
                 val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
                 if (sharedText != null) {
-                    val extractedId = extractSpotifyIdFromUrl(sharedText)
-                    if (extractedId != null) {
-                        android.util.Log.d("MainActivity", "Extracted Spotify track ID from shared link: $extractedId")
-                        return extractedId
+                    val link = extractSpotifyLink(sharedText)
+                    if (link != null) {
+                        android.util.Log.d("MainActivity", "Extracted Spotify link from shared text: $link")
+                        return link
                     }
                 }
             }
@@ -220,7 +252,7 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         
-        initialDeepLinkTrackId = extractDeepLink(intent)
+        initialDeepLink = extractDeepLink(intent)
 
         
         val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
@@ -296,7 +328,7 @@ class MainActivity : ComponentActivity() {
                         color = Color(0xFF121212)
                     ) {
                         EngineTester(
-                            initialDeepLinkTrackId = initialDeepLinkTrackId,
+                            initialDeepLink = initialDeepLink,
                             intentFlow = intentFlow,
                             onLanguageChanged = { newLang -> appLanguage = newLang }
                         )
@@ -310,8 +342,8 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EngineTester(
-    modifier: Modifier = Modifier, 
-    initialDeepLinkTrackId: String? = null, 
+    modifier: Modifier = Modifier,
+    initialDeepLink: String? = null,
     intentFlow: kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.emptyFlow(),
     onLanguageChanged: (String) -> Unit = {}
 ) {
@@ -320,9 +352,12 @@ fun EngineTester(
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
+    // E12 D5: don't tear down the player on every Activity dispose (rotation/recomposition
+    // previously killed playback mid-song). Persist state synchronously; the foreground
+    // service + onTaskRemoved handle actual teardown when the user leaves for real.
     DisposableEffect(audioPlayerService) {
         onDispose {
-            audioPlayerService.release()
+            audioPlayerService.saveNow()
         }
     }
 
@@ -341,30 +376,14 @@ fun EngineTester(
     var librarySelectedGroup by rememberSaveable { mutableStateOf("Tracks") }
 
     LaunchedEffect(Unit) {
-        if (initialDeepLinkTrackId != null) {
-            if (initialDeepLinkTrackId == "NOW_PLAYING") {
-                val currentTrackId = audioPlayerService.state.value.currentTrack?.id
-                if (currentTrackId != null) {
-                    navigationStack.add(Screen.TrackDetail(currentTrackId))
-                }
-            } else {
-                navigationStack.add(Screen.TrackDetail(initialDeepLinkTrackId))
-            }
+        if (initialDeepLink != null) {
+            navigateDeepLink(initialDeepLink!!, navigationStack, audioPlayerService)
         }
     }
 
     LaunchedEffect(intentFlow) {
         intentFlow.collect { deepLink ->
-            if (deepLink == "NOW_PLAYING") {
-                val currentTrackId = audioPlayerService.state.value.currentTrack?.id
-                if (currentTrackId != null) {
-                    if (navigationStack.lastOrNull() !is Screen.TrackDetail || (navigationStack.last() as Screen.TrackDetail).id != currentTrackId) {
-                        navigationStack.add(Screen.TrackDetail(currentTrackId))
-                    }
-                }
-            } else {
-                navigationStack.add(Screen.TrackDetail(deepLink))
-            }
+            navigateDeepLink(deepLink, navigationStack, audioPlayerService)
         }
     }
 
@@ -649,6 +668,9 @@ fun EngineTester(
                         SearchScreen(
                             spotifyRepo = spotifyRepo,
                             onTrackClick = { track -> audioPlayerService.loadPlaylist(listOf(track), 0) },
+                            // E20: pasting a track link opens its detail (doesn't fabricate an
+                            // empty stub and try to reproduce it).
+                            onOpenTrack = { id -> navigationStack.add(Screen.TrackDetail(id)) },
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {
                                 currentTrack?.id?.let { id ->

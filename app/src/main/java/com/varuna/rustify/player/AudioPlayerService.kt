@@ -6,6 +6,9 @@ package com.varuna.rustify.player
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -20,12 +23,15 @@ import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
 data class AudioPlayerState(
@@ -65,7 +71,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         @Volatile
         var instance: AudioPlayerService? = null
-        
+
         val resolvedStreamUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
 
         fun getInstance(context: Context): AudioPlayerService {
@@ -91,8 +97,10 @@ class AudioPlayerService private constructor(private val context: Context) {
     private val persistedUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var preBufferingJob: kotlinx.coroutines.Job? = null
     private var playJob: kotlinx.coroutines.Job? = null
-    private var isResolving = false
-    private var isRetrying = false
+    @Volatile private var isResolving = false
+    @Volatile private var isRetrying = false
+    // Generation token so a stale playJob's finally won't clobber isResolving (E10 RC-3).
+    private val resolveGen = AtomicLong(0)
     private val userQueue = mutableListOf<FullTrack>()
 
     // Max age for cached stream URLs (YouTube URLs last ~6h)
@@ -132,18 +140,29 @@ class AudioPlayerService private constructor(private val context: Context) {
         instance = this
     }
 
-    private var proxyPort: Int = 0
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private var mediaControllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
 
+    // Single coalescing save queue — serializes all state writes, eliminating the
+    // race where two concurrent `saveState` launches wrote the file out of order (E13 §3.2).
+    private val saveRequests = Channel<Unit>(Channel.CONFLATED)
+
     init {
-        // Start Rust audio proxy server
+        // Initialize the YouTube resolver cache + mappings (replaces removed loopback server, E11).
         val cachePath = context.cacheDir.absolutePath
-        proxyPort = NativeEngine.startAudioServerNative(cachePath)
-        android.util.Log.d("AudioPlayerService", "Rust proxy started on port $proxyPort")
+        NativeEngine.initCacheDirNative(cachePath)
 
         loadUrlCache()
         loadState()
+
+        // Single consumer: debounced, serialized state persistence (E13).
+        mainScope.launch(Dispatchers.IO) {
+            for (unused in saveRequests) {
+                delay(400) // debounce / coalesce bursts
+                while (saveRequests.tryReceive().isSuccess) { /* drain */ }
+                writeStateAtomically(_state.value)
+            }
+        }
 
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
@@ -159,6 +178,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     Player.STATE_READY -> {
                         _state.value = _state.value.copy(isBuffering = false, isError = false)
                         _state.value.currentTrack?.id?.let { retryCountMap.remove(it) }
+                        requestSave()
                     }
                     Player.STATE_ENDED -> {
                         _state.value = _state.value.copy(isBuffering = false)
@@ -170,7 +190,6 @@ class AudioPlayerService private constructor(private val context: Context) {
                         }
                     }
                     Player.STATE_IDLE -> {
-                        // Idle without error is fine (after stop())
                         if (!_state.value.isError && !isResolving) {
                             _state.value = _state.value.copy(isBuffering = false)
                         }
@@ -180,7 +199,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.e("AudioPlayerService", "ExoPlayer error: ${error.message}")
-                
+
                 _state.value = _state.value.copy(
                     isBuffering = false,
                     isPlaying = false,
@@ -189,7 +208,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 )
 
                 val currentTrackId = _state.value.currentTrack?.id
-                
+
                 var isExpiredUrl = false
                 // Clear cached URL if we get 403 Forbidden or 410 Gone (URL expired)
                 val cause = error.cause
@@ -211,12 +230,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                     if (retries < 2) {
                         retryCountMap[currentTrackId] = retries + 1
                         isRetrying = true
-                        val delayMs = if (isExpiredUrl) 100L else 3000L
+                        // E10: exponential backoff + jitter for transient errors; fast re-resolve for expired URLs.
+                        val delayMs = if (isExpiredUrl) 100L else (500L shl retries).coerceAtMost(8000L) + Random.nextLong(0, 500)
                         android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}/2) in ${delayMs}ms")
                         autoRetryJob?.cancel()
                         autoRetryJob = mainScope.launch {
                             delay(delayMs.milliseconds)
-                            // Only retry if we're still in error for the SAME track
                             if (_state.value.isError && _state.value.currentTrack?.id == currentTrackId) {
                                 retryCurrentTrack()
                             } else {
@@ -239,6 +258,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         // Periodic position / buffer update
         mainScope.launch {
             var lastSaveTime = 0L
+            var lastSavedPosition = 0L
             while (true) {
                 if (!isResolving && (exoPlayer.isPlaying || _state.value.isBuffering)) {
                     _state.value = _state.value.copy(
@@ -249,20 +269,91 @@ class AudioPlayerService private constructor(private val context: Context) {
                     )
                 }
                 val now = System.currentTimeMillis()
+                // E13: only request a save when position advanced meaningfully (>3s) to reduce I/O.
                 if (now - lastSaveTime > 5000) {
-                    if (!_state.value.isError && !isRetrying) {
-                        saveState()
+                    if (!_state.value.isError && !isRetrying &&
+                        kotlin.math.abs(_state.value.positionMs - lastSavedPosition) > 3000) {
+                        requestSave()
+                        lastSavedPosition = _state.value.positionMs
                     }
                     lastSaveTime = now
                 }
                 delay(500.milliseconds)
             }
         }
+
+        // E11: observe network availability so playback auto-recovers after a VPN tunnel
+        // comes up or Wi-Fi reconnects (no ConnectivityManager existed anywhere before).
+        registerNetworkCallback()
+    }
+
+    // -----------------------------------------------------------------------
+    // Network resilience (E11)
+    // -----------------------------------------------------------------------
+
+    @Volatile private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var lastRetryForNetwork = 0L
+
+    private fun registerNetworkCallback() {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) { maybeRetryOnReconnect() }
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        maybeRetryOnReconnect()
+                    }
+                }
+            }
+            cm.registerDefaultNetworkCallback(cb)
+            networkCallback = cb
+        } catch (e: Exception) {
+            android.util.Log.w("AudioPlayerService", "NetworkCallback registration failed: ${e.message}")
+        }
+    }
+
+    private fun maybeRetryOnReconnect() {
+        val st = _state.value
+        if (!st.isError || isRetrying) return
+        val now = System.currentTimeMillis()
+        if (now - lastRetryForNetwork < 2000) return // debounce
+        lastRetryForNetwork = now
+        android.util.Log.d("AudioPlayerService", "Network recovered, retrying current track")
+        mainScope.launch { retryCurrentTrack() }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val cb = networkCallback ?: return
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            cm?.unregisterNetworkCallback(cb)
+        } catch (_: Exception) { }
+        networkCallback = null
     }
 
     // -----------------------------------------------------------------------
     // Core: resolve YouTube stream URL then hand it to ExoPlayer
     // -----------------------------------------------------------------------
+
+    // E12: explicit, deterministic foreground-service bind, not inside the cancelable playJob.
+    private fun ensureForegroundServiceBound() {
+        if (mediaControllerFuture != null) return
+        val startIntent = Intent(context, RustifyForegroundService::class.java)
+        androidx.core.content.ContextCompat.startForegroundService(context, startIntent)
+        val token = androidx.media3.session.SessionToken(
+            context, android.content.ComponentName(context, RustifyForegroundService::class.java)
+        )
+        val future = androidx.media3.session.MediaController.Builder(context, token).buildAsync()
+        mediaControllerFuture = future
+        future.addListener({
+            try {
+                future.get()
+            } catch (e: Exception) {
+                android.util.Log.e("AudioPlayerService", "MediaController bind failed", e)
+                mediaControllerFuture = null // allow retry on next play
+            }
+        }, androidx.core.content.ContextCompat.getMainExecutor(context))
+    }
 
     private fun playTrack(track: FullTrack, youtubeId: String? = null) {
         val trackId = track.id ?: return
@@ -288,41 +379,31 @@ class AudioPlayerService private constructor(private val context: Context) {
         preloadLyrics(track)
 
         // Show buffering spinner immediately (resolver can take a few seconds)
+        val myGen = resolveGen.incrementAndGet()
         isResolving = true
         _state.value = _state.value.copy(isBuffering = true, isError = false, errorMessage = "")
+
+        // E12: bind the foreground service before launching the cancelable job so a rapid
+        // skip can't prevent the service/notification from starting.
+        ensureForegroundServiceBound()
 
         playJob?.cancel()
         playJob = mainScope.launch {
             val thisJob = coroutineContext[kotlinx.coroutines.Job]
-            
-            // Prevent background termination by binding a MediaController if not already bound
-            if (mediaControllerFuture == null) {
-                val sessionToken = androidx.media3.session.SessionToken(context, android.content.ComponentName(context, RustifyForegroundService::class.java))
-                mediaControllerFuture = androidx.media3.session.MediaController.Builder(context, sessionToken).buildAsync()
-            }
-            
+
             try {
-                // Set dummy item with new metadata so the notification persists while resolving
+                // E12: do NOT set a dummy MediaItem / pause the player here. The notification
+                // keeps the previous item until the real one is prepared, instead of freezing
+                // on a fake "loading" item in pausse. The UI spinner is driven by _state.isBuffering.
                 val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
                 val metadata = androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(track.name)
                     .setArtist(track.artists.joinToString(", ") { it.name })
                     .setArtworkUri(if (artworkUrl.isNotBlank()) android.net.Uri.parse(artworkUrl) else null)
                     .build()
-                    
-                val dummyItem = MediaItem.Builder()
-                    .setMediaId("loading")
-                    .setUri("dummy://loading")
-                    .setMediaMetadata(metadata)
-                    .build()
-                    
-                exoPlayer.pause()
-                exoPlayer.setMediaItem(dummyItem)
-                // Don't call prepare yet, just let the media session update its state
-                // This keeps the player from clearing the notification
-                
+
                 var streamUrl: String? = null
-                
+
                 if (trackId.startsWith("local:")) {
                     streamUrl = trackId.removePrefix("local:")
                     android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
@@ -331,7 +412,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
                     val matchLocalFirst = prefs.getBoolean("settings_match_local_first", false)
                     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
-                    
+
                     if (matchLocalFirst && localMusicDirs.isNotEmpty()) {
                         val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
                         if (match != null) {
@@ -353,62 +434,43 @@ class AudioPlayerService private constructor(private val context: Context) {
                         if (streamUrl.isNullOrBlank()) {
                             android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
 
-                        val resolvedYoutubeId = withContext(Dispatchers.IO) {
-                            NativeEngine.resolveYouTubeIdNative(trackId, youtubeId ?: "")
-                        }
+                            val resolvedYoutubeId = withContext(Dispatchers.IO) {
+                                NativeEngine.resolveYouTubeIdNative(trackId, youtubeId ?: "")
+                            }
 
-                        if (resolvedYoutubeId.isNotBlank()) {
-                            android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
-                            streamUrl = withContext(Dispatchers.IO) {
-                                try {
-                                    val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedYoutubeId")
-                                    request.addOption("-g")
-                                    request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                                    // Optimization flags (Safe ones only)
-                                    request.addOption("--no-check-certificate")
-                                    request.addOption("--no-warnings")
-
-                                    val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                                    response.out.trim().lines().firstOrNull()?.trim()
-                                } catch (e: Exception) {
-                                    android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed", e)
-                                    null
+                            if (resolvedYoutubeId.isNotBlank()) {
+                                android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
+                                streamUrl = withContext(Dispatchers.IO) {
+                                    extractStreamUrlWithRetry(resolvedYoutubeId)
                                 }
                             }
+                        } else {
+                            android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
+                            preResolvedUrls.remove(trackId)
                         }
-                    } else {
-                        android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
-                        preResolvedUrls.remove(trackId)
                     }
                 }
-            }
 
-            if (streamUrl.isNullOrBlank()) {
-                    android.util.Log.e("AudioPlayerService", "Could not extract stream URL")
-                    _state.value = _state.value.copy(
-                        isBuffering = false,
-                        isPlaying = false,
-                        isError = true,
-                        errorMessage = "Error extracting audio"
-                    )
+                if (streamUrl.isNullOrBlank()) {
+                    // E10: auto-retry the extraction failure instead of leaving the user stuck.
+                    scheduleExtractionRetry(track, youtubeId)
                     return@launch
                 }
-                
+
 
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata)
                     .apply { setCustomCacheKey(trackId) }
                     .build()
-                    
+
                 resolvedStreamUrls[trackId] = streamUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
-                // Local content:// URIs expire when permissions change
                 val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
                 if (!trackId.startsWith("local:") && !isLocalStream) {
                     putCachedStreamUrl(trackId, streamUrl)
                 }
-                
+
                 val mediaSource = if (isLocalStream) {
                     android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
                     DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
@@ -416,7 +478,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 } else {
                     android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
                     val cacheFactory = cacheDataSourceFactory
-                    
+
                     DefaultMediaSourceFactory(cacheFactory)
                         .createMediaSource(mediaItem)
                 }
@@ -431,10 +493,71 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Pre-buffer the next track in the queue
                 preBufferNextTrack()
             } finally {
-                if (playJob == thisJob) {
+                // E10: generation token — only the latest playTrack clears isResolving.
+                if (resolveGen.get() == myGen) {
                     isResolving = false
                 }
             }
+        }
+    }
+
+    // E10/E11: yt-dlp extraction with a couple of retries on transient failure
+    // (network blips during VPN tunnel bring-up etc.).
+    private fun extractStreamUrlWithRetry(youtubeId: String, maxAttempts: Int = 3): String? {
+        var lastError: Exception? = null
+        for (attempt in 0 until maxAttempts) {
+            try {
+                val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId")
+                request.addOption("-g")
+                request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
+                request.addOption("--no-check-certificate")
+                request.addOption("--no-warnings")
+                val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
+                val url = response.out.trim().lines().firstOrNull()?.trim()
+                if (!url.isNullOrBlank()) return url
+            } catch (e: Exception) {
+                lastError = e
+                android.util.Log.w("AudioPlayerService", "yt-dlp attempt ${attempt + 1} failed: ${e.message}")
+            }
+            if (attempt < maxAttempts - 1) {
+                try { Thread.sleep((500L shl attempt).coerceAtMost(4000L)) } catch (_: InterruptedException) {}
+            }
+        }
+        if (lastError != null) {
+            android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed after $maxAttempts attempts", lastError)
+        }
+        return null
+    }
+
+    // E10: retry the failure to extract a stream URL (previously a dead-end error banner).
+    private fun scheduleExtractionRetry(track: FullTrack, youtubeId: String?) {
+        val id = track.id ?: return
+        val n = retryCountMap[id] ?: 0
+        if (n >= 2) {
+            retryCountMap.remove(id)
+            _state.value = _state.value.copy(
+                isBuffering = false, isPlaying = false,
+                isError = true, errorMessage = "No se encontró una fuente reproducible"
+            )
+            mainScope.launch { delay(2000.milliseconds); skipToNext() }
+            return
+        }
+        retryCountMap[id] = n + 1
+        isRetrying = true
+        val delayMs = (500L shl n).coerceAtMost(8000L) + Random.nextLong(0, 500)
+        _state.value = _state.value.copy(
+            isError = true, isBuffering = true,
+            errorMessage = "Reintentando (${n + 1}/2)…"
+        )
+        autoRetryJob?.cancel()
+        autoRetryJob = mainScope.launch {
+            delay(delayMs.milliseconds)
+            if (_state.value.currentTrack?.id == id) {
+                resolvedStreamUrls.remove(id)
+                preResolvedUrls.remove(id)
+                retryCurrentTrack(youtubeId)
+            }
+            isRetrying = false
         }
     }
 
@@ -450,7 +573,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             preBufferingJob?.cancel()
             preBufferingJob = mainScope.launch {
                 android.util.Log.d("AudioPlayerService", "Pre-buffering next track: ${nextTrack.name}")
-                
+
                 // Register metadata in Rust so the resolver can match the track
                 val artistsJson = "[" + nextTrack.artists.joinToString(",") {
                     "\"" + it.name.replace("\"", "\\\"") + "\""
@@ -466,23 +589,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 if (youtubeId.isNotBlank()) {
                     resolvedUrl = withContext(Dispatchers.IO) {
-                        try {
-                            val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId")
-                            request.addOption("-g")
-                            request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                            // Optimization flags (Safe ones only)
-                            request.addOption("--no-check-certificate")
-                            request.addOption("--no-warnings")
-
-                            val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                            response.out.trim().lines().firstOrNull()?.trim()
-                        } catch (e: Exception) {
-                            android.util.Log.e("AudioPlayerService", "Pre-buffer YoutubeDL fallback error for $nextTrackId", e)
-                            null
-                        }
+                        extractStreamUrlWithRetry(youtubeId)
                     }
                 }
-                
+
                 if (!resolvedUrl.isNullOrBlank()) {
                     preResolvedUrls[nextTrackId] = resolvedUrl
                     resolvedStreamUrls[nextTrackId] = resolvedUrl
@@ -538,6 +648,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun loadAndPlay(track: FullTrack) {
+        ensureForegroundServiceBound()
         val queue = listOf(track) + userQueue
         _state.value = _state.value.copy(
             currentTrack = track,
@@ -550,21 +661,22 @@ class AudioPlayerService private constructor(private val context: Context) {
         preResolvedUrls.clear()
         playTrack(track)
         notifyQueueChanged(queue)
-        saveState()
+        requestSave()
     }
 
     fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
         if (tracks.isEmpty()) return
+        ensureForegroundServiceBound()
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
-        
+
         val baseQueue = if (_state.value.isShuffle) {
             val remaining = tracks.filterIndexed { i, _ -> i != idx }.shuffled()
             listOf(selected) + remaining
         } else {
             tracks
         }
-        
+
         val selectedIdx = baseQueue.indexOfFirst { it.id == selected.id }
         val queue = if (selectedIdx != -1) {
             baseQueue.take(selectedIdx + 1) + userQueue + baseQueue.drop(selectedIdx + 1)
@@ -583,7 +695,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         preResolvedUrls.clear()
         playTrack(selected)
         notifyQueueChanged(queue)
-        saveState()
+        requestSave()
     }
 
     fun cyclePlaybackMode() {
@@ -607,14 +719,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             preBufferNextTrack()
             notifyQueueChanged(st.originalQueue)
         }
-        saveState()
+        requestSave()
     }
 
     fun stopPlayerAndRelease() {
         playJob?.cancel()
         exoPlayer.stop()
         _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
-        saveState()
+        saveNow()
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
@@ -627,15 +739,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         preResolvedUrls.clear()
         preBufferNextTrack()
         notifyQueueChanged(list)
+        requestSave()
     }
 
     fun removeFromQueue(index: Int) {
         val st = _state.value
         if (index !in st.queue.indices) return
-        
+
         val list = st.queue.toMutableList()
         list.removeAt(index)
-        
+
         // Remove from userQueue based on relative position to avoid removing duplicates
         val hasCurrent = if (st.currentTrack != null && st.queue.firstOrNull()?.id == st.currentTrack.id) 1 else 0
         synchronized(userQueue) {
@@ -643,11 +756,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 userQueue.removeAt(index - hasCurrent)
             }
         }
-        
+
         _state.value = st.copy(queue = list)
         preResolvedUrls.clear()
         preBufferNextTrack()
         notifyQueueChanged(list)
+        requestSave()
     }
 
     fun play() {
@@ -659,10 +773,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 exoPlayer.play()
             }
         }
+        requestSave()
     }
 
     fun pause() {
         exoPlayer.pause()
+        requestSave()
     }
 
     fun togglePlayPause() {
@@ -676,23 +792,27 @@ class AudioPlayerService private constructor(private val context: Context) {
                 exoPlayer.play()
             }
         }
+        requestSave()
     }
 
     fun seekTo(positionMs: Long) {
         exoPlayer.seekTo(positionMs)
         _state.value = _state.value.copy(positionMs = positionMs)
+        requestSave()
     }
 
     fun skipToNext() {
         val st = _state.value
+        _state.value = st.copy(positionMs = exoPlayer.currentPosition)
         val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
         if (idx != -1 && idx < st.queue.lastIndex) {
             val next = st.queue[idx + 1]
-            _state.value = st.copy(
+            _state.value = _state.value.copy(
                 currentTrack = next, isPlaying = false,
                 positionMs = 0L, durationMs = next.durationMs.toLong()
             )
             playTrack(next)
+            requestSave()
         } else if (idx == st.queue.lastIndex && st.currentTrack != null) {
             // Autoplay radio
             mainScope.launch(Dispatchers.IO) {
@@ -714,6 +834,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                             val newQueue = st.queue + newTracks
                             _state.value = _state.value.copy(queue = newQueue, originalQueue = st.originalQueue + newTracks)
                             notifyQueueChanged(newQueue)
+                            requestSave()
                             skipToNext()
                         }
                     }
@@ -734,6 +855,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 positionMs = 0L, durationMs = prev.durationMs.toLong()
             )
             playTrack(prev)
+            requestSave()
         }
     }
 
@@ -771,12 +893,13 @@ class AudioPlayerService private constructor(private val context: Context) {
         val track = st.queue.find { it.id == trackId }
         if (track != null) {
             _state.value = st.copy(
-                currentTrack = track, 
+                currentTrack = track,
                 isPlaying = false,
-                positionMs = 0L, 
+                positionMs = 0L,
                 durationMs = track.durationMs.toLong()
             )
             playTrack(track, youtubeId)
+            requestSave()
         } else {
             // Should not happen normally, but fallback just in case
         }
@@ -785,7 +908,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     private fun insertTrackAfterUserQueue(list: List<FullTrack>, currentTrack: FullTrack?, trackToInsert: FullTrack): List<FullTrack> {
         val currentIdx = list.indexOfFirst { it.id == currentTrack?.id }
         if (currentIdx == -1) return list + trackToInsert
-        
+
         var count = 0
         for (i in (currentIdx + 1) until list.size) {
             if (userQueue.any { it.id == list[i].id }) {
@@ -811,6 +934,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         _state.value = _state.value.copy(queue = q, originalQueue = orig)
         preBufferNextTrack()
         notifyQueueChanged(q)
+        requestSave()
     }
 
     @Suppress("unused")
@@ -830,13 +954,18 @@ class AudioPlayerService private constructor(private val context: Context) {
         _state.value = _state.value.copy(queue = currentQueue, originalQueue = currentOrig)
         preBufferNextTrack()
         notifyQueueChanged(currentQueue)
+        requestSave()
     }
 
     fun release() {
+        // E13: persist the latest state synchronously before tearing down.
+        saveNow()
+        unregisterNetworkCallback()
         val stopIntent = Intent(context, RustifyForegroundService::class.java).apply {
             action = "STOP_SERVICE"
         }
         context.startService(stopIntent)
+        mediaControllerFuture?.cancel(true)
         mediaControllerFuture = null
         exoPlayer.release()
         exoPlayerInstance = null
@@ -910,40 +1039,65 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    internal fun saveState() {
-        val st = _state.value
-        // Never persist error state — it contaminates the next session
-        if (st.isError || isResolving) return
+    // -------------------------------------------------------------------
+    // Playback state persistence (E13: atomic, debounced, complete)
+    // -------------------------------------------------------------------
 
-        mainScope.launch(Dispatchers.IO) {
-            try {
-                val file = java.io.File(context.filesDir, "playback_state.json")
-                val json = org.json.JSONObject()
-                st.currentTrack?.let { json.put("currentTrack", it.toJson()) }
+    /** Enqueue a debounced state save. Cheap to call from any playback event. */
+    internal fun requestSave() {
+        val st = _state.value
+        if (st.isError || isResolving) return
+        saveRequests.trySend(Unit)
+    }
+
+    /** Backwards-compatible alias for existing callers. */
+    internal fun saveState() = requestSave()
+
+    /** Synchronous atomic write — use on shutdown paths where the async queue may not flush. */
+    internal fun saveNow() {
+        writeStateAtomically(_state.value)
+    }
+
+    private fun writeStateAtomically(st: AudioPlayerState) {
+        try {
+            // Never persist error state — it contaminates the next session
+            if (st.isError || isResolving) return
+            val dir = context.filesDir
+            val tmp = java.io.File(dir, "playback_state.json.tmp")
+            val dst = java.io.File(dir, "playback_state.json")
+            val json = org.json.JSONObject().apply {
+                st.currentTrack?.let { put("currentTrack", it.toJson()) }
 
                 val qArr = org.json.JSONArray()
                 st.queue.forEach { qArr.put(it.toJson()) }
-                json.put("queue", qArr)
+                put("queue", qArr)
 
                 val origArr = org.json.JSONArray()
                 st.originalQueue.forEach { origArr.put(it.toJson()) }
-                json.put("originalQueue", origArr)
+                put("originalQueue", origArr)
 
                 val uqArr = org.json.JSONArray()
                 synchronized(userQueue) {
                     userQueue.forEach { uqArr.put(it.toJson()) }
                 }
-                json.put("userQueue", uqArr)
+                put("userQueue", uqArr)
 
-                json.put("positionMs", st.positionMs)
-                json.put("durationMs", st.durationMs)
-                json.put("isShuffle", st.isShuffle)
-                json.put("lastSavedTimestamp", System.currentTimeMillis())
-
-                file.writeText(json.toString())
-            } catch (e: Exception) {
-                android.util.Log.e("AudioPlayerService", "Error saving state", e)
+                put("positionMs", st.positionMs)
+                put("durationMs", st.durationMs)
+                put("isShuffle", st.isShuffle)
+                put("isRepeat", st.isRepeat)           // E13: previously missing
+                put("wasPlaying", st.isPlaying)
+                put("schemaVersion", 2)
+                put("lastSavedTimestamp", System.currentTimeMillis())
             }
+            // Atomic write: tmp + rename — never a half-written file (E13 §3.3).
+            tmp.writeText(json.toString())
+            if (!tmp.renameTo(dst)) {
+                dst.writeText(json.toString())
+                tmp.delete()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AudioPlayerService", "Error saving state", e)
         }
     }
 
@@ -981,6 +1135,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val positionMs = json.optLong("positionMs", 0L)
                 val durationMs = json.optLong("durationMs", 0L)
                 val isShuffle = json.optBoolean("isShuffle", false)
+                val isRepeat = json.optBoolean("isRepeat", false)   // E13: restore repeat mode
 
                 _state.value = _state.value.copy(
                     currentTrack = track,
@@ -989,6 +1144,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     positionMs = positionMs,
                     durationMs = durationMs,
                     isShuffle = isShuffle,
+                    isRepeat = isRepeat,
                     isPlaying = false,
                     isBuffering = false
                 )

@@ -79,33 +79,20 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchYouTube
     })
 }
 
-/// JNI Bridge: Start audio proxy server in background, returns the dynamic port
+/// JNI Bridge: Initialize the YouTube resolver cache directory + load persisted mappings.
+/// Replaces the former `startAudioServerNative` (the loopback HTTP server was dead code, E11).
 #[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startAudioServerNative<'local>(
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_initCacheDirNative<'local>(
     mut env_unowned: EnvUnowned<'local>,
     _class: JClass<'local>,
     cache_dir: JString<'local>,
-) -> jint {
-    let env_outcome = env_unowned.with_env(|env| -> jni::errors::Result<jint> {
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
         let mutf8 = cache_dir.mutf8_chars(env)?;
         let cache_dir_str = mutf8.to_string();
-        
-        let port_res = get_runtime().block_on(async {
-            youtube::server::start_server(cache_dir_str).await
-        });
-        
-        match port_res {
-            Ok(port) => Ok(port as jint),
-            Err(e) => {
-                eprintln!("Failed to start Rust audio server: {}", e);
-                Ok(0)
-            }
-        }
+        youtube::server::init_cache_dir(&cache_dir_str);
+        Ok(())
     });
-    match env_outcome.into_outcome() {
-        Outcome::Ok(port) => port,
-        _ => 0,
-    }
 }
 
 /// JNI Bridge: Register track metadata in Rust memory

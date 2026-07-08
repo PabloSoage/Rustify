@@ -67,6 +67,11 @@
     <string name="track_menu_view_youtube">Alternative YouTube version</string>
     <string name="track_menu_add_queue">Add to Queue</string>
     <string name="track_menu_share">Share</string>
+    <string name="share_track">Share Track</string>
+    <string name="share_no_link">No link available for this track</string>
+    <string name="share_no_target">No app available to share</string>
+    <string name="paste_clipboard_empty">Clipboard is empty</string>
+    <string name="paste_no_spotify_link">No Spotify link found in clipboard</string>
     <string name="added_to_queue">Added to queue</string>
     <string name="track_alternative_changed">Alternative track confirmed</string>
     <string name="playlist_not_found">No playlists found</string>

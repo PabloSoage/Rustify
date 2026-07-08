@@ -64,6 +64,8 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
+import com.varuna.rustify.util.SpotifyLink
+import com.varuna.rustify.util.SpotifyLinkParser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -78,6 +80,7 @@ enum class SearchFilter {
 fun SearchScreen(
     spotifyRepo: SpotifyRepository,
     onTrackClick: (FullTrack) -> Unit,
+    onOpenTrack: (String) -> Unit,
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
@@ -166,47 +169,28 @@ fun SearchScreen(
                             Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
                         }
                     } else {
-                        // Paste Spotify link from clipboard (BUG-10)
+                        // Paste Spotify link from clipboard (E20: navigate, don't reproduce a stub).
                         IconButton(onClick = {
-                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                            val clip = clipboard?.primaryClip
-                            if (clip != null && clip.itemCount > 0) {
-                                val pastedText = clip.getItemAt(0).text?.toString()
-                                if (pastedText != null) {
-                                    val trackRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?track/([a-zA-Z0-9]+)""")
-                                    val trackMatch = trackRegex.find(pastedText)
-                                    if (trackMatch != null) {
-                                        val trackId = trackMatch.groupValues[1]
-                                        android.util.Log.d("SearchScreen", "Pasted Spotify track: $trackId")
-                                        // Navigate to track via callback
-                                        onTrackClick(
-                                            FullTrack(
-                                                id = trackId, name = "", externalUri = "",
-                                                explicit = false, durationMs = 0, isrc = "",
-                                                artists = emptyList(), album = null
-                                            )
-                                        )
-                                        return@IconButton
-                                    }
-                                    // Try album
-                                    val albumRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?album/([a-zA-Z0-9]+)""")
-                                    val albumMatch = albumRegex.find(pastedText)
-                                    if (albumMatch != null) {
-                                        val albumId = albumMatch.groupValues[1]
-                                        onAlbumClick(albumId, "", emptyList())
-                                        return@IconButton
-                                    }
-                                    // Try playlist
-                                    val playlistRegex = Regex("""open\.spotify\.com/(?:intl-[a-zA-Z]{2}/)?playlist/([a-zA-Z0-9]+)""")
-                                    val playlistMatch = playlistRegex.find(pastedText)
-                                    if (playlistMatch != null) {
-                                        val playlistId = playlistMatch.groupValues[1]
-                                        onPlaylistClick(playlistId, "", emptyList())
-                                        return@IconButton
-                                    }
-                                    // No match found — show toast
-                                    android.widget.Toast.makeText(context, "No Spotify link found in clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                            val pasted = try {
+                                val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                            } catch (e: Exception) {
+                                android.util.Log.w("SearchScreen", "Clipboard read failed: ${e.message}")
+                                null
+                            }
+                            if (pasted.isNullOrBlank()) {
+                                android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
+                                return@IconButton
+                            }
+                            when (val link = SpotifyLinkParser.parse(pasted)) {
+                                is SpotifyLink.Track -> {
+                                    android.util.Log.d("SearchScreen", "Pasted Spotify track: ${link.id}")
+                                    onOpenTrack(link.id)
                                 }
+                                is SpotifyLink.Album -> onAlbumClick(link.id, "", emptyList())
+                                is SpotifyLink.Playlist -> onPlaylistClick(link.id, "", emptyList())
+                                is SpotifyLink.Artist -> onArtistClick(link.id)
+                                null -> android.widget.Toast.makeText(context, R.string.paste_no_spotify_link, android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }) {
                             Icon(Icons.Default.Add, contentDescription = "Paste Spotify link", tint = Color.White)
