@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.util.LogCapture
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,6 +87,7 @@ import java.io.File
 fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
     onBack: () -> Unit,
+    onNavigateLogViewer: () -> Unit = {},
     onLocaleChanged: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -98,6 +100,11 @@ fun SettingsScreen(
     
     var downloadUriString by remember { mutableStateOf(prefs.getString("download_directory", null)) }
     
+    // F1.B / F1.A — diagnóstico y wrapper.
+    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_capture_enabled", false)) }
+    var wrapperHost by remember { mutableStateOf(prefs.getString("rustify_wrapper_host", "") ?: "") }
+    var shareAsRustify by remember { mutableStateOf(prefs.getBoolean("share_as_rustify_link", false)) }
+
     var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
     var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
     var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
@@ -847,6 +854,122 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.padding(start = 12.dp))
                             Text(name, color = Color.White, fontSize = 16.sp)
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // F1.B — Diagnóstico / Logs
+            Text(
+                text = stringResource(R.string.settings_diagnostics),
+                color = Color(0xFF1DB954),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                            Text(stringResource(R.string.settings_capture_logs), color = Color.White, fontSize = 14.sp)
+                            Text(stringResource(R.string.settings_capture_logs_desc), color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = loggingEnabled,
+                            onCheckedChange = { checked ->
+                                loggingEnabled = checked
+                                prefs.edit { putBoolean("logging_capture_enabled", checked) }
+                                // Vía elegida: logcat del propio proceso (start/stop del stream).
+                                if (checked) LogCapture.start() else LogCapture.stop()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF1DB954)
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { onNavigateLogViewer() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.settings_view_logs), color = Color.White)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // F1.A — Enlace Rustify (wrapper)
+            Text(
+                text = stringResource(R.string.settings_rustify_link),
+                color = Color(0xFF1DB954),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = wrapperHost,
+                        onValueChange = { value ->
+                            wrapperHost = value
+                            // Persistir; blank → null (fallback rustify://). Host VERIFICADO es build-time.
+                            prefs.edit {
+                                if (value.isBlank()) remove("rustify_wrapper_host")
+                                else putString("rustify_wrapper_host", value.trim())
+                            }
+                        },
+                        label = { Text(stringResource(R.string.settings_wrapper_host)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF121212),
+                            unfocusedContainerColor = Color(0xFF121212)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(stringResource(R.string.settings_wrapper_host_desc), color = Color.Gray, fontSize = 12.sp)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                            Text(stringResource(R.string.settings_share_as_rustify), color = Color.White, fontSize = 14.sp)
+                            Text(stringResource(R.string.settings_share_as_rustify_desc), color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = shareAsRustify,
+                            onCheckedChange = { checked ->
+                                shareAsRustify = checked
+                                prefs.edit { putBoolean("share_as_rustify_link", checked) }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF1DB954)
+                            )
+                        )
                     }
                 }
             }

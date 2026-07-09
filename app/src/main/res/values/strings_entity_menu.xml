@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- E30-ctx: entity (album/playlist/artist) context menu strings.
+         Kept in a separate file so we don't touch strings.xml (Android merges all
+         string files under res/values/). -->
+
+    <!-- Share labels per entity type -->
+    <string name="entity_menu_share_album">Share album</string>
+    <string name="entity_menu_share_playlist">Share playlist</string>
+    <string name="entity_menu_share_artist">Share artist</string>
+
+    <!-- Go to artist -->
+    <string name="entity_menu_go_artist">Go to artist</string>
+
+    <!-- Add all tracks to a playlist -->
+    <string name="entity_menu_add_all_playlist">Add to a playlist</string>
+    <string name="entity_menu_new_playlist">New playlist</string>
+    <string name="entity_menu_new_playlist_hint">Playlist name</string>
+    <string name="entity_menu_create">Create</string>
+    <string name="entity_menu_cancel">Cancel</string>
+
+    <!-- Feedback toasts -->
+    <string name="entity_menu_added_n_to_playlist">Added %1$d songs to %2$s</string>
+    <string name="entity_menu_no_tracks">No songs to add</string>
+    <string name="entity_menu_add_error">Could not add songs: %1$s</string>
+    <string name="entity_menu_load_playlists_error">Could not load playlists</string>
+</resources>

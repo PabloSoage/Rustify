@@ -2,7 +2,7 @@ package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,17 +49,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullArtist
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimpleAlbum
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.PlaylistItemCard
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
@@ -71,6 +78,7 @@ fun ArtistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onShufflePlay: (List<FullTrack>) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
@@ -79,6 +87,7 @@ fun ArtistScreen(
     var albums by remember { mutableStateOf<List<SimpleAlbum>>(emptyList()) }
     var relatedArtists by remember { mutableStateOf<List<FullArtist>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
+    var showEntityMenu by remember { mutableStateOf(false) }
 
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -202,7 +211,7 @@ fun ArtistScreen(
                                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                                 maxLines = 1,
-                                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                modifier = Modifier.bouncingMarquee()
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -217,12 +226,70 @@ fun ArtistScreen(
 
                     if (topTracks.isNotEmpty()) {
                         item {
-                            Text(
-                                text = "Top Tracks",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Top Tracks",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clickable {
+                                                if (topTracks.isNotEmpty()) {
+                                                    onTrackClick(topTracks, 0)
+                                                }
+                                            },
+                                        shape = CircleShape,
+                                        color = spotifyGreen
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Play",
+                                                tint = Color.Black,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clickable {
+                                                if (topTracks.isNotEmpty()) {
+                                                    onShufflePlay(topTracks)
+                                                }
+                                            },
+                                        shape = CircleShape,
+                                        color = spotifyGreen
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Shuffle,
+                                                contentDescription = stringResource(R.string.cd_shuffle_play),
+                                                tint = Color.Black,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                         items(topTracks.withIndex().toList(), key = { (_, track) -> track.id ?: "local_${track.name.hashCode()}" }) { (index, track) ->
                             val trackId = track.id ?: ""
@@ -237,8 +304,7 @@ fun ArtistScreen(
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
                                     android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                    kotlinx.coroutines.delay(100L)
-                                    dismissState.reset()
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }
                             
@@ -357,8 +423,23 @@ fun ArtistScreen(
                 IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
+                IconButton(onClick = { showEntityMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                }
             }
         }
+    }
+
+    if (showEntityMenu) {
+        EntityOptionsMenuBottomSheet(
+            entityType = "artist",
+            entityId = artistId,
+            entityName = artistDetails?.name ?: "",
+            primaryArtistId = null,
+            tracks = topTracks,
+            onDismiss = { showEntityMenu = false },
+            onGoToArtist = {}
+        )
     }
 
     if (selectedTrackForMenu != null) {

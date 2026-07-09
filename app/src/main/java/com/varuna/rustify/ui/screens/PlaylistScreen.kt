@@ -1,7 +1,6 @@
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,16 +51,20 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullPlaylist
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +80,7 @@ fun PlaylistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onShufflePlay: (List<FullTrack>) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
@@ -82,6 +88,7 @@ fun PlaylistScreen(
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
+    var showEntityMenu by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -250,10 +257,10 @@ fun PlaylistScreen(
                                     ),
                                     color = Color.White,
                                     maxLines = 1,
-                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                    modifier = Modifier.bouncingMarquee()
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                
+
                                 val descriptionText = playlistDetails?.description ?: "Spotify Playlist"
 
                                 Text(
@@ -261,7 +268,7 @@ fun PlaylistScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.LightGray,
                                     maxLines = 1,
-                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                    modifier = Modifier.bouncingMarquee()
                                 )
 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -303,7 +310,7 @@ fun PlaylistScreen(
                             Surface(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clickable { 
+                                    .clickable {
                                         if (tracks.isNotEmpty()) {
                                             onTrackClick(tracks, 0)
                                         }
@@ -318,6 +325,30 @@ fun PlaylistScreen(
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
                                         contentDescription = "Play",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clickable {
+                                        if (tracks.isNotEmpty()) {
+                                            onShufflePlay(tracks)
+                                        }
+                                    },
+                                shape = CircleShape,
+                                color = spotifyGreen
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = stringResource(R.string.cd_shuffle_play),
                                         tint = Color.Black,
                                         modifier = Modifier.size(32.dp)
                                     )
@@ -371,8 +402,7 @@ fun PlaylistScreen(
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
                                     android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                    kotlinx.coroutines.delay(100L)
-                                    dismissState.reset()
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }
 
@@ -442,8 +472,23 @@ fun PlaylistScreen(
                 IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
+                IconButton(onClick = { showEntityMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                }
             }
         }
+    }
+
+    if (showEntityMenu) {
+        EntityOptionsMenuBottomSheet(
+            entityType = "playlist",
+            entityId = playlistId,
+            entityName = playlistName,
+            primaryArtistId = null,
+            tracks = tracks,
+            onDismiss = { showEntityMenu = false },
+            onGoToArtist = onArtistClick
+        )
     }
 
     if (selectedTrackForMenu != null) {

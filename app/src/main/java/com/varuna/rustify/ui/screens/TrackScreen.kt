@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.varuna.rustify.R
-import androidx.compose.foundation.basicMarquee
+import com.varuna.rustify.util.bouncingMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -908,14 +908,14 @@ fun TrackScreenControls(
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                     maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.fillMaxWidth().bouncingMarquee()
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.titleMedium,
                     color = Color(0xFF1DB954),
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE).clickable {
+                    modifier = Modifier.fillMaxWidth().bouncingMarquee().clickable {
                         if (track.artists.isNotEmpty()) {
                             onArtistClick(track.artists.first().id)
                         }
@@ -943,7 +943,7 @@ fun TrackScreenControls(
             style = MaterialTheme.typography.bodyLarge,
             color = Color.LightGray,
             maxLines = 1,
-            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE).clickable {
+            modifier = Modifier.fillMaxWidth().bouncingMarquee().clickable {
                 track.album?.let {
                     onAlbumClick(it.id, it.name, it.images)
                 }

@@ -51,9 +51,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -111,38 +111,114 @@ fun LibraryScreen(
         if (enableLocalMusic) LibraryTab.entries else LibraryTab.entries.filter { it != LibraryTab.LOCAL }
     }
 
+    // BUG A: searchBarOffset in [-fullHeight, 0]; 0 = fully shown, -fullHeight = collapsed.
     var searchBarOffset by remember { mutableFloatStateOf(0f) }
     var searchBarFullHeightPx by remember { mutableFloatStateOf(0f) }
     var hasMeasuredSearchBar by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    val currentHeightPx = if (hasMeasuredSearchBar) {
-        (searchBarFullHeightPx + searchBarOffset).coerceIn(0f, searchBarFullHeightPx)
-    } else {
-        0f 
-    }
-    val currentHeightDp = with(density) { currentHeightPx.toDp() }
+    // A1: full bar height reserved as a FIXED spacer so the list layout never reflows.
+    val searchBarFullHeightDp = with(density) { searchBarFullHeightPx.toDp() }
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Same "speed matches scroll" accumulation as before (not a trigger).
                 if (hasMeasuredSearchBar) {
                     searchBarOffset = (searchBarOffset + available.y).coerceIn(-searchBarFullHeightPx, 0f)
                 }
-                return Offset.Zero 
+                return Offset.Zero
             }
         }
     }
 
-    Column(
+    var globalSearchQuery by rememberSaveable { mutableStateOf("") }
+
+    // A2: root is now a Box. The content Column reserves a FIXED spacer (full bar height);
+    // the bar is OVERLAID on top and only TRANSLATES (graphicsLayer.translationY), so it
+    // never adds/removes space from the Column -> the list keeps a stable layout/scroll.
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(darkBackground)
             .nestedScroll(nestedScrollConnection)
     ) {
-        var globalSearchQuery by rememberSaveable { mutableStateOf("") }
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Fixed hole = full bar height; does not change when the bar collapses.
+            Spacer(modifier = Modifier.height(searchBarFullHeightDp))
 
+            androidx.compose.material3.SecondaryScrollableTabRow(
+                selectedTabIndex = selectedTab.ordinal,
+                containerColor = darkBackground,
+                contentColor = Color.White,
+                indicator = {
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(selectedTab.ordinal),
+                        color = spotifyGreen
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    val title = when (tab) {
+                        LibraryTab.PLAYLISTS -> stringResource(R.string.library_tab_playlists)
+                        LibraryTab.ALBUMS -> stringResource(R.string.library_tab_albums)
+                        LibraryTab.ARTISTS -> stringResource(R.string.library_tab_artists)
+                        LibraryTab.LOCAL -> stringResource(R.string.library_tab_local_music)
+                        LibraryTab.TRACKS -> stringResource(R.string.library_tab_liked_tracks)
+                    }
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = {
+                            onTabSelected(tab)
+                        },
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        selectedContentColor = spotifyGreen,
+                        unselectedContentColor = Color.LightGray
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (selectedTab) {
+                    LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
+                    LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
+                    LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
+                    LibraryTab.TRACKS -> LibraryTracks(
+                        spotifyRepo = spotifyRepo,
+                        onTrackClick = onTrackClick,
+                        onAddToQueue = onAddToQueue,
+                        onGoToQueue = onGoToQueue,
+                        onAlbumClick = onAlbumClick,
+                        onArtistClick = onArtistClick,
+                        currentTrackId = currentTrackId,
+                        searchQuery = globalSearchQuery
+                    )
+                    LibraryTab.LOCAL -> LibraryLocalMusic(
+                        spotifyRepo = spotifyRepo,
+                        onTrackClick = onTrackClick,
+                        onAddToQueue = onAddToQueue,
+                        onGoToQueue = onGoToQueue,
+                        onOpenSettings = onOpenSettings,
+                        onAlbumClick = onAlbumClick,
+                        onArtistClick = onArtistClick,
+                        currentTrackId = currentTrackId,
+                        searchQuery = globalSearchQuery,
+                        selectedGroup = selectedGroup,
+                        onGroupSelected = onGroupSelected
+                    )
+                }
+            }
+        }
+
+        // A3: overlaid search bar. Measures its full height once, then only translates
+        // (no height change) so it slides above the list without pushing it.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(darkBackground)
                 .onGloballyPositioned { coordinates ->
                     val h = coordinates.size.height.toFloat()
                     if (h > 0 && !hasMeasuredSearchBar) {
@@ -150,10 +226,7 @@ fun LibraryScreen(
                         hasMeasuredSearchBar = true
                     }
                 }
-                .then(
-                    if (hasMeasuredSearchBar) Modifier.height(currentHeightDp) else Modifier
-                )
-                .clipToBounds()
+                .graphicsLayer { translationY = searchBarOffset }
         ) {
             OutlinedTextField(
                 value = globalSearchQuery,
@@ -182,73 +255,6 @@ fun LibraryScreen(
                 ),
                 singleLine = true
             )
-        }
-
-        androidx.compose.material3.SecondaryScrollableTabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            containerColor = darkBackground,
-            contentColor = Color.White,
-            indicator = {
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(selectedTab.ordinal),
-                    color = spotifyGreen
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, tab ->
-                val title = when (tab) {
-                    LibraryTab.PLAYLISTS -> stringResource(R.string.library_tab_playlists)
-                    LibraryTab.ALBUMS -> stringResource(R.string.library_tab_albums)
-                    LibraryTab.ARTISTS -> stringResource(R.string.library_tab_artists)
-                    LibraryTab.LOCAL -> stringResource(R.string.library_tab_local_music)
-                    LibraryTab.TRACKS -> stringResource(R.string.library_tab_liked_tracks)
-                }
-                Tab(
-                    selected = selectedTab == tab,
-                    onClick = {
-                        onTabSelected(tab)
-                    },
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    selectedContentColor = spotifyGreen,
-                    unselectedContentColor = Color.LightGray
-                )
-            }
-        }
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            when (selectedTab) {
-                LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
-                LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
-                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
-                LibraryTab.TRACKS -> LibraryTracks(
-                    spotifyRepo = spotifyRepo,
-                    onTrackClick = onTrackClick,
-                    onAddToQueue = onAddToQueue,
-                    onGoToQueue = onGoToQueue,
-                    onAlbumClick = onAlbumClick,
-                    onArtistClick = onArtistClick,
-                    currentTrackId = currentTrackId,
-                    searchQuery = globalSearchQuery
-                )
-                LibraryTab.LOCAL -> LibraryLocalMusic(
-                    spotifyRepo = spotifyRepo,
-                    onTrackClick = onTrackClick,
-                    onAddToQueue = onAddToQueue,
-                    onGoToQueue = onGoToQueue,
-                    onOpenSettings = onOpenSettings,
-                    onAlbumClick = onAlbumClick,
-                    onArtistClick = onArtistClick,
-                    currentTrackId = currentTrackId,
-                    searchQuery = globalSearchQuery,
-                    selectedGroup = selectedGroup,
-                    onGroupSelected = onGroupSelected
-                )
-            }
         }
     }
 }
@@ -443,18 +449,21 @@ fun LibraryTracks(
                         val trackId = track.id ?: ""
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
+                        // BUG C: handle the queue action in confirmValueChange and return
+                        // false so the box animates back to 0 by itself (no reset()/delay
+                        // competing over the same Animatable -> row no longer sticks mid-way).
                         val dismissState = rememberSwipeToDismissBoxState(
-                            positionalThreshold = { it * 0.4f }
-                        )
-
-                        LaunchedEffect(dismissState.currentValue) {
-                            if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                onAddToQueue(track)
-                                android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                kotlinx.coroutines.delay(100L)
-                                dismissState.reset()
+                            positionalThreshold = { it * 0.4f },
+                            confirmValueChange = { newValue ->
+                                if (newValue == SwipeToDismissBoxValue.StartToEnd) {
+                                    onAddToQueue(track)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    false // reject -> row returns to original offset 0
+                                } else {
+                                    false
+                                }
                             }
-                        }
+                        )
 
                         SwipeToDismissBox(
                             state = dismissState,

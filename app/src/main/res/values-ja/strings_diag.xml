@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 設定: 診断 / ログ -->
+    <string name="settings_diagnostics">診断 / ログ</string>
+    <string name="settings_capture_logs">ログを記録</string>
+    <string name="settings_capture_logs_desc">ADBなしで問題を診断するためにアプリのlogcatを記録します。</string>
+    <string name="settings_view_logs">ログを表示</string>
+
+    <!-- 設定: Rustifyリンク (ラッパー) -->
+    <string name="settings_rustify_link">Rustifyリンク</string>
+    <string name="settings_wrapper_host">自分のホスト (例: user.github.io)</string>
+    <string name="settings_wrapper_host_desc">assetlinks.jsonをホストする自分のドメイン。空欄の場合はrustify://（強い検証なし）にフォールバックします。検証されるホストはビルド時に固定されます。</string>
+    <string name="settings_share_as_rustify">Rustifyリンクとして共有</string>
+    <string name="settings_share_as_rustify_desc">共有するSpotifyリンクをラップしてRustifyで開きます。</string>
+
+    <!-- ログビューア -->
+    <string name="log_viewer_title">ログ</string>
+    <string name="log_filter_tag">タグでフィルタ</string>
+    <string name="log_level_all">すべて</string>
+    <string name="log_autoscroll">自動スクロール</string>
+    <string name="log_dump_now">今すぐダンプ</string>
+    <string name="log_share">共有</string>
+    <string name="log_export">エクスポート</string>
+    <string name="log_clear">クリア</string>
+    <string name="log_exported">ログをエクスポートしました</string>
+    <string name="log_capture_error">ログ記録を利用できません: %1$s</string>
+</resources>

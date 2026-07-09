@@ -43,6 +43,27 @@
                 <data android:pathPrefix="/intl-" />
             </intent-filter>
 
+            <!-- F1.A: Wrapper Rustify VERIFICABLE (App Link). El host es un PLACEHOLDER build-time
+                 y DEBE ser un dominio propio del usuario/proyecto que aloje
+                 https://<host>/.well-known/assetlinks.json con el fingerprint SHA-256 de la firma.
+                 Sin ese JSON, autoVerify simplemente NO verifica (se comporta como web link manual).
+                 El host es fijo en compilación (no runtime); considerar manifestPlaceholders. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="rustify.example.com" android:pathPrefix="/r" />
+            </intent-filter>
+
+            <!-- F1.A: Fallback SIN verificación fuerte (cualquier app puede reclamar el scheme).
+                 Registra rustify:// para que el branch de extractDeepLink sea alcanzable. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rustify" />
+            </intent-filter>
+
             <!-- Share Target: intercept shared Spotify links from other apps -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

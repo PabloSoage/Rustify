@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- E30-ctx: エンティティ（アルバム/プレイリスト/アーティスト）コンテキストメニューの文字列。 -->
+
+    <string name="entity_menu_share_album">アルバムを共有</string>
+    <string name="entity_menu_share_playlist">プレイリストを共有</string>
+    <string name="entity_menu_share_artist">アーティストを共有</string>
+
+    <string name="entity_menu_go_artist">アーティストへ移動</string>
+
+    <string name="entity_menu_add_all_playlist">プレイリストに追加</string>
+    <string name="entity_menu_new_playlist">新しいプレイリスト</string>
+    <string name="entity_menu_new_playlist_hint">プレイリスト名</string>
+    <string name="entity_menu_create">作成</string>
+    <string name="entity_menu_cancel">キャンセル</string>
+
+    <string name="entity_menu_added_n_to_playlist">%2$s に %1$d 曲を追加しました</string>
+    <string name="entity_menu_no_tracks">追加する曲がありません</string>
+    <string name="entity_menu_add_error">曲を追加できませんでした: %1$s</string>
+    <string name="entity_menu_load_playlists_error">プレイリストを読み込めませんでした</string>
+</resources>

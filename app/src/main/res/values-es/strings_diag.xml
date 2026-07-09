@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ajustes: Diagnóstico / Logs -->
+    <string name="settings_diagnostics">Diagnóstico / Logs</string>
+    <string name="settings_capture_logs">Capturar logs</string>
+    <string name="settings_capture_logs_desc">Registra el logcat de la app para diagnosticar sin ADB.</string>
+    <string name="settings_view_logs">Ver logs</string>
+
+    <!-- Ajustes: Enlace Rustify (wrapper) -->
+    <string name="settings_rustify_link">Enlace Rustify</string>
+    <string name="settings_wrapper_host">Host propio (p. ej. usuario.github.io)</string>
+    <string name="settings_wrapper_host_desc">Un dominio que controles y que aloje assetlinks.json. Déjalo vacío para usar rustify:// (sin verificación fuerte). El host verificado se fija al compilar.</string>
+    <string name="settings_share_as_rustify">Compartir como enlace Rustify</string>
+    <string name="settings_share_as_rustify_desc">Envuelve los enlaces de Spotify compartidos para que abran en Rustify.</string>
+
+    <!-- Visor de logs -->
+    <string name="log_viewer_title">Logs</string>
+    <string name="log_filter_tag">Filtrar por tag</string>
+    <string name="log_level_all">Todos</string>
+    <string name="log_autoscroll">Autoscroll</string>
+    <string name="log_dump_now">Volcar ahora</string>
+    <string name="log_share">Compartir</string>
+    <string name="log_export">Exportar</string>
+    <string name="log_clear">Limpiar</string>
+    <string name="log_exported">Logs exportados</string>
+    <string name="log_capture_error">Captura de logs no disponible: %1$s</string>
+</resources>

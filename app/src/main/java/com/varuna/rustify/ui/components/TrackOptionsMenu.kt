@@ -309,15 +309,8 @@ fun TrackOptionsMenuBottomSheet(
                                 onDismiss()
                                 return@MenuOptionItem
                             }
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "https://open.spotify.com/track/$id")
-                            }
-                            try {
-                                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.share_track)))
-                            } catch (e: android.content.ActivityNotFoundException) {
-                                android.widget.Toast.makeText(context, R.string.share_no_target, android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            // B4: robust share (adds FLAG_ACTIVITY_NEW_TASK + catches any exception).
+                            com.varuna.rustify.util.ShareUtils.shareSpotifyLink(context, "track", id)
                             onDismiss()
                         }
                     )

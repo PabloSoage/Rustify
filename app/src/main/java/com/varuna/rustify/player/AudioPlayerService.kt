@@ -237,7 +237,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                         autoRetryJob = mainScope.launch {
                             delay(delayMs.milliseconds)
                             if (_state.value.isError && _state.value.currentTrack?.id == currentTrackId) {
-                                retryCurrentTrack()
+                                retryCurrentTrack(isAutoRetry = true)   // B1: keep onPlayerError's own counter
                             } else {
                                 android.util.Log.d("AudioPlayerService", "Auto-retry skipped: state changed for $currentTrackId")
                             }
@@ -355,14 +355,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         }, androidx.core.content.ContextCompat.getMainExecutor(context))
     }
 
-    private fun playTrack(track: FullTrack, youtubeId: String? = null) {
+    private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         val trackId = track.id ?: return
         userQueue.removeAll { it.id == trackId }
 
         // Cancel any pending auto-retry from a previous track to prevent notification/playback race conditions
         autoRetryJob?.cancel()
         autoRetryJob = null
-        retryCountMap.remove(trackId)
+        // B1: only reset the retry counter on a GENUINE new play, never on an auto-retry re-entry,
+        // otherwise scheduleExtractionRetry/onPlayerError can never reach the give-up threshold.
+        if (!isAutoRetry) retryCountMap.remove(trackId)
         isRetrying = false
 
         // Register metadata in Rust so the resolver can match the track (only if not local)
@@ -421,7 +423,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                         }
                     }
 
-                    if (streamUrl == null) {
+                    // B3: only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
+                    // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
+                    // so the stale cached URL must not shadow the new source.
+                    if (streamUrl == null && youtubeId.isNullOrBlank()) {
                         // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
                         val cachedUrl = getCachedStreamUrl(trackId)
                         if (!cachedUrl.isNullOrBlank()) {
@@ -430,7 +435,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                         }
                     }
                     if (streamUrl == null) {
-                        streamUrl = preResolvedUrls[trackId]
+                        if (youtubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
                         if (streamUrl.isNullOrBlank()) {
                             android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
 
@@ -555,7 +560,8 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (_state.value.currentTrack?.id == id) {
                 resolvedStreamUrls.remove(id)
                 preResolvedUrls.remove(id)
-                retryCurrentTrack(youtubeId)
+                removeCachedStreamUrl(id)                       // B3: don't let a stale URL shadow re-resolution
+                retryCurrentTrack(youtubeId, isAutoRetry = true) // B1: keep the retry counter
             }
             isRetrying = false
         }
@@ -654,7 +660,9 @@ class AudioPlayerService private constructor(private val context: Context) {
             currentTrack = track,
             isPlaying = false,
             queue = queue,
-            originalQueue = listOf(track),
+            // F4/§3.2: include userQueue so cycling shuffle/repeat (which restores originalQueue)
+            // doesn't silently drop the manually-queued tracks.
+            originalQueue = queue,
             positionMs = 0L,
             durationMs = track.durationMs.toLong()
         )
@@ -695,6 +703,17 @@ class AudioPlayerService private constructor(private val context: Context) {
         preResolvedUrls.clear()
         playTrack(selected)
         notifyQueueChanged(queue)
+        requestSave()
+    }
+
+    /**
+     * F4: start playback of [tracks] in shuffle mode from a RANDOM first track (not index 0).
+     * Forces isShuffle ON before delegating to loadPlaylist (which honours _state.isShuffle).
+     */
+    fun shufflePlay(tracks: List<FullTrack>) {
+        if (tracks.isEmpty()) return
+        _state.value = _state.value.copy(isShuffle = true, isRepeat = false)
+        loadPlaylist(tracks, tracks.indices.random())
         requestSave()
     }
 
@@ -805,6 +824,18 @@ class AudioPlayerService private constructor(private val context: Context) {
         val st = _state.value
         _state.value = st.copy(positionMs = exoPlayer.currentPosition)
         val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+        if (idx == -1 && st.queue.isNotEmpty()) {
+            // F4/§3.3: the current track isn't in the queue (e.g. a restored/truncated originalQueue).
+            // Don't get stuck — advance to the first queued track instead of doing nothing.
+            val next = st.queue.first()
+            _state.value = _state.value.copy(
+                currentTrack = next, isPlaying = false,
+                positionMs = 0L, durationMs = next.durationMs.toLong()
+            )
+            playTrack(next)
+            requestSave()
+            return
+        }
         if (idx != -1 && idx < st.queue.lastIndex) {
             val next = st.queue[idx + 1]
             _state.value = _state.value.copy(
@@ -859,7 +890,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null) {
+    fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null, isAutoRetry: Boolean = false) {
         val st = _state.value
         val track = if (fallbackTrackId != null) {
             st.queue.find { it.id == fallbackTrackId } ?: st.currentTrack
@@ -870,12 +901,14 @@ class AudioPlayerService private constructor(private val context: Context) {
         // Cancel any pending auto-retry to prevent it from firing later on a different track
         autoRetryJob?.cancel()
         autoRetryJob = null
-        track.id?.let { retryCountMap.remove(it) }
+        // B1: preserve the retry counter across auto-retries; only reset on a user-initiated retry.
+        if (!isAutoRetry) track.id?.let { retryCountMap.remove(it) }
 
-        // Force full re-resolution: clear all cached URLs for this track
+        // Force full re-resolution: clear ALL cached URLs for this track (incl. the persisted one — B3).
         track.id?.let {
             resolvedStreamUrls.remove(it)
             preResolvedUrls.remove(it)
+            removeCachedStreamUrl(it)
         }
 
         _state.value = st.copy(
@@ -885,7 +918,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             isError = false,
             errorMessage = ""
         )
-        playTrack(track, youtubeId)
+        playTrack(track, youtubeId, isAutoRetry = isAutoRetry)
     }
 
     fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null) {
@@ -978,6 +1011,16 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private fun getCachedStreamUrl(trackId: String): String? {
         return persistedUrlCache[trackId]
+    }
+
+    // B3: invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
+    // stale URL. Covers both the in-memory map (backed by stream_url_cache.json) and the legacy
+    // SharedPreferences "cached_url_$id" entry.
+    private fun removeCachedStreamUrl(trackId: String) {
+        persistedUrlCache.remove(trackId)
+        context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+            .edit().remove("cached_url_$trackId").apply()
+        mainScope.launch(Dispatchers.IO) { saveUrlCache() }
     }
 
     private fun putCachedStreamUrl(trackId: String, url: String) {

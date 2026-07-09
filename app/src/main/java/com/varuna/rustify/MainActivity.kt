@@ -15,7 +15,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,6 +96,8 @@ import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.util.SpotifyLink
 import com.varuna.rustify.util.SpotifyLinkParser
+import com.varuna.rustify.util.bouncingMarquee
+import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
@@ -119,6 +120,7 @@ sealed class Screen {
     data class TrackDetail(val id: String) : Screen()
     object Settings : Screen()
     object Downloads : Screen()
+    object LogViewer : Screen()
 }
 
 /**
@@ -199,6 +201,18 @@ class MainActivity : ComponentActivity() {
     private fun extractDeepLink(intent: android.content.Intent?): String? {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
+            // F1.A: wrapper Rustify autoverificable (host propio del usuario, §4.A.2).
+            // El host se guarda en prefs sólo para GENERAR el link y desenvolverlo aquí; el host
+            // VERIFICADO va fijado en el manifest a build-time (no configurable en runtime).
+            val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
+            val wrapperHost = prefs.getString("rustify_wrapper_host", null)
+            if (uri?.scheme == "https" && !wrapperHost.isNullOrBlank() && uri.host == wrapperHost
+                && uri.pathSegments.firstOrNull() == "r"
+            ) {
+                val payload = uri.getQueryParameter("s")                 // formato A: ?s=open.spotify.com/track/ID
+                    ?: uri.pathSegments.drop(1).joinToString("/")        // formato B: /r/track/ID
+                return extractSpotifyLink(payload)                       // reutiliza SpotifyLinkParser
+            }
             if (uri?.host == "open.spotify.com") {
                 // pathSegments ignores the intl-xx prefix automatically: look for the entity type.
                 val segs = uri.pathSegments
@@ -620,6 +634,7 @@ fun EngineTester(
             is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
             is Screen.Settings -> "Settings"
             is Screen.Downloads -> "Downloads"
+            is Screen.LogViewer -> "LogViewer"
         }
 
         val screenContent = remember(currentScreen) {
@@ -730,6 +745,7 @@ fun EngineTester(
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onShufflePlay = { audioPlayerService.shufflePlay(it) },
                         currentTrackId = currentTrack?.id
                     )
                 }
@@ -750,7 +766,8 @@ fun EngineTester(
                         onAlbumClick = { id, name, images ->
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onShufflePlay = { audioPlayerService.shufflePlay(it) }
                     )
                 }
                 is Screen.ArtistDetail -> {
@@ -767,6 +784,7 @@ fun EngineTester(
                         },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onShufflePlay = { audioPlayerService.shufflePlay(it) },
                         currentTrackId = currentTrack?.id
                     )
                 }
@@ -784,6 +802,7 @@ fun EngineTester(
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
                         onLocaleChanged = { newCode ->
                             onLanguageChanged(newCode)
                             coroutineScope.launch {
@@ -798,6 +817,11 @@ fun EngineTester(
                 }
                 is Screen.Downloads -> {
                     com.varuna.rustify.ui.screens.DownloadsScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.LogViewer -> {
+                    LogViewerScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
@@ -1020,14 +1044,14 @@ fun MiniPlayer(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.bouncingMarquee()
                 )
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     color = Color.LightGray,
                     fontSize = 12.sp,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.bouncingMarquee()
                 )
             }
 

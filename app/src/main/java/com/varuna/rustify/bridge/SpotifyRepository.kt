@@ -1151,6 +1151,32 @@ class SpotifyRepository(context: Context) {
     }
 
     /**
+     * Add many tracks to a playlist (E30-ctx: "add whole album/playlist to a playlist").
+     *
+     * The Rust `add_tracks_to_playlist` sends every uri in a single POST, but the Spotify REST
+     * endpoint accepts at most 100 uris per call. So we chunk [trackIds] into batches of 100 and
+     * call [addTracksToPlaylist] per chunk, accumulating how many were successfully added.
+     *
+     * @return number of tracks added.
+     * @throws SpotifyEngineException if a chunk fails (the UI reports the partial count via the message).
+     */
+    suspend fun addAllTracksToPlaylist(context: Context, playlistId: String, trackIds: List<String>): Int = withContext(Dispatchers.IO) {
+        var added = 0
+        // Filter out blanks / local tracks (no valid Spotify uri).
+        val validIds = trackIds.filter { it.isNotBlank() && !it.startsWith("local:") }
+        for (chunk in validIds.chunked(100)) {
+            val res = addTracksToPlaylist(playlistId, chunk)
+            if (res.success) {
+                added += chunk.size
+            } else {
+                // Surface partial progress in the error so the UI can inform the user.
+                throw SpotifyEngineException(res.error ?: "add_tracks_to_playlist failed after $added tracks")
+            }
+        }
+        added
+    }
+
+    /**
      * Remove tracks from a playlist.
      */
     suspend fun removeTracksFromPlaylist(playlistId: String, trackIds: List<String>): OperationResult = withContext(Dispatchers.IO) {

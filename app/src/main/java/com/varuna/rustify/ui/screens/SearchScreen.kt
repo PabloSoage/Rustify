@@ -39,7 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -278,19 +277,22 @@ fun SearchScreen(
                                 val trackId = track.id ?: ""
                                 val isLiked = spotifyRepo.isTrackLiked(trackId)
                                 
+                                // BUG C: handle the queue action in confirmValueChange and
+                                // return false so the box animates back to 0 by itself (no
+                                // reset()/delay competing -> row no longer sticks mid-way).
                                 @Suppress("DEPRECATION")
                                 val dismissState = rememberSwipeToDismissBoxState(
-                                    positionalThreshold = { it * 0.4f }
-                                )
-
-                                LaunchedEffect(dismissState.currentValue) {
-                                    if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
-                                        onAddToQueue(track)
-                                        android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                        delay(150.milliseconds)
-                                        dismissState.reset()
+                                    positionalThreshold = { it * 0.4f },
+                                    confirmValueChange = { newValue ->
+                                        if (newValue == SwipeToDismissBoxValue.StartToEnd) {
+                                            onAddToQueue(track)
+                                            android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                            false // reject -> row returns to original offset 0
+                                        } else {
+                                            false
+                                        }
                                     }
-                                }
+                                )
 
                                 SwipeToDismissBox(
                                     state = dismissState,

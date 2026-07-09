@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings: Diagnostics / Logs -->
+    <string name="settings_diagnostics">Diagnostics / Logs</string>
+    <string name="settings_capture_logs">Capture logs</string>
+    <string name="settings_capture_logs_desc">Record this app\'s logcat to diagnose issues without ADB.</string>
+    <string name="settings_view_logs">View logs</string>
+
+    <!-- Settings: Rustify link (wrapper) -->
+    <string name="settings_rustify_link">Rustify link</string>
+    <string name="settings_wrapper_host">Own host (e.g. user.github.io)</string>
+    <string name="settings_wrapper_host_desc">A domain you control hosting assetlinks.json. Leave empty to fall back to rustify:// (no strong verification). The verified host is fixed at build time.</string>
+    <string name="settings_share_as_rustify">Share as Rustify link</string>
+    <string name="settings_share_as_rustify_desc">Wrap shared Spotify links so they open in Rustify.</string>
+
+    <!-- Log viewer -->
+    <string name="log_viewer_title">Logs</string>
+    <string name="log_filter_tag">Filter by tag</string>
+    <string name="log_level_all">All</string>
+    <string name="log_autoscroll">Autoscroll</string>
+    <string name="log_dump_now">Dump now</string>
+    <string name="log_share">Share</string>
+    <string name="log_export">Export</string>
+    <string name="log_clear">Clear</string>
+    <string name="log_exported">Logs exported</string>
+    <string name="log_capture_error">Log capture unavailable: %1$s</string>
+</resources>

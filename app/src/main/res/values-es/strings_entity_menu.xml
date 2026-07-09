@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- E30-ctx: cadenas del menú contextual de entidades (álbum/playlist/artista). -->
+
+    <string name="entity_menu_share_album">Compartir álbum</string>
+    <string name="entity_menu_share_playlist">Compartir playlist</string>
+    <string name="entity_menu_share_artist">Compartir artista</string>
+
+    <string name="entity_menu_go_artist">Ir al artista</string>
+
+    <string name="entity_menu_add_all_playlist">Añadir a una playlist</string>
+    <string name="entity_menu_new_playlist">Nueva playlist</string>
+    <string name="entity_menu_new_playlist_hint">Nombre de la playlist</string>
+    <string name="entity_menu_create">Crear</string>
+    <string name="entity_menu_cancel">Cancelar</string>
+
+    <string name="entity_menu_added_n_to_playlist">Añadidas %1$d canciones a %2$s</string>
+    <string name="entity_menu_no_tracks">No hay canciones que añadir</string>
+    <string name="entity_menu_add_error">No se pudieron añadir las canciones: %1$s</string>
+    <string name="entity_menu_load_playlists_error">No se pudieron cargar las playlists</string>
+</resources>
