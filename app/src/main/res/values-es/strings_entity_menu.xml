@@ -5,6 +5,7 @@
     <string name="entity_menu_share_album">Compartir álbum</string>
     <string name="entity_menu_share_playlist">Compartir playlist</string>
     <string name="entity_menu_share_artist">Compartir artista</string>
+    <string name="entity_menu_share_rustify">Compartir como enlace Rustify</string>
 
     <string name="entity_menu_go_artist">Ir al artista</string>
 

@@ -27,4 +27,7 @@ app/release/*.apk
 *.so
 *.dm
 
+# App Links verification site (separate repo)
+rustify.github.io/
+
 docs/

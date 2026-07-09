@@ -8,6 +8,7 @@
     <string name="entity_menu_share_album">Share album</string>
     <string name="entity_menu_share_playlist">Share playlist</string>
     <string name="entity_menu_share_artist">Share artist</string>
+    <string name="entity_menu_share_rustify">Share as Rustify link</string>
 
     <!-- Go to artist -->
     <string name="entity_menu_go_artist">Go to artist</string>

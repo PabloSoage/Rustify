@@ -1,7 +1,9 @@
 package com.varuna.rustify.util
 
+import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 
 /**
  * F1.B — Captura de logs in-app leyendo el logcat del PROPIO proceso (§4.B.1 del doc 40).
@@ -10,8 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
  * Se arranca un proceso `logcat` de larga duración en modo stream, se lee su stdout en un hilo
  * daemon, se parsea cada línea a [Entry] y se encola en un buffer acotado expuesto por [flow].
  *
- * Ventaja: NO requiere migrar ninguno de los `android.util.Log.*` existentes; además captura los
- * logs de librerías (ExoPlayer/yt-dlp/JNI) que van a logcat de por sí.
+ * **Persistencia anti-crash:** cada entrada se apunta también a `filesDir/rustify_log.txt`.
+ * Al arrancar, si el fichero existe (sesión anterior que crasheó), se carga en el buffer.
+ * Así los logs sobreviven a un crash y están disponibles al reabrir la app.
  */
 object LogCapture {
 
@@ -20,6 +23,8 @@ object LogCapture {
 
     /** Tope del buffer circular en memoria. */
     private const val CAP = 3000
+    /** Tope del fichero de persistencia (bytes). Al superarlo se rota. */
+    private const val MAX_FILE_BYTES = 512_000L
 
     private val buf = ArrayDeque<Entry>(CAP)
     private val _flow = MutableStateFlow<List<Entry>>(emptyList())
@@ -31,6 +36,7 @@ object LogCapture {
 
     private var proc: Process? = null
     private var readerThread: Thread? = null
+    private var logFile: File? = null
 
     /** true si el stream continuo está activo. */
     val isCapturing: Boolean
@@ -41,13 +47,42 @@ object LogCapture {
         Regex("""^\d\d-\d\d \d\d:\d\d:\d\d\.\d+\s+\d+\s+\d+\s+([VDIWEFvdiwef])\s+(.*?)\s*:\s?(.*)$""")
 
     /**
+     * Inicializa la ruta del fichero de persistencia. Debe llamarse una vez antes de [start]
+     * (p.ej. desde [android.app.Application.onCreate]). Idempotente si ya se llamó.
+     */
+    fun init(context: Context) {
+        if (logFile == null) {
+            logFile = File(context.filesDir, "rustify_log.txt")
+        }
+    }
+
+    /**
      * Arranca el stream continuo del logcat del propio proceso. No-op si ya está capturando.
-     * @param clearFirst si true, ejecuta `logcat -c` antes para empezar limpio.
+     * Si el proceso anterior murió (crash de la app) limpia la referencia para poder rearrancar.
+     *
+     * Si existe un fichero de logs de una sesión anterior, lo carga en el buffer antes de
+     * empezar a capturar, para que los logs del crash estén visibles.
+     *
+     * @param clearFirst si true, ejecuta `logcat -c` y trunca el fichero para empezar limpio.
      */
     @Synchronized
     fun start(clearFirst: Boolean = true) {
+        // If the logcat process died (e.g., app killed by crash), clean up stale ref.
+        if (proc != null && !proc!!.isAlive) {
+            proc = null
+            readerThread = null
+        }
         if (proc != null) return
         _error.value = null
+
+        // Load any persisted logs from a previous (possibly crashed) session BEFORE starting.
+        val file = logFile
+        if (clearFirst) {
+            file?.delete()
+        } else if (file != null && file.exists() && file.length() > 0) {
+            loadFromFile(file)
+        }
+
         val pid = android.os.Process.myPid()
         try {
             if (clearFirst) {
@@ -66,6 +101,7 @@ object LogCapture {
                                 buf.addLast(e)
                                 _flow.value = buf.toList()
                             }
+                            appendToFile(e)
                         }
                     }
                 } catch (_: Exception) {
@@ -80,7 +116,7 @@ object LogCapture {
         }
     }
 
-    /** Mata el proceso logcat y detiene el stream. Conserva el buffer. */
+    /** Mata el proceso logcat y detiene el stream. Conserva el buffer y el fichero. */
     @Synchronized
     fun stop() {
         proc?.destroy()
@@ -88,12 +124,13 @@ object LogCapture {
         readerThread = null
     }
 
-    /** Vacía el buffer en memoria. */
+    /** Vacía el buffer en memoria y trunca el fichero. */
     fun clear() {
         synchronized(buf) {
             buf.clear()
             _flow.value = emptyList()
         }
+        logFile?.delete()
     }
 
     /** Volcado del buffer como texto plano (una línea `raw` por entrada). */
@@ -112,6 +149,42 @@ object LogCapture {
         "logcat -d falló: ${e.message}"
     }
 
+    // ── file persistence ──────────────────────────────────────────────────
+
+    private fun appendToFile(e: Entry) {
+        val file = logFile ?: return
+        try {
+            // Rotate if the file is getting too large: keep only the second half
+            // of the in-memory buffer so we have at least some recent history.
+            if (file.length() > MAX_FILE_BYTES) {
+                val recent = synchronized(buf) {
+                    buf.takeLast(buf.size / 2).joinToString("\n") { it.raw }
+                }
+                file.writeText(recent + "\n")
+            }
+            file.appendText(e.raw + "\n")
+        } catch (_: Exception) {
+            // Disk full or other I/O error — log is best-effort.
+        }
+    }
+
+    private fun loadFromFile(file: File) {
+        try {
+            val lines = file.readLines()
+            val entries = lines.mapNotNull { line ->
+                if (line.isBlank()) null else parseLine(line)
+            }
+            synchronized(buf) {
+                // Keep only the last CAP entries from the file.
+                val toLoad = if (entries.size > CAP) entries.takeLast(CAP) else entries
+                buf.addAll(toLoad)
+                _flow.value = buf.toList()
+            }
+        } catch (_: Exception) {
+            // Corrupt or missing file — start fresh.
+        }
+    }
+
     /**
      * Parsea una línea `threadtime`. Las líneas que no casan (continuaciones/stacktraces) se
      * conservan como entradas con nivel/tag heredados de la última entrada válida.
@@ -127,7 +200,6 @@ object LogCapture {
             lastTag = tag
             Entry(line, level, tag)
         } else {
-            // Continuación / línea no estándar: hereda nivel/tag previos.
             Entry(line, lastLevel, lastTag)
         }
     }

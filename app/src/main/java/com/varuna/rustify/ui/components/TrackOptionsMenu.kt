@@ -314,6 +314,25 @@ fun TrackOptionsMenuBottomSheet(
                             onDismiss()
                         }
                     )
+
+                    // F2: extra "Share as Rustify" button shown only when the toggle is on.
+                    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                    if (prefs.getBoolean("share_as_rustify_link", false)) {
+                        MenuOptionItem(
+                            icon = Icons.Default.Share,
+                            label = stringResource(R.string.track_menu_share_rustify),
+                            onClick = {
+                                val id = track.id
+                                if (id.isNullOrBlank()) {
+                                    android.widget.Toast.makeText(context, R.string.share_no_link, android.widget.Toast.LENGTH_SHORT).show()
+                                    onDismiss()
+                                    return@MenuOptionItem
+                                }
+                                com.varuna.rustify.util.ShareUtils.shareRustifyLink(context, "track", id)
+                                onDismiss()
+                            }
+                        )
+                    }
                 }
 
                 if (!isLocalTrack && downloadUriStr != null) {

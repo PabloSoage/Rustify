@@ -17,6 +17,7 @@
     <string name="log_viewer_title">Logs</string>
     <string name="log_filter_tag">Filtrar por tag</string>
     <string name="log_level_all">Todos</string>
+    <string name="log_level_help">Info de niveles de log</string>
     <string name="log_autoscroll">Autoscroll</string>
     <string name="log_dump_now">Volcar ahora</string>
     <string name="log_share">Compartir</string>

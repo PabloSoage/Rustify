@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -111,19 +112,33 @@ fun LibraryScreen(
         if (enableLocalMusic) LibraryTab.entries else LibraryTab.entries.filter { it != LibraryTab.LOCAL }
     }
 
-    // BUG A: searchBarOffset in [-fullHeight, 0]; 0 = fully shown, -fullHeight = collapsed.
+    // -- Search bar collapsible state --
+    // searchBarOffset in [-searchBarFullHeightPx, 0]; 0 = fully shown, negative = collapsed.
     var searchBarOffset by remember { mutableFloatStateOf(0f) }
     var searchBarFullHeightPx by remember { mutableFloatStateOf(0f) }
     var hasMeasuredSearchBar by remember { mutableStateOf(false) }
+    var tabsHeightPx by remember { mutableFloatStateOf(0f) }
+    var hasMeasuredTabs by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    // A1: full bar height reserved as a FIXED spacer so the list layout never reflows.
-    val searchBarFullHeightDp = with(density) { searchBarFullHeightPx.toDp() }
+
+    // Dynamic visible header height: shrinks from (searchBarHeight + tabsHeight) down
+    // to tabsHeight as the bar collapses. Used as content padding-top.
+    val visibleHeaderHeightDp = with(density) {
+        (tabsHeightPx + (searchBarFullHeightPx + searchBarOffset).coerceAtLeast(0f)).toDp()
+    }
+
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
+            // Both collapse (scroll up) and expand (scroll down) happen here.
+            // When swiping up (available.y < 0), the bar collapses first before the list scrolls.
+            // When swiping down (available.y > 0), the bar expands first before the list scrolls.
+            // Net movement = padding shrinks/grows X + list scrolls 0 = X. 1:1 with finger.
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Same "speed matches scroll" accumulation as before (not a trigger).
                 if (hasMeasuredSearchBar) {
-                    searchBarOffset = (searchBarOffset + available.y).coerceIn(-searchBarFullHeightPx, 0f)
+                    val prevOffset = searchBarOffset
+                    searchBarOffset = (searchBarOffset + available.y)
+                        .coerceIn(-searchBarFullHeightPx, 0f)
+                    return Offset(0f, searchBarOffset - prevOffset) // consume used amount
                 }
                 return Offset.Zero
             }
@@ -132,19 +147,108 @@ fun LibraryScreen(
 
     var globalSearchQuery by rememberSaveable { mutableStateOf("") }
 
-    // A2: root is now a Box. The content Column reserves a FIXED spacer (full bar height);
-    // the bar is OVERLAID on top and only TRANSLATES (graphicsLayer.translationY), so it
-    // never adds/removes space from the Column -> the list keeps a stable layout/scroll.
+    // Root Box: content underneath, header (bar+tabs) overlay on top.
+    // The header Column translates as a block: when the bar collapses, the tabs
+    // slide up to the top of the screen. The content has a FIXED padding-top
+    // equal to the full header height, so the list never reflows.
+    // clipToBounds prevents the bar from leaking into the status bar area.
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(darkBackground)
+            .clipToBounds()
             .nestedScroll(nestedScrollConnection)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Fixed hole = full bar height; does not change when the bar collapses.
-            Spacer(modifier = Modifier.height(searchBarFullHeightDp))
+        // --- Content (list): dynamic padding-top that shrinks as the bar collapses ---
+        // Using padding change (not graphicsLayer) means the Box expands upward,
+        // giving the LazyColumn more visible area — no whole-container translation,
+        // no black gap at the bottom, and no scroll-position jump.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = visibleHeaderHeightDp)
+        ) {
+            when (selectedTab) {
+                LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
+                LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
+                LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
+                LibraryTab.TRACKS -> LibraryTracks(
+                    spotifyRepo = spotifyRepo,
+                    onTrackClick = onTrackClick,
+                    onAddToQueue = onAddToQueue,
+                    onGoToQueue = onGoToQueue,
+                    onAlbumClick = onAlbumClick,
+                    onArtistClick = onArtistClick,
+                    currentTrackId = currentTrackId,
+                    searchQuery = globalSearchQuery
+                )
+                LibraryTab.LOCAL -> LibraryLocalMusic(
+                    spotifyRepo = spotifyRepo,
+                    onTrackClick = onTrackClick,
+                    onAddToQueue = onAddToQueue,
+                    onGoToQueue = onGoToQueue,
+                    onOpenSettings = onOpenSettings,
+                    onAlbumClick = onAlbumClick,
+                    onArtistClick = onArtistClick,
+                    currentTrackId = currentTrackId,
+                    searchQuery = globalSearchQuery,
+                    selectedGroup = selectedGroup,
+                    onGroupSelected = onGroupSelected
+                )
+            }
+        }
 
+        // --- Header overlay (search bar + tabs): translates as a single block ---
+        // When searchBarOffset == 0 → fully visible (bar + tabs).
+        // When searchBarOffset == -searchBarFullHeightPx → bar hidden, tabs at very top.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationY = searchBarOffset }
+        ) {
+            // Search bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(darkBackground)
+                    .onGloballyPositioned { coordinates ->
+                        val h = coordinates.size.height.toFloat()
+                        if (h > 0 && !hasMeasuredSearchBar) {
+                            searchBarFullHeightPx = h
+                            hasMeasuredSearchBar = true
+                        }
+                    }
+            ) {
+                OutlinedTextField(
+                    value = globalSearchQuery,
+                    onValueChange = { globalSearchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                    },
+                    trailingIcon = {
+                        if (globalSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { globalSearchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                            }
+                        }
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF242424),
+                        unfocusedContainerColor = Color(0xFF242424),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = Color(0xFF1DB954)
+                    ),
+                    singleLine = true
+                )
+            }
+
+            // Tabs
             androidx.compose.material3.SecondaryScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 containerColor = darkBackground,
@@ -154,6 +258,13 @@ fun LibraryScreen(
                         modifier = Modifier.tabIndicatorOffset(selectedTab.ordinal),
                         color = spotifyGreen
                     )
+                },
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    val h = coordinates.size.height.toFloat()
+                    if (h > 0 && !hasMeasuredTabs) {
+                        tabsHeightPx = h
+                        hasMeasuredTabs = true
+                    }
                 }
             ) {
                 tabs.forEachIndexed { index, tab ->
@@ -180,81 +291,6 @@ fun LibraryScreen(
                     )
                 }
             }
-
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (selectedTab) {
-                    LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
-                    LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
-                    LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
-                    LibraryTab.TRACKS -> LibraryTracks(
-                        spotifyRepo = spotifyRepo,
-                        onTrackClick = onTrackClick,
-                        onAddToQueue = onAddToQueue,
-                        onGoToQueue = onGoToQueue,
-                        onAlbumClick = onAlbumClick,
-                        onArtistClick = onArtistClick,
-                        currentTrackId = currentTrackId,
-                        searchQuery = globalSearchQuery
-                    )
-                    LibraryTab.LOCAL -> LibraryLocalMusic(
-                        spotifyRepo = spotifyRepo,
-                        onTrackClick = onTrackClick,
-                        onAddToQueue = onAddToQueue,
-                        onGoToQueue = onGoToQueue,
-                        onOpenSettings = onOpenSettings,
-                        onAlbumClick = onAlbumClick,
-                        onArtistClick = onArtistClick,
-                        currentTrackId = currentTrackId,
-                        searchQuery = globalSearchQuery,
-                        selectedGroup = selectedGroup,
-                        onGroupSelected = onGroupSelected
-                    )
-                }
-            }
-        }
-
-        // A3: overlaid search bar. Measures its full height once, then only translates
-        // (no height change) so it slides above the list without pushing it.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(darkBackground)
-                .onGloballyPositioned { coordinates ->
-                    val h = coordinates.size.height.toFloat()
-                    if (h > 0 && !hasMeasuredSearchBar) {
-                        searchBarFullHeightPx = h
-                        hasMeasuredSearchBar = true
-                    }
-                }
-                .graphicsLayer { translationY = searchBarOffset }
-        ) {
-            OutlinedTextField(
-                value = globalSearchQuery,
-                onValueChange = { globalSearchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(24.dp),
-                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-                },
-                trailingIcon = {
-                    if (globalSearchQuery.isNotEmpty()) {
-                        IconButton(onClick = { globalSearchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
-                        }
-                    }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF242424),
-                    unfocusedContainerColor = Color(0xFF242424),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color(0xFF1DB954)
-                ),
-                singleLine = true
-            )
         }
     }
 }
@@ -449,21 +485,17 @@ fun LibraryTracks(
                         val trackId = track.id ?: ""
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
                         
-                        // BUG C: handle the queue action in confirmValueChange and return
-                        // false so the box animates back to 0 by itself (no reset()/delay
-                        // competing over the same Animatable -> row no longer sticks mid-way).
                         val dismissState = rememberSwipeToDismissBoxState(
-                            positionalThreshold = { it * 0.4f },
-                            confirmValueChange = { newValue ->
-                                if (newValue == SwipeToDismissBoxValue.StartToEnd) {
-                                    onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
-                                    false // reject -> row returns to original offset 0
-                                } else {
-                                    false
-                                }
-                            }
+                            positionalThreshold = { it * 0.4f }
                         )
+
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                onAddToQueue(track)
+                                android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                            }
+                        }
 
                         SwipeToDismissBox(
                             state = dismissState,

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -79,6 +80,7 @@ fun LogViewerScreen(
     var tagFilter by remember { mutableStateOf("") }
     var levelFilter by remember { mutableStateOf<Char?>(null) } // null = todos
     var autoScroll by remember { mutableStateOf(true) }
+    var showLevelHelp by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -138,7 +140,9 @@ fun LogViewerScreen(
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, dump)
                         }
-                        context.startActivity(Intent.createChooser(send, null))
+                        val chooser = Intent.createChooser(send, null)
+                            .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(chooser)
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.log_dump_now), tint = Color.White)
                     }
@@ -148,7 +152,9 @@ fun LogViewerScreen(
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, LogCapture.exportText())
                         }
-                        context.startActivity(Intent.createChooser(send, null))
+                        val chooser = Intent.createChooser(send, null)
+                            .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(chooser)
                     }) {
                         Icon(Icons.Default.Share, contentDescription = stringResource(R.string.log_share), tint = Color.White)
                     }
@@ -159,6 +165,14 @@ fun LogViewerScreen(
                     // Limpiar buffer
                     IconButton(onClick = { LogCapture.clear() }) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.log_clear), tint = Color.White)
+                    }
+                    // Info: explain log levels
+                    IconButton(onClick = { showLevelHelp = !showLevelHelp }) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(R.string.log_level_help),
+                            tint = if (showLevelHelp) Color(0xFF1DB954) else Color.White
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
@@ -211,6 +225,19 @@ fun LogViewerScreen(
                             selectedLabelColor = Color.Black
                         )
                     )
+                }
+            }
+
+            // Level help legend (toggled by the info button in the top bar).
+            if (showLevelHelp) {
+                val legendColor = Color.LightGray
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text("V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Warn  ·  E = Error",
+                        color = legendColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text("Verbose → mayor detalle, menor severidad. Error → crítico, menor detalle.",
+                        color = legendColor.copy(alpha = 0.7f), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }
 

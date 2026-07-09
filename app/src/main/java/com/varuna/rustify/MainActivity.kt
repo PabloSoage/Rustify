@@ -202,11 +202,12 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
             // F1.A: wrapper Rustify autoverificable (host propio del usuario, §4.A.2).
-            // El host se guarda en prefs sólo para GENERAR el link y desenvolverlo aquí; el host
-            // VERIFICADO va fijado en el manifest a build-time (no configurable en runtime).
+            // El host se guarda en prefs para GENERAR el link; el host VERIFICADO va fijado en el
+            // manifest a build-time. Aquí desenvolvemos tanto el host de prefs como los baked-in.
             val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
             val wrapperHost = prefs.getString("rustify_wrapper_host", null)
-            if (uri?.scheme == "https" && !wrapperHost.isNullOrBlank() && uri.host == wrapperHost
+            val knownHosts = listOfNotNull(wrapperHost, "pablosoage.github.io")
+            if (uri?.scheme == "https" && uri.host in knownHosts
                 && uri.pathSegments.firstOrNull() == "r"
             ) {
                 val payload = uri.getQueryParameter("s")                 // formato A: ?s=open.spotify.com/track/ID
@@ -220,10 +221,10 @@ class MainActivity : ComponentActivity() {
                 if (i != -1 && i + 1 < segs.size) {
                     return "${segs[i]}:${segs[i + 1]}"
                 }
-            } else if (uri?.scheme == "rustify" && uri.host == "track") {
+            } else if (uri?.scheme == "rustify" && uri.host in setOf("track", "album", "playlist", "artist")) {
                 val pathSegments = uri.pathSegments
                 if (pathSegments.isNotEmpty()) {
-                    return "track:${pathSegments[0]}"
+                    return "${uri.host}:${pathSegments[0]}"
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
                 val v = uri.getQueryParameter("v")
@@ -273,6 +274,12 @@ class MainActivity : ComponentActivity() {
         val appLang = prefs.getString("app_language", "system") ?: "system"
         val langCode = if (appLang == "system") java.util.Locale.getDefault().language else appLang
         com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
+
+        // LogCapture: init file path + auto-resume if toggle was on (survives crash).
+        com.varuna.rustify.util.LogCapture.init(this)
+        if (prefs.getBoolean("logging_capture_enabled", false)) {
+            com.varuna.rustify.util.LogCapture.start(clearFirst = false)
+        }
         
         // Initialize YoutubeDL
         try {

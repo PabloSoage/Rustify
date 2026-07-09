@@ -64,6 +64,7 @@
     <string name="track_options_view_artist">アーティストを見る</string>
     <string name="track_menu_view_youtube">別のYouTubeバージョン</string>
     <string name="track_menu_share">共有</string>
+    <string name="track_menu_share_rustify">Rustifyリンクで共有</string>
     <string name="share_track">トラックを共有</string>
     <string name="share_no_link">このトラックのリンクはありません</string>
     <string name="share_no_target">共有できるアプリがありません</string>

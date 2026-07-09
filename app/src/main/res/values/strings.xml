@@ -67,6 +67,7 @@
     <string name="track_menu_view_youtube">Alternative YouTube version</string>
     <string name="track_menu_add_queue">Add to Queue</string>
     <string name="track_menu_share">Share</string>
+    <string name="track_menu_share_rustify">Share as Rustify link</string>
     <string name="share_track">Share Track</string>
     <string name="share_no_link">No link available for this track</string>
     <string name="share_no_target">No app available to share</string>

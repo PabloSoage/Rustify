@@ -466,7 +466,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata)
-                    .apply { setCustomCacheKey(trackId) }
+                    .apply { setCustomCacheKey(if (youtubeId.isNullOrBlank()) trackId else "${trackId}_${youtubeId}") }
                     .build()
 
                 resolvedStreamUrls[trackId] = streamUrl

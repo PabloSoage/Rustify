@@ -5,6 +5,7 @@
     <string name="entity_menu_share_album">アルバムを共有</string>
     <string name="entity_menu_share_playlist">プレイリストを共有</string>
     <string name="entity_menu_share_artist">アーティストを共有</string>
+    <string name="entity_menu_share_rustify">Rustifyリンクで共有</string>
 
     <string name="entity_menu_go_artist">アーティストへ移動</string>
 

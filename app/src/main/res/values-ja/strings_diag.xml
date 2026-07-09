@@ -17,6 +17,7 @@
     <string name="log_viewer_title">ログ</string>
     <string name="log_filter_tag">タグでフィルタ</string>
     <string name="log_level_all">すべて</string>
+    <string name="log_level_help">ログレベル情報</string>
     <string name="log_autoscroll">自動スクロール</string>
     <string name="log_dump_now">今すぐダンプ</string>
     <string name="log_share">共有</string>

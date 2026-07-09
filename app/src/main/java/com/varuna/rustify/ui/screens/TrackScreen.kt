@@ -751,6 +751,7 @@ fun QueueBottomSheet(
                                 if (originalIndex in queue.indices) {
                                     audioPlayerService.removeFromQueue(originalIndex)
                                 }
+                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
                         }
 

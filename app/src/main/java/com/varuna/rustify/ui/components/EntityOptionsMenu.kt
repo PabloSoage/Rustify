@@ -249,7 +249,7 @@ fun EntityOptionsMenuBottomSheet(
                 HorizontalDivider(color = Color.DarkGray)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Share (always).
+                // Share (always) — plain Spotify URL.
                 EntityMenuRow(
                     icon = Icons.Default.Share,
                     label = stringResource(shareLabelRes),
@@ -258,6 +258,19 @@ fun EntityOptionsMenuBottomSheet(
                         onDismiss()
                     }
                 )
+
+                // F2: extra "Share as Rustify" shown only when the Settings toggle is on.
+                val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                if (prefs.getBoolean("share_as_rustify_link", false)) {
+                    EntityMenuRow(
+                        icon = Icons.Default.Share,
+                        label = stringResource(R.string.entity_menu_share_rustify),
+                        onClick = {
+                            ShareUtils.shareRustifyLink(context, entityType, entityId)
+                            onDismiss()
+                        }
+                    )
+                }
 
                 // Go to artist (only when we have a primary artist id).
                 if (!primaryArtistId.isNullOrBlank()) {
