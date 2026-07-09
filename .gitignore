@@ -23,4 +23,8 @@ Inspection/
 app/release/*.apk
 *.apk
 
+# Native libs & baseline profiles (generated at build time)
+*.so
+*.dm
+
 docs/
