@@ -29,5 +29,6 @@ app/release/*.apk
 
 # App Links verification site (separate repo)
 rustify.github.io/
+rustify-music.github.io/
 
 docs/

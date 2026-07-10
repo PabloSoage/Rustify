@@ -46,10 +46,18 @@
             <!-- F1.A: Wrappers Rustify VERIFICABLES (App Links).
                  Cada host DEBE alojar https://<host>/.well-known/assetlinks.json con el fingerprint
                  SHA-256 de la firma. Sin ese JSON, autoVerify simplemente NO verifica.
-                 El host es fijo en compilación (no runtime); para añadir/quitar hosts hay que recompilar.
-                 Considerar manifestPlaceholders si se publica para múltiples dominios. -->
+                 El host es fijo en compilación (no runtime).
+                 Hosts sincronizados con util/AppLinksHosts.kt — añadir/quitar allí y aquí. -->
 
-            <!-- Proyecto Rustify (dominio oficial, verifica contra pablosoage.github.io) -->
+            <!-- rustify-music.github.io (organización del proyecto) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="rustify-music.github.io" android:pathPrefix="/r" />
+            </intent-filter>
+
+            <!-- pablosoage.github.io (dominio personal del maintainer) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

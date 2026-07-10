@@ -202,11 +202,12 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
             // F1.A: wrapper Rustify autoverificable (host propio del usuario, §4.A.2).
-            // El host se guarda en prefs para GENERAR el link; el host VERIFICADO va fijado en el
-            // manifest a build-time. Aquí desenvolvemos tanto el host de prefs como los baked-in.
+            // El host se guarda en prefs para GENERAR el link; los hosts VERIFICADOS van fijados
+            // en el manifest a build-time. Aquí desenvolvemos tanto el host de prefs como los
+            // baked-in definidos en AppLinksHosts.verifiedHosts.
             val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
             val wrapperHost = prefs.getString("rustify_wrapper_host", null)
-            val knownHosts = listOfNotNull(wrapperHost, "pablosoage.github.io")
+            val knownHosts = listOfNotNull(wrapperHost) + com.varuna.rustify.util.AppLinksHosts.verifiedHosts
             if (uri?.scheme == "https" && uri.host in knownHosts
                 && uri.pathSegments.firstOrNull() == "r"
             ) {
