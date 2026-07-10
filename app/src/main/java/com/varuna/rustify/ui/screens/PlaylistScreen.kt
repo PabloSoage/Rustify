@@ -20,6 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullPlaylist
+import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
@@ -90,6 +94,8 @@ fun PlaylistScreen(
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var meId by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -99,6 +105,8 @@ fun PlaylistScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) { runCatching { meId = spotifyRepo.getMe().id } }
 
     LaunchedEffect(playlistId) {
         isLoading = true
@@ -473,11 +481,80 @@ fun PlaylistScreen(
                 IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                IconButton(onClick = { showEntityMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (meId != null && playlistDetails?.owner?.id == meId) {
+                        IconButton(onClick = { showEditDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit playlist", tint = Color.White)
+                        }
+                    }
+                    playlistDetails?.let { pl ->
+                        val followed = spotifyRepo.isPlaylistFollowed(pl.id)
+                        IconButton(onClick = {
+                            coroutineScope.launch {
+                                spotifyRepo.toggleFollowPlaylist(
+                                    SimplePlaylist(pl.id, pl.name, pl.description, pl.images, pl.externalUri, pl.owner, pl.totalTracks)
+                                )
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (followed) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Follow playlist",
+                                tint = if (followed) Color(0xFF1DB954) else Color.White
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showEntityMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                    }
                 }
             }
         }
+    }
+
+    if (showEditDialog) {
+        val pl = playlistDetails
+        var editName by remember(pl?.id) { mutableStateOf(pl?.name ?: "") }
+        var editDesc by remember(pl?.id) { mutableStateOf(pl?.description ?: "") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text("Edit playlist", color = Color.White) },
+            text = {
+                Column {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Name") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = editDesc,
+                        onValueChange = { editDesc = it },
+                        label = { Text("Description") }
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val id = pl?.id
+                    showEditDialog = false
+                    if (id != null && editName.isNotBlank()) {
+                        coroutineScope.launch {
+                            val res = spotifyRepo.updatePlaylist(id, editName, editDesc)
+                            if (res.success) {
+                                playlistDetails = playlistDetails?.copy(name = editName, description = editDesc)
+                            }
+                        }
+                    }
+                }) { Text("Save", color = Color(0xFF1DB954)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showEditDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
     }
 
     if (showEntityMenu) {

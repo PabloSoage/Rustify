@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
@@ -527,8 +529,20 @@ fun AlbumScreen(
                 IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                IconButton(onClick = { showEntityMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    albumDetails?.let { album ->
+                        val saved = spotifyRepo.isAlbumSaved(album.id)
+                        IconButton(onClick = { coroutineScope.launch { spotifyRepo.toggleSaveAlbum(album) } }) {
+                            Icon(
+                                imageVector = if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Save album",
+                                tint = if (saved) Color(0xFF1DB954) else Color.White
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showEntityMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                    }
                 }
             }
         }

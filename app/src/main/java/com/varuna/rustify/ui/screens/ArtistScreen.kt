@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
@@ -424,8 +426,20 @@ fun ArtistScreen(
                 IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                IconButton(onClick = { showEntityMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    artistDetails?.let { artist ->
+                        val followed = spotifyRepo.isArtistFollowed(artist.id)
+                        IconButton(onClick = { coroutineScope.launch { spotifyRepo.toggleFollowArtist(artist) } }) {
+                            Icon(
+                                imageVector = if (followed) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Follow artist",
+                                tint = if (followed) Color(0xFF1DB954) else Color.White
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showEntityMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                    }
                 }
             }
         }

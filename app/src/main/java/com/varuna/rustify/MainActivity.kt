@@ -102,6 +102,7 @@ import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.NewReleasesScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
@@ -115,6 +116,7 @@ sealed class Screen {
     object Home : Screen()
     object Search : Screen()
     object Library : Screen()
+    object NewReleases : Screen()
     data class PlaylistDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class ArtistDetail(val id: String) : Screen()
@@ -646,6 +648,7 @@ fun EngineTester(
             is Screen.Settings -> "Settings"
             is Screen.Downloads -> "Downloads"
             is Screen.LogViewer -> "LogViewer"
+            is Screen.NewReleases -> "NewReleases"
         }
 
         val screenContent = remember(currentScreen) {
@@ -687,6 +690,9 @@ fun EngineTester(
                             },
                             onDownloadsClick = {
                                 navigationStack.add(Screen.Downloads)
+                            },
+                            onNewReleasesClick = {
+                                navigationStack.add(Screen.NewReleases)
                             }
                         )
                     }
@@ -735,6 +741,7 @@ fun EngineTester(
                                 }
                             },
                             onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                            onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                             onOpenSettings = { navigationStack.add(Screen.Settings) },
                             currentTrackId = currentTrack?.id
                         )
@@ -822,6 +829,13 @@ fun EngineTester(
                         audioPlayerService = audioPlayerService,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onOpenTrack = { id -> navigationStack.add(Screen.TrackDetail(id)) }
+                    )
+                }
+                is Screen.NewReleases -> {
+                    NewReleasesScreen(
+                        spotifyRepo = spotifyRepo,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) }
                     )
                 }
                 is Screen.Settings -> {

@@ -98,6 +98,7 @@ fun LibraryScreen(
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
@@ -179,6 +180,7 @@ fun LibraryScreen(
                     onGoToQueue = onGoToQueue,
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
+                    onGoToRadio = onGoToRadio,
                     currentTrackId = currentTrackId,
                     searchQuery = globalSearchQuery
                 )
@@ -435,6 +437,7 @@ fun LibraryTracks(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     currentTrackId: String? = null,
     searchQuery: String = ""
 ) {
@@ -582,6 +585,11 @@ fun LibraryTracks(
                 onArtistClick(id)
                 selectedTrackForMenu = null
             },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                val t = selectedTrackForMenu!!
+                cb(t.id ?: "", t.name)
+                selectedTrackForMenu = null
+            } },
             onRemoveFromPlaylist = null
         )
     }

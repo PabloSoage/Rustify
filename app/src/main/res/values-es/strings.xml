@@ -119,6 +119,7 @@
     <string name="track_menu_go_radio">Ir a la radio</string>
     <string name="radio_play_all">Reproducir todo</string>
     <string name="radio_empty">No se encontraron canciones relacionadas</string>
+    <string name="new_releases_title">Novedades</string>
     <string name="track_menu_share">Compartir</string>
     <string name="track_menu_share_rustify">Compartir como enlace Rustify</string>
     <string name="share_track">Compartir pista</string>

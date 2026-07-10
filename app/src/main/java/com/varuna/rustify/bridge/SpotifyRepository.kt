@@ -900,6 +900,48 @@ class SpotifyRepository(context: Context) {
         result
     }
 
+    // --- Library follow/save toggles (reactive over the cached state lists) --------------------
+
+    fun isAlbumSaved(id: String): Boolean = savedAlbums.any { it.id == id }
+    fun isArtistFollowed(id: String): Boolean = followedArtists.any { it.id == id }
+    fun isPlaylistFollowed(id: String): Boolean = savedPlaylists.any { it.id == id }
+
+    /** Save/unsave an album; updates [savedAlbums] on success so the UI reflects it immediately. */
+    suspend fun toggleSaveAlbum(album: FullAlbum): OperationResult = withContext(Dispatchers.IO) {
+        val id = album.id
+        val saved = isAlbumSaved(id)
+        val result = if (saved) unsaveAlbums(listOf(id)) else saveAlbums(listOf(id))
+        if (result.success) withContext(Dispatchers.Main) {
+            if (saved) savedAlbums.removeAll { it.id == id }
+            else if (savedAlbums.none { it.id == id }) savedAlbums.add(0, album)
+        }
+        result
+    }
+
+    /** Follow/unfollow an artist; updates [followedArtists] on success. */
+    suspend fun toggleFollowArtist(artist: FullArtist): OperationResult = withContext(Dispatchers.IO) {
+        val id = artist.id
+        val followed = isArtistFollowed(id)
+        val result = if (followed) unfollowArtists(listOf(id)) else followArtists(listOf(id))
+        if (result.success) withContext(Dispatchers.Main) {
+            if (followed) followedArtists.removeAll { it.id == id }
+            else if (followedArtists.none { it.id == id }) followedArtists.add(0, artist)
+        }
+        result
+    }
+
+    /** Follow/unfollow a playlist; updates [savedPlaylists] on success. */
+    suspend fun toggleFollowPlaylist(playlist: SimplePlaylist): OperationResult = withContext(Dispatchers.IO) {
+        val id = playlist.id
+        val followed = isPlaylistFollowed(id)
+        val result = if (followed) unfollowPlaylist(id) else followPlaylist(id)
+        if (result.success) withContext(Dispatchers.Main) {
+            if (followed) savedPlaylists.removeAll { it.id == id }
+            else if (savedPlaylists.none { it.id == id }) savedPlaylists.add(0, playlist)
+        }
+        result
+    }
+
     /**
      * Toggle like/unlike status for a track by ID (fallback).
      */

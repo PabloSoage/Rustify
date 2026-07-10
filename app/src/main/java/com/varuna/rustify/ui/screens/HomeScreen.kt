@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,6 +49,7 @@ fun HomeScreen(
     onItemClick: (BrowseSectionItem) -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit,
+    onNewReleasesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -115,7 +117,15 @@ fun HomeScreen(
                         )
                         Row {
                             val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
-                            
+
+                            IconButton(onClick = onNewReleasesClick) {
+                                Icon(
+                                    imageVector = Icons.Default.NewReleases,
+                                    contentDescription = "New releases",
+                                    tint = Color.White
+                                )
+                            }
+
                             IconButton(onClick = onDownloadsClick) {
                                 if (activeDownloads > 0) {
                                     androidx.compose.material3.BadgedBox(

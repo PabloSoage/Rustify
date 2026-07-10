@@ -69,6 +69,7 @@
     <string name="track_menu_go_radio">Go to radio</string>
     <string name="radio_play_all">Play all</string>
     <string name="radio_empty">No related tracks found</string>
+    <string name="new_releases_title">New releases</string>
     <string name="track_menu_share">Share</string>
     <string name="track_menu_share_rustify">Share as Rustify link</string>
     <string name="share_track">Share Track</string>
