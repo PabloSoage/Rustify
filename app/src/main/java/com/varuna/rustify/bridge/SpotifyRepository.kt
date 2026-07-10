@@ -464,10 +464,6 @@ class SpotifyRepository(context: Context) {
 
     fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
 
-    fun setTrackLikedState(id: String, liked: Boolean) {
-        likedTrackIds[id] = liked
-    }
-
     init {
         instance = this
 

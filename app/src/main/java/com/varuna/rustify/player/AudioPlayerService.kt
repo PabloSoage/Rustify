@@ -970,7 +970,6 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    @Suppress("unused")
     fun enqueueAll(tracks: List<FullTrack>) {
         var currentQueue = _state.value.queue
         var currentOrig = _state.value.originalQueue
@@ -1092,9 +1091,6 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (st.isError || isResolving) return
         saveRequests.trySend(Unit)
     }
-
-    /** Backwards-compatible alias for existing callers. */
-    internal fun saveState() = requestSave()
 
     /** Synchronous atomic write — use on shutdown paths where the async queue may not flush. */
     internal fun saveNow() {

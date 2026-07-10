@@ -66,6 +66,9 @@
     <string name="track_options_view_artist">View Artist</string>
     <string name="track_menu_view_youtube">Alternative YouTube version</string>
     <string name="track_menu_add_queue">Add to Queue</string>
+    <string name="track_menu_go_radio">Go to radio</string>
+    <string name="radio_play_all">Play all</string>
+    <string name="radio_empty">No related tracks found</string>
     <string name="track_menu_share">Share</string>
     <string name="track_menu_share_rustify">Share as Rustify link</string>
     <string name="share_track">Share Track</string>

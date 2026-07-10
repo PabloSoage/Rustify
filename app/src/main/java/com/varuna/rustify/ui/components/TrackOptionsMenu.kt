@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,6 +75,7 @@ fun TrackOptionsMenuBottomSheet(
     onGoToQueue: () -> Unit,
     onGoToAlbum: (String, String, List<SpotifyImage>) -> Unit,
     onGoToArtist: (String) -> Unit,
+    onGoToRadio: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -297,6 +299,17 @@ fun TrackOptionsMenuBottomSheet(
                 }
 
                 val isLocalTrack = track.id?.startsWith("local:") == true
+
+                if (onGoToRadio != null && !isLocalTrack) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Radio,
+                        label = stringResource(R.string.track_menu_go_radio),
+                        onClick = {
+                            onGoToRadio()
+                            onDismiss()
+                        }
+                    )
+                }
 
                 if (!isLocalTrack) {
                     MenuOptionItem(

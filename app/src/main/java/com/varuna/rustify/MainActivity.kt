@@ -103,6 +103,7 @@ import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
+import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.SettingsScreen
 import com.varuna.rustify.ui.screens.TrackScreen
@@ -118,6 +119,7 @@ sealed class Screen {
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class ArtistDetail(val id: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
+    data class RadioDetail(val trackId: String, val trackName: String) : Screen()
     object Settings : Screen()
     object Downloads : Screen()
     object LogViewer : Screen()
@@ -640,6 +642,7 @@ fun EngineTester(
             is Screen.AlbumDetail -> "AlbumDetail_${currentScreen.id}"
             is Screen.ArtistDetail -> "ArtistDetail_${currentScreen.id}"
             is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
+            is Screen.RadioDetail -> "RadioDetail_${currentScreen.trackId}"
             is Screen.Settings -> "Settings"
             is Screen.Downloads -> "Downloads"
             is Screen.LogViewer -> "LogViewer"
@@ -707,6 +710,7 @@ fun EngineTester(
                                 navigationStack.add(Screen.PlaylistDetail(id, name, images))
                             },
                             onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                            onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                             currentTrackId = currentTrack?.id
                         )
                     }
@@ -753,6 +757,7 @@ fun EngineTester(
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                         onShufflePlay = { audioPlayerService.shufflePlay(it) },
                         currentTrackId = currentTrack?.id
                     )
@@ -775,6 +780,7 @@ fun EngineTester(
                             navigationStack.add(Screen.AlbumDetail(id, name, images))
                         },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                         onShufflePlay = { audioPlayerService.shufflePlay(it) }
                     )
                 }
@@ -792,6 +798,7 @@ fun EngineTester(
                         },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                         onShufflePlay = { audioPlayerService.shufflePlay(it) },
                         currentTrackId = currentTrack?.id
                     )
@@ -803,7 +810,18 @@ fun EngineTester(
                         audioPlayerService = audioPlayerService,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
-                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) }
+                        onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
+                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) }
+                    )
+                }
+                is Screen.RadioDetail -> {
+                    RadioScreen(
+                        trackId = currentScreen.trackId,
+                        trackName = currentScreen.trackName,
+                        spotifyRepo = spotifyRepo,
+                        audioPlayerService = audioPlayerService,
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onOpenTrack = { id -> navigationStack.add(Screen.TrackDetail(id)) }
                     )
                 }
                 is Screen.Settings -> {

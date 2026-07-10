@@ -86,6 +86,7 @@ fun SearchScreen(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
@@ -408,7 +409,12 @@ fun SearchScreen(
             onGoToArtist = { id ->
                 onArtistClick(id)
                 selectedTrackForMenu = null
-            }
+            },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                val t = selectedTrackForMenu!!
+                cb(t.id ?: "", t.name)
+                selectedTrackForMenu = null
+            } }
         )
     }
 }

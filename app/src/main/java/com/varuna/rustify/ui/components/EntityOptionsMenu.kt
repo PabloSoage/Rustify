@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +56,7 @@ import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.util.ShareUtils
 import kotlinx.coroutines.launch
 
@@ -279,6 +281,20 @@ fun EntityOptionsMenuBottomSheet(
                         label = stringResource(R.string.entity_menu_go_artist),
                         onClick = {
                             onGoToArtist(primaryArtistId)
+                            onDismiss()
+                        }
+                    )
+                }
+
+                // Add all tracks to the playback queue (only when there are tracks).
+                if (tracks.isNotEmpty()) {
+                    val addedToQueueMsg = stringResource(R.string.added_to_queue)
+                    EntityMenuRow(
+                        icon = Icons.Default.QueueMusic,
+                        label = stringResource(R.string.track_menu_add_queue),
+                        onClick = {
+                            AudioPlayerService.getInstance(context).enqueueAll(tracks)
+                            Toast.makeText(context, addedToQueueMsg, Toast.LENGTH_SHORT).show()
                             onDismiss()
                         }
                     )

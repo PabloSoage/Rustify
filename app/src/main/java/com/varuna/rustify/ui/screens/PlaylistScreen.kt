@@ -80,6 +80,7 @@ fun PlaylistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
@@ -512,6 +513,11 @@ fun PlaylistScreen(
                 onArtistClick(id)
                 selectedTrackForMenu = null
             },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                val t = selectedTrackForMenu!!
+                cb(t.id ?: "", t.name)
+                selectedTrackForMenu = null
+            } },
             onRemoveFromPlaylist = {
                 val trackToRemove = selectedTrackForMenu!!
                 coroutineScope.launch {

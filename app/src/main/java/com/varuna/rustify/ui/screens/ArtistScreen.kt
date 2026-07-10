@@ -78,6 +78,7 @@ fun ArtistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
@@ -463,6 +464,11 @@ fun ArtistScreen(
                 onArtistClick(id)
                 selectedTrackForMenu = null
             },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                val t = selectedTrackForMenu!!
+                cb(t.id ?: "", t.name)
+                selectedTrackForMenu = null
+            } },
             onRemoveFromPlaylist = null
         )
     }

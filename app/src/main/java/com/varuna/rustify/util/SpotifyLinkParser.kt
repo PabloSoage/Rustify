@@ -34,7 +34,4 @@ object SpotifyLinkParser {
             else -> null
         }
     }
-
-    /** Convenience: just the track id, or null. */
-    fun parseTrackId(text: String): String? = (parse(text) as? SpotifyLink.Track)?.id
 }

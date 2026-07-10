@@ -268,6 +268,7 @@ fun TrackScreen(
     onBackClick: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var trackDetails by remember { mutableStateOf<FullTrack?>(null) }
@@ -648,7 +649,11 @@ fun TrackScreen(
             onGoToArtist = { id ->
                 showOptionsMenu = false
                 onArtistClick(id)
-            }
+            },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                showOptionsMenu = false
+                cb(trackToShow.id ?: "", trackToShow.name)
+            } }
         )
     }
 }
