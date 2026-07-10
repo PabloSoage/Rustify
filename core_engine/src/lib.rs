@@ -228,29 +228,6 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_loginSpotifyN
     })
 }
 
-/// JNI Bridge: Login with OAuth Authorization Code
-#[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_loginSpotifyWithAuthCodeNative<'local>(
-    mut env_unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    code: JString<'local>,
-    redirect_uri: JString<'local>,
-) -> jstring {
-    jni_bridge!(env_unowned, |env| {
-        let code_mutf8 = code.mutf8_chars(env)?;
-        let code_str = code_mutf8.to_string();
-
-        let uri_mutf8 = redirect_uri.mutf8_chars(env)?;
-        let uri_str = uri_mutf8.to_string();
-
-        let async_result = get_runtime().block_on(async {
-            let mut client = spotify::client::get_spotify_client().write().unwrap();
-            client.login_with_auth_code(&code_str, &uri_str).await
-        });
-        serialize_result(async_result)
-    })
-}
-
 /// JNI Bridge: Logout
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_logoutSpotifyNative<'local>(
@@ -302,7 +279,6 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_restoreSpotif
     sp_dc_cookie: JString<'local>,
     access_token: JString<'local>,
     expiration: jlong,
-    refresh_token: JString<'local>,
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let cookie_mutf8 = sp_dc_cookie.mutf8_chars(env)?;
@@ -311,47 +287,15 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_restoreSpotif
         let token_mutf8 = access_token.mutf8_chars(env)?;
         let token_str = token_mutf8.to_string();
 
-        let rt_mutf8 = refresh_token.mutf8_chars(env)?;
-        let rt_str = rt_mutf8.to_string();
-
         let token_opt = if token_str.is_empty() { None } else { Some(token_str.as_str()) };
         let exp_opt = if expiration <= 0 { None } else { Some(expiration as u64) };
-        let rt_opt = if rt_str.is_empty() { None } else { Some(rt_str.as_str()) };
 
         let async_result = get_runtime().block_on(async {
             let mut client = spotify::client::get_spotify_client().write().unwrap();
-            client.restore_session(&cookie_str, token_opt, exp_opt, rt_opt).await
+            client.restore_session(&cookie_str, token_opt, exp_opt).await
         });
         serialize_result(async_result)
     })
-}
-
-/// JNI Bridge: Set Spotify Developer Credentials
-#[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setSpotifyDeveloperCredentialsNative<'local>(
-    mut env_unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    client_id: JString<'local>,
-    client_secret: JString<'local>,
-) -> jboolean {
-    let outcome = env_unowned.with_env(|env| -> jni::errors::Result<jboolean> {
-        let id_mutf8 = client_id.mutf8_chars(env)?;
-        let id_str = id_mutf8.to_string();
-
-        let secret_mutf8 = client_secret.mutf8_chars(env)?;
-        let secret_str = secret_mutf8.to_string();
-
-        if let Ok(client) = spotify::client::get_spotify_client().read() {
-            client.set_developer_credentials(&id_str, &secret_str);
-            Ok(JNI_TRUE)
-        } else {
-            Ok(JNI_FALSE)
-        }
-    });
-    match outcome.into_outcome() {
-        Outcome::Ok(res) => res,
-        _ => JNI_FALSE,
-    }
 }
 
 // =============================================================================

@@ -53,7 +53,6 @@ class SpotifyRepository(context: Context) {
         private const val KEY_SP_DC = "sp_dc_cookie"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
-        private const val KEY_REFRESH_TOKEN = "refresh_token"
 
         @Volatile
         private var instance: SpotifyRepository? = null
@@ -757,7 +756,6 @@ class SpotifyRepository(context: Context) {
             remove(KEY_SP_DC)
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_EXPIRATION)
-            remove(KEY_REFRESH_TOKEN)
         }
     }
 
@@ -780,54 +778,31 @@ class SpotifyRepository(context: Context) {
     }
 
     /**
-     * Login using OAuth Authorization Code obtained from redirect.
-     */
-    suspend fun loginWithAuthCode(code: String, redirectUri: String): LoginResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.loginSpotifyWithAuthCodeNative(code, redirectUri)
-        val result = LoginResult.fromJson(JSONObject(json))
-        if (result.success) {
-            prefs.edit {
-                putString(KEY_ACCESS_TOKEN, result.accessToken)
-                putLong(KEY_EXPIRATION, result.expiration ?: 0L)
-                if (!result.refreshToken.isNullOrEmpty()) {
-                    putString(KEY_REFRESH_TOKEN, result.refreshToken)
-                }
-            }
-            triggerBackgroundSync()
-        }
-        result
-    }
-
-    /**
-     * Attempt to restore a previous session from the saved sp_dc cookie or OAuth refresh token.
+     * Attempt to restore a previous session from the saved sp_dc cookie.
      * Call this on app startup to auto-login.
-     * @return LoginResult if a saved cookie or refresh token exists, null if no saved session.
+     * @return LoginResult if a saved cookie exists, null if no saved session.
      */
     suspend fun restoreSession(): LoginResult? = withContext(Dispatchers.IO) {
         val savedCookie = prefs.getString(KEY_SP_DC, "") ?: ""
         val cachedToken = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
         val cachedExp = prefs.getLong(KEY_EXPIRATION, 0L)
-        val savedRefreshToken = prefs.getString(KEY_REFRESH_TOKEN, "") ?: ""
         
-        if (savedCookie.isEmpty() && savedRefreshToken.isEmpty()) {
+        if (savedCookie.isEmpty()) {
             return@withContext null
         }
         
         val json = try {
-            NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp, savedRefreshToken)
+            NativeEngine.restoreSpotifySessionNative(savedCookie, cachedToken, cachedExp)
         } catch (e: Exception) {
             android.util.Log.w("SpotifyRepository", "restoreSession native threw: ${e.message}")
             return@withContext LoginResult(success = false, user = null, error = e.message,
-                accessToken = null, expiration = null, refreshToken = null)
+                accessToken = null, expiration = null)
         }
         val result = LoginResult.fromJson(JSONObject(json))
         if (result.success) {
             prefs.edit {
                 putString(KEY_ACCESS_TOKEN, result.accessToken)
                 putLong(KEY_EXPIRATION, result.expiration ?: 0L)
-                if (!result.refreshToken.isNullOrEmpty()) {
-                    putString(KEY_REFRESH_TOKEN, result.refreshToken)
-                }
             }
             triggerBackgroundSync()
         } else {
@@ -839,7 +814,6 @@ class SpotifyRepository(context: Context) {
                     remove(KEY_SP_DC)
                     remove(KEY_ACCESS_TOKEN)
                     remove(KEY_EXPIRATION)
-                    remove(KEY_REFRESH_TOKEN)
                 }
             }
         }
@@ -855,10 +829,10 @@ class SpotifyRepository(context: Context) {
     }
 
     /**
-     * Check if there's a saved session available (either sp_dc cookie or refresh token).
+     * Check if there's a saved session available (sp_dc cookie).
      */
     fun hasSavedSession(): Boolean = 
-        (prefs.getString(KEY_SP_DC, null) != null) || (prefs.getString(KEY_REFRESH_TOKEN, null) != null)
+        prefs.getString(KEY_SP_DC, null) != null
 
     // =========================================================================
     // USER / LIBRARY

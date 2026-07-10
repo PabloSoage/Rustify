@@ -458,8 +458,6 @@ pub struct LoginResult {
     pub access_token: Option<String>,
     #[serde(rename = "accessTokenExpirationTimestampMs", skip_serializing_if = "Option::is_none")]
     pub expiration: Option<u64>,
-    #[serde(rename = "refreshToken", skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
 }
 
 // ── Common ────────────────────────────────────────────────────────────────────

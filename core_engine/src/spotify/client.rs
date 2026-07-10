@@ -116,11 +116,8 @@ pub struct SpotifyClient {
     http: Client,
     credentials: Option<SpotifyCredentials>,
     sp_dc: Option<String>,
-    refresh_token: RwLock<Option<String>>,
     client_credentials: RwLock<Option<String>>,
     client_credentials_expiration: RwLock<u64>,
-    developer_client_id: RwLock<Option<String>>,
-    developer_client_secret: RwLock<Option<String>>,
     gql_hashes: RwLock<HashMap<String, String>>,
     cache_dir: RwLock<Option<String>>,
     accept_language: RwLock<Option<String>>,
@@ -137,11 +134,8 @@ impl SpotifyClient {
                 .unwrap(),
             credentials: None,
             sp_dc: None,
-            refresh_token: RwLock::new(None),
             client_credentials: RwLock::new(None),
             client_credentials_expiration: RwLock::new(0),
-            developer_client_id: RwLock::new(None),
-            developer_client_secret: RwLock::new(None),
             gql_hashes: RwLock::new(HashMap::new()),
             cache_dir: RwLock::new(None),
             accept_language: RwLock::new(None),
@@ -168,7 +162,6 @@ impl SpotifyClient {
                     error: None,
                     access_token: Some(creds.access_token),
                     expiration: Some(creds.expiration),
-                    refresh_token: None,
                 })
             }
             Err(e) => {
@@ -180,128 +173,12 @@ impl SpotifyClient {
                     error: Some(e.to_string()),
                     access_token: None,
                     expiration: None,
-                    refresh_token: None,
                 })
             }
         }
     }
 
-    pub async fn login_with_auth_code(&mut self, code: &str, redirect_uri: &str) -> SpotifyResult<LoginResult> {
-        let client_id = {
-            let id = self.developer_client_id.read().unwrap();
-            id.clone().ok_or(SpotifyError::InternalError("Client ID not configured".into()))?
-        };
-        let client_secret = {
-            let secret = self.developer_client_secret.read().unwrap();
-            secret.clone().ok_or(SpotifyError::InternalError("Client Secret not configured".into()))?
-        };
-
-        let url = "https://accounts.spotify.com/api/token";
-        let res = self.http.post(url)
-            .basic_auth(&client_id, Some(&client_secret))
-            .form(&[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("redirect_uri", redirect_uri),
-            ])
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            let status = res.status().as_u16();
-            let body = res.text().await.unwrap_or_default();
-            return Err(SpotifyError::ApiError(status, format!("Auth code exchange failed: {}", body)));
-        }
-
-        #[derive(Deserialize)]
-        struct TokenResponse {
-            access_token: String,
-            refresh_token: Option<String>,
-            expires_in: u64,
-        }
-
-        let resp: TokenResponse = res.json().await?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        let creds = SpotifyCredentials {
-            client_id: client_id.clone(),
-            access_token: resp.access_token.clone(),
-            expiration: now + (resp.expires_in * 1000),
-            is_anonymous: false,
-        };
-
-        self.credentials = Some(creds.clone());
-        if let Some(ref rt) = resp.refresh_token {
-            *self.refresh_token.write().unwrap() = Some(rt.clone());
-        }
-
-        Ok(LoginResult {
-            success: true,
-            user: None,
-            error: None,
-            access_token: Some(creds.access_token),
-            expiration: Some(creds.expiration),
-            refresh_token: resp.refresh_token.clone(),
-        })
-    }
-
     pub async fn refresh_token(&mut self) -> SpotifyResult<()> {
-        if let Some(ref rt) = *self.refresh_token.read().unwrap() {
-            let client_id = {
-                let id = self.developer_client_id.read().unwrap();
-                id.clone().ok_or(SpotifyError::InternalError("Client ID not configured".into()))?
-            };
-            let client_secret = {
-                let secret = self.developer_client_secret.read().unwrap();
-                secret.clone().ok_or(SpotifyError::InternalError("Client Secret not configured".into()))?
-            };
-
-            let url = "https://accounts.spotify.com/api/token";
-            let res = self.http.post(url)
-                .basic_auth(&client_id, Some(&client_secret))
-                .form(&[
-                    ("grant_type", "refresh_token"),
-                    ("refresh_token", rt),
-                ])
-                .send()
-                .await?;
-
-            if !res.status().is_success() {
-                let status = res.status().as_u16();
-                let body = res.text().await.unwrap_or_default();
-                return Err(SpotifyError::ApiError(status, format!("Refresh token failed: {}", body)));
-            }
-
-            #[derive(Deserialize)]
-            struct RefreshResponse {
-                access_token: String,
-                refresh_token: Option<String>,
-                expires_in: u64,
-            }
-
-            let resp: RefreshResponse = res.json().await?;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-
-            let creds = SpotifyCredentials {
-                client_id: client_id.clone(),
-                access_token: resp.access_token.clone(),
-                expiration: now + (resp.expires_in * 1000),
-                is_anonymous: false,
-            };
-
-            self.credentials = Some(creds);
-            if let Some(new_rt) = resp.refresh_token {
-                *self.refresh_token.write().unwrap() = Some(new_rt);
-            }
-            return Ok(());
-        }
-
         let sp_dc = self.sp_dc.clone()
             .ok_or(SpotifyError::NotAuthenticated)?;
 
@@ -330,7 +207,6 @@ impl SpotifyClient {
     pub fn logout(&mut self) {
         self.credentials = None;
         self.sp_dc = None;
-        *self.refresh_token.write().unwrap() = None;
     }
 
     pub async fn restore_session(
@@ -338,14 +214,7 @@ impl SpotifyClient {
         sp_dc: &str,
         access_token: Option<&str>,
         expiration: Option<u64>,
-        refresh_token_opt: Option<&str>,
     ) -> SpotifyResult<LoginResult> {
-        if let Some(rt) = refresh_token_opt {
-            if !rt.is_empty() {
-                *self.refresh_token.write().unwrap() = Some(rt.to_string());
-            }
-        }
-
         self.sp_dc = if sp_dc.is_empty() { None } else { Some(sp_dc.to_string()) };
 
         if let (Some(token), Some(exp)) = (access_token, expiration) {
@@ -354,7 +223,7 @@ impl SpotifyClient {
                 .unwrap()
                 .as_millis() as u64;
             if now + 60000 < exp {
-                let client_id = self.developer_client_id.read().unwrap().clone().unwrap_or_default();
+                let client_id = String::new();
                 let creds = SpotifyCredentials {
                     client_id,
                     access_token: token.to_string(),
@@ -368,35 +237,7 @@ impl SpotifyClient {
                     error: None,
                     access_token: Some(token.to_string()),
                     expiration: Some(exp),
-                    refresh_token: self.refresh_token.read().unwrap().clone(),
                 });
-            }
-        }
-
-        if self.refresh_token.read().unwrap().is_some() {
-            match self.refresh_token().await {
-                Ok(_) => {
-                    let creds = self.credentials.as_ref().unwrap();
-                    let rt = self.refresh_token.read().unwrap().clone();
-                    return Ok(LoginResult {
-                        success: true,
-                        user: None,
-                        error: None,
-                        access_token: Some(creds.access_token.clone()),
-                        expiration: Some(creds.expiration),
-                        refresh_token: rt,
-                    });
-                }
-                Err(e) => {
-                    return Ok(LoginResult {
-                        success: false,
-                        user: None,
-                        error: Some(format!("Failed to refresh session: {}", e)),
-                        access_token: None,
-                        expiration: None,
-                        refresh_token: None,
-                    });
-                }
             }
         }
 
@@ -520,13 +361,6 @@ impl SpotifyClient {
     // CLIENT CREDENTIALS FLOW (for REST API)
     // =========================================================================
 
-    pub fn set_developer_credentials(&self, client_id: &str, client_secret: &str) {
-        *self.developer_client_id.write().unwrap() = Some(client_id.to_string());
-        *self.developer_client_secret.write().unwrap() = Some(client_secret.to_string());
-        *self.client_credentials.write().unwrap() = None;
-        *self.client_credentials_expiration.write().unwrap() = 0;
-    }
-
     pub fn set_cache_dir(&self, path: &str) {
         *self.cache_dir.write().unwrap() = Some(path.to_string());
         if let Err(e) = self.load_hashes_from_disk() {
@@ -595,15 +429,9 @@ impl SpotifyClient {
             }
         }
 
-        // Get developer credentials or fall back to defaults
-        let client_id = {
-            let id = self.developer_client_id.read().unwrap();
-            id.clone().unwrap_or_else(|| "4c97a4b21a07409ea4017e889d701ab0".to_string())
-        };
-        let client_secret = {
-            let secret = self.developer_client_secret.read().unwrap();
-            secret.clone().unwrap_or_else(|| "049386348c4146059d646b9a89d7fa2a".to_string())
-        };
+        // App-level Spotify credentials for the client-credentials grant.
+        let client_id = "4c97a4b21a07409ea4017e889d701ab0".to_string();
+        let client_secret = "049386348c4146059d646b9a89d7fa2a".to_string();
 
         let url = "https://accounts.spotify.com/api/token";
         

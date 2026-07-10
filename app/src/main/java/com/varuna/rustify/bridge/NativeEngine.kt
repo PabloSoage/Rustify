@@ -92,18 +92,9 @@ object NativeEngine {
      * @param spDcCookie The saved sp_dc cookie value.
      * @param accessToken The saved access token.
      * @param expirationMs The expiration timestamp in milliseconds.
-     * @param refreshToken The saved OAuth refresh token.
      * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
      */
-    external fun restoreSpotifySessionNative(spDcCookie: String, accessToken: String, expirationMs: Long, refreshToken: String): String
-
-    /**
-     * Authenticates the user using the OAuth authorization code.
-     * @param code The authorization code.
-     * @param redirectUri The registered redirect URI.
-     * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
-     */
-    external fun loginSpotifyWithAuthCodeNative(code: String, redirectUri: String): String
+    external fun restoreSpotifySessionNative(spDcCookie: String, accessToken: String, expirationMs: Long): String
 
 
 

@@ -77,8 +77,7 @@ data class LoginResult(
     val user: SpotifyUser?,
     val error: String?,
     val accessToken: String?,
-    val expiration: Long?,
-    val refreshToken: String?
+    val expiration: Long?
 ) {
     companion object {
         fun fromJson(json: JSONObject): LoginResult = LoginResult(
@@ -86,8 +85,7 @@ data class LoginResult(
             user = if (json.has("user") && !json.isNull("user")) SpotifyUser.fromJson(json.getJSONObject("user")) else null,
             error = json.optString("error", ""),
             accessToken = if (json.has("accessToken") && !json.isNull("accessToken")) json.optString("accessToken") else null,
-            expiration = if (json.has("accessTokenExpirationTimestampMs") && !json.isNull("accessTokenExpirationTimestampMs")) json.optLong("accessTokenExpirationTimestampMs") else null,
-            refreshToken = if (json.has("refreshToken") && !json.isNull("refreshToken")) json.optString("refreshToken") else null
+            expiration = if (json.has("accessTokenExpirationTimestampMs") && !json.isNull("accessTokenExpirationTimestampMs")) json.optLong("accessTokenExpirationTimestampMs") else null
         )
     }
 }
