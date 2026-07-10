@@ -22,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -290,7 +290,7 @@ fun EntityOptionsMenuBottomSheet(
                 if (tracks.isNotEmpty()) {
                     val addedToQueueMsg = stringResource(R.string.added_to_queue)
                     EntityMenuRow(
-                        icon = Icons.Default.QueueMusic,
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
                         label = stringResource(R.string.track_menu_add_queue),
                         onClick = {
                             AudioPlayerService.getInstance(context).enqueueAll(tracks)

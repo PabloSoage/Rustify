@@ -15,7 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -134,7 +134,7 @@ fun RadioScreen(
                         onClick = { audioPlayerService.enqueueAll(tracks) },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.QueueMusic, contentDescription = null, tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.track_menu_add_queue), color = Color.White)
                     }
