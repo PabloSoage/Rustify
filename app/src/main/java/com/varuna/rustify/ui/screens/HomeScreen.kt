@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Settings
@@ -50,6 +51,7 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit,
     onNewReleasesClick: () -> Unit,
+    onMetricsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -122,6 +124,14 @@ fun HomeScreen(
                                 Icon(
                                     imageVector = Icons.Default.NewReleases,
                                     contentDescription = "New releases",
+                                    tint = Color.White
+                                )
+                            }
+
+                            IconButton(onClick = onMetricsClick) {
+                                Icon(
+                                    imageVector = Icons.Default.BarChart,
+                                    contentDescription = "Listening metrics",
                                     tint = Color.White
                                 )
                             }

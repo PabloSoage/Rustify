@@ -149,6 +149,10 @@
     <string name="track_menu_unfavorite">Unfavorite</string>
     <string name="local_playlist_selector_title">Add to local playlist</string>
     <string name="local_playlist_added">Added to local playlist</string>
+    <string name="local_playlist_delete">Delete playlist</string>
+    <string name="local_playlist_delete_confirm">Delete</string>
+    <string name="local_playlist_delete_msg">Delete this local playlist? This cannot be undone.</string>
+    <string name="local_playlist_deleted">Playlist deleted</string>
     <string name="settings_local_data">Local data (playlists + favorites)</string>
     <string name="settings_export_local_empty">No local data to export</string>
     
@@ -173,6 +177,12 @@
     <string name="metrics_range_month">This Month</string>
     <string name="metrics_range_all">All Time</string>
     <string name="metrics_empty">No listening data yet</string>
+    <string name="metrics_export">Export metrics (Spotify stats.fm)</string>
+    <string name="metrics_export_done">Metrics exported</string>
+    <string name="metrics_export_empty">No metrics to export</string>
+    <string name="metrics_import">Import listening history</string>
+    <string name="metrics_import_done">Imported %1$d events</string>
+    <string name="metrics_import_error">Import failed: %1$s</string>
 
     <!-- E40 — YouTube Music -->
     <string name="ytm_tab_all">All</string>

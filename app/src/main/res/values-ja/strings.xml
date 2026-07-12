@@ -118,4 +118,20 @@
     <!-- General -->
     <string name="general_error">エラー</string>
 
+<!-- E70 extras -->
+    <string name="metrics_export">メトリクスをエクスポート (Spotify/stats.fm)</string>
+    <string name="metrics_export_done">メトリクスをエクスポートしました</string>
+    <string name="metrics_export_empty">エクスポートするメトリクスがありません</string>
+    <string name="metrics_import">再生履歴をインポート</string>
+    <string name="metrics_import_done">%1$d 件のイベントをインポートしました</string>
+    <string name="metrics_import_error">インポートに失敗しました: %1$s</string>
+
+<!-- E30 extras -->
+    <string name="local_playlist_delete">プレイリストを削除</string>
+    <string name="local_playlist_delete_confirm">削除</string>
+    <string name="local_playlist_delete_msg">このローカルプレイリストを削除しますか？元に戻せません。</string>
+    <string name="local_playlist_deleted">プレイリストを削除しました</string>
+    <string name="settings_local_data">ローカルデータ（プレイリスト + お気に入り）</string>
+    <string name="settings_export_local_empty">エクスポートするローカルデータがありません</string>
+
 </resources>

@@ -488,7 +488,7 @@ fun SettingsScreen(
                         Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         
-                        if (localMusicDirs.isEmpty()) {
+if (localMusicDirs.isEmpty()) {
                             Text(stringResource(R.string.settings_no_folder_configured), color = Color.Gray, fontSize = 14.sp)
                         } else {
                             localMusicDirs.forEach { uriStr ->
@@ -500,8 +500,8 @@ fun SettingsScreen(
                                     val name = Uri.parse(uriStr).lastPathSegment ?: uriStr
                                     Text(name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
                                     Text(
-                                        stringResource(R.string.settings_remove), 
-                                        color = Color.Red, 
+                                        stringResource(R.string.settings_remove),
+                                        color = Color.Red,
                                         fontSize = 12.sp,
                                         modifier = Modifier.clickable {
                                             val newSet = localMusicDirs.toMutableSet().apply { remove(uriStr) }
@@ -509,31 +509,31 @@ fun SettingsScreen(
                                             prefs.edit { putStringSet("local_music_directories", newSet) }
                                         }.padding(8.dp)
                                     )
-                    }
+                                }
+                            }
+                        }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        stringResource(R.string.settings_local_data),
-                        color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { exportLocalLauncher.launch("rustify_local_data.json") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
-                        ) { Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp) }
-                        Button(onClick = { importLocalLauncher.launch(arrayOf("application/json", "*/*")) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
-                        ) { Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp) }
-                    }
-                }
-            }
-                        
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = { addLocalMusicDirLauncher.launch(null) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
                         ) {
                             Text(stringResource(R.string.settings_add_folder), color = Color.White)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.settings_local_data),
+                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { exportLocalLauncher.launch("rustify_local_data.json") },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                            ) { Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp) }
+                            Button(onClick = { importLocalLauncher.launch(arrayOf("application/json", "*/*")) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                            ) { Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp) }
                         }
                     }
 
@@ -995,16 +995,6 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.settings_view_logs), color = Color.White)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = onNavigateMetrics,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }

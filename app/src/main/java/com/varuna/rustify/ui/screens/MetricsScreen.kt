@@ -1,11 +1,18 @@
 package com.varuna.rustify.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.GetApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,11 +82,78 @@ fun MetricsScreen(onBack: () -> Unit) {
         MetricsRange.ALL to stringResource(R.string.metrics_range_all)
     )
 
+    val exportMsg = stringResource(R.string.metrics_export_done)
+    val exportEmptyMsg = stringResource(R.string.metrics_export_empty)
+    val importDoneTemplate = stringResource(R.string.metrics_import_done)
+    val importErrorTemplate = stringResource(R.string.metrics_import_error)
+
+    // E70 — Export metrics to a user-chosen file as Streaming History (Spotify/stats.fm compatible).
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val events = ListeningTracker.loadEvents(context)
+                    if (events.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, exportEmptyMsg, Toast.LENGTH_SHORT).show()
+                        }
+                        return@withContext
+                    }
+                    val bytes = ListeningTracker.exportSpotifyHistoryBytes(context)
+                    context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show()
+                    }
+                }.onFailure { e ->
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
+    // E70 — Import listening history JSON (Spotify StreamingHistoryN.json, Rustify metrics.json
+    // or Rustify container { events: [...] }).
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val n = context.contentResolver.openInputStream(uri)?.use {
+                        ListeningTracker.importHistory(context, it)
+                    } ?: 0
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, importDoneTemplate.format(n), Toast.LENGTH_SHORT).show()
+                    }
+                    load()
+                }.onFailure { e ->
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) } },
+                actions = {
+                    IconButton(onClick = { exportLauncher.launch("rustify_metrics_export.json") }) {
+                        Icon(Icons.Default.GetApp, contentDescription = stringResource(R.string.metrics_export), tint = Color.White)
+                    }
+                    IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = stringResource(R.string.metrics_import), tint = Color.White)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
             )
         },

@@ -39,7 +39,12 @@ object AudioBackendSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(key, null)
         val parsed = mutableListOf<BackendEntry>()
-        if (!raw.isNullOrBlank()) {
+        // Default sane: si nunca hubo prefs guardadas, todos los providers conocidos
+        // arrancan ACTIVOS (ytdlp es el único backend hoy → el usuario oye audio sin
+        // tocar Ajustes). Anexar nuevos providers como desactivados sólo aplica si ya
+        // había prefs (forward-compat ante upgrades sin reventar la elección del usuario).
+        val defaultEnabled = raw.isNullOrBlank()
+        if (!defaultEnabled) {
             runCatching {
                 val arr = JSONArray(raw)
                 for (i in 0 until arr.length()) {
@@ -51,10 +56,10 @@ object AudioBackendSettings {
                 }
             }
         }
-        // Anexa providers conocidos ausentes (forward-compat) al final, desactivados.
+        // Anexa providers conocidos ausentes: activos si es primera ejecución, desactivados si upgrade.
         val present = parsed.map { it.id }.toMutableSet()
         for (id in knownIds) {
-            if (id !in present) { parsed.add(BackendEntry(id, false)); present.add(id) }
+            if (id !in present) { parsed.add(BackendEntry(id, defaultEnabled)); present.add(id) }
         }
         // Filtra ids desconocidos (providers eliminados en versiones futuras).
         return parsed.filter { it.id in knownIds }

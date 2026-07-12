@@ -20,12 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +98,7 @@ fun PlaylistScreen(
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteLocalDialog by remember { mutableStateOf(false) }
     var meId by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -114,11 +118,10 @@ fun PlaylistScreen(
         try {
             if (playlistId.startsWith("localpl:")) {
                 // E30: playlist puramente local — resolve ids "local:" contra localTracks.
-                val resolved = SpotifyRepository.localPlaylistTracksCache[playlistId]
-                    ?: spotifyRepo.localPlaylistTracks(playlistId).also {
-                        SpotifyRepository.localPlaylistTracksCache[playlistId] = it
-                    }
-                tracks = resolved
+                // Always resolve fresh: the cache is invalidated on add/remove, but a stale
+                // empty snapshot could otherwise freeze the screen at "No tracks found".
+                tracks = spotifyRepo.localPlaylistTracks(playlistId)
+                SpotifyRepository.localPlaylistTracksCache[playlistId] = tracks
                 hasMore = false
             } else {
                 playlistDetails = spotifyRepo.getPlaylist(playlistId)
@@ -496,6 +499,11 @@ fun PlaylistScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (playlistId.startsWith("localpl:")) {
+                        IconButton(onClick = { showDeleteLocalDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.local_playlist_delete), tint = Color.White)
+                        }
+                    }
                     if (meId != null && playlistDetails?.owner?.id == meId) {
                         IconButton(onClick = { showEditDialog = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit playlist", tint = Color.White)
@@ -580,6 +588,27 @@ fun PlaylistScreen(
             tracks = tracks,
             onDismiss = { showEntityMenu = false },
             onGoToArtist = onArtistClick
+        )
+    }
+
+    if (showDeleteLocalDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteLocalDialog = false },
+            title = { Text(stringResource(R.string.local_playlist_delete), color = Color.White) },
+            text = { Text(stringResource(R.string.local_playlist_delete_msg), color = Color.LightGray) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteLocalDialog = false
+                    spotifyRepo.deleteLocalPlaylist(playlistId)
+                    android.widget.Toast.makeText(context, R.string.local_playlist_deleted, android.widget.Toast.LENGTH_SHORT).show()
+                    onBackClick()
+                }) { Text(stringResource(R.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteLocalDialog = false }) {
+                    Text(stringResource(android.R.string.cancel), color = Color.Gray)
+                }
+            }
         )
     }
 

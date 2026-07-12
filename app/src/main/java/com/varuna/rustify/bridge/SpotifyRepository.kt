@@ -571,6 +571,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
             trackIds = pl.trackIds + trackId,
             updatedAt = System.currentTimeMillis()
         )
+        localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
     }
 
@@ -581,6 +582,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
             trackIds = pl.trackIds - trackId,
             updatedAt = System.currentTimeMillis()
         )
+        localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
     }
 

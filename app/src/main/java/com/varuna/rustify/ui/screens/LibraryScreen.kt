@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,6 +39,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -65,6 +68,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -77,10 +81,12 @@ import com.varuna.rustify.bridge.YtMusicRepository
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
 import kotlinx.coroutines.launch
+import com.varuna.rustify.bridge.LocalPlaylist
 
 enum class LibraryTab {
     PLAYLISTS,
@@ -832,6 +838,8 @@ fun LibraryLocalMusic(
                 }
                 var showCreateDialog by remember { mutableStateOf(false) }
                 var newPlaylistName by remember { mutableStateOf("") }
+                var pendingDelete by remember { mutableStateOf<LocalPlaylist?>(null) }
+                val deletedMsg = stringResource(R.string.local_playlist_deleted)
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
@@ -857,15 +865,17 @@ fun LibraryLocalMusic(
                         }
                         items(playlists.size, key = { playlists[it].id }) { i ->
                             val pl = playlists[i]
-                            SearchResultRow(
-                                title = pl.name,
-                                subtitle = "${pl.trackIds.size} tracks",
-                                imageUrl = null,
+                            LocalPlaylistRow(
+                                playlist = pl,
+                                resolvedTracks = remember(pl.id, pl.trackIds.size) {
+                                    spotifyRepo.localPlaylistTracks(pl.id)
+                                },
                                 onClick = {
                                     val resolved = spotifyRepo.localPlaylistTracks(pl.id)
                                     SpotifyRepository.localPlaylistTracksCache[pl.id] = resolved
                                     onPlaylistClick(pl.id, pl.name, emptyList())
-                                }
+                                },
+                                onDelete = { pendingDelete = pl }
                             )
                         }
                     }
@@ -903,6 +913,26 @@ fun LibraryLocalMusic(
                         },
                         dismissButton = {
                             TextButton(onClick = { showCreateDialog = false; newPlaylistName = "" }) {
+                                Text(stringResource(android.R.string.cancel))
+                            }
+                        }
+                    )
+                }
+
+                pendingDelete?.let { pl ->
+                    AlertDialog(
+                        onDismissRequest = { pendingDelete = null },
+                        title = { Text(stringResource(R.string.local_playlist_delete)) },
+                        text = { Text(stringResource(R.string.local_playlist_delete_msg)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                spotifyRepo.deleteLocalPlaylist(pl.id)
+                                android.widget.Toast.makeText(context, deletedMsg, android.widget.Toast.LENGTH_SHORT).show()
+                                pendingDelete = null
+                            }) { Text(stringResource(R.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingDelete = null }) {
                                 Text(stringResource(android.R.string.cancel))
                             }
                         }
@@ -1200,6 +1230,106 @@ fun VerticalScrollbarWithTooltip(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+    }
+}
+
+/**
+ * E30 — Row de playlist local con grid 2x2 de covers (deduplicados por álbum)
+ * + botón de eliminar. Reemplaza a SearchResultRow que pasaba imageUrl=null (sin carátula).
+ */
+@Composable
+private fun LocalPlaylistRow(
+    playlist: LocalPlaylist,
+    resolvedTracks: List<FullTrack>,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LocalPlaylistCoverGrid(tracks = resolvedTracks)
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${playlist.trackIds.size} ${stringResource(R.string.local_group_tracks)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.LightGray,
+                maxLines = 1
+            )
+        }
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = stringResource(R.string.local_playlist_delete),
+                tint = Color.LightGray
+            )
+        }
+    }
+}
+
+/** Grid 2x2 (hasta 4 covers) deduplicados por álbum para evitar caratulas idénticas. */
+@Composable
+private fun LocalPlaylistCoverGrid(tracks: List<FullTrack>) {
+    val covers = remember(tracks) {
+        tracks.asSequence()
+            .mapNotNull { t ->
+                val imgUrl = t.album?.images?.firstOrNull()?.url?.takeIf { it.isNotBlank() }
+                    ?: t.externalUri?.takeIf { it.isNotBlank() }
+                val key = t.album?.name?.takeIf { it.isNotBlank() } ?: imgUrl ?: t.id
+                if (imgUrl != null) key to imgUrl else null
+            }
+            .distinctBy { it.first }
+            .take(4)
+            .map { it.second }
+            .toList()
+    }
+    Surface(
+        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)),
+        color = Color.DarkGray
+    ) {
+        when (covers.size) {
+            0 -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("♪", color = Color.White, fontSize = 22.sp)
+            }
+            1 -> AsyncImage(
+                model = covers[0],
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            else -> Column(Modifier.fillMaxSize()) {
+                val rows = covers.chunked(2)
+                rows.forEach { rowItems ->
+                    Row(Modifier.fillMaxWidth().weight(1f)) {
+                        rowItems.forEach { url ->
+                            AsyncImage(
+                                model = url,
+                                contentDescription = null,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        if (rowItems.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }

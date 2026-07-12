@@ -676,6 +676,9 @@ fun EngineTester(
                             },
                             onNewReleasesClick = {
                                 navigationStack.add(Screen.NewReleases)
+                            },
+                            onMetricsClick = {
+                                navigationStack.add(Screen.Metrics)
                             }
                         )
                     }
