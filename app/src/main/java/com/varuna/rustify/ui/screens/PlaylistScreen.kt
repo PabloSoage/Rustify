@@ -112,12 +112,21 @@ fun PlaylistScreen(
         isLoading = true
         errorMessage = null
         try {
-            playlistDetails = spotifyRepo.getPlaylist(playlistId)
-            val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-            tracks = response.items
-            hasMore = response.hasMore
-            offset = tracks.size
-
+            if (playlistId.startsWith("localpl:")) {
+                // E30: playlist puramente local — resolve ids "local:" contra localTracks.
+                val resolved = SpotifyRepository.localPlaylistTracksCache[playlistId]
+                    ?: spotifyRepo.localPlaylistTracks(playlistId).also {
+                        SpotifyRepository.localPlaylistTracksCache[playlistId] = it
+                    }
+                tracks = resolved
+                hasMore = false
+            } else {
+                playlistDetails = spotifyRepo.getPlaylist(playlistId)
+                val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
+                tracks = response.items
+                hasMore = response.hasMore
+                offset = tracks.size
+            }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Failed to load details"
         } finally {
@@ -185,11 +194,16 @@ fun PlaylistScreen(
                                 isLoading = true
                                 errorMessage = null
                                 try {
-                                    playlistDetails = spotifyRepo.getPlaylist(playlistId)
-                                    val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-                                    tracks = response.items
-                                    hasMore = response.hasMore
-                                    offset = tracks.size
+                                    if (playlistId.startsWith("localpl:")) {
+                                        tracks = spotifyRepo.localPlaylistTracks(playlistId)
+                                        hasMore = false
+                                    } else {
+                                        playlistDetails = spotifyRepo.getPlaylist(playlistId)
+                                        val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
+                                        tracks = response.items
+                                        hasMore = response.hasMore
+                                        offset = tracks.size
+                                    }
                                 } catch (e: Exception) {
                                     errorMessage = e.message
                                 } finally {
@@ -599,12 +613,18 @@ fun PlaylistScreen(
                 val trackToRemove = selectedTrackForMenu!!
                 coroutineScope.launch {
                     trackToRemove.id?.let { tid ->
-                        val res = spotifyRepo.removeTracksFromPlaylist(playlistId, listOf(tid))
-                        if (res.success) {
-                            val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-                            tracks = response.items
-                            offset = tracks.size
-                            hasMore = response.hasMore
+                        if (playlistId.startsWith("localpl:")) {
+                            spotifyRepo.removeFromLocalPlaylist(playlistId, tid)
+                            tracks = spotifyRepo.localPlaylistTracks(playlistId)
+                            hasMore = false
+                        } else {
+                            val res = spotifyRepo.removeTracksFromPlaylist(playlistId, listOf(tid))
+                            if (res.success) {
+                                val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
+                                tracks = response.items
+                                offset = tracks.size
+                                hasMore = response.hasMore
+                            }
                         }
                     }
                 }

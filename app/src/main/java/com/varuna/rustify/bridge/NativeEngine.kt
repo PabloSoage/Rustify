@@ -370,6 +370,14 @@ object NativeEngine {
     /**
      * Triggers the background scrape/warmup of Spotify GraphQL hashes in Rust.
      */
-    external fun warmupSpotifyHashesNative()
+    external fun warmupSpotifyHashesNative()    // =====================================================================
+    // YOUTUBE MUSIC (E40)
+    // =====================================================================
+
+    external fun searchYtMusicNative(query: String): String
+    external fun getYtmAlbumNative(browseId: String): String
+    external fun getYtmArtistNative(channelId: String): String
+    external fun getYtmPlaylistNative(playlistId: String): String
+    external fun getYtmRadioNative(videoId: String): String
 
 }

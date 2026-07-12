@@ -418,6 +418,45 @@ data class SimplePlaylist(
     }
 }
 
+/**
+ * E30 — Playlist puramente local. Sólo guarda ids "local:..." (referencias a tracks
+ * vivos en [com.varuna.rustify.bridge.SpotifyRepository.localTracks]); los FullTrack
+ * completos se resuelven por lookup al abrir, para mantener el fichero pequeño y sin
+ * metadata duplicada/obsoleta. id con prefijo "localpl:" para no colisionar con Spotify.
+ */
+data class LocalPlaylist(
+    val id: String,
+    val name: String,
+    val trackIds: List<String>,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("name", name)
+        put("trackIds", JSONArray().apply { trackIds.forEach { put(it) } })
+        put("createdAt", createdAt)
+        put("updatedAt", updatedAt)
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject): LocalPlaylist = LocalPlaylist(
+            id = o.optString("id", ""),
+            name = o.optString("name", ""),
+            trackIds = o.optJSONArray("trackIds")?.let { a ->
+                (0 until a.length()).map { a.getString(it) }
+            } ?: emptyList(),
+            createdAt = o.optLong("createdAt", 0L),
+            updatedAt = o.optLong("updatedAt", 0L)
+        )
+
+        fun listFromJsonArray(array: JSONArray?): List<LocalPlaylist> {
+            if (array == null) return emptyList()
+            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
+        }
+    }
+}
+
 data class FullPlaylist(
     val id: String,
     val name: String,
@@ -602,3 +641,136 @@ fun FullTrack.effectiveCoverUrl(): String? =
     album?.images?.maxByOrNull { it.width ?: 0 }?.url
         ?: externalUri.takeIf { it.isNotBlank() }
 
+// =============================================================================
+
+
+// =============================================================================
+// E40 — YOUTUBE MUSIC MODELS (serialize via JNI from RustyPipe)
+// =============================================================================
+
+data class YtmArtistRef(
+    val id: String, val name: String
+) {
+    fun toJson(): JSONObject = JSONObject().apply { put("id", id); put("name", name) }
+    companion object {
+        fun fromJson(o: JSONObject) = YtmArtistRef(o.optString("id",""), o.optString("name",""))
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun toJsonArray(list: List<YtmArtistRef>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+    }
+}
+
+data class YtmTrack(
+    val videoId: String, val title: String, val artists: List<YtmArtistRef>,
+    val albumId: String?, val durationSec: Int, val thumbnailUrl: String, val isExplicit: Boolean = false
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("video_id", videoId); put("title", title)
+        put("artists", JSONArray().apply { artists.forEach { put(it.toJson()) } })
+        put("album_id", albumId ?: ""); put("duration_sec", durationSec)
+        put("thumbnail_url", thumbnailUrl); put("is_explicit", isExplicit)
+    }
+    fun toFullTrack(): FullTrack = FullTrack(
+        id = "ytm:$videoId", name = title, externalUri = "https://music.youtube.com/watch?v=$videoId",
+        explicit = isExplicit, durationMs = durationSec * 1000, isrc = "",
+        artists = artists.map { SimpleArtist(it.id, it.name, "", null) }, album = null
+    )
+    companion object {
+        fun fromJson(o: JSONObject) = YtmTrack(
+            o.optString("video_id",""), o.optString("title",""),
+            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
+            o.optString("album_id","").ifBlank { null }, o.optInt("duration_sec"),
+            o.optString("thumbnail_url",""), o.optBoolean("is_explicit")
+        )
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun toJsonArray(list: List<YtmTrack>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+    }
+}
+
+data class YtmAlbum(
+    val browseId: String, val title: String, val artists: List<YtmArtistRef>,
+    val year: Int?, val thumbnailUrl: String, val tracks: List<YtmTrack>
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("browse_id", browseId); put("title", title)
+        put("artists", JSONArray().apply { artists.forEach { put(it.toJson()) } })
+        put("year", year?:0); put("thumbnail_url", thumbnailUrl)
+        put("tracks", YtmTrack.toJsonArray(tracks))
+    }
+    companion object {
+        fun fromJson(o: JSONObject) = YtmAlbum(
+            o.optString("browse_id",""), o.optString("title",""),
+            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
+            o.optInt("year").takeIf { it > 0 }, o.optString("thumbnail_url",""),
+            YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
+        )
+    }
+}
+
+data class YtmAlbumSlim(
+    val browseId: String, val title: String, val year: Int?, val thumbnailUrl: String
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("browse_id", browseId); put("title", title); put("year", year?:0); put("thumbnail_url", thumbnailUrl)
+    }
+    companion object {
+        fun fromJson(o: JSONObject) = YtmAlbumSlim(o.optString("browse_id",""), o.optString("title",""), o.optInt("year").takeIf { it > 0 }, o.optString("thumbnail_url",""))
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun toJsonArray(list: List<YtmAlbumSlim>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+    }
+}
+
+data class YtmArtist(
+    val channelId: String, val name: String, val thumbnailUrl: String,
+    val topTracks: List<YtmTrack>, val albums: List<YtmAlbumSlim>
+) {
+    companion object {
+        fun fromJson(o: JSONObject) = YtmArtist(
+            o.optString("channel_id",""), o.optString("name",""), o.optString("thumbnail_url",""),
+            YtmTrack.listFromJsonArray(o.optJSONArray("top_tracks")),
+            YtmAlbumSlim.listFromJsonArray(o.optJSONArray("albums"))
+        )
+    }
+}
+
+data class YtmPlaylist(
+    val playlistId: String, val title: String, val author: String?,
+    val thumbnailUrl: String, val tracks: List<YtmTrack>
+) {
+    companion object {
+        fun fromJson(o: JSONObject) = YtmPlaylist(
+            o.optString("playlist_id",""), o.optString("title",""),
+            o.optString("author","").ifBlank { null }, o.optString("thumbnail_url",""),
+            YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
+        )
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList<YtmPlaylist>() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+    }
+}
+
+data class YtmLocalPlaylist(
+    val localId: String, val name: String, val items: List<YtmTrack>,
+    val createdAt: Long, val updatedAt: Long
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("localId", localId); put("name", name)
+        put("items", YtmTrack.toJsonArray(items)); put("createdAt", createdAt); put("updatedAt", updatedAt)
+    }
+    companion object {
+        fun fromJson(o: JSONObject) = YtmLocalPlaylist(o.optString("localId",""), o.optString("name",""), YtmTrack.listFromJsonArray(o.optJSONArray("items")), o.optLong("createdAt"), o.optLong("updatedAt"))
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun toJsonArray(list: List<YtmLocalPlaylist>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+    }
+}
+
+data class YtmSearchResults(
+    val tracks: List<YtmTrack>, val albums: List<YtmAlbumSlim>,
+    val artists: List<YtmArtistRef>, val playlists: List<YtmPlaylist>
+) {
+    companion object {
+        fun fromJson(o: JSONObject) = YtmSearchResults(
+            YtmTrack.listFromJsonArray(o.optJSONArray("tracks")),
+            YtmAlbumSlim.listFromJsonArray(o.optJSONArray("albums")),
+            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
+            YtmPlaylist.listFromJsonArray(o.optJSONArray("playlists"))
+        )
+    }
+}

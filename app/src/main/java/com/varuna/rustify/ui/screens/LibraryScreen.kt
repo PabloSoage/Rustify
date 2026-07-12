@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,15 +26,18 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Tab
@@ -68,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.YtMusicRepository
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -81,7 +87,8 @@ enum class LibraryTab {
     ALBUMS,
     ARTISTS,
     TRACKS,
-    LOCAL
+    LOCAL,
+    YTMUSIC
 }
 
 
@@ -108,9 +115,16 @@ fun LibraryScreen(
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
     val enableLocalMusic = prefs.getBoolean("enable_local_music", true)
+    val enableYtmMusic = prefs.getBoolean("enable_ytm_music", true)
     
-    val tabs = remember(enableLocalMusic) {
-        if (enableLocalMusic) LibraryTab.entries else LibraryTab.entries.filter { it != LibraryTab.LOCAL }
+    val tabs = remember(enableLocalMusic, enableYtmMusic) {
+        LibraryTab.entries.filter { tab ->
+            when (tab) {
+                LibraryTab.LOCAL -> enableLocalMusic
+                LibraryTab.YTMUSIC -> enableYtmMusic
+                else -> true
+            }
+        }
     }
 
     // -- Search bar collapsible state --
@@ -192,11 +206,20 @@ fun LibraryScreen(
                     onOpenSettings = onOpenSettings,
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
+                    onPlaylistClick = onPlaylistClick,
                     currentTrackId = currentTrackId,
                     searchQuery = globalSearchQuery,
                     selectedGroup = selectedGroup,
                     onGroupSelected = onGroupSelected
                 )
+                LibraryTab.YTMUSIC -> {
+                    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
+                    YtMusicScreen(
+                        repo = ytmRepo,
+                        onTrackClick = onTrackClick,
+                        onBack = { /* stays in tab, no-op */ }
+                    )
+                }
             }
         }
 
@@ -276,6 +299,7 @@ fun LibraryScreen(
                         LibraryTab.ARTISTS -> stringResource(R.string.library_tab_artists)
                         LibraryTab.LOCAL -> stringResource(R.string.library_tab_local_music)
                         LibraryTab.TRACKS -> stringResource(R.string.library_tab_liked_tracks)
+                        LibraryTab.YTMUSIC -> "YouTube Music"
                     }
                     Tab(
                         selected = selectedTab == tab,
@@ -604,6 +628,7 @@ fun LibraryLocalMusic(
     onOpenSettings: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     currentTrackId: String? = null,
     searchQuery: String = "",
     selectedGroup: String,
@@ -641,7 +666,9 @@ fun LibraryLocalMusic(
     val groupOptions = listOf(
         stringResource(R.string.local_group_tracks) to "Tracks",
         stringResource(R.string.local_group_albums) to "Albums",
-        stringResource(R.string.local_group_artists) to "Artists"
+        stringResource(R.string.local_group_artists) to "Artists",
+        stringResource(R.string.local_group_playlists) to "Playlists",
+        stringResource(R.string.local_group_favorites) to "Favorites"
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -706,9 +733,9 @@ fun LibraryLocalMusic(
                                 track = track,
                                 fallbackCoverUrl = cover,
                                 onClick = { onTrackClick(filteredTracks, index) },
-                                isLiked = false,
+                                isLiked = track.id?.let { spotifyRepo.isLocalFavorite(it) } ?: false,
                                 isCurrentTrack = track.id == currentTrackId,
-                                onLikeToggle = null,
+                                onLikeToggle = { track.id?.let { spotifyRepo.toggleLocalFavorite(it) } },
                                 onMoreClick = { selectedTrackForMenu = track }
                             )
                         }
@@ -787,6 +814,137 @@ fun LibraryLocalMusic(
                     VerticalScrollbarWithTooltip(
                         lazyListState = artistsLazyListState,
                         itemsCount = artistGroups.size,
+                        getDateForItem = { "" },
+                        onDragStateChanged = { },
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(top = 8.dp, bottom = bottomPadding)
+                    )
+                }
+            }
+
+            // E30 — Playlists locales (crear/listar/navegar al detalle).
+            "Playlists" -> {
+                val playlistsLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                // Sin remember: lee el SnapshotStateList en composición → recompone al añadir/borrar.
+                val playlists = spotifyRepo.localPlaylists.filter {
+                    searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
+                }
+                var showCreateDialog by remember { mutableStateOf(false) }
+                var newPlaylistName by remember { mutableStateOf("") }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = playlistsLazyListState,
+                        contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item(key = "create_local_playlist") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showCreateDialog = true }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1DB954))
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    stringResource(R.string.local_playlist_create),
+                                    color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        items(playlists.size, key = { playlists[it].id }) { i ->
+                            val pl = playlists[i]
+                            SearchResultRow(
+                                title = pl.name,
+                                subtitle = "${pl.trackIds.size} tracks",
+                                imageUrl = null,
+                                onClick = {
+                                    val resolved = spotifyRepo.localPlaylistTracks(pl.id)
+                                    SpotifyRepository.localPlaylistTracksCache[pl.id] = resolved
+                                    onPlaylistClick(pl.id, pl.name, emptyList())
+                                }
+                            )
+                        }
+                    }
+                    VerticalScrollbarWithTooltip(
+                        lazyListState = playlistsLazyListState,
+                        itemsCount = playlists.size + 1,
+                        getDateForItem = { "" },
+                        onDragStateChanged = { },
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(top = 8.dp, bottom = bottomPadding)
+                    )
+                }
+
+                if (showCreateDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCreateDialog = false; newPlaylistName = "" },
+                        title = { Text(stringResource(R.string.local_playlist_create)) },
+                        text = {
+                            OutlinedTextField(
+                                value = newPlaylistName,
+                                onValueChange = { newPlaylistName = it },
+                                singleLine = true,
+                                placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (newPlaylistName.isNotBlank()) {
+                                    spotifyRepo.createLocalPlaylist(newPlaylistName.trim())
+                                }
+                                showCreateDialog = false
+                                newPlaylistName = ""
+                            }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showCreateDialog = false; newPlaylistName = "" }) {
+                                Text(stringResource(android.R.string.cancel))
+                            }
+                        }
+                    )
+                }
+            }
+
+            // E30 — Favoritos locales (tracks "local:" marcados como favoritos).
+            "Favorites" -> {
+                val favsLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                // Sin remember: localFavoriteTracks() lee localTracks + localFavoriteIds (observables).
+                val favs = spotifyRepo.localFavoriteTracks().filter {
+                    searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = favsLazyListState,
+                        contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(favs, key = { index, t -> t.id ?: "fav_${index}_${t.name.hashCode()}" }) { index, track ->
+                            val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                            TrackRowItem(
+                                index = index + 1,
+                                track = track,
+                                fallbackCoverUrl = cover,
+                                onClick = { onTrackClick(favs, index) },
+                                isLiked = true,
+                                isCurrentTrack = track.id == currentTrackId,
+                                onLikeToggle = { track.id?.let { spotifyRepo.toggleLocalFavorite(it) } },
+                                onMoreClick = { selectedTrackForMenu = track }
+                            )
+                        }
+                    }
+                    if (favs.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.local_favorites_empty), color = Color.Gray)
+                        }
+                    }
+                    VerticalScrollbarWithTooltip(
+                        lazyListState = favsLazyListState,
+                        itemsCount = favs.size,
                         getDateForItem = { "" },
                         onDragStateChanged = { },
                         modifier = Modifier

@@ -5,8 +5,6 @@ package com.varuna.rustify.bridge
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import com.yausername.youtubedl_android.YoutubeDL
-import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 enum class DownloadStatus {
     QUEUED, RESOLVING, DOWNLOADING, COMPLETE, ERROR
@@ -98,103 +95,84 @@ object DownloadManager {
         downloadUriStr: String
     ) {
         updateStatus(trackId, DownloadStatus.RESOLVING)
-        
+
         try {
-            var resolvedId: String? = null
+            // E60: la resolución + descarga vive ahora en la cadena de backends
+            // (AudioSourceRegistry.downloadChain). yt-dlp es el provider por defecto.
             try {
-                val artistsJson = "[" + trackArtist.split(",").joinToString(",") {
-                    "\"" + it.trim().replace("\"", "\\\"") + "\""
-                } + "]"
-                NativeEngine.registerTrackMetadataNative(trackId, trackName, artistsJson, 0, "")
-                resolvedId = NativeEngine.resolveYouTubeIdNative(trackId, "")
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            if (resolvedId.isNullOrBlank()) {
-                updateStatus(trackId, DownloadStatus.ERROR, error = context.getString(com.varuna.rustify.R.string.track_menu_url_not_found))
-                return
-            }
+                initDeferred.await()
+            } catch (_: Exception) {}
+
+            val safeName = "${trackArtist.replace("/", "_")} - ${trackName.replace("/", "_")}"
+            val tempDir = java.io.File(context.cacheDir, "downloads")
+            tempDir.mkdirs()
+            val tempFile = java.io.File(tempDir, "$safeName.mp3")
 
             updateStatus(trackId, DownloadStatus.DOWNLOADING)
 
-            val safeName = "${trackArtist.replace("/", "_")} - ${trackName.replace("/", "_")}"
-            
-            withContext(Dispatchers.IO) {
-                // Wait for yt-dlp update
-                try {
-                    initDeferred.await()
-                } catch (e: Exception) {}
+            // Reconstruye un FullTrack para el contrato del provider a partir de los
+            // primitivos que maneja DownloadManager (artist como string separado por comas).
+            val track = FullTrack(
+                id = trackId, name = trackName, externalUri = "", explicit = false,
+                durationMs = 0, isrc = "",
+                artists = if (trackArtist.isBlank()) emptyList()
+                          else trackArtist.split(",").map { SimpleArtist("", it.trim(), "", null) },
+                album = null
+            )
 
-                val tempDir = java.io.File(context.cacheDir, "downloads")
-                tempDir.mkdirs()
-                val tempFile = java.io.File(tempDir, "$safeName.mp3")
-                if (tempFile.exists()) tempFile.delete()
-
-                try {
-                    val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedId")
-                    request.addOption("-f", "bestaudio")
-                    request.addOption("-x")
-                    request.addOption("--audio-format", "mp3")
-                    request.addOption("--audio-quality", "320K")
-                    request.addOption("--embed-thumbnail")
-                    request.addOption("--add-metadata")
-                    request.addOption("-o", tempFile.absolutePath)
-                    request.addOption("--no-check-certificate")
-                    request.addOption("--no-warnings")
-
-                    YoutubeDL.getInstance().execute(request, trackId) { progress, etaInSeconds, line ->
-                        if (scope.isActive) {
-                            scope.launch {
-                                updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress.toInt())
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("DownloadManager", "FFmpeg mp3 extraction failed, falling back to m4a", e)
-                    if (tempFile.exists()) tempFile.delete()
-                    
-                    val fallbackRequest = YoutubeDLRequest("https://music.youtube.com/watch?v=$resolvedId")
-                    fallbackRequest.addOption("-f", "bestaudio[ext=m4a]/bestaudio")
-                    fallbackRequest.addOption("-o", tempFile.absolutePath)
-                    fallbackRequest.addOption("--no-check-certificate")
-                    fallbackRequest.addOption("--no-warnings")
-                    
-                    YoutubeDL.getInstance().execute(fallbackRequest, trackId) { progress, etaInSeconds, line ->
-                        if (scope.isActive) {
-                            scope.launch {
-                                updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress.toInt())
-                            }
+            val res = com.varuna.rustify.audio.AudioSourceRegistry.downloadChain(context)
+                .downloadTo(track, tempFile) { progress ->
+                    if (scope.isActive) {
+                        scope.launch {
+                            updateStatus(trackId, DownloadStatus.DOWNLOADING, progress = progress)
                         }
                     }
                 }
 
-                if (tempFile.exists()) {
-                    val treeUri = downloadUriStr.toUri()
-                    val docFile = DocumentFile.fromTreeUri(context, treeUri)
-                    val newFile = docFile?.createFile("audio/mpeg", "$safeName.mp3")
-                    if (newFile != null) {
-                        context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
-                            java.io.FileInputStream(tempFile).use { inputStream ->
-                                inputStream.copyTo(outputStream)
-                            }
+            if (res.isSuccess) {
+                val f = res.getOrNull()!!.second
+                if (!f.exists()) throw Exception("Temporary file not found after download")
+
+                // Copia el temporal a un árbol SAF (sin cambios respecto al flujo previo).
+                val treeUri = downloadUriStr.toUri()
+                val docFile = DocumentFile.fromTreeUri(context, treeUri)
+                val newFile = docFile?.createFile("audio/mpeg", "$safeName.mp3")
+                if (newFile != null) {
+                    context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
+                        java.io.FileInputStream(f).use { inputStream ->
+                            inputStream.copyTo(outputStream)
                         }
-                    } else {
-                        throw Exception("Failed to create SAF output file")
                     }
-                    tempFile.delete()
                 } else {
-                    throw Exception("Temporary file not found after download")
+                    throw Exception("Failed to create SAF output file")
                 }
-            }
+                f.delete()
 
-            if (currentCoroutineContext().isActive) {
-                updateStatus(trackId, DownloadStatus.COMPLETE, progress = 100)
-                val toastMsg = context.getString(com.varuna.rustify.R.string.track_menu_downloaded_toast, trackName)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
+                if (currentCoroutineContext().isActive) {
+                    updateStatus(trackId, DownloadStatus.COMPLETE, progress = 100)
+                    val toastMsg = context.getString(com.varuna.rustify.R.string.track_menu_downloaded_toast, trackName)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    updateStatus(trackId, DownloadStatus.ERROR, error = context.getString(com.varuna.rustify.R.string.track_menu_download_error))
                 }
             } else {
-                updateStatus(trackId, DownloadStatus.ERROR, error = context.getString(com.varuna.rustify.R.string.track_menu_download_error))
+                val err = res.exceptionOrNull()
+                err?.printStackTrace()
+                // Distinción de mensajes (paridad con el flujo previo):
+                //  - "resolver returned empty YouTube id" → URL no encontrada
+                //  - resto de fallos de cadena → error genérico de descarga
+                val isResolveFail = err is com.varuna.rustify.audio.AudioSourceChainException &&
+                    err.errors.any { it.message?.contains("resolver returned empty") == true }
+                val msg = when {
+                    isResolveFail -> context.getString(com.varuna.rustify.R.string.track_menu_url_not_found)
+                    err is com.varuna.rustify.audio.AudioSourceChainException ->
+                        err.errors.firstOrNull()?.localizedMessage
+                            ?: context.getString(com.varuna.rustify.R.string.track_menu_download_error)
+                    else -> err?.localizedMessage ?: context.getString(com.varuna.rustify.R.string.track_menu_download_error)
+                }
+                updateStatus(trackId, DownloadStatus.ERROR, error = msg)
             }
 
         } catch (e: Exception) {

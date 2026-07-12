@@ -15,6 +15,16 @@
     <string name="settings_ytdlp_updated">yt-dlp updated</string>
     <string name="settings_nightly_version">Nightly Version</string>
     <string name="settings_nightly_desc">Daily build with the latest anti-block fixes. May be unstable.</string>
+
+    <!-- E60 — Audio backends -->
+    <string name="settings_audio_backends">Audio Backends</string>
+    <string name="settings_backends_stream_order">Streaming order</string>
+    <string name="settings_backends_download_order">Download order</string>
+    <string name="settings_backends_drag_hint">Long-press and drag to reorder. Toggle to enable a backend.</string>
+    <string name="backend_ytdlp">yt-dlp (YouTube)</string>
+    <string name="backend_ytdlp_desc">Direct extraction via yt-dlp</string>
+    <string name="backend_stream">stream</string>
+    <string name="backend_download">download</string>
     
     <string name="settings_storage">Storage</string>
     <string name="settings_clear_audio_cache">Clear Audio Cache</string>
@@ -129,6 +139,18 @@
     <string name="local_group_tracks">Tracks</string>
     <string name="local_group_albums">Albums</string>
     <string name="local_group_artists">Artists</string>
+    <string name="local_group_playlists">Playlists</string>
+    <string name="local_group_favorites">Favorites</string>
+    <string name="local_playlist_create">New playlist</string>
+    <string name="local_playlist_name_hint">Playlist name</string>
+    <string name="local_playlist_create_confirm">Create</string>
+    <string name="local_favorites_empty">No local favorites yet</string>
+    <string name="track_menu_favorite">Favorite</string>
+    <string name="track_menu_unfavorite">Unfavorite</string>
+    <string name="local_playlist_selector_title">Add to local playlist</string>
+    <string name="local_playlist_added">Added to local playlist</string>
+    <string name="settings_local_data">Local data (playlists + favorites)</string>
+    <string name="settings_export_local_empty">No local data to export</string>
     
     <!-- General -->
     <string name="general_error">Error</string>
@@ -139,4 +161,38 @@
     <string name="queue_added">Added to queue</string>
     <string name="lyrics_not_found">Lyrics not found</string>
 
+    <!-- E70 — Listening Metrics -->
+    <string name="metrics_title">Listening Metrics</string>
+    <string name="metrics_total_plays">Total plays</string>
+    <string name="metrics_total_minutes">Total minutes</string>
+    <string name="metrics_top_tracks">Top Tracks</string>
+    <string name="metrics_top_artists">Top Artists</string>
+    <string name="metrics_top_albums">Top Albums</string>
+    <string name="metrics_range_today">Today</string>
+    <string name="metrics_range_week">This Week</string>
+    <string name="metrics_range_month">This Month</string>
+    <string name="metrics_range_all">All Time</string>
+    <string name="metrics_empty">No listening data yet</string>
+
+    <!-- E40 — YouTube Music -->
+    <string name="ytm_tab_all">All</string>
+    <string name="ytm_tab_favorites">Favorites</string>
+    <string name="ytm_tab_playlists">Playlists</string>
+    <string name="ytm_tab_albums">Albums</string>
+    <string name="ytm_tab_artists">Artists</string>
+    <string name="ytm_search_placeholder">Search YouTube Music</string>
+    <string name="ytm_search_empty">Search for tracks, albums, artists or playlists</string>
+    <string name="ytm_no_results">No results found</string>
+    <string name="ytm_no_favorites">No favorites yet. Search and tap the heart icon.</string>
+    <string name="ytm_play_all">Play all</string>
+    <string name="ytm_save">Save</string>
+    <string name="ytm_unsave">Unsave</string>
+    <string name="ytm_album_detail">Album</string>
+    <string name="ytm_artist_detail">Artist</string>
+    <string name="enable_ytm_music">YouTube Music</string>
+    <string name="enable_ytm_music_desc">Shows the YouTube Music tab in your library</string>
+    <string name="settings_export_ytm">Export YTM Library</string>
+    <string name="settings_import_ytm">Import YTM Library</string>
+    <string name="settings_ytm_export_success">YTM library exported</string>
+    <string name="settings_ytm_export_empty">No YTM library to export</string>
 </resources>

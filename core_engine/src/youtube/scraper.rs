@@ -18,9 +18,15 @@ use std::sync::OnceLock;
 /// This eliminates repeated disk cache reads, version fetches, and TLS setup overhead on every track resolution.
 static RUSTYPIPE_CLIENT: OnceLock<rustypipe::client::RustyPipe> = OnceLock::new();
 
+/// Public no-arg getter for YTM modules. Uses the default Android cache directory.
+pub fn get_client() -> rustypipe::client::RustyPipe {
+    get_client_internal("/data/data/com.varuna.rustify/cache")
+        .expect("Failed to build RustyPipe client")
+}
+
 /// Get or initialise the global RustyPipe client.
 /// On Android the cache directory is set by the JNI layer via `init_cache_dir`.
-fn get_client(cache_dir: &str) -> Result<rustypipe::client::RustyPipe, Box<dyn std::error::Error>> {
+fn get_client_internal(cache_dir: &str) -> Result<rustypipe::client::RustyPipe, Box<dyn std::error::Error>> {
     if let Some(rp) = RUSTYPIPE_CLIENT.get() {
         return Ok(rp.clone());
     }
@@ -65,7 +71,7 @@ impl YouTubeScraper {
             }]);
         }
 
-        let rp = get_client(&self.cache_dir)?;
+        let rp = get_client_internal(&self.cache_dir)?;
 
         let mut all_tracks = Vec::new();
 
@@ -121,7 +127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_yt_search() {
-        let rp = get_client("/tmp/rustify_test_cache").unwrap();
+        let rp = get_client_internal("/tmp/rustify_test_cache").unwrap();
         let query = "OST Song of the welkin moon: moonlit ballad of the night full ver. | gesnhin impact sub esp. de cattpuriasong";
         println!("Searching videos for: {}", query);
         match rp.query().music_search_videos(query).await {

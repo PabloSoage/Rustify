@@ -59,8 +59,10 @@ class SpotifyRepository(context: Context) {
 
         // Local music bridge: temporary storage for local album/artist tracks
         // Used to pass local track data to AlbumScreen/ArtistScreen without API calls
-        val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
-        val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
+val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
+    val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
+    // E30: caché de tracks resueltos para una playlist local (patrón de localAlbumTracks).
+    val localPlaylistTracksCache = mutableMapOf<String, List<FullTrack>>()
 
         /**
          * Normalize a name for comparison: trim, lowercase, strip featuring tags.
@@ -159,6 +161,10 @@ class SpotifyRepository(context: Context) {
     var isScanningLocalTracks by mutableStateOf(false)
         private set
 
+    // E30 — Playlists y favoritos locales (JSON en filesDir, ids "local:...").
+    val localPlaylists = androidx.compose.runtime.mutableStateListOf<LocalPlaylist>()
+    private val localFavoriteIds = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+
     val savedPlaylists = androidx.compose.runtime.mutableStateListOf<SimplePlaylist>()
     var isSyncingPlaylists by mutableStateOf(false)
         private set
@@ -177,6 +183,69 @@ class SpotifyRepository(context: Context) {
 
     private fun getLikedTracksCacheFile(): java.io.File {
         return java.io.File(appCtx.filesDir, "spotify_liked_tracks_cache.json")
+    }
+
+    // E30 — ficheros de datos locales (playlists + favoritos).
+    private fun getLocalPlaylistsFile(): java.io.File =
+        java.io.File(appCtx.filesDir, "local_playlists.json")
+
+    private fun getLocalFavoritesFile(): java.io.File =
+        java.io.File(appCtx.filesDir, "local_favorites.json")
+
+    private fun loadLocalUserData() {
+        runCatching {
+            val f = getLocalPlaylistsFile()
+            if (f.exists()) {
+                val list = LocalPlaylist.listFromJsonArray(JSONArray(f.readText()))
+                repositoryScope.launch(Dispatchers.Main) {
+                    localPlaylists.clear()
+                    localPlaylists.addAll(list)
+                }
+            }
+        }
+        runCatching {
+            val f = getLocalFavoritesFile()
+            if (f.exists()) {
+                val arr = JSONArray(f.readText())
+                val ids = (0 until arr.length()).map { arr.getString(it) }
+                repositoryScope.launch(Dispatchers.Main) {
+                    ids.forEach { localFavoriteIds[it] = true }
+                }
+            }
+        }
+    }
+
+    /** E30 — recarga playlists + favoritos locales desde disco (tras un import). */
+    fun reloadLocalUserData() {
+        repositoryScope.launch(Dispatchers.IO) {
+            localPlaylists.clear()
+            localFavoriteIds.clear()
+            loadLocalUserData()
+        }
+    }
+
+    private fun saveLocalPlaylists() {
+        runCatching {
+            val arr = JSONArray()
+            // Copia snapshot (evita ConcurrentModification durante serialización).
+            val snapshot = localPlaylists.toList()
+            snapshot.forEach { arr.put(it.toJson()) }
+            atomicWrite(getLocalPlaylistsFile(), arr.toString())
+        }
+    }
+
+    private fun saveLocalFavorites() {
+        runCatching {
+            val arr = JSONArray()
+            localFavoriteIds.filterValues { it }.keys.forEach { arr.put(it) }
+            atomicWrite(getLocalFavoritesFile(), arr.toString())
+        }
+    }
+
+    private fun atomicWrite(dst: java.io.File, content: String) {
+        val tmp = java.io.File(dst.parentFile, dst.name + ".tmp")
+        tmp.writeText(content)
+        if (!tmp.renameTo(dst)) { dst.writeText(content); tmp.delete() }
     }
 
     private fun loadLikedTracksFromCache() {
@@ -464,6 +533,77 @@ class SpotifyRepository(context: Context) {
 
     fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
 
+    // -------------------------------------------------------------------
+    // E30 — API de playlists y favoritos locales (ids "local:...").
+    // -------------------------------------------------------------------
+
+    /** ¿Está este track local marcado como favorito? */
+    fun isLocalFavorite(id: String): Boolean = localFavoriteIds[id] == true
+
+    /** Marca/desmarca un track local como favorito. No-op si no es id "local:". */
+    fun toggleLocalFavorite(id: String) {
+        if (!id.startsWith("local:")) return
+        localFavoriteIds[id] = !(localFavoriteIds[id] == true)
+        saveLocalFavorites()
+    }
+
+    /** Tracks locales marcados como favoritos (vivos, con cover/duración). Ignora huérfanos. */
+    fun localFavoriteTracks(): List<FullTrack> =
+        localTracks.filter { it.id != null && localFavoriteIds[it.id] == true }
+
+    fun createLocalPlaylist(name: String): LocalPlaylist {
+        val pl = LocalPlaylist(
+            id = "localpl:${java.util.UUID.randomUUID()}",
+            name = name,
+            trackIds = emptyList()
+        )
+        localPlaylists.add(pl)
+        saveLocalPlaylists()
+        return pl
+    }
+
+    fun addToLocalPlaylist(playlistId: String, trackId: String) {
+        if (!trackId.startsWith("local:")) return
+        val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
+        val pl = localPlaylists[i]
+        if (trackId in pl.trackIds) return
+        localPlaylists[i] = pl.copy(
+            trackIds = pl.trackIds + trackId,
+            updatedAt = System.currentTimeMillis()
+        )
+        saveLocalPlaylists()
+    }
+
+    fun removeFromLocalPlaylist(playlistId: String, trackId: String) {
+        val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
+        val pl = localPlaylists[i]
+        localPlaylists[i] = pl.copy(
+            trackIds = pl.trackIds - trackId,
+            updatedAt = System.currentTimeMillis()
+        )
+        saveLocalPlaylists()
+    }
+
+    fun deleteLocalPlaylist(playlistId: String) {
+        localPlaylists.removeAll { it.id == playlistId }
+        localPlaylistTracksCache.remove(playlistId)
+        saveLocalPlaylists()
+    }
+
+    fun renameLocalPlaylist(playlistId: String, newName: String) {
+        val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
+        val pl = localPlaylists[i]
+        localPlaylists[i] = pl.copy(name = newName, updatedAt = System.currentTimeMillis())
+        saveLocalPlaylists()
+    }
+
+    /** Resuelve ids "local:" → FullTrack vivos (con cover/duración). Ignora huérfanos. */
+    fun localPlaylistTracks(playlistId: String): List<FullTrack> {
+        val byId = localTracks.associateBy { it.id }
+        return localPlaylists.firstOrNull { it.id == playlistId }
+            ?.trackIds?.mapNotNull { byId[it] } ?: emptyList()
+    }
+
     init {
         instance = this
 
@@ -478,7 +618,8 @@ class SpotifyRepository(context: Context) {
         repositoryScope.launch {
             withContext(Dispatchers.IO) {
                 loadLikedTracksFromCache()
-                loadLocalTracksFromCache()
+loadLocalTracksFromCache()
+                loadLocalUserData()   // E30: playlists + favoritos locales
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_playlists_cache.json"), savedPlaylists) { SimplePlaylist.fromJson(it) }
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_albums_cache.json"), savedAlbums) { FullAlbum.fromJson(it) }
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_followed_artists_cache.json"), followedArtists) { FullArtist.fromJson(it) }

@@ -15,6 +15,16 @@
     <string name="settings_ytdlp_updated">yt-dlp actualizado</string>
     <string name="settings_nightly_version">Versión Nightly</string>
     <string name="settings_nightly_desc">Versión diaria con las últimas correcciones antibloqueo. Puede ser inestable.</string>
+
+    <!-- E60 — Backends de audio -->
+    <string name="settings_audio_backends">Backends de Audio</string>
+    <string name="settings_backends_stream_order">Orden de streaming</string>
+    <string name="settings_backends_download_order">Orden de descarga</string>
+    <string name="settings_backends_drag_hint">Mantén pulsado y arrastra para reordenar. Activa cada backend con el interruptor.</string>
+    <string name="backend_ytdlp">yt-dlp (YouTube)</string>
+    <string name="backend_ytdlp_desc">Extracción directa con yt-dlp</string>
+    <string name="backend_stream">stream</string>
+    <string name="backend_download">descarga</string>
     
     <string name="settings_cache_storage">Caché y Almacenamiento</string>
     <string name="settings_storage">Almacenamiento</string>
@@ -130,11 +140,58 @@
     <string name="track_menu_go_artist">Ir al artista</string>
     <string name="settings_match_local_first">Priorizar música local</string>
     <string name="settings_match_local_first_desc">Reproduce archivos locales antes que streams de YouTube si coinciden título y artista.</string>
-    <string name="local_group_tracks">Canciones</string>
-    <string name="local_group_albums">Álbumes</string>
-    <string name="local_group_artists">Artistas</string>
+<string name="local_group_tracks">Canciones</string>
+<string name="local_group_albums">Álbumes</string>
+<string name="local_group_artists">Artistas</string>
+<string name="local_group_playlists">Playlists</string>
+<string name="local_group_favorites">Favoritos</string>
+<string name="local_playlist_create">Nueva playlist</string>
+<string name="local_playlist_name_hint">Nombre de la playlist</string>
+<string name="local_playlist_create_confirm">Crear</string>
+<string name="local_favorites_empty">Sin favoritos locales aún</string>
+<string name="track_menu_favorite">Favorito</string>
+<string name="track_menu_unfavorite">Quitar favorito</string>
+<string name="local_playlist_selector_title">Añadir a playlist local</string>
+<string name="local_playlist_added">Añadido a la playlist local</string>
+<string name="settings_local_data">Datos locales (playlists + favoritos)</string>
+<string name="settings_export_local_empty">Sin datos locales que exportar</string>
     <string name="added_to_queue">Añadido a la cola</string>
     <string name="track_alternative_changed">Alternativa confirmada</string>
     <string name="playlist_not_found">No se encontraron playlists</string>
     <string name="added_to_playlist">Añadido a %1$s</string>
+
+    <!-- E70 — Listening Metrics -->
+    <string name="metrics_title">Métricas de Escucha</string>
+    <string name="metrics_total_plays">Reproducciones</string>
+    <string name="metrics_total_minutes">Minutos</string>
+    <string name="metrics_top_tracks">Canciones</string>
+    <string name="metrics_top_artists">Artistas</string>
+    <string name="metrics_top_albums">Álbumes</string>
+    <string name="metrics_range_today">Hoy</string>
+    <string name="metrics_range_week">Esta Semana</string>
+    <string name="metrics_range_month">Este Mes</string>
+    <string name="metrics_range_all">Todo</string>
+    <string name="metrics_empty">Sin datos aún</string>
+
+    <!-- E40 — YouTube Music -->
+    <string name="ytm_tab_all">Todo</string>
+    <string name="ytm_tab_favorites">Favoritos</string>
+    <string name="ytm_tab_playlists">Playlists</string>
+    <string name="ytm_tab_albums">Álbumes</string>
+    <string name="ytm_tab_artists">Artistas</string>
+    <string name="ytm_search_placeholder">Buscar en YouTube Music</string>
+    <string name="ytm_search_empty">Busca canciones, álbumes, artistas o playlists</string>
+    <string name="ytm_no_results">Sin resultados</string>
+    <string name="ytm_no_favorites">Sin favoritos aún. Busca y pulsa el corazón.</string>
+    <string name="ytm_play_all">Reproducir todo</string>
+    <string name="ytm_save">Guardar</string>
+    <string name="ytm_unsave">Quitar</string>
+    <string name="ytm_album_detail">Álbum</string>
+    <string name="ytm_artist_detail">Artista</string>
+    <string name="enable_ytm_music">YouTube Music</string>
+    <string name="enable_ytm_music_desc">Muestra la pestaña YouTube Music en tu biblioteca</string>
+    <string name="settings_export_ytm">Exportar biblioteca YTM</string>
+    <string name="settings_import_ytm">Importar biblioteca YTM</string>
+    <string name="settings_ytm_export_success">Biblioteca YTM exportada</string>
+    <string name="settings_ytm_export_empty">Sin biblioteca YTM que exportar</string>
 </resources>

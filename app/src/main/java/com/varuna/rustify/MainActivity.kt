@@ -102,6 +102,7 @@ import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.MetricsScreen
 import com.varuna.rustify.ui.screens.NewReleasesScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.RadioScreen
@@ -125,6 +126,7 @@ sealed class Screen {
     object Settings : Screen()
     object Downloads : Screen()
     object LogViewer : Screen()
+    object Metrics : Screen()
 }
 
 /**
@@ -286,30 +288,10 @@ class MainActivity : ComponentActivity() {
             com.varuna.rustify.util.LogCapture.start(clearFirst = false)
         }
         
-        // Initialize YoutubeDL
-        try {
-            com.yausername.youtubedl_android.YoutubeDL.getInstance().init(application)
-            com.yausername.ffmpeg.FFmpeg.getInstance().init(application)
-            android.util.Log.d("YoutubeDL", "YoutubeDL and FFmpeg initialized successfully.")
-            // Auto-update in background
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                try {
-                    val prefs = application.getSharedPreferences("rustify_settings", MODE_PRIVATE)
-                    val channelStr = prefs.getString("ytdlp_channel", "NIGHTLY")
-                    val channel = if (channelStr == "STABLE") com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.STABLE else com.yausername.youtubedl_android.YoutubeDL.UpdateChannel.NIGHTLY
-                    
-                    com.yausername.youtubedl_android.YoutubeDL.getInstance().updateYoutubeDL(application, channel)
-                    android.util.Log.d("YoutubeDL", "YoutubeDL updated successfully.")
-                } catch (e: Exception) {
-                    android.util.Log.e("YoutubeDL", "Failed to update YoutubeDL", e)
-                }
-
-                com.varuna.rustify.bridge.DownloadManager.initDeferred.complete(Unit)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("YoutubeDL", "Failed to initialize YoutubeDL", e)
-            com.varuna.rustify.bridge.DownloadManager.initDeferred.complete(Unit)
-        }
+        // E60: bootstrap de los backends de audio centralizado en AudioSourceRegistry
+        // (movido desde el inline yt-dlp init/update que había aquí). yt-dlp sigue siendo
+        // el provider por defecto; nuevos backends (Invidious/Deemix) se inicializarán aquí también.
+        com.varuna.rustify.audio.AudioSourceRegistry.initialize(application)
 
         window.attributes.layoutInDisplayCutoutMode =
             android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -648,6 +630,7 @@ fun EngineTester(
             is Screen.Settings -> "Settings"
             is Screen.Downloads -> "Downloads"
             is Screen.LogViewer -> "LogViewer"
+            is Screen.Metrics -> "Metrics"
             is Screen.NewReleases -> "NewReleases"
         }
 
@@ -843,6 +826,7 @@ fun EngineTester(
                         spotifyRepository = spotifyRepo,
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
+                        onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
                         onLocaleChanged = { newCode ->
                             onLanguageChanged(newCode)
                             coroutineScope.launch {
@@ -862,6 +846,11 @@ fun EngineTester(
                 }
                 is Screen.LogViewer -> {
                     LogViewerScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.Metrics -> {
+                    MetricsScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }

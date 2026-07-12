@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,15 +49,20 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -88,7 +95,8 @@ fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
     onBack: () -> Unit,
     onNavigateLogViewer: () -> Unit = {},
-    onLocaleChanged: ((String) -> Unit)? = null
+    onLocaleChanged: ((String) -> Unit)? = null,
+    onNavigateMetrics: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -107,6 +115,7 @@ fun SettingsScreen(
 
     var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
     var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
+    var enableYtmMusic by remember { mutableStateOf(prefs.getBoolean("enable_ytm_music", true)) }
     var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
 
     val addLocalMusicDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -207,6 +216,48 @@ fun SettingsScreen(
                         Toast.makeText(context, importErrorMsg, Toast.LENGTH_SHORT).show()
                     }
                 }
+            }
+        }
+    }
+
+    // E30 - export/import de datos locales (contenedor versionado).
+    val localExportSuccessMsg = stringResource(R.string.settings_export_success)
+    val localExportEmptyMsg = stringResource(R.string.settings_export_local_empty)
+    val localExportErrorMsg = stringResource(R.string.settings_export_error)
+    val localImportSuccessMsg = stringResource(R.string.settings_import_success)
+    val localImportErrorMsg = stringResource(R.string.settings_import_error)
+    val exportLocalLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val playlistsFile = File(context.filesDir, "local_playlists.json")
+                    val favoritesFile = File(context.filesDir, "local_favorites.json")
+                    if (!playlistsFile.exists() && !favoritesFile.exists()) {
+                        withContext(Dispatchers.Main) { Toast.makeText(context, localExportEmptyMsg, Toast.LENGTH_SHORT).show() }; return@launch
+                    }
+                    val root = org.json.JSONObject().apply {
+                        put("schema", "rustify-local-user-data"); put("version", 1); put("exportedAt", System.currentTimeMillis())
+                        put("playlists", if (playlistsFile.exists()) org.json.JSONArray(playlistsFile.readText()) else org.json.JSONArray())
+                        put("favorites", if (favoritesFile.exists()) org.json.JSONArray(favoritesFile.readText()) else org.json.JSONArray())
+                    }
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(root.toString().toByteArray()) }
+                    withContext(Dispatchers.Main) { Toast.makeText(context, localExportSuccessMsg, Toast.LENGTH_SHORT).show() }
+                } catch (e: Exception) { e.printStackTrace(); withContext(Dispatchers.Main) { Toast.makeText(context, localExportErrorMsg, Toast.LENGTH_SHORT).show() } }
+            }
+        }
+    }
+    val importLocalLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val raw = context.contentResolver.openInputStream(uri)?.use { java.io.ByteArrayOutputStream().also { bos -> it.copyTo(bos) }.toString(Charsets.UTF_8) } ?: ""
+                    val root = org.json.JSONObject(raw)
+                    if (root.optString("schema") != "rustify-local-user-data") { withContext(Dispatchers.Main) { Toast.makeText(context, localImportErrorMsg, Toast.LENGTH_SHORT).show() }; return@launch }
+                    File(context.filesDir, "local_playlists.json").writeText((root.optJSONArray("playlists") ?: org.json.JSONArray()).toString())
+                    File(context.filesDir, "local_favorites.json").writeText((root.optJSONArray("favorites") ?: org.json.JSONArray()).toString())
+                    spotifyRepository.reloadLocalUserData()
+                    withContext(Dispatchers.Main) { Toast.makeText(context, localImportSuccessMsg, Toast.LENGTH_LONG).show() }
+                } catch (e: Exception) { e.printStackTrace(); withContext(Dispatchers.Main) { Toast.makeText(context, localImportErrorMsg, Toast.LENGTH_SHORT).show() } }
             }
         }
     }
@@ -323,6 +374,8 @@ fun SettingsScreen(
 
 
 
+            AudioBackendsSection(context)
+
             Text(
                 text = stringResource(R.string.settings_cache_storage),
                 color = Color(0xFF1DB954),
@@ -410,6 +463,28 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.enable_ytm_music), color = Color.White, fontSize = 14.sp)
+                                Text(stringResource(R.string.enable_ytm_music_desc), color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Switch(
+                                checked = enableYtmMusic,
+                                onCheckedChange = { checked ->
+                                    enableYtmMusic = checked
+                                    prefs.edit { putBoolean("enable_ytm_music", checked) }
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
+                            )
+                        }
+
                         Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         
@@ -434,9 +509,24 @@ fun SettingsScreen(
                                             prefs.edit { putStringSet("local_music_directories", newSet) }
                                         }.padding(8.dp)
                                     )
-                                }
-                            }
-                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        stringResource(R.string.settings_local_data),
+                        color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { exportLocalLauncher.launch("rustify_local_data.json") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp) }
+                        Button(onClick = { importLocalLauncher.launch(arrayOf("application/json", "*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp) }
+                    }
+                }
+            }
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
@@ -906,6 +996,16 @@ fun SettingsScreen(
                     ) {
                         Text(stringResource(R.string.settings_view_logs), color = Color.White)
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onNavigateMetrics,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -998,6 +1098,98 @@ fun SettingsScreen(
                 Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// E60 - Sección "Audio Backends" (drag&drop + toggles).
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun AudioBackendsSection(context: android.content.Context) {
+    val knownIds = remember { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
+    val catalog = remember { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
+    var streamOrder by remember { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
+    var downloadOrder by remember { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, knownIds)) }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(stringResource(R.string.settings_audio_backends), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_backends_stream_order), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            ReorderableBackendList(streamOrder, catalog) { newOrder -> streamOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, newOrder) }
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.settings_backends_download_order), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            ReorderableBackendList(downloadOrder, catalog) { newOrder -> downloadOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, newOrder) }
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.settings_backends_drag_hint), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun ReorderableBackendList(
+    entries: List<com.varuna.rustify.audio.AudioBackendSettings.BackendEntry>,
+    catalog: Map<String, com.varuna.rustify.audio.AudioSourceCapabilities>,
+    onOrderChanged: (List<com.varuna.rustify.audio.AudioBackendSettings.BackendEntry>) -> Unit
+) {
+    val density = LocalDensity.current
+    val rowHeightPx = with(density) { 56.dp.toPx() }
+    var order by remember(entries) { mutableStateOf(entries) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+
+    Column {
+        order.forEachIndexed { index, entry ->
+            key(entry.id) {
+                val currentIndex by rememberUpdatedState(index)
+                val currentOrder by rememberUpdatedState(order)
+                val caps = catalog[entry.id]
+                val isDragging = draggingIndex == currentIndex
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                        .graphicsLayer { translationY = if (isDragging) dragOffset else 0f }
+                        .background(if (isDragging) Color(0xFF2A2A2A) else Color.Transparent)
+                        .pointerInput(entry.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { draggingIndex = currentIndex; dragOffset = 0f },
+                                onDragEnd = { if (draggingIndex != null) onOrderChanged(order); draggingIndex = null; dragOffset = 0f },
+                                onDragCancel = { draggingIndex = null; dragOffset = 0f },
+                                onDrag = { change, dragAmount ->
+                                    change.consume(); dragOffset += dragAmount.y
+                                    val moved = draggingIndex ?: return@detectDragGesturesAfterLongPress
+                                    val targetDelta = (dragOffset / rowHeightPx).toInt()
+                                    if (targetDelta != 0) {
+                                        val target = (moved + targetDelta).coerceIn(0, currentOrder.lastIndex)
+                                        if (target != moved) {
+                                            val mutable = currentOrder.toMutableList(); mutable.add(target, mutable.removeAt(moved))
+                                            order = mutable; dragOffset -= (target - moved) * rowHeightPx; draggingIndex = target; onOrderChanged(order)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.DragHandle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(caps?.displayNameRes ?: R.string.backend_ytdlp), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        val badges = buildList {
+                            if (caps?.canStream == true) add(stringResource(R.string.backend_stream))
+                            if (caps?.canDownload == true) add(stringResource(R.string.backend_download))
+                        }
+                        if (badges.isNotEmpty()) Text(badges.joinToString(" · "), color = Color.Gray, fontSize = 12.sp)
+                    }
+                    Switch(checked = entry.enabled, onCheckedChange = { checked ->
+                        val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = checked); order = mutable; onOrderChanged(order)
+                    }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954)))
+                }
+            }
         }
     }
 }

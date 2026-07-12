@@ -27,6 +27,8 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.RemoveCircleOutline
@@ -34,7 +36,10 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -81,6 +86,10 @@ fun TrackOptionsMenuBottomSheet(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     var showPlaylistSelector by remember { mutableStateOf(false) }
+    // E30 — selector de playlist local + diálogo de creación.
+    var showLocalPlaylistSelector by remember { mutableStateOf(false) }
+    var showCreateLocalPlaylistDialog by remember { mutableStateOf(false) }
+    var newLocalPlaylistName by remember { mutableStateOf("") }
     var playlists by remember { mutableStateOf<List<SimplePlaylist>>(emptyList()) }
     var isLoadingPlaylists by remember { mutableStateOf(false) }
 
@@ -91,6 +100,97 @@ fun TrackOptionsMenuBottomSheet(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         // Handle if needed
+    }
+
+    // E30 — selector de playlist local (tracks "local:") + diálogo de creación.
+    val localPlaylistAddedMsg = stringResource(R.string.local_playlist_added)
+    if (showLocalPlaylistSelector) {
+        AlertDialog(
+            onDismissRequest = { showLocalPlaylistSelector = false },
+            title = { Text(stringResource(R.string.local_playlist_selector_title)) },
+            text = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showLocalPlaylistSelector = false
+                                showCreateLocalPlaylistDialog = true
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1DB954))
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(R.string.local_playlist_create), color = Color.White)
+                    }
+                    HorizontalDivider(color = Color.DarkGray)
+                    if (spotifyRepo.localPlaylists.isEmpty()) {
+                        Text(
+                            stringResource(R.string.playlist_not_found),
+                            color = Color.Gray,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    } else {
+                        spotifyRepo.localPlaylists.forEach { pl ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        track.id?.let { spotifyRepo.addToLocalPlaylist(pl.id, it) }
+                                        Toast.makeText(context, localPlaylistAddedMsg, Toast.LENGTH_SHORT).show()
+                                        showLocalPlaylistSelector = false
+                                        onDismiss()
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pl.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(8.dp))
+                                Text("${pl.trackIds.size}", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLocalPlaylistSelector = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+    if (showCreateLocalPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" },
+            title = { Text(stringResource(R.string.local_playlist_create)) },
+            text = {
+                OutlinedTextField(
+                    value = newLocalPlaylistName,
+                    onValueChange = { newLocalPlaylistName = it },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newLocalPlaylistName.isNotBlank()) {
+                        val pl = spotifyRepo.createLocalPlaylist(newLocalPlaylistName.trim())
+                        track.id?.let { spotifyRepo.addToLocalPlaylist(pl.id, it) }
+                        Toast.makeText(context, localPlaylistAddedMsg, Toast.LENGTH_SHORT).show()
+                    }
+                    showCreateLocalPlaylistDialog = false
+                    newLocalPlaylistName = ""
+                    onDismiss()
+                }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
     }
 
     if (showPlaylistSelector) {
@@ -243,19 +343,40 @@ fun TrackOptionsMenuBottomSheet(
                     }
                 )
 
+                val isLocalTrack = track.id?.startsWith("local:") == true
+
+                // E30 — favorito local (sólo para tracks "local:").
+                if (isLocalTrack) {
+                    val tid = track.id ?: ""
+                    var isFav by remember { mutableStateOf(spotifyRepo.isLocalFavorite(tid)) }
+                    MenuOptionItem(
+                        icon = if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        label = stringResource(if (isFav) R.string.track_menu_unfavorite else R.string.track_menu_favorite),
+                        iconColor = if (isFav) Color(0xFF1DB954) else Color.White,
+                        onClick = {
+                            spotifyRepo.toggleLocalFavorite(tid)
+                            isFav = !isFav
+                        }
+                    )
+                }
+
                 MenuOptionItem(
                     icon = Icons.Default.Add,
                     label = stringResource(R.string.track_menu_add_playlist),
                     onClick = {
-                        showPlaylistSelector = true
-                        isLoadingPlaylists = true
-                        coroutineScope.launch {
-                            try {
-                                playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "Error al cargar playlists", Toast.LENGTH_SHORT).show()
-                            } finally {
-                                isLoadingPlaylists = false
+                        if (isLocalTrack) {
+                            showLocalPlaylistSelector = true
+                        } else {
+                            showPlaylistSelector = true
+                            isLoadingPlaylists = true
+                            coroutineScope.launch {
+                                try {
+                                    playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Error al cargar playlists", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isLoadingPlaylists = false
+                                }
                             }
                         }
                     }
@@ -297,8 +418,6 @@ fun TrackOptionsMenuBottomSheet(
                         }
                     )
                 }
-
-                val isLocalTrack = track.id?.startsWith("local:") == true
 
                 if (onGoToRadio != null && !isLocalTrack) {
                     MenuOptionItem(

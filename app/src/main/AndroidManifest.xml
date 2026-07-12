@@ -43,6 +43,26 @@
                 <data android:pathPrefix="/intl-" />
             </intent-filter>
 
+            <!-- E40: YouTube Music deep links -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="music.youtube.com" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="youtu.be" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.youtube.com" android:pathPrefix="/watch" />
+            </intent-filter>
+
             <!-- F1.A: Wrappers Rustify VERIFICABLES (App Links).
                  Cada host DEBE alojar https://<host>/.well-known/assetlinks.json con el fingerprint
                  SHA-256 de la firma. Sin ese JSON, autoVerify simplemente NO verifica.

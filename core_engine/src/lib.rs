@@ -207,6 +207,85 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateQueueNa
 }
 
 // =============================================================================
+// YOUTUBE MUSIC (E40) — YTM browse APIs
+// =============================================================================
+
+/// JNI Bridge: Search YouTube Music (tracks, albums, artists, playlists)
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchYtMusicNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    query: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = query.mutf8_chars(env)?;
+        let q = mutf8.to_string();
+        let results = get_runtime().block_on(youtube::ytmusic::ytm_search(&q));
+        serde_json::to_string(&results).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+/// JNI Bridge: Get YouTube Music album details
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmAlbumNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    browse_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = browse_id.mutf8_chars(env)?;
+        let id = mutf8.to_string();
+        let album = get_runtime().block_on(youtube::ytmusic::ytm_get_album(&id));
+        serde_json::to_string(&album).unwrap_or_else(|_| "null".to_string())
+    })
+}
+
+/// JNI Bridge: Get YouTube Music artist details
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmArtistNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    channel_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = channel_id.mutf8_chars(env)?;
+        let id = mutf8.to_string();
+        let artist = get_runtime().block_on(youtube::ytmusic::ytm_get_artist(&id));
+        serde_json::to_string(&artist).unwrap_or_else(|_| "null".to_string())
+    })
+}
+
+/// JNI Bridge: Get YouTube Music playlist details
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmPlaylistNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    playlist_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = playlist_id.mutf8_chars(env)?;
+        let id = mutf8.to_string();
+        let playlist = get_runtime().block_on(youtube::ytmusic::ytm_get_playlist(&id));
+        serde_json::to_string(&playlist).unwrap_or_else(|_| "null".to_string())
+    })
+}
+
+/// JNI Bridge: Get YouTube Music radio (related tracks)
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmRadioNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    video_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = video_id.mutf8_chars(env)?;
+        let id = mutf8.to_string();
+        let tracks = get_runtime().block_on(youtube::ytmusic::ytm_radio(&id));
+        serde_json::to_string(&tracks).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+// =============================================================================
 // SPOTIFY — AUTHENTICATION
 // =============================================================================
 

@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine
+import com.varuna.rustify.metrics.ListeningTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -50,10 +51,12 @@ data class AudioPlayerState(
 )
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@SuppressLint("StaticFieldLeak")
+    @SuppressLint("StaticFieldLeak")
 class AudioPlayerService private constructor(private val context: Context) {
     private val _state = MutableStateFlow(AudioPlayerState())
     val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
+
+    private val listenerTracker = ListeningTracker(context.applicationContext)
 
     // Preloaded lyrics for the current track (BUG-20 fix)
     private val _preloadedLyrics = MutableStateFlow<com.varuna.rustify.bridge.LyricsResult?>(null)
@@ -182,6 +185,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                     Player.STATE_ENDED -> {
                         _state.value = _state.value.copy(isBuffering = false)
+                        listenerTracker.onEnded()
                         if (_state.value.isRepeat) {
                             seekTo(0L)
                             play()
@@ -198,6 +202,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                listenerTracker.onError()
                 android.util.Log.e("AudioPlayerService", "ExoPlayer error: ${error.message}")
 
                 _state.value = _state.value.copy(
@@ -218,6 +223,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                         if (currentTrackId != null) {
                             val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
                             prefs.edit().remove("cached_url_$currentTrackId").apply()
+                            // E60: también invalida la caché "provider que funcionó" para que la
+                            // siguiente resolución pase por toda la cadena (no credite el caduco).
+                            com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(currentTrackId)
                         }
                         android.util.Log.d("AudioPlayerService", "Stream URL expired (HTTP ${cause.responseCode}), cleared cache for $currentTrackId")
                     }
@@ -261,12 +269,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             var lastSavedPosition = 0L
             while (true) {
                 if (!isResolving && (exoPlayer.isPlaying || _state.value.isBuffering)) {
+                    val pos = exoPlayer.currentPosition
                     _state.value = _state.value.copy(
-                        positionMs = exoPlayer.currentPosition,
+                        positionMs = pos,
                         durationMs = if (exoPlayer.duration > 0) exoPlayer.duration
                                      else _state.value.durationMs,
                         bufferPercent = exoPlayer.bufferedPercentage.coerceIn(0, 100)
                     )
+                    listenerTracker.onProgress(pos)
                 }
                 val now = System.currentTimeMillis()
                 // E13: only request a save when position advanced meaningfully (>3s) to reduce I/O.
@@ -368,7 +378,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         isRetrying = false
 
         // Register metadata in Rust so the resolver can match the track (only if not local)
-        if (!trackId.startsWith("local:")) {
+        if (!trackId.startsWith("local:") && !trackId.startsWith("ytm:")) {
             val artistsJson = "[" + track.artists.joinToString(",") {
                 "\"" + it.name.replace("\"", "\\\"") + "\""
             } + "]"
@@ -378,9 +388,14 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
 
         // Preload lyrics asynchronously so they're cached when user opens TrackScreen
-        preloadLyrics(track)
+        // E40: skip lyrics for ytm: (no Spotify track id)
+        if (!trackId.startsWith("ytm:")) { preloadLyrics(track) }
 
         // Show buffering spinner immediately (resolver can take a few seconds)
+        // E40: extract videoId from ytm: prefix (bypasses Spotify resolver)
+        var effectiveYoutubeId = youtubeId
+        if (trackId.startsWith("ytm:")) { effectiveYoutubeId = trackId.removePrefix("ytm:") }
+
         val myGen = resolveGen.incrementAndGet()
         isResolving = true
         _state.value = _state.value.copy(isBuffering = true, isError = false, errorMessage = "")
@@ -426,7 +441,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     // B3: only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
                     // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
                     // so the stale cached URL must not shadow the new source.
-                    if (streamUrl == null && youtubeId.isNullOrBlank()) {
+                    if (streamUrl == null && effectiveYoutubeId.isNullOrBlank()) {
                         // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
                         val cachedUrl = getCachedStreamUrl(trackId)
                         if (!cachedUrl.isNullOrBlank()) {
@@ -435,19 +450,20 @@ class AudioPlayerService private constructor(private val context: Context) {
                         }
                     }
                     if (streamUrl == null) {
-                        if (youtubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
+                        if (effectiveYoutubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
                         if (streamUrl.isNullOrBlank()) {
-                            android.util.Log.d("AudioPlayerService", "Resolving YouTube ID for track $trackId...")
-
-                            val resolvedYoutubeId = withContext(Dispatchers.IO) {
-                                NativeEngine.resolveYouTubeIdNative(trackId, youtubeId ?: "")
+                            // E60: la resolución de red vive ahora en la cadena de backends
+                            // (AudioSourceRegistry.streamChain). yt-dlp es el provider por defecto;
+                            // el `hint` es el youtubeId explícito de una alternativa elegida.
+                            android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
+                            val res = com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                                .resolveStreamUrl(track, hint = effectiveYoutubeId)
+                            res.onSuccess { (_, info) ->
+                                streamUrl = info.uri
+                                android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId: ${info.uri.take(80)}...")
                             }
-
-                            if (resolvedYoutubeId.isNotBlank()) {
-                                android.util.Log.d("AudioPlayerService", "Resolved YouTube ID: $resolvedYoutubeId. Extracting stream with yt-dlp...")
-                                streamUrl = withContext(Dispatchers.IO) {
-                                    extractStreamUrlWithRetry(resolvedYoutubeId)
-                                }
+                            res.onFailure { e ->
+                                android.util.Log.w("AudioPlayerService", "Stream chain failed for $trackId: ${e.message}")
                             }
                         } else {
                             android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
@@ -458,7 +474,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 if (streamUrl.isNullOrBlank()) {
                     // E10: auto-retry the extraction failure instead of leaving the user stuck.
-                    scheduleExtractionRetry(track, youtubeId)
+                    scheduleExtractionRetry(track, effectiveYoutubeId)
                     return@launch
                 }
 
@@ -466,7 +482,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata)
-                    .apply { setCustomCacheKey(if (youtubeId.isNullOrBlank()) trackId else "${trackId}_${youtubeId}") }
+                    .apply { setCustomCacheKey(if (effectiveYoutubeId.isNullOrBlank()) trackId else "${trackId}_${effectiveYoutubeId}") }
                     .build()
 
                 resolvedStreamUrls[trackId] = streamUrl
@@ -494,6 +510,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     exoPlayer.seekTo(_state.value.positionMs)
                 }
                 exoPlayer.play()
+                listenerTracker.onTrackStarted(track)
 
                 // Pre-buffer the next track in the queue
                 preBufferNextTrack()
@@ -506,33 +523,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    // E10/E11: yt-dlp extraction with a couple of retries on transient failure
-    // (network blips during VPN tunnel bring-up etc.).
-    private fun extractStreamUrlWithRetry(youtubeId: String, maxAttempts: Int = 3): String? {
-        var lastError: Exception? = null
-        for (attempt in 0 until maxAttempts) {
-            try {
-                val request = com.yausername.youtubedl_android.YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId")
-                request.addOption("-g")
-                request.addOption("-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio")
-                request.addOption("--no-check-certificate")
-                request.addOption("--no-warnings")
-                val response = com.yausername.youtubedl_android.YoutubeDL.getInstance().execute(request)
-                val url = response.out.trim().lines().firstOrNull()?.trim()
-                if (!url.isNullOrBlank()) return url
-            } catch (e: Exception) {
-                lastError = e
-                android.util.Log.w("AudioPlayerService", "yt-dlp attempt ${attempt + 1} failed: ${e.message}")
-            }
-            if (attempt < maxAttempts - 1) {
-                try { Thread.sleep((500L shl attempt).coerceAtMost(4000L)) } catch (_: InterruptedException) {}
-            }
-        }
-        if (lastError != null) {
-            android.util.Log.e("AudioPlayerService", "YoutubeDL extraction failed after $maxAttempts attempts", lastError)
-        }
-        return null
-    }
+    // E60: the yt-dlp extraction with retries now lives in YtDlpAudioSource (resolved via
+    // AudioSourceRegistry.streamChain). See audio/YtDlpAudioSource.kt::extractStreamUrlWithRetry.
 
     // E10: retry the failure to extract a stream URL (previously a dead-end error banner).
     private fun scheduleExtractionRetry(track: FullTrack, youtubeId: String?) {
@@ -588,21 +580,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                     nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
                 )
 
-                var resolvedUrl: String? = null
-                val youtubeId = withContext(Dispatchers.IO) {
-                    NativeEngine.resolveYouTubeIdNative(nextTrackId, "")
-                }
-
-                if (youtubeId.isNotBlank()) {
-                    resolvedUrl = withContext(Dispatchers.IO) {
-                        extractStreamUrlWithRetry(youtubeId)
-                    }
-                }
-
-                if (!resolvedUrl.isNullOrBlank()) {
-                    preResolvedUrls[nextTrackId] = resolvedUrl
-                    resolvedStreamUrls[nextTrackId] = resolvedUrl
+                // E60: pre-buffer a través de la misma cadena de backends que playTrack
+                // (single source of truth: un solo resolveStreamUrl, sin duplicar el patrón yt-dlp).
+                val res = com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                    .resolveStreamUrl(nextTrack, hint = null)
+                res.onSuccess { (_, info) ->
+                    preResolvedUrls[nextTrackId] = info.uri
+                    resolvedStreamUrls[nextTrackId] = info.uri
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
+                }
+                res.onFailure { e ->
+                    android.util.Log.w("AudioPlayerService", "Pre-buffer chain failed for ${nextTrack.name}: ${e.message}")
                 }
 
                 // Preload lyrics for the next track so they're ready when the user views the track screen
@@ -909,6 +897,8 @@ class AudioPlayerService private constructor(private val context: Context) {
             resolvedStreamUrls.remove(it)
             preResolvedUrls.remove(it)
             removeCachedStreamUrl(it)
+            // E60: re-resolution forzada → no confíes en el provider cacheado como "bueno".
+            com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it)
         }
 
         _state.value = st.copy(
@@ -992,6 +982,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     fun release() {
         // E13: persist the latest state synchronously before tearing down.
         saveNow()
+        listenerTracker.flush()
         unregisterNetworkCallback()
         val stopIntent = Intent(context, RustifyForegroundService::class.java).apply {
             action = "STOP_SERVICE"
