@@ -1,42 +1,67 @@
 # Rustify 🎵🦀
 
-**Rustify** is a highly optimized, cross-platform Android music player that seamlessly merges Spotify's extensive metadata with YouTube's reliable audio playback. 
+**Rustify** is a highly optimized Android music player that merges Spotify's extensive metadata with YouTube's reliable audio playback.
 
-By leveraging a high-performance **Rust core** integrated via JNI, Rustify bypasses the limitations of traditional web-scraping wrappers, delivering a native, low-latency, and ad-free listening experience directly from your Spotify library.
+By leveraging a high-performance **Rust core** integrated via JNI, Rustify delivers a native, low-latency, and ad-free listening experience directly from your Spotify library.
 
 ---
 
 ## ✨ Key Features
 
-- **Spotify to YouTube Sync**: Fetch your liked tracks, playlists, and albums directly from Spotify. Rustify intelligently matches them against YouTube's audio catalog in milliseconds.
-- **Synchronized Lyrics**: Native integration with LRCLIB provides real-time, auto-scrolling lyrics perfectly timed to your currently playing track.
-- **Background Downloads**: A robust, built-in `DownloadManager` allows you to download tracks, albums, and playlists securely for offline playback.
-- **Advanced Audio Player**: Built on top of AndroidX Media3 (ExoPlayer), featuring intelligent streaming, gapless playback simulation, and robust foreground service support for uninterrupted listening.
-- **Deep Linking & Intent Interception**: Seamlessly open Spotify URLs and custom `rustify://` links directly inside the app without needing the official Spotify client.
-- **Local Music Support**: Scan and manage local music files on your device. Rustify integrates them with your Spotify library and automatically enriches them with Spotify metadata.
-- **Aggressive Caching**: Intelligent persistent caching for audio stream URLs (via `stream_url_cache.json`), cover art, and user libraries ensures blazing-fast load times and offline resilience.
-- **Multi-Language Support**: Fully localized and translated into English, Spanish, and Japanese.
-- **Modern Jetpack Compose UI**: A beautiful, fluid, and responsive user interface built entirely with modern Android declarative UI paradigms.
-- **Baseline Profiles**: Optimized startup times and rendering performance using Jetpack ProfileInstaller.
+### 🎧 Playback & Audio
+- **Spotify to YouTube Sync** — Fetch your liked tracks, playlists, and albums from Spotify. The Rust resolver matches them against YouTube in milliseconds using ISRC lookups, metadata matching, and an intelligent fallback chain (API → general YouTube scraper).
+- **YouTube Music Integration** — Full YouTube Music browsing: search, albums, artists, playlists, and a local YTM library (favorites, saved albums/artists, custom playlists). Switch between the official YTM API and the general YouTube scraper for more results, including covers and unofficial content.
+- **Advanced Audio Player** — Built on AndroidX Media3 (ExoPlayer): intelligent streaming, gapless playback simulation, and robust foreground service support. Auto-retry with exponential backoff on network errors, and automatic re-resolution when stream URLs expire.
+- **Background Downloads** — Download tracks, albums, and playlists via yt-dlp for offline playback.
+- **YouTube Alternatives** — Pick a different YouTube source for any track. Manual mappings are persisted, take priority over auto-match, and preserve playback position.
+
+### 📊 Discovery & Metrics
+- **AI DJ** — Generates automixes from your listening history. Three modes: Heuristic (offline, rule-based), External API (OpenAI-compatible), and Local (stub). Customizable base URL, model, and API key; defaults to a keyless endpoint.
+- **Listening Metrics** — Track-level analytics (plays, time, streaks) aggregated by track, artist, and album with daily/weekly/monthly filters. Import from Spotify's Extended and legacy `StreamingHistory*.json` exports with deduplication.
+- **Song Radio** — Generate a playlist of similar tracks from any Spotify track, available from every detail screen.
+- **New Releases** — Paginated album grid of Spotify's latest releases.
+
+### 💾 Data & Sync
+- **Google Drive Backup/Sync** — Bidirectional sync of mappings, local playlists/favorites, YTM library, and metrics via the private `appDataFolder`. Merge = set-union + last-write-wins + metrics dedupe.
+- **Local Playlists** — Create, rename, and manage playlists from local and YTM tracks, with mosaic cover art from the first tracks.
+- **State Persistence** — Atomic temp-and-rename writes with debounced serialization prevent file corruption. Playback position, queue, repeat, and shuffle survive restarts.
+
+### 🔗 Deep Linking & Sharing
+- **Unified Link Parser** — Handles Spotify tracks, albums, playlists, and artists (including `/intl-XX/` routes) from `open.spotify.com` and clipboard paste. YouTube Music links are parsed and routed to the appropriate YTM screen.
+- **Rustify Wrapper Links** — Share links on your own verified domain (`https://<host>/r/?s=<url>`) that open directly in Rustify via Android App Links, with a `rustify://` scheme fallback.
+- **Dual Share** — "Share" always sends the plain link; "Share as Rustify Link" appears as a second button when the toggle is on.
+
+### 🎨 Interface & UX
+- **Modern Jetpack Compose UI** — Built entirely with Material 3, with reactive state via `StateFlow`. Includes synchronized auto-scrolling lyrics (LRCLIB, cached with retry-on-failure), a Home hamburger menu, library management (save/follow/edit, bulk add-to-queue), and polished touches such as swipe-to-queue and adaptive marquee scrolling.
+- **Spotify Canvas** — Short looping muted mp4 videos play full-screen behind the cover art and controls (Spotify-style); tap to hide the UI and watch at full color. Protobuf decode is done by hand in Rust with no extra dependencies.
+
+### 🪵 Developer & Diagnostics
+- **In-App Log Capture** — Real-time `logcat` stream with color-coded levels, tag/level filtering, autoscroll, and export. Crash-resilient (persisted to `filesDir`).
+- **Baseline Profiles** — Optimized startup via Jetpack ProfileInstaller.
+- **Internationalization** — Fully localized in English and Spanish (Japanese partial).
 
 ---
 
 ## 🏗️ Architecture & Tech Stack
 
-Rustify's true power lies in its hybrid architecture, separating the heavy lifting from the UI thread:
+Rustify uses a hybrid architecture that separates the heavy lifting from the UI thread:
 
 ### 1. The Core Engine (Rust 🦀)
-Located in `core_engine/`, this is the brain of the application compiled to a native shared library (`libcore_engine.so`):
-- **Spotify Scraper**: Dynamically scrapes and updates Spotify's GraphQL hashes, acting identically to a web browser to prevent API blocking.
-- **YouTube Resolution**: Handles YouTube ID resolution and audio stream extraction using an embedded, dynamically updated `yt-dlp` bridge.
-- **Matching Algorithm**: Uses normalized string comparison, ISRC lookups, and duration validation (±5s) to ensure the YouTube audio perfectly matches the Spotify track.
-- **JNI Bridge**: Exposed safely to Kotlin via `lib.rs`.
+Located in `core_engine/` and compiled to a native shared library (`libcore_engine.so`):
+- **Spotify Client** — Dynamically scrapes and updates GraphQL hashes, acting like a web browser to avoid API blocking; handles auth (`sp_dc` cookie), token refresh, and API retry with `Retry-After` support.
+- **YouTube Music API** — RustyPipe 0.11.4 integration for `music_search_*`, album/artist/playlist detail, and radio.
+- **YouTube Scraper** — General YouTube search (includes unofficial content), used for the "Find alternatives" dialog and as an optional search mode in the YTM Explore tab.
+- **Matching Algorithm** — Normalized string comparison, ISRC lookups, and duration validation (±5s) to ensure the YouTube audio matches the Spotify track.
+- **Canvas Endpoint** — Hand-crafted protobuf encode/decode (varints) for the `canvaz-cache/v0/canvases` REST endpoint. No `prost` dependency.
+- **JNI Bridge** — All Rust functionality exposed to Kotlin via `lib.rs`.
 
 ### 2. The Android Client (Kotlin ☕)
-Located in `app/`, this handles the user experience and Android OS integration:
-- **UI Layer**: Built entirely with **Jetpack Compose**, relying heavily on `ViewModel` and `StateFlow` for reactive, unidirectional data flow.
-- **Playback Service**: `AudioPlayerService.kt` acts as a Singleton process managing the `ExoPlayer` instance, playback queue, and cache logic.
-- **Media Session**: `RustifyForegroundService.kt` binds the player to the Android OS media controls (lock screen, Bluetooth controls) via Media3 `MediaSessionService`.
+Located in `app/`, handling the user experience and Android OS integration:
+- **UI Layer** — Built entirely with **Jetpack Compose** and Material 3, relying on `StateFlow` for reactive, unidirectional data flow. Navigation via a manual stack with `SaveableStateHolder`.
+- **Playback Service** — `AudioPlayerService` manages the `ExoPlayer` instance, playback queue, URL cache with expiry, and retry logic.
+- **Media Session** — `RustifyForegroundService` binds to Android media controls (lock screen, Bluetooth) via Media3 `MediaSessionService`.
+- **Audio Chain** — Pluggable provider chain (`AudioSourceChain`) with configurable priority order. Currently powered by yt-dlp; designed for future provider expansion.
+- **Google Drive Sync** — `AuthorizationClient` with `drive.appdata` scope + OkHttp REST v3 over the private `appDataFolder`.
 
 ---
 
@@ -44,12 +69,12 @@ Located in `app/`, this handles the user experience and Android OS integration:
 
 ### Prerequisites
 - **Android Studio** (Koala or newer recommended).
-- **Android NDK** (Required to compile the JNI bindings).
+- **Android NDK** (required to compile the JNI bindings).
 - **Rust Toolchain**: Install via `rustup` (`rustup target add aarch64-linux-android x86_64-linux-android`).
 - **cargo-ndk**: Install via `cargo install cargo-ndk`.
 
 ### Compilation
-The Gradle build script (`build.gradle.kts`) is configured to automatically invoke `cargo-ndk` to compile the Rust core before packaging the APK.
+The Gradle build script (`build.gradle.kts`) automatically invokes `cargo-ndk` to compile the Rust core before packaging the APK.
 
 1. **Build Debug APK**:
    ```bash

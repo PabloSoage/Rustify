@@ -32,3 +32,6 @@ rustify.github.io/
 rustify-music.github.io/
 
 docs/
+
+# Kotlin compiler IDE session artifacts
+.kotlin/
