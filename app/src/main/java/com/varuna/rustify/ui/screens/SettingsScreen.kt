@@ -36,6 +36,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.util.AppLinksHosts
 import com.varuna.rustify.util.LogCapture
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
@@ -110,7 +116,21 @@ fun SettingsScreen(
     
     // F1.B / F1.A — diagnóstico y wrapper.
     var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_capture_enabled", false)) }
-    var wrapperHost by remember { mutableStateOf(prefs.getString("rustify_wrapper_host", "") ?: "") }
+    // null pref (never set) → preselect default. Explicit "" (user cleared it) → blank/fallback.
+    var wrapperHost by remember {
+        mutableStateOf(prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST)
+    }
+    // "Personalizado…" mode: user typing a free host not in verifiedHosts.
+    var wrapperHostCustom by remember {
+        mutableStateOf(wrapperHost.isNotBlank() && wrapperHost !in AppLinksHosts.verifiedHosts)
+    }
+    var wrapperMenuExpanded by remember { mutableStateOf(false) }
+    // First run (pref never set): persist the preselected default so behavior matches the UI.
+    LaunchedEffect(Unit) {
+        if (!prefs.contains("rustify_wrapper_host")) {
+            prefs.edit { putString("rustify_wrapper_host", AppLinksHosts.DEFAULT_HOST) }
+        }
+    }
     var shareAsRustify by remember { mutableStateOf(prefs.getBoolean("share_as_rustify_link", false)) }
 
     var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
@@ -1016,26 +1036,90 @@ if (localMusicDirs.isEmpty()) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    OutlinedTextField(
-                        value = wrapperHost,
-                        onValueChange = { value ->
-                            wrapperHost = value
-                            // Persistir; blank → null (fallback rustify://). Host VERIFICADO es build-time.
-                            prefs.edit {
-                                if (value.isBlank()) remove("rustify_wrapper_host")
-                                else putString("rustify_wrapper_host", value.trim())
-                            }
-                        },
-                        label = { Text(stringResource(R.string.settings_wrapper_host)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = TextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedContainerColor = Color(0xFF121212),
-                            unfocusedContainerColor = Color(0xFF121212)
-                        )
+                    // Persist helper: blank → remove pref (fallback rustify://); else store trimmed host.
+                    val persistWrapperHost: (String) -> Unit = { value ->
+                        wrapperHost = value
+                        prefs.edit {
+                            if (value.isBlank()) putString("rustify_wrapper_host", "")
+                            else putString("rustify_wrapper_host", value.trim())
+                        }
+                    }
+                    val customOption = "Personalizado…"
+                    val blankOption = "(En blanco → rustify://)"
+                    val fieldColors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF121212),
+                        unfocusedContainerColor = Color(0xFF121212)
                     )
+                    val selectionLabel = when {
+                        wrapperHostCustom -> customOption
+                        wrapperHost.isBlank() -> blankOption
+                        else -> wrapperHost
+                    }
+
+                    ExposedDropdownMenuBox(
+                        expanded = wrapperMenuExpanded,
+                        onExpandedChange = { wrapperMenuExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectionLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_wrapper_host)) },
+                            singleLine = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = wrapperMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth(),
+                            colors = fieldColors
+                        )
+                        ExposedDropdownMenu(
+                            expanded = wrapperMenuExpanded,
+                            onDismissRequest = { wrapperMenuExpanded = false }
+                        ) {
+                            AppLinksHosts.verifiedHosts.forEach { host ->
+                                DropdownMenuItem(
+                                    text = { Text(host) },
+                                    onClick = {
+                                        wrapperHostCustom = false
+                                        wrapperMenuExpanded = false
+                                        persistWrapperHost(host)
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(blankOption) },
+                                onClick = {
+                                    wrapperHostCustom = false
+                                    wrapperMenuExpanded = false
+                                    persistWrapperHost("")
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(customOption) },
+                                onClick = {
+                                    wrapperHostCustom = true
+                                    wrapperMenuExpanded = false
+                                    // Keep current value; user edits it in the free-text field below.
+                                }
+                            )
+                        }
+                    }
+
+                    if (wrapperHostCustom) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = wrapperHost,
+                            onValueChange = { persistWrapperHost(it) },
+                            label = { Text(customOption) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = fieldColors
+                        )
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(stringResource(R.string.settings_wrapper_host_desc), color = Color.Gray, fontSize = 12.sp)
 

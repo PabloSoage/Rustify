@@ -153,10 +153,13 @@
 <string name="track_menu_unfavorite">Quitar favorito</string>
 <string name="local_playlist_selector_title">Añadir a playlist local</string>
 <string name="local_playlist_added">Añadido a la playlist local</string>
+<string name="local_playlist_already_added">Ya está en esta playlist</string>
 <string name="local_playlist_delete">Eliminar playlist</string>
 <string name="local_playlist_delete_confirm">Eliminar</string>
 <string name="local_playlist_delete_msg">¿Eliminar esta playlist local? No se puede deshacer.</string>
 <string name="local_playlist_deleted">Playlist eliminada</string>
+<string name="local_playlist_rename">Renombrar playlist</string>
+<string name="local_playlist_empty">Aún no hay canciones. Añade pistas desde el menú de cualquier canción local.</string>
 <string name="settings_local_data">Datos locales (playlists + favoritos)</string>
 <string name="settings_export_local_empty">Sin datos locales que exportar</string>
     <string name="added_to_queue">Añadido a la cola</string>
@@ -219,4 +222,13 @@
     <string name="ytm_delete">Eliminar</string>
     <string name="ytm_not_found">No encontrado</string>
     <string name="ytm_library_empty">Tu biblioteca de YouTube Music está vacía.\nPulsa buscar para empezar.</string>
+    <string name="ytm_saved_favorite">Añadido a favoritos</string>
+    <string name="ytm_removed_favorite">Quitado de favoritos</string>
+    <string name="ytm_saved_album">Álbum guardado</string>
+    <string name="ytm_removed_album">Álbum quitado</string>
+    <string name="ytm_saved_artist">Artista guardado</string>
+    <string name="ytm_removed_artist">Artista quitado</string>
+    <string name="ytm_playlist_created">Lista creada</string>
+    <string name="ytm_load_error">No se pudo cargar. Revisa tu conexión e inténtalo de nuevo.</string>
+    <string name="ytm_retry">Reintentar</string>
 </resources>

@@ -149,10 +149,13 @@
     <string name="track_menu_unfavorite">Unfavorite</string>
     <string name="local_playlist_selector_title">Add to local playlist</string>
     <string name="local_playlist_added">Added to local playlist</string>
+    <string name="local_playlist_already_added">Already in this playlist</string>
     <string name="local_playlist_delete">Delete playlist</string>
     <string name="local_playlist_delete_confirm">Delete</string>
     <string name="local_playlist_delete_msg">Delete this local playlist? This cannot be undone.</string>
     <string name="local_playlist_deleted">Playlist deleted</string>
+    <string name="local_playlist_rename">Rename playlist</string>
+    <string name="local_playlist_empty">No songs yet. Add tracks from the menu of any local song.</string>
     <string name="settings_local_data">Local data (playlists + favorites)</string>
     <string name="settings_export_local_empty">No local data to export</string>
     
@@ -220,4 +223,13 @@
     <string name="ytm_delete">Delete</string>
     <string name="ytm_not_found">Not found</string>
     <string name="ytm_library_empty">Your YouTube Music library is empty.\nTap search to get started.</string>
+    <string name="ytm_saved_favorite">Added to favorites</string>
+    <string name="ytm_removed_favorite">Removed from favorites</string>
+    <string name="ytm_saved_album">Album saved</string>
+    <string name="ytm_removed_album">Album removed</string>
+    <string name="ytm_saved_artist">Artist saved</string>
+    <string name="ytm_removed_artist">Artist removed</string>
+    <string name="ytm_playlist_created">Playlist created</string>
+    <string name="ytm_load_error">Couldn\'t load. Check your connection and try again.</string>
+    <string name="ytm_retry">Retry</string>
 </resources>

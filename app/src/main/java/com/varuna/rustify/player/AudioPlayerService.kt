@@ -98,6 +98,11 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val preResolvedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val persistedUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    // E60: per-track absolute expiry (epoch ms) for cached stream URLs, fed by StreamInfo.expiresAtMs.
+    // A googlevideo URL past this instant is dropped before it reaches ExoPlayer (avoids a guaranteed 403).
+    private val urlExpiryCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    // E60: last human-readable reason the audio chain failed to resolve, shown to the user on give-up.
+    @Volatile private var lastResolveError: String? = null
     private var preBufferingJob: kotlinx.coroutines.Job? = null
     private var playJob: kotlinx.coroutines.Job? = null
     @Volatile private var isResolving = false
@@ -224,8 +229,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                     if (cause.responseCode == 403 || cause.responseCode == 410) {
                         isExpiredUrl = true
                         if (currentTrackId != null) {
-                            val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-                            prefs.edit().remove("cached_url_$currentTrackId").apply()
+                            // E60: purge the ACTUAL persisted URL cache (map + json + legacy prefs + expiry),
+                            // not just the legacy SharedPreferences key — otherwise getCachedStreamUrl would
+                            // re-serve the same expired googlevideo URL on the next play.
+                            removeCachedStreamUrl(currentTrackId)
                             // E60: también invalida la caché "provider que funcionó" para que la
                             // siguiente resolución pase por toda la cadena (no credite el caduco).
                             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(currentTrackId)
@@ -464,8 +471,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                         // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
                         val cachedUrl = getCachedStreamUrl(trackId)
                         if (!cachedUrl.isNullOrBlank()) {
-                            streamUrl = cachedUrl
-                            android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                            // E60: honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on
+                            // ExoPlayer, so drop it and force a fresh chain resolution instead.
+                            val expiresAt = urlExpiryCache[trackId]
+                            if (expiresAt != null && System.currentTimeMillis() >= expiresAt) {
+                                android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
+                                removeCachedStreamUrl(trackId)
+                                com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
+                            } else {
+                                streamUrl = cachedUrl
+                                android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                            }
                         }
                     }
                     if (streamUrl == null) {
@@ -477,12 +493,20 @@ class AudioPlayerService private constructor(private val context: Context) {
                             android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
                             val res = com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
                                 .resolveStreamUrl(track, hint = effectiveYoutubeId)
-                            res.onSuccess { (_, info) ->
+                            res.onSuccess { (providerId, info) ->
                                 streamUrl = info.uri
-                                android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId: ${info.uri.take(80)}...")
+                                lastResolveError = null   // E60: clear any stale failure reason on success
+                                // E60: remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
+                                info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
+                                android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
                             }
                             res.onFailure { e ->
-                                android.util.Log.w("AudioPlayerService", "Stream chain failed for $trackId: ${e.message}")
+                                // E60: surface the real per-provider reason so the banner isn't just "not playable".
+                                val detail = (e as? com.varuna.rustify.audio.AudioSourceChainException)
+                                    ?.errors?.mapNotNull { it.message }?.joinToString("; ")
+                                    ?.takeIf { it.isNotBlank() } ?: e.message
+                                android.util.Log.w("AudioPlayerService", "Stream chain failed for $trackId: $detail")
+                                lastResolveError = detail
                             }
                         } else {
                             android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
@@ -552,9 +576,14 @@ class AudioPlayerService private constructor(private val context: Context) {
         val n = retryCountMap[id] ?: 0
         if (n >= 2) {
             retryCountMap.remove(id)
+            // E60: include the concrete chain failure (e.g. "resolver returned empty YouTube id",
+            // yt-dlp error) instead of a bare "no source" banner.
+            val reason = lastResolveError?.takeIf { it.isNotBlank() }
             _state.value = _state.value.copy(
                 isBuffering = false, isPlaying = false,
-                isError = true, errorMessage = "No se encontró una fuente reproducible"
+                isError = true,
+                errorMessage = if (reason != null) "No se encontró una fuente reproducible: $reason"
+                               else "No se encontró una fuente reproducible"
             )
             mainScope.launch { delay(2000.milliseconds); skipToNext() }
             return
@@ -607,6 +636,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 res.onSuccess { (_, info) ->
                     preResolvedUrls[nextTrackId] = info.uri
                     resolvedStreamUrls[nextTrackId] = info.uri
+                    info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // E60: track pre-buffered URL expiry too
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
                 }
                 res.onFailure { e ->
@@ -1035,6 +1065,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     // SharedPreferences "cached_url_$id" entry.
     private fun removeCachedStreamUrl(trackId: String) {
         persistedUrlCache.remove(trackId)
+        urlExpiryCache.remove(trackId)   // E60: drop the tracked expiry alongside the URL
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
             .edit().remove("cached_url_$trackId").apply()
         mainScope.launch(Dispatchers.IO) { saveUrlCache() }
@@ -1047,6 +1078,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             val keysToRemove = persistedUrlCache.keys().toList().take(50)
             for (key in keysToRemove) {
                 persistedUrlCache.remove(key)
+                urlExpiryCache.remove(key)   // E60: keep expiry map in lockstep with the URL cache
             }
         }
         // Save async to disk

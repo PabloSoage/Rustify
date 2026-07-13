@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -158,6 +159,7 @@ private fun PlaylistsSection(
     repo: YtMusicRepository,
     onOpenLocalPlaylist: (String) -> Unit
 ) {
+    val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     val playlists = repo.playlists
@@ -216,7 +218,10 @@ private fun PlaylistsSection(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (name.isNotBlank()) repo.createPlaylist(name.trim())
+                    if (name.isNotBlank()) {
+                        repo.createPlaylist(name.trim())
+                        context.ytmToast(R.string.ytm_playlist_created)
+                    }
                     name = ""; showDialog = false
                 }) { Text(stringResource(R.string.ytm_create_playlist), color = Green) }
             },

@@ -154,10 +154,19 @@ class ListeningTracker(private val appContext: Context) {
             if (arr == null) throw IllegalArgumentException("Unrecognized JSON format")
             val file = File(context.filesDir, "metrics.json")
             val existing = if (file.exists()) JSONArray(file.readText()) else JSONArray()
+            // Dedupe: clave por (trackId|trackName, startedAt, listenedMs). Reimportar el mismo
+            // export no debe doblar eventos. Se siembra con lo ya persistido y con los recién
+            // añadidos en esta misma pasada (por si el propio fichero contiene duplicados).
+            val seen = HashSet<String>()
+            for (i in 0 until existing.length()) {
+                existing.optJSONObject(i)?.let { seen.add(dedupeKey(it)) }
+            }
             var added = 0
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val event = normalizeToRustifyEvent(o) ?: continue
+                // Dedupe: saltar si ya existe (mismo track + startedAt + listenedMs).
+                if (!seen.add(dedupeKey(event))) continue
                 existing.put(event)
                 added++
             }
@@ -173,24 +182,66 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         /**
-         * Si el JSONObject ya tiene el campo `trackName` de Rustify, se considera Rustify y se
-         * acepta tal cual. Si no, se intenta parsear como entrada de Spotify Streaming History
-         * (campos `ts`, `ms_played`, `master_metadata_*`, `spotify_track_uri`).
+         * Normaliza un objeto JSON de historial a un evento Rustify. Acepta tres orígenes:
+         *  1. Evento Rustify (ya tiene `trackName`) → se acepta tal cual.
+         *  2. Spotify **Extended** Streaming History (nuevo GDPR):
+         *     `ts` (ISO-8601), `ms_played`, `master_metadata_track_name`,
+         *     `master_metadata_album_album_name`, `master_metadata_artist_name`, `spotify_track_uri`.
+         *  3. Spotify **antiguo** `StreamingHistory*.json`:
+         *     `endTime` ("yyyy-MM-dd HH:mm", zona local del export), `msPlayed`, `trackName`,
+         *     `artistName` (sin álbum ni uri).
          */
+        /**
+         * Clave de dedupe de un evento Rustify ya normalizado. Usa `trackId` si existe (imports
+         * nuevos con URI o eventos de la app), y cae a `trackName` para el formato antiguo sin URI.
+         */
+        private fun dedupeKey(e: JSONObject): String {
+            val id = e.optString("trackId", "")
+            val idPart = if (id.isNotBlank()) id else "n:${e.optString("trackName", "")}"
+            return "$idPart|${e.optLong("startedAt")}|${e.optLong("listenedMs")}"
+        }
+
         private fun normalizeToRustifyEvent(o: JSONObject): JSONObject? {
+            // Formato Rustify: `trackName` + un campo propio (evita colisión con el antiguo Spotify,
+            // que también usa `trackName` pero sin `startedAt`/`counted`/`source`).
             val nameR = o.optString("trackName", "")
-            if (nameR.isNotBlank()) return o // ya es Rustify
-            val name = o.optString("master_metadata_track_name", "")
-            if (name.isBlank()) return null
-            val ms = o.optLong("ms_played", 0)
-            val startedAt = runCatching {
-                java.time.Instant.parse(o.optString("ts", "")).toEpochMilli()
-            }.getOrDefault(0L)
-            val trackName = o.optString("master_metadata_track_name", "")
-            val albumName = o.optString("master_metadata_album_album_name", "")
-            val artistName = o.optString("master_metadata_artist_name", "")
-            val uri = o.optString("spotify_track_uri", "")
-            val trackId = if (uri.startsWith("spotify:track:")) uri.removePrefix("spotify:track:") else ""
+            if (nameR.isNotBlank() && (o.has("startedAt") || o.has("counted") || o.has("source"))) {
+                return o // ya es Rustify
+            }
+
+            // --- Detección del formato Spotify ---
+            val isOld = o.has("endTime") || o.has("msPlayed")
+
+            val trackName: String
+            val artistName: String
+            val albumName: String
+            val ms: Long
+            val startedAt: Long
+            val trackId: String
+
+            if (isOld) {
+                // Formato antiguo: StreamingHistory*.json
+                trackName = o.optString("trackName", "")
+                if (trackName.isBlank()) return null
+                artistName = o.optString("artistName", "")
+                albumName = "" // el formato antiguo no incluye álbum
+                ms = o.optLong("msPlayed", 0)
+                startedAt = parseOldEndTime(o.optString("endTime", ""))
+                trackId = "" // el formato antiguo no incluye URI/ID
+            } else {
+                // Formato nuevo: Extended Streaming History
+                trackName = o.optString("master_metadata_track_name", "")
+                if (trackName.isBlank()) return null
+                artistName = o.optString("master_metadata_artist_name", "")
+                albumName = o.optString("master_metadata_album_album_name", "")
+                ms = o.optLong("ms_played", 0)
+                startedAt = runCatching {
+                    java.time.Instant.parse(o.optString("ts", "")).toEpochMilli()
+                }.getOrDefault(0L)
+                val uri = o.optString("spotify_track_uri", "")
+                trackId = if (uri.startsWith("spotify:track:")) uri.removePrefix("spotify:track:") else ""
+            }
+
             return JSONObject().apply {
                 put("trackId", trackId)
                 put("isrc", "")
@@ -206,6 +257,21 @@ class ListeningTracker(private val appContext: Context) {
                 put("completed", false)
                 put("source", "spotify")
             }
+        }
+
+        /**
+         * Parsea el `endTime` del formato antiguo de Spotify ("yyyy-MM-dd HH:mm"), que viene en la
+         * zona horaria local del usuario en el momento del export. Devuelve epoch millis, o 0 si falla.
+         */
+        private fun parseOldEndTime(endTime: String): Long {
+            if (endTime.isBlank()) return 0L
+            return runCatching {
+                val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                java.time.LocalDateTime.parse(endTime, fmt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+            }.getOrDefault(0L)
         }
     }
 }

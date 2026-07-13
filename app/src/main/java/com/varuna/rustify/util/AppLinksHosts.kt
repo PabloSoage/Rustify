@@ -17,11 +17,14 @@ package com.varuna.rustify.util
  */
 object AppLinksHosts {
 
-    /** Verified App Links hosts baked into the manifest. */
+    /** Verified App Links hosts baked into the manifest. First entry is the default. */
     val verifiedHosts: List<String> = listOf(
-        "pablosoage.github.io",
         "rustify-music.github.io",
+        "pablosoage.github.io",
     )
+
+    /** Default wrapper host preselected in the UI when no preference is set yet. */
+    val DEFAULT_HOST: String = verifiedHosts.first()
 
     /** Placeholder host kept for reference; does NOT verify. */
     const val PLACEHOLDER_HOST = "rustify.example.com"

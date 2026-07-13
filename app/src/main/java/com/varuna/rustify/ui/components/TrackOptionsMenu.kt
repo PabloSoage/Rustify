@@ -104,6 +104,7 @@ fun TrackOptionsMenuBottomSheet(
 
     // E30 — selector de playlist local (tracks "local:") + diálogo de creación.
     val localPlaylistAddedMsg = stringResource(R.string.local_playlist_added)
+    val localPlaylistAlreadyMsg = stringResource(R.string.local_playlist_already_added)
     if (showLocalPlaylistSelector) {
         AlertDialog(
             onDismissRequest = { showLocalPlaylistSelector = false },
@@ -137,8 +138,14 @@ fun TrackOptionsMenuBottomSheet(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        track.id?.let { spotifyRepo.addToLocalPlaylist(pl.id, it) }
-                                        Toast.makeText(context, localPlaylistAddedMsg, Toast.LENGTH_SHORT).show()
+                                        val tid = track.id
+                                        val already = tid != null && tid in pl.trackIds
+                                        if (tid != null) spotifyRepo.addToLocalPlaylist(pl.id, tid)
+                                        Toast.makeText(
+                                            context,
+                                            if (already) localPlaylistAlreadyMsg else localPlaylistAddedMsg,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                         showLocalPlaylistSelector = false
                                         onDismiss()
                                     }

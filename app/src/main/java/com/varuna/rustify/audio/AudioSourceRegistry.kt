@@ -45,23 +45,24 @@ object AudioSourceRegistry {
     }
 
     /** Cadena de streaming con el orden/toggles guardados por el usuario (stream). */
-    fun streamChain(context: Context): AudioSourceChain {
-        ensureReady()
-        val order = AudioBackendSettings.loadOrder(context, AudioBackendSettings.KEY_STREAM, knownIds)
-        val enabled = AudioBackendSettings.enabledIds(order)
-        val chosen = providers.filter { it.capabilities.id in enabled }
-        return AudioSourceChain(
-            chosen.ifEmpty { providers.filter { it.capabilities.id == YtDlpAudioSource.ID } },
-            lastGood = lastGood
-        )
-    }
+    fun streamChain(context: Context): AudioSourceChain =
+        buildChain(context, AudioBackendSettings.KEY_STREAM)
 
     /** Cadena de descarga con el orden/toggles guardados por el usuario (download). */
-    fun downloadChain(context: Context): AudioSourceChain {
+    fun downloadChain(context: Context): AudioSourceChain =
+        buildChain(context, AudioBackendSettings.KEY_DOWNLOAD)
+
+    /**
+     * Construye una cadena respetando el ORDEN elegido por el usuario (no el de declaración):
+     * mapea los ids habilitados a sus providers en el mismo orden en que aparecen en prefs, así
+     * el drag&drop de Ajustes realmente cambia la prioridad de fallback cuando haya >1 provider.
+     */
+    private fun buildChain(context: Context, key: String): AudioSourceChain {
         ensureReady()
-        val order = AudioBackendSettings.loadOrder(context, AudioBackendSettings.KEY_DOWNLOAD, knownIds)
+        val order = AudioBackendSettings.loadOrder(context, key, knownIds)
         val enabled = AudioBackendSettings.enabledIds(order)
-        val chosen = providers.filter { it.capabilities.id in enabled }
+        val byId = providers.associateBy { it.capabilities.id }
+        val chosen = enabled.mapNotNull { byId[it] }
         return AudioSourceChain(
             chosen.ifEmpty { providers.filter { it.capabilities.id == YtDlpAudioSource.ID } },
             lastGood = lastGood

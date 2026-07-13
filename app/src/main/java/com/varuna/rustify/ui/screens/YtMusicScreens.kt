@@ -1,5 +1,8 @@
 package com.varuna.rustify.ui.screens
 
+import android.content.Context
+import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -238,14 +242,16 @@ fun YtMusicAlbumScreen(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String? = null
 ) {
+    val context = LocalContext.current
     var data by remember { mutableStateOf<YtmAlbum?>(null) }
     var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(browseId) { loading = true; data = repo.getAlbum(browseId); loading = false }
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
     YtmDetailScaffold(title, onBack) { padding ->
         when {
             loading -> YtmLoading(padding)
-            data == null -> YtmNotFound(padding)
+            data == null -> YtmError(padding) { attempt++ }
             else -> {
                 val d = data!!
                 LazyColumn(Modifier.fillMaxSize().padding(padding),
@@ -256,7 +262,11 @@ fun YtMusicAlbumScreen(
                             info1 = d.artists.joinToString(", ") { it.name },
                             info2 = d.year?.toString(),
                             isSaved = repo.isAlbumSaved(browseId),
-                            onSave = { repo.toggleSavedAlbum(YtmAlbumSlim(browseId, d.title, d.year, d.thumbnailUrl)) },
+                            onSave = {
+                                val wasSaved = repo.isAlbumSaved(browseId)
+                                repo.toggleSavedAlbum(YtmAlbumSlim(browseId, d.title, d.year, d.thumbnailUrl))
+                                context.ytmToast(if (wasSaved) R.string.ytm_removed_album else R.string.ytm_saved_album)
+                            },
                             onPlayAll = { onTrackClick(d.tracks.toFullTracks(), 0) }
                         )
                     }
@@ -289,14 +299,16 @@ fun YtMusicArtistScreen(
     onAlbum: (browseId: String, title: String) -> Unit,
     currentTrackId: String? = null
 ) {
+    val context = LocalContext.current
     var data by remember { mutableStateOf<YtmArtist?>(null) }
     var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(channelId) { loading = true; data = repo.getArtist(channelId); loading = false }
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
     YtmDetailScaffold(name, onBack) { padding ->
         when {
             loading -> YtmLoading(padding)
-            data == null -> YtmNotFound(padding)
+            data == null -> YtmError(padding) { attempt++ }
             else -> {
                 val d = data!!
                 LazyColumn(Modifier.fillMaxSize().padding(padding),
@@ -306,7 +318,11 @@ fun YtMusicArtistScreen(
                             thumbnail = d.thumbnailUrl, title = d.name, isCircle = true,
                             info1 = null, info2 = null,
                             isSaved = repo.isArtistSaved(channelId),
-                            onSave = { repo.toggleSavedArtist(YtmArtistRef(channelId, d.name)) },
+                            onSave = {
+                                val wasSaved = repo.isArtistSaved(channelId)
+                                repo.toggleSavedArtist(YtmArtistRef(channelId, d.name))
+                                context.ytmToast(if (wasSaved) R.string.ytm_removed_artist else R.string.ytm_saved_artist)
+                            },
                             onPlayAll = if (d.topTracks.isNotEmpty()) {
                                 { onTrackClick(d.topTracks.toFullTracks(), 0) }
                             } else null
@@ -353,12 +369,13 @@ fun YtMusicPlaylistScreen(
 ) {
     var data by remember { mutableStateOf<YtmPlaylist?>(null) }
     var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(playlistId) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
     YtmDetailScaffold(title, onBack) { padding ->
         when {
             loading -> YtmLoading(padding)
-            data == null -> YtmNotFound(padding)
+            data == null -> YtmError(padding) { attempt++ }
             else -> {
                 val d = data!!
                 LazyColumn(Modifier.fillMaxSize().padding(padding),
@@ -470,6 +487,26 @@ private fun YtmLoading(padding: PaddingValues) {
 private fun YtmNotFound(padding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
         Text(stringResource(R.string.ytm_not_found), color = Color.Gray)
+    }
+}
+
+/** Error state for remote loads: a graceful message + a retry button (no crash on null). */
+@Composable
+private fun YtmError(padding: PaddingValues, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Text(stringResource(R.string.ytm_load_error), color = Color.Gray)
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(containerColor = YtmGreen)
+            ) {
+                Text(stringResource(R.string.ytm_retry), color = Color.Black)
+            }
+        }
     }
 }
 
@@ -610,4 +647,9 @@ private fun YtmDetailHeader(
         }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+/** Short, localized save/favorite feedback. Kept here so all YTM screens share it. */
+internal fun Context.ytmToast(@StringRes msg: Int) {
+    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }

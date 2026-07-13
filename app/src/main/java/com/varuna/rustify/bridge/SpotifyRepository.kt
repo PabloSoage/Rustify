@@ -62,7 +62,10 @@ class SpotifyRepository(context: Context) {
 val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
     // E30: caché de tracks resueltos para una playlist local (patrón de localAlbumTracks).
-    val localPlaylistTracksCache = mutableMapOf<String, List<FullTrack>>()
+    // Accedida desde el hilo main (UI: PlaylistScreen/LibraryScreen) y desde IO → wrap
+    // sincronizado para evitar carreras al leer/escribir/limpiar el mapa concurrentemente.
+    val localPlaylistTracksCache: MutableMap<String, List<FullTrack>> =
+        java.util.Collections.synchronizedMap(mutableMapOf())
 
         /**
          * Normalize a name for comparison: trim, lowercase, strip featuring tags.
@@ -218,8 +221,12 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     /** E30 — recarga playlists + favoritos locales desde disco (tras un import). */
     fun reloadLocalUserData() {
         repositoryScope.launch(Dispatchers.IO) {
-            localPlaylists.clear()
-            localFavoriteIds.clear()
+            // Las SnapshotStateList/Map deben mutarse en el hilo principal; sólo el I/O va a IO.
+            withContext(Dispatchers.Main) {
+                localPlaylists.clear()
+                localFavoriteIds.clear()
+                SpotifyRepository.localPlaylistTracksCache.clear()
+            }
             loadLocalUserData()
         }
     }
@@ -600,9 +607,12 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     fun renameLocalPlaylist(playlistId: String, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
         val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
         val pl = localPlaylists[i]
-        localPlaylists[i] = pl.copy(name = newName, updatedAt = System.currentTimeMillis())
+        if (pl.name == trimmed) return
+        localPlaylists[i] = pl.copy(name = trimmed, updatedAt = System.currentTimeMillis())
         saveLocalPlaylists()
     }
 

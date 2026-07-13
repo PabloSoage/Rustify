@@ -103,6 +103,7 @@ fun PlaylistScreen(
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteLocalDialog by remember { mutableStateOf(false) }
+    var showRenameLocalDialog by remember { mutableStateOf(false) }
     var meId by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -293,7 +294,10 @@ fun PlaylistScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = if (isLocal) (localPlaylist?.name ?: playlistName) else playlistName,
+                                    text = if (isLocal)
+                                        (spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name
+                                            ?: localPlaylist?.name ?: playlistName)
+                                    else playlistName,
                                     style = MaterialTheme.typography.headlineMedium.copy(
                                         fontWeight = FontWeight.ExtraBold
                                     ),
@@ -418,7 +422,12 @@ fun PlaylistScreen(
                                     .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No tracks found", color = Color.Gray)
+                                Text(
+                                    text = if (isLocal)
+                                        stringResource(R.string.local_playlist_empty)
+                                    else "No tracks found",
+                                    color = Color.Gray
+                                )
                             }
                         }
                     } else {
@@ -445,8 +454,10 @@ fun PlaylistScreen(
                             }
                             
                             val trackId = track.id ?: ""
-                            val isLiked = spotifyRepo.isTrackLiked(trackId)
-                            
+                            // E30: los tracks locales usan favoritos locales, no los "liked" de Spotify.
+                            var localFav by remember(trackId) { mutableStateOf(spotifyRepo.isLocalFavorite(trackId)) }
+                            val isLiked = if (isLocal) localFav else spotifyRepo.isTrackLiked(trackId)
+
                             val dismissState = rememberSwipeToDismissBoxState(
                                 positionalThreshold = { it * 0.4f }
                             )
@@ -488,8 +499,13 @@ fun PlaylistScreen(
                                         isLiked = isLiked,
                                         isCurrentTrack = track.id == currentTrackId,
                                         onLikeToggle = {
-                                            coroutineScope.launch {
-                                                spotifyRepo.toggleLikeTrack(track)
+                                            if (isLocal) {
+                                                spotifyRepo.toggleLocalFavorite(trackId)
+                                                localFav = !localFav
+                                            } else {
+                                                coroutineScope.launch {
+                                                    spotifyRepo.toggleLikeTrack(track)
+                                                }
                                             }
                                         },
                                         onMoreClick = { selectedTrackForMenu = track }
@@ -527,6 +543,9 @@ fun PlaylistScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isLocal) {
+                        IconButton(onClick = { showRenameLocalDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.local_playlist_rename), tint = Color.White)
+                        }
                         IconButton(onClick = { showDeleteLocalDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.local_playlist_delete), tint = Color.White)
                         }
@@ -617,6 +636,39 @@ fun PlaylistScreen(
             tracks = tracks,
             onDismiss = { showEntityMenu = false },
             onGoToArtist = onArtistClick
+        )
+    }
+
+    if (showRenameLocalDialog) {
+        val currentName = spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name
+            ?: (localPlaylist?.name ?: playlistName)
+        var renameText by remember(playlistId, showRenameLocalDialog) { mutableStateOf(currentName) }
+        AlertDialog(
+            onDismissRequest = { showRenameLocalDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text(stringResource(R.string.local_playlist_rename), color = Color.White) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRenameLocalDialog = false
+                        spotifyRepo.renameLocalPlaylist(playlistId, renameText.trim())
+                    },
+                    enabled = renameText.isNotBlank()
+                ) { Text(stringResource(R.string.local_playlist_create_confirm), color = Color(0xFF1DB954)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameLocalDialog = false }) {
+                    Text(stringResource(android.R.string.cancel), color = Color.Gray)
+                }
+            }
         )
     }
 

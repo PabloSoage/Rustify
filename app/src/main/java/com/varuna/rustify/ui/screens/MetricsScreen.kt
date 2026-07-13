@@ -195,13 +195,29 @@ fun MetricsScreen(onBack: () -> Unit) {
                 if (data.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.metrics_empty), color = Color.Gray) }
                 } else {
+                    // M\u00E1ximo de plays para dibujar una barra de progreso relativa por fila.
+                    val maxPlays = data.maxOf { it.plays }.coerceAtLeast(1)
                     LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(data) { index, row ->
+                            val rankColor = when (index) {
+                                0 -> Color(0xFFFFD700) // oro
+                                1 -> Color(0xFFC0C0C0) // plata
+                                2 -> Color(0xFFCD7F32) // bronce
+                                else -> Color.Gray
+                            }
                             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text((index + 1).toString().padStart(2, '0'), color = Color.Gray, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
+                                Text((index + 1).toString().padStart(2, '0'), color = rankColor, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                    Text(row.name, color = Color.White, fontSize = 14.sp, maxLines = 1)
-                                    Text("${row.plays} plays \u00B7 ${row.ms / 60000} min", color = Color.Gray, fontSize = 12.sp)
+                                    Text(row.name.ifBlank { "Unknown" }, color = Color.White, fontSize = 14.sp, maxLines = 1, fontWeight = FontWeight.Medium)
+                                    Spacer(Modifier.height(4.dp))
+                                    LinearProgressIndicator(
+                                        progress = { row.plays.toFloat() / maxPlays },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                                        color = Color(0xFF1DB954),
+                                        trackColor = Color(0xFF2A2A2A)
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("${row.plays} plays · ${row.ms / 60000} min", color = Color.Gray, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -212,37 +228,69 @@ fun MetricsScreen(onBack: () -> Unit) {
     }
 }
 
+/**
+ * Calcula [from, to) en epoch millis para el rango seleccionado.
+ *
+ * Timezone: `startedAt` se guarda como epoch millis absolutos (sea de la app vía
+ * `System.currentTimeMillis()`, o de un import: `ts` UTC / `endTime` local → epoch). Las fronteras
+ * de día/semana/mes se calculan en la **zona local del dispositivo** con `Calendar`, coherente con
+ * cómo el usuario percibe "hoy". Como todo se compara en epoch millis (magnitud absoluta), no hay
+ * mezcla UTC/local: solo el *cálculo* de las fronteras usa la zona local, que es lo correcto.
+ */
 private fun rangeToFrom(range: MetricsRange): Pair<Long, Long> {
     val now = System.currentTimeMillis()
-    val cal = Calendar.getInstance().apply {
+    // Medianoche local de hoy.
+    val startOfToday = Calendar.getInstance().apply {
         timeInMillis = now
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }
-    return when (range) {
-        MetricsRange.TODAY -> cal.timeInMillis to now + 1
-        MetricsRange.WEEK -> { val ts = cal.timeInMillis; cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek); cal.timeInMillis to ts + 86400000 }
-        MetricsRange.MONTH -> { val ts = cal.timeInMillis; cal.set(Calendar.DAY_OF_MONTH, 1); cal.timeInMillis to ts + 86400000 }
-        MetricsRange.ALL -> 0L to now + 1
+    val to = now + 1
+    val from = when (range) {
+        MetricsRange.TODAY -> startOfToday.timeInMillis
+        MetricsRange.WEEK -> (startOfToday.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+        }.timeInMillis
+        MetricsRange.MONTH -> (startOfToday.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+        MetricsRange.ALL -> 0L
     }
+    return from to to
 }
 
 private fun aggregateBy(events: List<JSONObject>, keyField: String, nameField: String): List<MetricsRowData> {
-    return events.groupBy { it.optString(keyField) to it.optString(nameField) }
-        .map { (k, list) -> MetricsRowData(k.first, k.second, list.size, list.sumOf { it.optLong("listenedMs") }) }
-        .sortedByDescending { it.plays }.take(50)
+    // Agrupar SOLO por id: si el nombre cambió entre reproducciones (snapshots distintos), no debe
+    // producir dos filas. Cuando no hay id (imports antiguos sin URI), se cae al nombre como clave.
+    return events.groupBy {
+        it.optString(keyField).ifEmpty { "n:" + it.optString(nameField) }
+    }.map { (_, list) ->
+        // Nombre a mostrar: el más reciente (mayor startedAt) no vacío.
+        val name = list.maxByOrNull { it.optLong("startedAt") }?.optString(nameField).orEmpty()
+            .ifEmpty { list.firstNotNullOfOrNull { it.optString(nameField).ifEmpty { null } } ?: "" }
+        val key = list.first().optString(keyField)
+        MetricsRowData(key, name, list.size, list.sumOf { it.optLong("listenedMs") })
+    }.sortedByDescending { it.plays }.take(50)
 }
 
 private fun aggregateByArtist(events: List<JSONObject>): List<MetricsRowData> {
-    val map = mutableMapOf<Pair<String, String>, Pair<Int, Long>>()
+    // Acumular por id de artista; conservar el nombre más reciente asociado a ese id.
+    data class Acc(var plays: Int, var ms: Long, var name: String, var nameAt: Long)
+    val map = HashMap<String, Acc>()
     events.forEach { e ->
-        val ids = e.optJSONArray("artistIds") ?: return@forEach
+        val ids = e.optJSONArray("artistIds")
         val names = e.optJSONArray("artistNames") ?: return@forEach
-        for (i in 0 until minOf(ids.length(), names.length())) {
-            val key = ids.optString(i) to names.optString(i)
-            val (plays, ms) = map.getOrDefault(key, 0 to 0L)
-            map[key] = (plays + 1) to (ms + e.optLong("listenedMs"))
+        val startedAt = e.optLong("startedAt")
+        val ms = e.optLong("listenedMs")
+        val count = names.length()
+        for (i in 0 until count) {
+            val name = names.optString(i)
+            val id = ids?.optString(i).orEmpty().ifEmpty { "n:$name" }
+            val acc = map.getOrPut(id) { Acc(0, 0L, name, startedAt) }
+            acc.plays += 1
+            acc.ms += ms
+            if (startedAt >= acc.nameAt && name.isNotEmpty()) { acc.name = name; acc.nameAt = startedAt }
         }
     }
-    return map.map { (k, v) -> MetricsRowData(k.first, k.second, v.first, v.second) }
+    return map.map { (id, a) -> MetricsRowData(id, a.name, a.plays, a.ms) }
         .sortedByDescending { it.plays }.take(50)
 }

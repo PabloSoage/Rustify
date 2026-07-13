@@ -131,6 +131,8 @@
     <string name="local_playlist_delete_confirm">削除</string>
     <string name="local_playlist_delete_msg">このローカルプレイリストを削除しますか？元に戻せません。</string>
     <string name="local_playlist_deleted">プレイリストを削除しました</string>
+    <string name="local_playlist_rename">プレイリスト名を変更</string>
+    <string name="local_playlist_empty">まだ曲がありません。ローカル曲のメニューからトラックを追加してください。</string>
     <string name="settings_local_data">ローカルデータ（プレイリスト + お気に入り）</string>
     <string name="settings_export_local_empty">エクスポートするローカルデータがありません</string>
 

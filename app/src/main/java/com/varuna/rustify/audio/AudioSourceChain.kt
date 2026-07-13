@@ -32,7 +32,7 @@ class AudioSourceChain(
             if (!p.capabilities.canStream) continue
             try {
                 if (!p.isAvailableFor(track)) continue
-            } catch (e: Exception) { errors += e; continue }
+            } catch (e: Exception) { errors += labelError(p.capabilities.id, e); continue }
             val r = runCatching {
                 withTimeout(perProviderTimeoutMs) { p.resolveStreamUrl(track, hint).getOrThrow() }
             }
@@ -42,7 +42,8 @@ class AudioSourceChain(
                 return Result.success(p.capabilities.id to info)
             }
             r.onFailure { e ->
-                errors += e
+                // Tag the error with the provider id so the aggregated message names who failed and why.
+                errors += labelError(p.capabilities.id, e)
                 if (lastGood[trackId] == p.capabilities.id) lastGood.remove(trackId)
             }
         }
@@ -62,7 +63,7 @@ class AudioSourceChain(
             if (!p.capabilities.canDownload) continue
             try {
                 if (!p.isAvailableFor(track)) continue
-            } catch (e: Exception) { errors += e; continue }
+            } catch (e: Exception) { errors += labelError(p.capabilities.id, e); continue }
             // A full download (yt-dlp -x mp3 320K) routinely exceeds the resolve timeout; use a much
             // larger ceiling so real downloads aren't cancelled mid-transfer (E60 fix).
             val r = runCatching {
@@ -73,7 +74,7 @@ class AudioSourceChain(
                 return Result.success(p.capabilities.id to r.getOrNull()!!)
             }
             r.onFailure { e ->
-                errors += e
+                errors += labelError(p.capabilities.id, e)
                 if (lastGood[trackId] == p.capabilities.id) lastGood.remove(trackId)
             }
         }
@@ -82,6 +83,19 @@ class AudioSourceChain(
 
     /** Invalida la caché "provider que funcionó" para un track (p. ej. ante 403/410). */
     fun invalidate(trackId: String) { lastGood.remove(trackId) }
+
+    /**
+     * Wraps a provider failure with its id so [AudioSourceChainException]'s aggregated message reads
+     * e.g. "ytdlp: resolver returned empty YouTube id" instead of an anonymous cause. A timeout is
+     * reported explicitly (it arrives here as a [kotlinx.coroutines.TimeoutCancellationException]).
+     */
+    private fun labelError(providerId: String, e: Throwable): Throwable {
+        val reason = when (e) {
+            is kotlinx.coroutines.TimeoutCancellationException -> "timed out"
+            else -> e.message ?: e::class.simpleName.orEmpty()
+        }
+        return Exception("$providerId: $reason", e)
+    }
 
     private fun reorderPreferred(
         all: List<AudioSourceProvider>,

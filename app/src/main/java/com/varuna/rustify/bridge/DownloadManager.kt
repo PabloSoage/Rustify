@@ -64,7 +64,9 @@ object DownloadManager {
         updateActiveCount()
 
         scope.launch {
-            processDownload(context.applicationContext, trackId, trackName, trackArtist, spotifyRepo, downloadUriStr)
+            // E60: spotifyRepo is no longer used inside processDownload (resolution+download now live
+            // in AudioSourceRegistry.downloadChain). Kept on enqueueDownload's public signature for callers.
+            processDownload(context.applicationContext, trackId, trackName, trackArtist, downloadUriStr)
         }
     }
 
@@ -91,7 +93,6 @@ object DownloadManager {
         trackId: String,
         trackName: String,
         trackArtist: String,
-        spotifyRepo: SpotifyRepository,
         downloadUriStr: String
     ) {
         updateStatus(trackId, DownloadStatus.RESOLVING)
