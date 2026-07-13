@@ -112,6 +112,27 @@ class YtMusicRepository(private val appContext: Context) {
         }.getOrDefault(emptyResults)
     }
 
+    /** Search via the YouTube scraper (general YouTube, includes unofficial/covers). */
+    suspend fun searchScraper(query: String): YtmSearchResults = withContext(Dispatchers.IO) {
+        runCatching {
+            val raw = NativeEngine.searchYouTubeNative(query)
+            // The scraper returns a plain JSON array: [{id, title, author, duration_sec, thumbnail_url}]
+            val data = JSONArray(raw)
+            val tracks = (0 until data.length()).map { i ->
+                val o = data.getJSONObject(i)
+                YtmTrack(
+                    videoId = o.optString("id", ""),
+                    title = o.optString("title", ""),
+                    artists = listOf(YtmArtistRef("", o.optString("author", ""))),
+                    albumId = null,
+                    durationSec = o.optInt("duration_sec", 0),
+                    thumbnailUrl = o.optString("thumbnail_url", "")
+                )
+            }
+            YtmSearchResults(tracks, emptyList(), emptyList(), emptyList())
+        }.getOrDefault(emptyResults)
+    }
+
     suspend fun getAlbum(browseId: String): YtmAlbum? = withContext(Dispatchers.IO) {
         runCatching {
             val json = NativeEngine.getYtmAlbumNative(browseId)

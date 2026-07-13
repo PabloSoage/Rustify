@@ -99,6 +99,11 @@
     <string name="home_greeting_morning">Good Morning</string>
     <string name="home_greeting_afternoon">Good Afternoon</string>
     <string name="home_greeting_evening">Good Evening</string>
+    <string name="home_dj">DJ</string>
+    <string name="home_new_releases">New Releases</string>
+    <string name="home_metrics">Metrics</string>
+    <string name="home_downloads">Downloads</string>
+    <string name="home_settings">Settings</string>
     
     <!-- SearchScreen -->
     <string name="search_placeholder">What do you want to listen to?</string>
@@ -191,13 +196,16 @@
     <string name="metrics_import_error">Import failed: %1$s</string>
 
     <!-- E40 — YouTube Music -->
+    <string name="ytm_tab_explore">Explore</string>
     <string name="ytm_tab_all">All</string>
     <string name="ytm_tab_favorites">Favorites</string>
     <string name="ytm_tab_playlists">Playlists</string>
     <string name="ytm_tab_albums">Albums</string>
     <string name="ytm_tab_artists">Artists</string>
     <string name="ytm_search_placeholder">Search YouTube Music</string>
+    <string name="ytm_search_filter_title">Filter results</string>
     <string name="ytm_search_empty">Search for tracks, albums, artists or playlists</string>
+    <string name="ytm_explore_empty">Search YouTube Music using the search bar above</string>
     <string name="ytm_no_results">No results found</string>
     <string name="ytm_no_favorites">No favorites yet. Search and tap the heart icon.</string>
     <string name="ytm_play_all">Play all</string>
@@ -210,6 +218,9 @@
     <string name="paste_no_ytm_link">No YouTube Music link found in clipboard</string>
     <string name="enable_ytm_music">YouTube Music</string>
     <string name="enable_ytm_music_desc">Shows the YouTube Music tab in your library</string>
+    <string name="settings_ytm_scraper">Use YouTube Scraper</string>
+    <string name="settings_ytm_scraper_on">Scraper: includes unofficial/covers. Slower but more results.</string>
+    <string name="settings_ytm_scraper_off">API: official YouTube Music results. Fast but limited to signed content.</string>
     <string name="settings_export_ytm">Export YTM Library</string>
     <string name="settings_import_ytm">Import YTM Library</string>
     <string name="settings_ytm_export_success">YTM library exported</string>

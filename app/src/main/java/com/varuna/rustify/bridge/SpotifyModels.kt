@@ -672,7 +672,9 @@ data class YtmTrack(
     fun toFullTrack(): FullTrack = FullTrack(
         id = "ytm:$videoId", name = title, externalUri = "https://music.youtube.com/watch?v=$videoId",
         explicit = isExplicit, durationMs = durationSec * 1000, isrc = "",
-        artists = artists.map { SimpleArtist(it.id, it.name, "", null) }, album = null
+        artists = artists.map { SimpleArtist(it.id, it.name, "", null) },
+        album = SimpleAlbum("", "YouTube Music", "", null, null,
+            listOf(SpotifyImage(maximiseThumbnail(thumbnailUrl), 720, 720)), emptyList(), null)
     )
     companion object {
         fun fromJson(o: JSONObject) = YtmTrack(
@@ -684,6 +686,15 @@ data class YtmTrack(
         fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
         fun toJsonArray(list: List<YtmTrack>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
     }
+}
+
+/** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w0-h0`). */
+private fun maximiseThumbnail(url: String): String {
+    if (url.isBlank()) return url
+    return url
+        .replace(Regex("""=w\d+-h\d+"""), "=w720-h720")
+        .replace(Regex("""=s\d+"""), "=s720")
+        .replace("/hqdefault.", "/maxresdefault.")
 }
 
 data class YtmAlbum(

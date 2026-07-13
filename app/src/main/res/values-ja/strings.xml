@@ -78,6 +78,11 @@
     <string name="home_greeting_morning">おはようございます</string>
     <string name="home_greeting_afternoon">こんにちは</string>
     <string name="home_greeting_evening">こんばんは</string>
+    <string name="home_dj">DJ</string>
+    <string name="home_new_releases">新着</string>
+    <string name="home_metrics">統計</string>
+    <string name="home_downloads">ダウンロード</string>
+    <string name="home_settings">設定</string>
     
     <!-- SearchScreen -->
     <string name="search_placeholder">何を聴きたいですか？</string>
@@ -178,4 +183,9 @@
     <string name="settings_drive_sync_ok">同期完了</string>
     <string name="settings_drive_sync_error">同期エラー: %1$s</string>
     <string name="settings_drive_not_configured">Google Drive がまだ設定されていません。default_web_client_id と Cloud の OAuth クライアントを設定してください（ドキュメント参照）。</string>
+    <string name="ytm_tab_explore">探索</string>
+    <string name="ytm_explore_empty">上の検索バーで YouTube Music を検索</string>
+    <string name="settings_ytm_scraper">YouTube Scraper を使用</string>
+    <string name="settings_ytm_scraper_on">Scraper: 非公式/カバーを含む。遅いが結果が多い。</string>
+    <string name="settings_ytm_scraper_off">API: 公式 YouTube Music 結果。高速だが署名付きコンテンツのみ。</string>
 </resources>

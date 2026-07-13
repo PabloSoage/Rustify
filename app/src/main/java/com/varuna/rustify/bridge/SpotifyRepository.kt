@@ -577,7 +577,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     fun addToLocalPlaylist(playlistId: String, trackId: String) {
-        if (!trackId.startsWith("local:")) return
+        if (trackId.isBlank()) return
         val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
         val pl = localPlaylists[i]
         if (trackId in pl.trackIds) return

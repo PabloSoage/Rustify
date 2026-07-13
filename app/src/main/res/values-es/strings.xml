@@ -102,6 +102,11 @@
     <string name="home_greeting_morning">Buenos Días</string>
     <string name="home_greeting_afternoon">Buenas Tardes</string>
     <string name="home_greeting_evening">Buenas Noches</string>
+    <string name="home_dj">DJ</string>
+    <string name="home_new_releases">Novedades</string>
+    <string name="home_metrics">Métricas</string>
+    <string name="home_downloads">Descargas</string>
+    <string name="home_settings">Ajustes</string>
     
     <!-- SearchScreen -->
     <string name="search_placeholder">¿Qué quieres escuchar?</string>
@@ -190,6 +195,7 @@
     <string name="metrics_import_error">Importación fallida: %1$s</string>
 
     <!-- E40 — YouTube Music -->
+    <string name="ytm_tab_explore">Explorar</string>
     <string name="ytm_tab_all">Todo</string>
     <string name="ytm_tab_favorites">Favoritos</string>
     <string name="ytm_tab_playlists">Playlists</string>
@@ -197,6 +203,7 @@
     <string name="ytm_tab_artists">Artistas</string>
     <string name="ytm_search_placeholder">Buscar en YouTube Music</string>
     <string name="ytm_search_empty">Busca canciones, álbumes, artistas o playlists</string>
+    <string name="ytm_explore_empty">Busca en YouTube Music usando la barra de arriba</string>
     <string name="ytm_no_results">Sin resultados</string>
     <string name="ytm_no_favorites">Sin favoritos aún. Busca y pulsa el corazón.</string>
     <string name="ytm_play_all">Reproducir todo</string>
@@ -209,6 +216,9 @@
     <string name="paste_no_ytm_link">No se encontró ningún enlace de YouTube Music en el portapapeles</string>
     <string name="enable_ytm_music">YouTube Music</string>
     <string name="enable_ytm_music_desc">Muestra la pestaña YouTube Music en tu biblioteca</string>
+    <string name="settings_ytm_scraper">Usar YouTube Scraper</string>
+    <string name="settings_ytm_scraper_on">Scraper: incluye contenido no oficial/covers. Más lento pero más resultados.</string>
+    <string name="settings_ytm_scraper_off">API: resultados oficiales de YouTube Music. Rápido pero limitado a contenido firmado.</string>
     <string name="settings_export_ytm">Exportar biblioteca YTM</string>
     <string name="settings_import_ytm">Importar biblioteca YTM</string>
     <string name="settings_ytm_export_success">Biblioteca YTM exportada</string>

@@ -37,10 +37,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -282,7 +282,7 @@ fun SettingsScreen(
         if (uri != null) {
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    val raw = context.contentResolver.openInputStream(uri)?.use { java.io.ByteArrayOutputStream().also { bos -> it.copyTo(bos) }.toString(Charsets.UTF_8) } ?: ""
+                    val raw = context.contentResolver.openInputStream(uri)?.use { java.io.ByteArrayOutputStream().also { bos -> it.copyTo(bos) }.toString("UTF-8") } ?: ""
                     val root = org.json.JSONObject(raw)
                     if (root.optString("schema") != "rustify-local-user-data") { withContext(Dispatchers.Main) { Toast.makeText(context, localImportErrorMsg, Toast.LENGTH_SHORT).show() }; return@launch }
                     File(context.filesDir, "local_playlists.json").writeText((root.optJSONArray("playlists") ?: org.json.JSONArray()).toString())
@@ -593,7 +593,33 @@ fun SettingsScreen(
                                 colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
                             )
                         }
+                        Spacer(modifier = Modifier.height(12.dp))
 
+                        // YTM Search mode (API vs Scraper)
+                        var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.settings_ytm_scraper), color = Color.White, fontSize = 14.sp)
+                                Text(
+                                    if (ytmScraper) stringResource(R.string.settings_ytm_scraper_on) else stringResource(R.string.settings_ytm_scraper_off),
+                                    color = Color.Gray, fontSize = 12.sp
+                                )
+                            }
+                            Switch(
+                                checked = ytmScraper,
+                                onCheckedChange = { checked ->
+                                    ytmScraper = checked
+                                    prefs.edit { putString("ytm_search_mode", if (checked) "scraper" else "api") }
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFE65100))
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         
@@ -1265,11 +1291,11 @@ if (localMusicDirs.isEmpty()) {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = wrapperMenuExpanded)
                             },
                             modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth(),
                             colors = fieldColors
                         )
-                        ExposedDropdownMenu(
+                        DropdownMenu(
                             expanded = wrapperMenuExpanded,
                             onDismissRequest = { wrapperMenuExpanded = false }
                         ) {

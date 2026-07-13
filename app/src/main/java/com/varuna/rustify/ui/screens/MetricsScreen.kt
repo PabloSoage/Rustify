@@ -185,7 +185,7 @@ fun MetricsScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF121212), contentColor = Color(0xFF1DB954)) {
+            PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF121212), contentColor = Color(0xFF1DB954)) {
                 tabs.forEachIndexed { i, t -> Tab(selected = selectedTab == i, onClick = { selectedTab = i }, text = { Text(t, fontSize = 13.sp) }) }
             }
             if (isLoading) {

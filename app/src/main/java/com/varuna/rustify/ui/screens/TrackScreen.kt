@@ -2,6 +2,10 @@
 
 package com.varuna.rustify.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalContext
@@ -10,6 +14,7 @@ import com.varuna.rustify.R
 import com.varuna.rustify.util.bouncingMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -276,6 +281,7 @@ fun TrackScreen(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     onGoToRadio: ((String, String) -> Unit)? = null,
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
     modifier: Modifier = Modifier
 ) {
     var trackDetails by remember { mutableStateOf<FullTrack?>(null) }
@@ -367,6 +373,22 @@ fun TrackScreen(
     val darkBackground = Color(0xFF121212)
 
     val imgUrl = trackToShow?.effectiveCoverUrl()
+
+    // ── E80 — Canvas (full-screen behind cover) ──
+    var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
+    var canvasEnabled by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(trackId) {
+        canvasUrl = null
+        try {
+            val json = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                NativeEngine.getSpotifyCanvasNative(trackId)
+            }
+            val obj = JSONObject(json)
+            canvasUrl = if (obj.has("url") && !obj.isNull("url")) obj.optString("url") else null
+        } catch (_: Exception) {
+            canvasUrl = null
+        }
+    }
     val config = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
@@ -402,9 +424,25 @@ fun TrackScreen(
                 }
             } else {
                 trackToShow?.let { track ->
+                    val showCanvas = canvasEnabled && !canvasUrl.isNullOrEmpty()
+                    var uiVisible by remember { mutableStateOf(true) }
+
                     Box(modifier = Modifier.fillMaxSize()) {
-                        // Blurred Background
-                        if (!imgUrl.isNullOrEmpty()) {
+                        // ── Background layer ──
+                        if (showCanvas) {
+                            CanvasVideoPlayer(url = canvasUrl!!)
+                            // Tap to show UI when hidden
+                            if (!uiVisible) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ) { uiVisible = true }
+                                )
+                            }
+                        } else if (!imgUrl.isNullOrEmpty()) {
                             AsyncImage(
                                 model = imgUrl,
                                 contentDescription = null,
@@ -416,42 +454,123 @@ fun TrackScreen(
                             )
                         }
 
-                        // Content overlay
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(Color.Transparent, darkBackground.copy(alpha = 0.8f), darkBackground),
-                                        startY = 0f,
-                                        endY = 1500f
-                                    )
-                                )
+                        // ── UI layer (fades in/out on tap) ──
+                        AnimatedVisibility(
+                            visible = uiVisible,
+                            enter = fadeIn(animationSpec = tween(250)),
+                            exit = fadeOut(animationSpec = tween(250)),
                         ) {
-                            if (isLandscape) {
-                                Row(
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                // Gradient / dark overlay
+                                Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(top = 48.dp)
-                                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Cover Art / Canvas
-                                    TrackCoverWithCanvas(
-                                        trackId = track.id ?: trackId,
-                                        imgUrl = imgUrl,
-                                        contentDescription = track.name,
-                                        size = 180.dp
-                                    )
+                                        .background(
+                                            if (showCanvas) {
+                                                Brush.verticalGradient(
+                                                    colors = listOf(Color(0xFF0A0A0A), Color.Transparent, Color.Transparent, Color(0xFF0A0A0A)),
+                                                    startY = 0f,
+                                                    endY = Float.POSITIVE_INFINITY
+                                                )
+                                            } else {
+                                                Brush.verticalGradient(
+                                                    colors = listOf(Color.Transparent, darkBackground.copy(alpha = 0.8f), darkBackground),
+                                                    startY = 0f,
+                                                    endY = 1500f
+                                                )
+                                            }
+                                        )
+                                )
 
-                                    Spacer(modifier = Modifier.width(24.dp))
-                                    
+                                // Content
+                                if (isLandscape) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(top = 48.dp)
+                                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (!showCanvas) {
+                                            TrackCoverSimple(
+                                                imgUrl = imgUrl,
+                                                contentDescription = track.name,
+                                                size = 180.dp
+                                            )
+                                            Spacer(modifier = Modifier.width(24.dp))
+                                        } else {
+                                            // Tappable placeholder — preserves layout, tap to hide UI
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(180.dp)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) { uiVisible = false }
+                                            )
+                                            Spacer(modifier = Modifier.width(24.dp))
+                                        }
+
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .verticalScroll(rememberScrollState()),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            TrackScreenControls(
+                                                track = track,
+                                                lyricsResult = lyricsResult,
+                                                lyricsLoading = lyricsLoading,
+                                                isBuffering = isBuffering,
+                                                isPlaying = isPlaying,
+                                                bufferPercent = bufferPercent,
+                                                hasPrevious = hasPrevious,
+                                                hasNext = hasNext,
+                                                isCurrentTrack = isCurrentTrack,
+                                                currentPosition = currentPosition,
+                                                totalDuration = totalDuration,
+                                                playerState = playerState,
+                                                audioPlayerService = audioPlayerService,
+                                                spotifyRepo = spotifyRepo,
+                                                onShowMappingDialog = { showMappingDialog = true },
+                                                onShowQueue = { showQueueBottomSheet = true },
+                                                onAlbumClick = onAlbumClick,
+                                                onArtistClick = onArtistClick,
+                                                coroutineScope = coroutineScope,
+                                                ytmRepo = ytmRepo
+                                            )
+                                        }
+                                    }
+                                } else {
                                     Column(
                                         modifier = Modifier
-                                            .weight(1f)
+                                            .fillMaxSize()
+                                            .padding(top = 64.dp)
+                                            .padding(horizontal = 24.dp, vertical = 16.dp)
                                             .verticalScroll(rememberScrollState()),
-                                        horizontalAlignment = Alignment.CenterHorizontally
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
                                     ) {
+                                        if (!showCanvas) {
+                                            TrackCoverSimple(
+                                                imgUrl = imgUrl,
+                                                contentDescription = track.name,
+                                                size = 280.dp
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        } else {
+                                            // Tappable placeholder — preserves layout, tap to hide UI
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(280.dp)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) { uiVisible = false }
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        }
+
                                         TrackScreenControls(
                                             track = track,
                                             lyricsResult = lyricsResult,
@@ -471,104 +590,94 @@ fun TrackScreen(
                                             onShowQueue = { showQueueBottomSheet = true },
                                             onAlbumClick = onAlbumClick,
                                             onArtistClick = onArtistClick,
-                                            coroutineScope = coroutineScope
+                                            coroutineScope = coroutineScope,
+                                            ytmRepo = ytmRepo
                                         )
                                     }
                                 }
-                            } else {
-                                Column(
+
+                                // Error banner
+                                if (isError) {
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 32.dp)
+                                            .padding(bottom = 100.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFCC2200).copy(alpha = 0.85f))
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = playerState.errorMessage.ifBlank { "No se encontró en YouTube Music" },
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        TextButton(onClick = {
+                                            val inQueue = playerState.queue.any { it.id == trackToShow?.id }
+                                            if (inQueue && trackToShow?.id != null) {
+                                                audioPlayerService.playSpecificTrackInQueue(trackToShow.id!!)
+                                            } else {
+                                                audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow?.id)
+                                            }
+                                        }) {
+                                            Text("Reintentar", color = Color.White, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+
+                                // ── Top bar (back + canvas tabs + menu) ──
+                                Row(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(top = 64.dp)
-                                        .padding(horizontal = 24.dp, vertical = 16.dp)
-                                        .verticalScroll(rememberScrollState()),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
+                                        .fillMaxWidth()
+                                        .padding(top = if (isLandscape) 8.dp else 40.dp, start = 8.dp, end = 8.dp)
+                                        .align(Alignment.TopCenter),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Big Cover Art / Canvas
-                                    TrackCoverWithCanvas(
-                                        trackId = track.id ?: trackId,
-                                        imgUrl = imgUrl,
-                                        contentDescription = track.name,
-                                        size = 280.dp
-                                    )
+                                    IconButton(onClick = onBackClick) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                    }
 
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    
-                                    TrackScreenControls(
-                                        track = track,
-                                        lyricsResult = lyricsResult,
-                                        lyricsLoading = lyricsLoading,
-                                        isBuffering = isBuffering,
-                                        isPlaying = isPlaying,
-                                        bufferPercent = bufferPercent,
-                                        hasPrevious = hasPrevious,
-                                        hasNext = hasNext,
-                                        isCurrentTrack = isCurrentTrack,
-                                        currentPosition = currentPosition,
-                                        totalDuration = totalDuration,
-                                        playerState = playerState,
-                                        audioPlayerService = audioPlayerService,
-                                        spotifyRepo = spotifyRepo,
-                                        onShowMappingDialog = { showMappingDialog = true },
-                                        onShowQueue = { showQueueBottomSheet = true },
-                                        onAlbumClick = onAlbumClick,
-                                        onArtistClick = onArtistClick,
-                                        coroutineScope = coroutineScope
-                                    )
+                                    // Image | Canvas tab selector
+                                    if (!canvasUrl.isNullOrEmpty()) {
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(Color.White.copy(alpha = 0.10f))
+                                                .padding(2.dp)
+                                        ) {
+                                            listOf(
+                                                false to stringResource(R.string.track_tab_image),
+                                                true to stringResource(R.string.track_tab_canvas)
+                                            ).forEach { (canvas, label) ->
+                                                val selected = canvasEnabled == canvas
+                                                Text(
+                                                    text = label,
+                                                    color = if (selected) Color.Black else Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(18.dp))
+                                                        .background(if (selected) spotifyGreen else Color.Transparent)
+                                                        .clickable { canvasEnabled = canvas }
+                                                        .padding(horizontal = 14.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    trackToShow?.let {
+                                        IconButton(onClick = { showOptionsMenu = true }) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-
-                    // Error banner — shown when stream resolution fails
-                    if (isError) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 32.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFCC2200).copy(alpha = 0.85f))
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = playerState.errorMessage.ifBlank { "No se encontró en YouTube Music" },
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            TextButton(onClick = {
-                                val inQueue = playerState.queue.any { it.id == trackToShow?.id }
-                                if (inQueue && trackToShow?.id != null) {
-                                    audioPlayerService.playSpecificTrackInQueue(trackToShow.id!!)
-                                } else {
-                                    audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow?.id)
-                                }
-                            }) {
-                                Text("Reintentar", color = Color.White, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-
-                // Custom floating top bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = if (isLandscape) 8.dp else 40.dp, start = 8.dp, end = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                    }
-                    trackToShow?.let {
-                        IconButton(onClick = { showOptionsMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
                         }
                     }
                 }
@@ -588,6 +697,9 @@ fun TrackScreen(
                     track.id?.let { tid ->
                         NativeEngine.setAlternativeTrackNative(tid, ytId)
                         LyricsRepository.invalidateLyrics(tid)
+                        // Clear cached stream URL so the new mapping takes effect immediately
+                        audioPlayerService.removeCachedStreamUrl(tid)
+                        com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(tid)
                         
                         android.widget.Toast.makeText(
                             context.applicationContext,
@@ -861,7 +973,8 @@ fun TrackScreenControls(
     onShowQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    coroutineScope: kotlinx.coroutines.CoroutineScope
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null
 ) {
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
@@ -891,8 +1004,9 @@ fun TrackScreenControls(
             Spacer(modifier = Modifier.height(18.dp))
         }
 
-        // Title and Like button
-        Row(
+            // Title and Like button
+            val isYtm = track.id?.startsWith("ytm:") == true
+            Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -909,16 +1023,38 @@ fun TrackScreenControls(
                 Text(
                     text = track.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFF1DB954),
-                    modifier = Modifier.fillMaxWidth().bouncingMarquee().clickable {
-                        if (track.artists.isNotEmpty()) {
-                            onArtistClick(track.artists.first().id)
-                        }
+                    color = if (isYtm) Color.White else Color(0xFF1DB954),
+                    modifier = Modifier.fillMaxWidth().bouncingMarquee().run {
+                        if (!isYtm) clickable {
+                            if (track.artists.isNotEmpty()) {
+                                onArtistClick(track.artists.first().id)
+                            }
+                        } else this
                     }
                 )
             }
 
-            // Like Button
+            // Like / YTM Favorite Button
+            if (isYtm) {
+                val vid = track.id?.removePrefix("ytm:") ?: ""
+                val ctx = LocalContext.current
+                val effectiveYtmRepo = ytmRepo ?: remember(ctx) {
+                    com.varuna.rustify.bridge.YtMusicRepository(ctx.applicationContext)
+                }
+                var ytmFav by remember(vid) { mutableStateOf(effectiveYtmRepo.isFavorite(vid)) }
+                SpotifyLikeButton(
+                    isLiked = ytmFav,
+                    onClick = {
+                        effectiveYtmRepo.toggleFavorite(com.varuna.rustify.bridge.YtmTrack(
+                            videoId = vid, title = track.name,
+                            artists = track.artists.map { com.varuna.rustify.bridge.YtmArtistRef(it.id, it.name) },
+                            albumId = null, durationSec = track.durationMs / 1000,
+                            thumbnailUrl = track.album?.images?.firstOrNull()?.url ?: ""
+                        ))
+                        ytmFav = !ytmFav
+                    }
+                )
+            } else {
             val isLiked = track.id?.let { spotifyRepo.isTrackLiked(it) } ?: false
             SpotifyLikeButton(
                 isLiked = isLiked,
@@ -928,11 +1064,13 @@ fun TrackScreenControls(
                     }
                 }
             )
+            }
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Album Link
+        // Album Link — skip for YTM tracks (synthetic album)
+        if (!isYtm) {
         Text(
             text = track.album?.name ?: "",
             style = MaterialTheme.typography.bodyLarge,
@@ -944,6 +1082,7 @@ fun TrackScreenControls(
                 }
             }.align(Alignment.Start)
         )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1252,125 +1391,30 @@ fun LyricsView(
  * The YouTube "Vídeo" tab is intentionally left for a later iteration.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+/**
+ * Cover art with an optional canvas badge in the top-right corner.
+ * When the track has a canvas, a small pill styled like the Spotify
+ * canvas badge appears — tap it to toggle the full-screen canvas on/off.
+ */
 @Composable
-fun TrackCoverWithCanvas(
-    trackId: String,
+fun TrackCoverSimple(
     imgUrl: String?,
     contentDescription: String,
     size: androidx.compose.ui.unit.Dp
 ) {
-    val spotifyGreen = Color(0xFF1DB954)
-
-    // Canvas fetch state. null = not yet loaded / loading; then a Result-like pair.
-    var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
-    var canvasLoading by remember(trackId) { mutableStateOf(true) }
-    var canvasResolved by remember(trackId) { mutableStateOf(false) }
-    // Selected tab: 0 = Imagen, 1 = Canvas
-    var selectedTab by rememberSaveable(trackId) { mutableStateOf(0) }
-
-    LaunchedEffect(trackId) {
-        canvasLoading = true
-        canvasResolved = false
-        canvasUrl = null
-        try {
-            val json = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                NativeEngine.getSpotifyCanvasNative(trackId)
-            }
-            val obj = JSONObject(json)
-            // {"url":"..."} present & non-null → has canvas; {"url":null} or error → none.
-            canvasUrl = if (obj.has("url") && !obj.isNull("url")) obj.optString("url") else null
-        } catch (_: Exception) {
-            canvasUrl = null
-        } finally {
-            canvasResolved = true
-            canvasLoading = false
-        }
-    }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Tab selector
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color.White.copy(alpha = 0.08f))
-                .padding(2.dp)
-        ) {
-            listOf(
-                0 to stringResource(R.string.track_tab_image),
-                1 to stringResource(R.string.track_tab_canvas)
-            ).forEach { (index, label) ->
-                val selected = selectedTab == index
-                Text(
-                    text = label,
-                    color = if (selected) Color.Black else Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(if (selected) spotifyGreen else Color.Transparent)
-                        .clickable { selectedTab = index }
-                        .padding(horizontal = 18.dp, vertical = 6.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Surface(
-            modifier = Modifier
-                .size(size)
-                .clip(RoundedCornerShape(8.dp)),
-            color = Color.DarkGray
-        ) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                val url = canvasUrl
-                if (selectedTab == 1 && !url.isNullOrEmpty()) {
-                    CanvasVideoPlayer(url = url)
-                } else if (selectedTab == 1 && canvasLoading) {
-                    // Canvas selected but still resolving
-                    if (!imgUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = imgUrl,
-                            contentDescription = contentDescription,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            alpha = 0.4f
-                        )
-                    }
-                    CircularProgressIndicator(color = spotifyGreen, modifier = Modifier.size(32.dp))
-                } else if (selectedTab == 1 && canvasResolved && url.isNullOrEmpty()) {
-                    // No canvas → fall back to the image with a subtle hint
-                    if (!imgUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = imgUrl,
-                            contentDescription = contentDescription,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.track_canvas_none),
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .padding(vertical = 4.dp)
-                    )
-                } else {
-                    // Imagen tab (default)
-                    if (!imgUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = imgUrl,
-                            contentDescription = contentDescription,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                }
-            }
+    Surface(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(8.dp)),
+        color = Color.DarkGray
+    ) {
+        if (!imgUrl.isNullOrEmpty()) {
+            AsyncImage(
+                model = imgUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
         }
     }
 }

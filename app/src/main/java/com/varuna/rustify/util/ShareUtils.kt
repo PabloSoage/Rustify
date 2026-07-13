@@ -64,14 +64,7 @@ object ShareUtils {
             Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
             return
         }
-        val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-        val text = if (prefs.getBoolean("share_as_rustify_link", false)) {
-            val host = prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST
-            RustifyWrapperLink.wrap(ytmUrl, host)
-        } else {
-            ytmUrl
-        }
-        shareText(context, text)
+        shareText(context, ytmUrl)
     }
 
     private fun shareText(context: Context, text: String) {

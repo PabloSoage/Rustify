@@ -806,6 +806,30 @@ fun EngineTester(
                             onYtmOpenAlbum = { id, title -> navigationStack.add(Screen.YtmAlbumDetail(id, title)) },
                             onYtmOpenArtist = { id, name -> navigationStack.add(Screen.YtmArtistDetail(id, name)) },
                             onYtmOpenLocalPlaylist = { id -> navigationStack.add(Screen.YtmLocalPlaylistDetail(id)) },
+                            onYtmOpenPlaylist = { id, title -> navigationStack.add(Screen.YtmPlaylistDetail(id, title)) },
+                            onYtmPasteLink = {
+                                val pasted = try {
+                                    val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                                } catch (e: Exception) { null }
+                                if (pasted.isNullOrBlank()) {
+                                    android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
+                                } else when (val link = com.varuna.rustify.util.YtMusicLinkParser.parse(pasted)) {
+                                    is com.varuna.rustify.util.YtmLink.Track -> {
+                                        val yt = com.varuna.rustify.bridge.FullTrack(
+                                            id = "ytm:${link.videoId}", name = "YouTube Music",
+                                            externalUri = "https://music.youtube.com/watch?v=${link.videoId}",
+                                            explicit = false, durationMs = 0, isrc = "",
+                                            artists = emptyList(), album = null
+                                        )
+                                        audioPlayerService.loadPlaylist(listOf(yt), 0)
+                                    }
+                                    is com.varuna.rustify.util.YtmLink.Album -> navigationStack.add(Screen.YtmAlbumDetail(link.browseId, ""))
+                                    is com.varuna.rustify.util.YtmLink.Artist -> navigationStack.add(Screen.YtmArtistDetail(link.channelId, ""))
+                                    is com.varuna.rustify.util.YtmLink.Playlist -> navigationStack.add(Screen.YtmPlaylistDetail(link.playlistId, ""))
+                                    null -> android.widget.Toast.makeText(context, R.string.paste_no_ytm_link, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             currentTrackId = currentTrack?.id
                         )
                     }
@@ -881,7 +905,8 @@ fun EngineTester(
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
-                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) }
+                        onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
+                        ytmRepo = ytmRepo
                     )
                 }
                 is Screen.RadioDetail -> {

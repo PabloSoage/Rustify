@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,11 +23,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -37,23 +42,35 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.YtMusicRepository
+import com.varuna.rustify.bridge.YtmAlbumSlim
+import com.varuna.rustify.bridge.YtmArtistRef
+import com.varuna.rustify.bridge.YtmPlaylist
+import com.varuna.rustify.bridge.YtmSearchResults
+import com.varuna.rustify.bridge.YtmTrack
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * E40 — YouTube Music LIBRARY content (embedded inside LibraryScreen's own header).
@@ -67,42 +84,67 @@ import com.varuna.rustify.bridge.YtMusicRepository
  * in MainActivity via callbacks — there is no local navigation state here.
  */
 
-private enum class YtmLibSection { FAVORITES, PLAYLISTS, ALBUMS, ARTISTS }
+private enum class YtmLibSection { EXPLORE, FAVORITES, PLAYLISTS, ALBUMS, ARTISTS }
 
 private val Green = Color(0xFF1DB954)
 
 @Composable
 fun YtMusicLibraryContent(
     repo: YtMusicRepository,
-    onOpenSearch: () -> Unit,
+    searchQuery: String = "",
+    onPasteLink: () -> Unit = {},
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onOpenAlbum: (browseId: String, title: String) -> Unit,
     onOpenArtist: (channelId: String, name: String) -> Unit,
     onOpenLocalPlaylist: (localId: String) -> Unit,
+    onOpenPlaylist: (playlistId: String, title: String) -> Unit = { _, _ -> },
+    onAddToQueue: (List<FullTrack>) -> Unit = {},
+    onGoToQueue: () -> Unit = {},
+    onAddToPlaylist: (YtmTrack) -> Unit = {},
+    resultFilter: String = "all",
+    onFilterChanged: (String) -> Unit = {},
+    useScraper: Boolean = false,
+    onToggleScraper: () -> Unit = {},
     currentTrackId: String? = null,
     modifier: Modifier = Modifier
 ) {
-    var section by rememberSaveable { mutableStateOf(YtmLibSection.FAVORITES) }
+    var section by rememberSaveable { mutableStateOf(YtmLibSection.EXPLORE) }
+
+    // ── Inline search for the Explore tab (driven by the parent's search bar) ──
+    var exploreResults by remember { mutableStateOf<YtmSearchResults?>(null) }
+    var exploreSearching by remember { mutableStateOf(false) }
+    val resultCache = remember { mutableMapOf<String, YtmSearchResults?>() }
+
+    val effectiveQuery = searchQuery.trim()
+    LaunchedEffect(effectiveQuery, useScraper) {
+        if (effectiveQuery.isBlank()) {
+            exploreResults = null
+            exploreSearching = false
+        } else {
+            val cacheKey = "$effectiveQuery|$useScraper"
+            val cached = resultCache[cacheKey]
+            if (cached != null) {
+                exploreResults = cached
+                exploreSearching = false
+            } else {
+                exploreSearching = true
+                delay(400)
+                val r = if (useScraper) repo.searchScraper(effectiveQuery) else repo.search(effectiveQuery)
+                resultCache[cacheKey] = r
+                exploreResults = r
+                exploreSearching = false
+            }
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
-        // Entry point: open the full-screen search (single header, real back button).
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onOpenSearch)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Search, null, tint = Green)
-            Spacer(Modifier.width(12.dp))
-            Text(stringResource(R.string.ytm_search_action), color = Color.White,
-                fontWeight = FontWeight.Medium)
-        }
-
-        // Section chips.
+        // ── Section chips ──
         LazyRow(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val chips = listOf(
+                YtmLibSection.EXPLORE to R.string.ytm_tab_explore,
                 YtmLibSection.FAVORITES to R.string.ytm_tab_favorites,
                 YtmLibSection.PLAYLISTS to R.string.ytm_tab_playlists,
                 YtmLibSection.ALBUMS to R.string.ytm_tab_albums,
@@ -123,7 +165,25 @@ fun YtMusicLibraryContent(
         }
 
         when (section) {
-            YtmLibSection.FAVORITES -> FavoritesSection(repo, onTrackClick, currentTrackId)
+            YtmLibSection.EXPLORE -> ExploreSection(
+                results = exploreResults,
+                searching = exploreSearching,
+                query = effectiveQuery,
+                repo = repo,
+                onTrackClick = onTrackClick,
+                onOpenAlbum = onOpenAlbum,
+                onOpenArtist = onOpenArtist,
+                onOpenPlaylist = onOpenPlaylist,
+                onAddToQueue = onAddToQueue,
+                onGoToQueue = onGoToQueue,
+                onAddToPlaylist = onAddToPlaylist,
+                resultFilter = resultFilter,
+                currentTrackId = currentTrackId
+            )
+            YtmLibSection.FAVORITES -> FavoritesSection(
+                repo, onTrackClick, onAddToQueue, onGoToQueue, onAddToPlaylist,
+                onOpenArtist, onOpenAlbum, currentTrackId
+            )
             YtmLibSection.PLAYLISTS -> PlaylistsSection(repo, onOpenLocalPlaylist)
             YtmLibSection.ALBUMS -> AlbumsSection(repo, onOpenAlbum)
             YtmLibSection.ARTISTS -> ArtistsSection(repo, onOpenArtist)
@@ -135,6 +195,11 @@ fun YtMusicLibraryContent(
 private fun FavoritesSection(
     repo: YtMusicRepository,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (List<FullTrack>) -> Unit,
+    onGoToQueue: () -> Unit,
+    onAddToPlaylist: (YtmTrack) -> Unit,
+    onOpenArtist: (channelId: String, name: String) -> Unit,
+    onOpenAlbum: (browseId: String, title: String) -> Unit,
     currentTrackId: String?
 ) {
     val favorites = repo.favorites
@@ -148,7 +213,12 @@ private fun FavoritesSection(
                 track = t, index = i, currentTrackId = currentTrackId,
                 isFavorite = true,
                 onFavoriteToggle = { repo.toggleFavorite(t) },
-                onClick = { onTrackClick(full, i) }
+                onClick = { onTrackClick(full, i) },
+                onAddToQueue = { onAddToQueue(listOf(t.toFullTrack())) },
+                onGoToQueue = onGoToQueue,
+                onAddToPlaylist = { onAddToPlaylist(t) },
+                onOpenArtist = { id, name -> onOpenArtist(id, name) },
+                onOpenAlbum = { id, _ -> if (id.isNotBlank()) onOpenAlbum(id, "") }
             )
         }
     }
@@ -186,8 +256,26 @@ private fun PlaylistsSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)), color = Color.DarkGray) {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Text(pl.name.take(2).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
+                        val covers = pl.items.mapNotNull { it.thumbnailUrl.takeIf { u -> u.isNotBlank() } }.distinct().take(4)
+                        if (covers.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(pl.name.take(2).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (covers.size == 1) {
+                            AsyncImage(covers[0], null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            val rows = covers.chunked(2)
+                            Column(Modifier.fillMaxSize()) {
+                                rows.forEach { row ->
+                                    Row(Modifier.weight(1f)) {
+                                        row.forEach { url ->
+                                            AsyncImage(url, null, Modifier.weight(1f).fillMaxHeight(),
+                                                contentScale = ContentScale.Crop)
+                                        }
+                                        if (row.size == 1) Box(Modifier.weight(1f).fillMaxHeight().background(Color.DarkGray))
+                                    }
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.width(12.dp))
@@ -279,6 +367,89 @@ private fun ArtistsSection(
         }
     }
 }
+
+@Composable
+private fun ExploreSection(
+    results: YtmSearchResults?,
+    searching: Boolean,
+    query: String,
+    repo: YtMusicRepository,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onOpenAlbum: (browseId: String, title: String) -> Unit,
+    onOpenArtist: (channelId: String, name: String) -> Unit,
+    onOpenPlaylist: (playlistId: String, title: String) -> Unit,
+    onAddToQueue: (List<FullTrack>) -> Unit,
+    onGoToQueue: () -> Unit,
+    onAddToPlaylist: (YtmTrack) -> Unit,
+    resultFilter: String,
+    currentTrackId: String?
+) {
+    if (query.isBlank()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text(stringResource(R.string.ytm_explore_empty), color = Color.Gray,
+                modifier = Modifier.padding(24.dp))
+        }
+        return
+    }
+    if (searching) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            CircularProgressIndicator(color = Green)
+        }
+        return
+    }
+    if (results == null || results.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text(stringResource(R.string.ytm_no_results), color = Color.Gray)
+        }
+        return
+    }
+    val r = results
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
+        if (r.tracks.isNotEmpty() && (resultFilter == "all" || resultFilter == "tracks")) {
+            item { YtmSectionHeader(stringResource(R.string.ytm_section_tracks)) }
+            itemsIndexed(r.tracks) { i, t ->
+                YtmTrackListItem(
+                    track = t, index = i, currentTrackId = currentTrackId,
+                    isFavorite = repo.isFavorite(t.videoId),
+                    onFavoriteToggle = { repo.toggleFavorite(t) },
+                    onClick = { onTrackClick(r.tracks.map { it.toFullTrack() }, i) },
+                    onAddToQueue = { onAddToQueue(listOf(t.toFullTrack())) },
+                    onGoToQueue = onGoToQueue,
+                    onAddToPlaylist = { onAddToPlaylist(t) },
+                    onOpenArtist = { id, name -> onOpenArtist(id, name) },
+                    onOpenAlbum = { id, _ -> if (id.isNotBlank()) onOpenAlbum(id, "") }
+                )
+            }
+        }
+        if (r.albums.isNotEmpty() && (resultFilter == "all" || resultFilter == "albums")) {
+            item { YtmSectionHeader(stringResource(R.string.ytm_section_albums)) }
+            items(r.albums) { a ->
+                YtmResultRow(a.title, a.year?.toString() ?: "", a.thumbnailUrl, false) {
+                    onOpenAlbum(a.browseId, a.title)
+                }
+            }
+        }
+        if (r.artists.isNotEmpty() && (resultFilter == "all" || resultFilter == "artists")) {
+            item { YtmSectionHeader(stringResource(R.string.ytm_section_artists)) }
+            items(r.artists) { a ->
+                YtmResultRow(a.name, stringResource(R.string.ytm_artist_detail), null, true) {
+                    onOpenArtist(a.id, a.name)
+                }
+            }
+        }
+        if (r.playlists.isNotEmpty() && (resultFilter == "all" || resultFilter == "playlists")) {
+            item { YtmSectionHeader(stringResource(R.string.ytm_section_playlists)) }
+            items(r.playlists) { p ->
+                YtmResultRow(p.title, p.author ?: "", p.thumbnailUrl, false) {
+                    onOpenPlaylist(p.playlistId, p.title)
+                }
+            }
+        }
+    }
+}
+
+private fun YtmSearchResults.isEmpty() =
+    tracks.isEmpty() && albums.isEmpty() && artists.isEmpty() && playlists.isEmpty()
 
 @Composable
 private fun EmptyMessage(msg: String) {

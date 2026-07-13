@@ -32,10 +32,12 @@ object LyricsRepository {
         title: String,
         durationSec: Int
     ): LyricsResult? {
-        if (cache.containsKey(trackId)) return cache[trackId]
-        
+        // Return cached result only if non-null; null means "tried and failed" → retry
+        cache[trackId]?.let { return it }
+
         val result = fetchLyrics(artist, title, durationSec)
-        cache[trackId] = result
+        // Only cache successful results; null = failed, retry next time
+        if (result != null) cache[trackId] = result
         return result
     }
 

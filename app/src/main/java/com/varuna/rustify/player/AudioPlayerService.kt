@@ -474,9 +474,18 @@ class AudioPlayerService private constructor(private val context: Context) {
                             // E60: honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on
                             // ExoPlayer, so drop it and force a fresh chain resolution instead.
                             val expiresAt = urlExpiryCache[trackId]
-                            if (expiresAt != null && System.currentTimeMillis() >= expiresAt) {
-                                android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
+                            val expired = expiresAt != null && System.currentTimeMillis() >= expiresAt
+                            // If user has a confirmed alternative mapping, the cached URL may be from an
+                            // old auto-match — skip cache and force re-resolution through the resolver
+                            // which checks get_alternative_track first.
+                            val mappedId = NativeEngine.getAlternativeTrackNative(trackId)
+                            val hasUserMapping = mappedId.isNotBlank()
+                            if (expired || hasUserMapping) {
+                                if (expired) android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
+                                if (hasUserMapping) android.util.Log.d("AudioPlayerService", "User mapping found for $trackId ($mappedId); skipping cached URL")
                                 removeCachedStreamUrl(trackId)
+                                preResolvedUrls.remove(trackId)
+                                resolvedStreamUrls.remove(trackId)
                                 com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
                             } else {
                                 streamUrl = cachedUrl
@@ -1063,7 +1072,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     // B3: invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
     // stale URL. Covers both the in-memory map (backed by stream_url_cache.json) and the legacy
     // SharedPreferences "cached_url_$id" entry.
-    private fun removeCachedStreamUrl(trackId: String) {
+    fun removeCachedStreamUrl(trackId: String) {
         persistedUrlCache.remove(trackId)
         urlExpiryCache.remove(trackId)   // E60: drop the tracked expiry alongside the URL
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)

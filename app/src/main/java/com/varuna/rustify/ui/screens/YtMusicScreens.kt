@@ -26,16 +26,23 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -579,7 +586,9 @@ fun YtmSectionHeader(title: String) {
     )
 }
 
-/** A YTM track rendered through the shared TrackRowItem, with a favorite heart. */
+/**
+ * YTM track row with a custom ⋮ dropdown menu (Add to Queue, Go to Artist, Go to Album, Share).
+ */
 @Composable
 fun YtmTrackListItem(
     track: YtmTrack,
@@ -587,23 +596,92 @@ fun YtmTrackListItem(
     currentTrackId: String?,
     isFavorite: Boolean,
     onFavoriteToggle: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAddToQueue: (() -> Unit)? = null,
+    onGoToQueue: (() -> Unit)? = null,
+    onAddToPlaylist: (() -> Unit)? = null,
+    onOpenArtist: ((String, String) -> Unit)? = null,
+    onOpenAlbum: ((String, String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val full = remember(track) { track.toFullTrack() }
-    TrackRowItem(
-        index = index + 1,
-        track = full,
-        fallbackCoverUrl = track.thumbnailUrl.takeIf { it.isNotBlank() },
-        onClick = onClick,
-        isLiked = isFavorite,
-        isCurrentTrack = full.id == currentTrackId,
-        onLikeToggle = onFavoriteToggle,
-        // E40: the "more" (⋮) action shares the canonical YTM track link.
-        onMoreClick = {
-            ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)))
+    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val shareAsRustify = prefs.getBoolean("share_as_rustify_link", false)
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box {
+        TrackRowItem(
+            index = index + 1,
+            track = full,
+            fallbackCoverUrl = track.thumbnailUrl.takeIf { it.isNotBlank() },
+            onClick = onClick,
+            isLiked = isFavorite,
+            isCurrentTrack = full.id == currentTrackId,
+            onLikeToggle = onFavoriteToggle,
+            onMoreClick = { showMenu = true }
+        )
+        Box(Modifier.align(Alignment.TopEnd).size(1.dp)) {
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            if (onAddToQueue != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_add_queue)) },
+                    onClick = { showMenu = false; onAddToQueue() },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) }
+                )
+            }
+            if (onGoToQueue != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_go_queue)) },
+                    onClick = { showMenu = false; onGoToQueue() },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }
+                )
+            }
+            if (onAddToPlaylist != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_add_playlist)) },
+                    onClick = { showMenu = false; onAddToPlaylist() },
+                    leadingIcon = { Icon(Icons.Default.Add, null) }
+                )
+            }
+            if (track.artists.isNotEmpty() && onOpenArtist != null) {
+                val a = track.artists.first()
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_options_view_artist)) },
+                    onClick = { showMenu = false; onOpenArtist(a.id, a.name) },
+                    leadingIcon = { Icon(Icons.Default.Person, null) }
+                )
+            }
+            if (track.albumId != null && onOpenAlbum != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_go_album)) },
+                    onClick = { showMenu = false; onOpenAlbum(track.albumId!!, "") },
+                    leadingIcon = { Icon(Icons.Default.Album, null) }
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.track_menu_share)) },
+                onClick = {
+                    showMenu = false
+                    ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)))
+                },
+                leadingIcon = { Icon(Icons.Default.Share, null) }
+            )
+            if (shareAsRustify) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_share_rustify)) },
+                    onClick = {
+                        showMenu = false
+                        ShareUtils.shareRustifyLink(context, "track", "ytm:${track.videoId}")
+                    },
+                    leadingIcon = { Icon(Icons.Default.Share, null) }
+                )
+            }
         }
-    )
+    }
+}
 }
 
 /** Album / artist / playlist result row (image + title + subtitle). */

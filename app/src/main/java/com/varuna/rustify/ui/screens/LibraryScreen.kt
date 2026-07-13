@@ -29,11 +29,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
@@ -78,6 +83,7 @@ import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.YtMusicRepository
+import com.varuna.rustify.bridge.YtmTrack
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -119,6 +125,8 @@ fun LibraryScreen(
     onYtmOpenAlbum: (String, String) -> Unit = { _, _ -> },
     onYtmOpenArtist: (String, String) -> Unit = { _, _ -> },
     onYtmOpenLocalPlaylist: (String) -> Unit = {},
+    onYtmOpenPlaylist: (String, String) -> Unit = { _, _ -> },
+    onYtmPasteLink: () -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
@@ -128,6 +136,11 @@ fun LibraryScreen(
     val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
     val enableLocalMusic = prefs.getBoolean("enable_local_music", true)
     val enableYtmMusic = prefs.getBoolean("enable_ytm_music", true)
+    var ytmResultFilter by remember { mutableStateOf("all") }
+    var ytmUseScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+    var ytmPendingPlaylistTrack by remember { mutableStateOf<YtmTrack?>(null) }
+    var showYtmCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var ytmNewPlaylistName by remember { mutableStateOf("") }
     
     val tabs = remember(enableLocalMusic, enableYtmMusic) {
         LibraryTab.entries.filter { tab ->
@@ -229,11 +242,23 @@ fun LibraryScreen(
                     val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
                     YtMusicLibraryContent(
                         repo = repo,
-                        onOpenSearch = onYtmOpenSearch,
+                        searchQuery = globalSearchQuery,
+                        onPasteLink = onYtmPasteLink,
                         onTrackClick = onTrackClick,
                         onOpenAlbum = onYtmOpenAlbum,
                         onOpenArtist = onYtmOpenArtist,
                         onOpenLocalPlaylist = onYtmOpenLocalPlaylist,
+                        onOpenPlaylist = onYtmOpenPlaylist,
+                        onAddToQueue = { tracks -> tracks.forEach { onAddToQueue(it) } },
+                        onGoToQueue = onGoToQueue,
+                        onAddToPlaylist = { track -> ytmPendingPlaylistTrack = track },
+                        resultFilter = ytmResultFilter,
+                        onFilterChanged = { ytmResultFilter = it },
+                        useScraper = ytmUseScraper,
+                        onToggleScraper = {
+                            ytmUseScraper = !ytmUseScraper
+                            prefs.edit().putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api").apply()
+                        },
                         currentTrackId = currentTrackId
                     )
                 }
@@ -273,9 +298,58 @@ fun LibraryScreen(
                         Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
                     },
                     trailingIcon = {
-                        if (globalSearchQuery.isNotEmpty()) {
-                            IconButton(onClick = { globalSearchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                        Row {
+                            if (selectedTab == LibraryTab.YTMUSIC) {
+                                var showFilterMenu by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(onClick = { showFilterMenu = true }) {
+                                        Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = Color.White)
+                                    }
+                                    DropdownMenu(
+                                        expanded = showFilterMenu,
+                                        onDismissRequest = { showFilterMenu = false }
+                                    ) {
+                                        Text(stringResource(R.string.ytm_search_filter_title), color = Color.Gray,
+                                            fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                                        val filters = listOf("all" to R.string.search_filter_all, "tracks" to R.string.search_filter_tracks,
+                                            "albums" to R.string.search_filter_albums, "artists" to R.string.search_filter_artists,
+                                            "playlists" to R.string.search_filter_playlists)
+                                        filters.forEach { (f, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(label), fontSize = 14.sp,
+                                                    color = if (ytmResultFilter == f) Color(0xFF1DB954) else Color.White) },
+                                                onClick = { ytmResultFilter = f; showFilterMenu = false },
+                                                leadingIcon = if (ytmResultFilter == f) {{ Icon(Icons.Default.Check, null, tint = Color(0xFF1DB954)) }}
+                                                    else {{ Spacer(Modifier.size(24.dp)) }}
+                                            )
+                                        }
+                                        HorizontalDivider(color = Color.DarkGray)
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.settings_ytm_scraper), fontSize = 14.sp,
+                                                color = if (ytmUseScraper) Color(0xFFE65100) else Color.White) },
+                                            onClick = {
+                                                ytmUseScraper = !ytmUseScraper
+                                                prefs.edit().putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api").apply()
+                                                showFilterMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Default.FilterList, null,
+                                                    tint = if (ytmUseScraper) Color(0xFFE65100) else Color.White)
+                                            }
+                                        )
+                                        HorizontalDivider(color = Color.DarkGray)
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.ytm_paste_link), fontSize = 14.sp, color = Color.White) },
+                                            onClick = { showFilterMenu = false; onYtmPasteLink() },
+                                            leadingIcon = { Icon(Icons.Default.Add, null, tint = Color.White) }
+                                        )
+                                    }
+                                }
+                            }
+                            if (globalSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { globalSearchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                                }
                             }
                         }
                     },
@@ -334,6 +408,83 @@ fun LibraryScreen(
                     )
                 }
             }
+        }
+
+        // ── YTM: playlist selector dialog (uses YTM playlists, not local) ──
+        if (ytmPendingPlaylistTrack != null) {
+            val track = ytmPendingPlaylistTrack!!
+            val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+            AlertDialog(
+                onDismissRequest = { ytmPendingPlaylistTrack = null },
+                title = { Text(stringResource(R.string.local_playlist_selector_title)) },
+                text = {
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                ytmNewPlaylistName = ""; showYtmCreatePlaylistDialog = true
+                            }.padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Add, null, tint = Color(0xFF1DB954))
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(R.string.local_playlist_create), color = Color.White)
+                        }
+                        HorizontalDivider(color = Color.DarkGray)
+                        if (repo.playlists.isEmpty()) {
+                            Text(stringResource(R.string.playlist_not_found), color = Color.Gray, modifier = Modifier.padding(16.dp))
+                        } else {
+                            repo.playlists.forEach { pl ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable {
+                                        repo.addToPlaylist(pl.localId, track)
+                                        ytmPendingPlaylistTrack = null
+                                    }.padding(vertical = 12.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(pl.name, color = Color.White,
+                                        fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { ytmPendingPlaylistTrack = null }) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                }
+            )
+        }
+        if (showYtmCreatePlaylistDialog) {
+            val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+            AlertDialog(
+                onDismissRequest = { showYtmCreatePlaylistDialog = false; ytmNewPlaylistName = "" },
+                title = { Text(stringResource(R.string.local_playlist_create)) },
+                text = {
+                    OutlinedTextField(
+                        value = ytmNewPlaylistName, onValueChange = { ytmNewPlaylistName = it },
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (ytmNewPlaylistName.isNotBlank()) {
+                            val pl = repo.createPlaylist(ytmNewPlaylistName.trim())
+                            ytmPendingPlaylistTrack?.let { repo.addToPlaylist(pl.localId, it) }
+                        }
+                        showYtmCreatePlaylistDialog = false
+                        ytmNewPlaylistName = ""
+                        ytmPendingPlaylistTrack = null
+                    }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showYtmCreatePlaylistDialog = false; ytmNewPlaylistName = "" }) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                }
+            )
         }
     }
 }
@@ -1002,7 +1153,7 @@ fun LibraryLocalMusic(
     if (selectedTrackForMenu != null) {
         TrackOptionsMenuBottomSheet(
             track = selectedTrackForMenu!!,
-            spotifyRepo = SpotifyRepository(context),
+            spotifyRepo = spotifyRepo,
             onDismiss = { selectedTrackForMenu = null },
             onAddToQueue = {
                 onAddToQueue(selectedTrackForMenu!!)

@@ -351,6 +351,7 @@ fun TrackOptionsMenuBottomSheet(
                 )
 
                 val isLocalTrack = track.id?.startsWith("local:") == true
+                val isYtmTrack = track.id?.startsWith("ytm:") == true
 
                 // E30 — favorito local (sólo para tracks "local:").
                 if (isLocalTrack) {
@@ -371,7 +372,7 @@ fun TrackOptionsMenuBottomSheet(
                     icon = Icons.Default.Add,
                     label = stringResource(R.string.track_menu_add_playlist),
                     onClick = {
-                        if (isLocalTrack) {
+                        if (isLocalTrack || isYtmTrack) {
                             showLocalPlaylistSelector = true
                         } else {
                             showPlaylistSelector = true
@@ -405,7 +406,7 @@ fun TrackOptionsMenuBottomSheet(
                     onClick = onGoToQueue
                 )
 
-                if (track.album != null) {
+                if (track.album != null && !isYtmTrack) {
                     val album = track.album
                     MenuOptionItem(
                         icon = Icons.Default.Album,
@@ -416,7 +417,7 @@ fun TrackOptionsMenuBottomSheet(
                     )
                 }
 
-                if (track.artists.isNotEmpty()) {
+                if (track.artists.isNotEmpty() && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Person,
                         label = stringResource(R.string.track_options_view_artist),
@@ -426,7 +427,7 @@ fun TrackOptionsMenuBottomSheet(
                     )
                 }
 
-                if (onGoToRadio != null && !isLocalTrack) {
+                if (onGoToRadio != null && !isLocalTrack && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Radio,
                         label = stringResource(R.string.track_menu_go_radio),
@@ -438,6 +439,31 @@ fun TrackOptionsMenuBottomSheet(
                 }
 
                 if (!isLocalTrack) {
+                    if (isYtmTrack) {
+                        // Share YTM link
+                        MenuOptionItem(
+                            icon = Icons.Default.Share,
+                            label = stringResource(R.string.track_menu_share),
+                            onClick = {
+                                val videoId = track.id?.removePrefix("ytm:") ?: ""
+                                com.varuna.rustify.util.ShareUtils.shareYtmLink(context, "https://music.youtube.com/watch?v=$videoId")
+                                onDismiss()
+                            }
+                        )
+                        // Share as Rustify Link (only if toggle is on)
+                        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                        if (prefs.getBoolean("share_as_rustify_link", false)) {
+                            MenuOptionItem(
+                                icon = Icons.Default.Share,
+                                label = stringResource(R.string.track_menu_share_rustify),
+                                onClick = {
+                                    val videoId = track.id?.removePrefix("ytm:") ?: ""
+                                    com.varuna.rustify.util.ShareUtils.shareRustifyLink(context, "track", "ytm:$videoId")
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    } else {
                     MenuOptionItem(
                         icon = Icons.Default.Share,
                         label = stringResource(R.string.track_menu_share),
@@ -472,9 +498,10 @@ fun TrackOptionsMenuBottomSheet(
                             }
                         )
                     }
+                    }
                 }
 
-                if (!isLocalTrack && downloadUriStr != null) {
+                if (!isLocalTrack && !isYtmTrack && downloadUriStr != null) {
                     val downloadingStr = stringResource(R.string.track_menu_getting_url)
                     
                     MenuOptionItem(

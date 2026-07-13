@@ -45,6 +45,12 @@ object NativeEngine {
      */
     external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
 
+    /**
+     * Returns the user-confirmed alternative YouTube ID for a Spotify track,
+     * or an empty string if no mapping exists.
+     */
+    external fun getAlternativeTrackNative(spotifyId: String): String
+
 
 
     /**

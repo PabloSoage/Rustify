@@ -1,22 +1,34 @@
 package com.varuna.rustify.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Settings
@@ -28,9 +40,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -96,6 +112,10 @@ fun HomeScreen(
             val config = androidx.compose.ui.platform.LocalConfiguration.current
             val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             val bottomPadding = if (isLandscape) 16.dp else 100.dp
+
+            var menuOpen by remember { mutableStateOf(false) }
+            val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = 16.dp, bottom = bottomPadding)
@@ -119,61 +139,23 @@ fun HomeScreen(
                                 color = Color.White
                             )
                         )
-                        Row {
-                            val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
 
-                            IconButton(onClick = onDjClick) {
-                                Icon(
-                                    imageVector = Icons.Default.Radio,
-                                    contentDescription = "DJ",
-                                    tint = Color(0xFF1DB954)
-                                )
-                            }
-
-                            IconButton(onClick = onNewReleasesClick) {
-                                Icon(
-                                    imageVector = Icons.Default.NewReleases,
-                                    contentDescription = "New releases",
-                                    tint = Color.White
-                                )
-                            }
-
-                            IconButton(onClick = onMetricsClick) {
-                                Icon(
-                                    imageVector = Icons.Default.BarChart,
-                                    contentDescription = "Listening metrics",
-                                    tint = Color.White
-                                )
-                            }
-
-                            IconButton(onClick = onDownloadsClick) {
-                                if (activeDownloads > 0) {
-                                    androidx.compose.material3.BadgedBox(
-                                        badge = {
-                                            androidx.compose.material3.Badge(containerColor = Color.Red) {
-                                                Text(activeDownloads.toString(), color = Color.White)
-                                            }
+                        IconButton(onClick = { menuOpen = !menuOpen }) {
+                            val showBadge = !menuOpen && activeDownloads > 0
+                            if (showBadge) {
+                                androidx.compose.material3.BadgedBox(
+                                    badge = {
+                                        androidx.compose.material3.Badge(containerColor = Color.Red) {
+                                            Text(activeDownloads.toString(), color = Color.White)
                                         }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.FileDownload,
-                                            contentDescription = "Downloads",
-                                            tint = Color.White
-                                        )
                                     }
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.FileDownload,
-                                        contentDescription = "Downloads",
-                                        tint = Color.White
-                                    )
+                                ) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Open menu", tint = Color.White)
                                 }
-                            }
-                            
-                            IconButton(onClick = onSettingsClick) {
+                            } else {
                                 Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Settings",
+                                    imageVector = if (menuOpen) Icons.Default.Close else Icons.Default.Menu,
+                                    contentDescription = if (menuOpen) "Close menu" else "Open menu",
                                     tint = Color.White
                                 )
                             }
@@ -187,6 +169,101 @@ fun HomeScreen(
                             section = section,
                             onItemClick = onItemClick
                         )
+                    }
+                }
+            }
+
+            // ── Hamburger menu panel (overlays on top, slides from the left) ──
+            AnimatedVisibility(
+                visible = menuOpen,
+                enter = fadeIn(animationSpec = tween(200)) + slideInHorizontally(animationSpec = tween(200)) { -it },
+                exit = fadeOut(animationSpec = tween(200)) + slideOutHorizontally(animationSpec = tween(200)) { -it },
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { menuOpen = false }
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(0.55f)
+                            .align(Alignment.CenterStart)
+                            .background(Color(0xFF1E1E1E))
+                            .padding(horizontal = 20.dp, vertical = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TextButton(
+                            onClick = { menuOpen = false; onDjClick() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Radio, contentDescription = null, tint = Color(0xFF1DB954))
+                                Spacer(Modifier.width(16.dp))
+                                Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_dj), color = Color.White)
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { menuOpen = false; onNewReleasesClick() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.NewReleases, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(16.dp))
+                                Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_new_releases), color = Color.White)
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { menuOpen = false; onMetricsClick() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.BarChart, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(16.dp))
+                                Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_metrics), color = Color.White)
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { menuOpen = false; onDownloadsClick() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (activeDownloads > 0) {
+                                    androidx.compose.material3.BadgedBox(
+                                        badge = {
+                                            androidx.compose.material3.Badge(containerColor = Color.Red) {
+                                                Text(activeDownloads.toString(), color = Color.White)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.FileDownload, contentDescription = null, tint = Color.White)
+                                    }
+                                } else {
+                                    Icon(Icons.Default.FileDownload, contentDescription = null, tint = Color.White)
+                                }
+                                Spacer(Modifier.width(16.dp))
+                                Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_downloads), color = Color.White)
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { menuOpen = false; onSettingsClick() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Settings, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(16.dp))
+                                Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_settings), color = Color.White)
+                            }
+                        }
                     }
                 }
             }

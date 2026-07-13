@@ -59,6 +59,11 @@ pub fn get_cache_dir() -> Option<String> {
 }
 
 pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&str>, cache_dir: &str) -> Option<String> {
+    // User-confirmed mapping ALWAYS takes priority over auto-matched hints
+    if let Some(mapped) = get_alternative_track(track_id) {
+        log_info!("[Resolver] Using mapped YT id={} for spotify_id={} (user mapping wins over hint)", mapped, track_id);
+        return Some(mapped);
+    }
     if let Some(yt_id) = youtube_id_opt {
         set_alternative_track(track_id.to_string(), yt_id.to_string());
         return Some(yt_id.to_string());
@@ -85,10 +90,13 @@ pub fn set_alternative_track(spotify_id: String, youtube_id: String) {
 
 pub fn get_alternative_track(spotify_id: &str) -> Option<String> {
     let mappings_lock = YOUTUBE_MAPPINGS.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(lock) = mappings_lock.lock() {
-        return lock.get(spotify_id).cloned();
+    match mappings_lock.lock() {
+        Ok(lock) => lock.get(spotify_id).cloned(),
+        Err(_) => {
+            log_info!("[Mappings] CRITICAL: YOUTUBE_MAPPINGS mutex is poisoned — all user mappings are unavailable!");
+            None
+        }
     }
-    None
 }
 
 // Background queue updates (pre-buffering task)
