@@ -49,6 +49,31 @@ object ShareUtils {
         shareText(context, text)
     }
 
+    /**
+     * Shares a YouTube Music entity link (E40). Mirror of [shareSpotifyLink] + [shareRustifyLink]:
+     * if the "share as Rustify link" toggle is on it wraps [ytmUrl] via [RustifyWrapperLink.wrap]
+     * (verified host or `rustify://ytm*` fallback); otherwise shares the canonical YTM URL as-is.
+     *
+     * Reads the same `share_as_rustify_link` pref the Spotify path uses, so behaviour is consistent
+     * without every YTM screen having to touch prefs.
+     *
+     * @param ytmUrl canonical `https://music.youtube.com/...` URL of the entity.
+     */
+    fun shareYtmLink(context: Context, ytmUrl: String) {
+        if (ytmUrl.isBlank()) {
+            Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+        val text = if (prefs.getBoolean("share_as_rustify_link", false)) {
+            val host = prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST
+            RustifyWrapperLink.wrap(ytmUrl, host)
+        } else {
+            ytmUrl
+        }
+        shareText(context, text)
+    }
+
     private fun shareText(context: Context, text: String) {
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             this.type = "text/plain"

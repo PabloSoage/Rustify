@@ -202,6 +202,9 @@
     <string name="ytm_unsave">Unsave</string>
     <string name="ytm_album_detail">Album</string>
     <string name="ytm_artist_detail">Artist</string>
+    <string name="ytm_share">Share</string>
+    <string name="ytm_paste_link">Paste YouTube Music link</string>
+    <string name="paste_no_ytm_link">No YouTube Music link found in clipboard</string>
     <string name="enable_ytm_music">YouTube Music</string>
     <string name="enable_ytm_music_desc">Shows the YouTube Music tab in your library</string>
     <string name="settings_export_ytm">Export YTM Library</string>

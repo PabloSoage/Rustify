@@ -19,6 +19,7 @@ object RustifyWrapperLink {
      */
     fun wrap(spotifyUrl: String, host: String?): String =
         if (!host.isNullOrBlank()) {
+            // Modo host verificado: envuelve CUALQUIER URL (Spotify o YTM, E40) sin parsear.
             "https://$host/r/?s=${URLEncoder.encode(spotifyUrl, "UTF-8")}"
         } else {
             val link = SpotifyLinkParser.parse(spotifyUrl)
@@ -36,6 +37,16 @@ object RustifyWrapperLink {
                     is SpotifyLink.Artist -> link.id
                 }
                 "rustify://$type/$id"
-            } else spotifyUrl
+            } else {
+                // E40: fallback sin host para links YTM → rustify://ytmtrack/VIDEOID (etc.).
+                val ytm = YtMusicLinkParser.parse(spotifyUrl)
+                when (ytm) {
+                    is YtmLink.Track -> "rustify://ytmtrack/${ytm.videoId}"
+                    is YtmLink.Album -> "rustify://ytmalbum/${ytm.browseId}"
+                    is YtmLink.Artist -> "rustify://ytmartist/${ytm.channelId}"
+                    is YtmLink.Playlist -> "rustify://ytmplaylist/${ytm.playlistId}"
+                    null -> spotifyUrl
+                }
+            }
         }
 }

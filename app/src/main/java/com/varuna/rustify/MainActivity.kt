@@ -207,6 +207,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Extract a Spotify OR YouTube Music link from arbitrary text (share / wrapper payload).
+     * Spotify is tried first, then YTM (E40). Returns a tagged token or null.
+     */
+    private fun extractAnyLink(text: String): String? =
+        extractSpotifyLink(text) ?: com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(text)
+
     @SuppressLint("AppBundleLocaleChanges")
     override fun attachBaseContext(newBase: android.content.Context) {
         val prefs = newBase.getSharedPreferences("rustify_settings", MODE_PRIVATE)
@@ -246,7 +253,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 val payload = uri.getQueryParameter("s")                 // formato A: ?s=open.spotify.com/track/ID
                     ?: uri.pathSegments.drop(1).joinToString("/")        // formato B: /r/track/ID
-                return extractSpotifyLink(payload)                       // reutiliza SpotifyLinkParser
+                return extractAnyLink(payload)                           // Spotify o YTM (E40)
             }
             if (uri?.host == "open.spotify.com") {
                 // pathSegments ignores the intl-xx prefix automatically: look for the entity type.
@@ -255,35 +262,27 @@ class MainActivity : ComponentActivity() {
                 if (i != -1 && i + 1 < segs.size) {
                     return "${segs[i]}:${segs[i + 1]}"
                 }
-            } else if (uri?.scheme == "rustify" && uri.host in setOf("track", "album", "playlist", "artist")) {
+            } else if (uri?.scheme == "rustify" &&
+                uri.host in setOf(
+                    "track", "album", "playlist", "artist",
+                    "ytmtrack", "ytmalbum", "ytmartist", "ytmplaylist"   // E40 YTM fallback scheme
+                )
+            ) {
                 val pathSegments = uri.pathSegments
                 if (pathSegments.isNotEmpty()) {
                     return "${uri.host}:${pathSegments[0]}"
                 }
-            } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
-                // E40: route real YTM targets onto the nav stack (was Log.d-only before).
-                val v = uri.getQueryParameter("v")
-                val list = uri.getQueryParameter("list")
-                val first = uri.pathSegments.firstOrNull()
-                val second = uri.pathSegments.getOrNull(1)
-                when {
-                    v != null -> return "ytmtrack:$v"                 // /watch?v=VIDEOID → play
-                    list != null -> return "ytmplaylist:$list"        // ?list=PLAYLISTID
-                    first == "playlist" && second != null -> return "ytmplaylist:$second"
-                    first == "browse" && second != null -> return "ytmalbum:$second"    // MPRE...
-                    first == "channel" && second != null -> return "ytmartist:$second"  // UC...
-                }
-            } else if (uri?.host == "youtu.be") {
-                val v = uri.lastPathSegment
-                if (v != null) return "ytmtrack:$v"
+            } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com" || uri?.host == "youtu.be") {
+                // E40: single source of truth — delegate to YtMusicLinkParser.
+                com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(uri.toString())?.let { return it }
             }
         } else if (intent?.action == android.content.Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
                 val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
                 if (sharedText != null) {
-                    val link = extractSpotifyLink(sharedText)
+                    val link = extractAnyLink(sharedText)   // Spotify o YTM (E40)
                     if (link != null) {
-                        android.util.Log.d("MainActivity", "Extracted Spotify link from shared text: $link")
+                        android.util.Log.d("MainActivity", "Extracted link from shared text: $link")
                         return link
                     }
                 }

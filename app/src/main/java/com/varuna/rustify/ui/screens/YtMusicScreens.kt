@@ -26,11 +26,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -76,6 +78,9 @@ import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.YtmTrack
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.util.ShareUtils
+import com.varuna.rustify.util.YtMusicLinkParser
+import com.varuna.rustify.util.YtmLink
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,11 +116,43 @@ fun YtMusicSearchScreen(
     onPlaylist: (playlistId: String, title: String) -> Unit,
     currentTrackId: String? = null
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<YtmSearchResults?>(null) }
     var searching by remember { mutableStateOf(false) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
+
+    // E40: paste a YTM link from the clipboard and navigate (mirror of Spotify's "+" button).
+    fun pasteYtmLink() {
+        val pasted = try {
+            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+        } catch (e: Exception) {
+            android.util.Log.w("YtMusicSearchScreen", "Clipboard read failed: ${e.message}")
+            null
+        }
+        if (pasted.isNullOrBlank()) {
+            Toast.makeText(context, R.string.paste_clipboard_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        when (val link = YtMusicLinkParser.parse(pasted)) {
+            is YtmLink.Track -> {
+                // No YtmTrack metadata for a bare link — hand a minimal ytm: FullTrack to the player.
+                val yt = FullTrack(
+                    id = "ytm:${link.videoId}", name = "YouTube Music",
+                    externalUri = "https://music.youtube.com/watch?v=${link.videoId}",
+                    explicit = false, durationMs = 0, isrc = "",
+                    artists = emptyList(), album = null
+                )
+                onTrackClick(listOf(yt), 0)
+            }
+            is YtmLink.Album -> onAlbum(link.browseId, "")
+            is YtmLink.Artist -> onArtist(link.channelId, "")
+            is YtmLink.Playlist -> onPlaylist(link.playlistId, "")
+            null -> Toast.makeText(context, R.string.paste_no_ytm_link, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun runSearch(q: String) {
         searchJob?.cancel()
@@ -151,8 +188,15 @@ fun YtMusicSearchScreen(
                 placeholder = { Text(stringResource(R.string.ytm_search_placeholder), color = Color.Gray) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) IconButton(onClick = { query = ""; runSearch("") }) {
-                        Icon(Icons.Default.Clear, "Clear", tint = Color.White)
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = ""; runSearch("") }) {
+                            Icon(Icons.Default.Clear, "Clear", tint = Color.White)
+                        }
+                    } else {
+                        // Paste a YTM link from clipboard (E40).
+                        IconButton(onClick = { pasteYtmLink() }) {
+                            Icon(Icons.Default.Add, stringResource(R.string.ytm_paste_link), tint = Color.White)
+                        }
                     }
                 },
                 colors = TextFieldDefaults.colors(
@@ -248,7 +292,9 @@ fun YtMusicAlbumScreen(
     var attempt by remember { mutableStateOf(0) }
     LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
-    YtmDetailScaffold(title, onBack) { padding ->
+    YtmDetailScaffold(title, onBack, onShare = {
+        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Album(browseId)))
+    }) { padding ->
         when {
             loading -> YtmLoading(padding)
             data == null -> YtmError(padding) { attempt++ }
@@ -305,7 +351,9 @@ fun YtMusicArtistScreen(
     var attempt by remember { mutableStateOf(0) }
     LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
-    YtmDetailScaffold(name, onBack) { padding ->
+    YtmDetailScaffold(name, onBack, onShare = {
+        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Artist(channelId)))
+    }) { padding ->
         when {
             loading -> YtmLoading(padding)
             data == null -> YtmError(padding) { attempt++ }
@@ -367,12 +415,15 @@ fun YtMusicPlaylistScreen(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String? = null
 ) {
+    val context = LocalContext.current
     var data by remember { mutableStateOf<YtmPlaylist?>(null) }
     var loading by remember { mutableStateOf(true) }
     var attempt by remember { mutableStateOf(0) }
     LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
-    YtmDetailScaffold(title, onBack) { padding ->
+    YtmDetailScaffold(title, onBack, onShare = {
+        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Playlist(playlistId)))
+    }) { padding ->
         when {
             loading -> YtmLoading(padding)
             data == null -> YtmError(padding) { attempt++ }
@@ -457,6 +508,7 @@ fun YtMusicLocalPlaylistScreen(
 private fun YtmDetailScaffold(
     title: String,
     onBack: () -> Unit,
+    onShare: (() -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
@@ -467,6 +519,13 @@ private fun YtmDetailScaffold(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    if (onShare != null) {
+                        IconButton(onClick = onShare) {
+                            Icon(Icons.Default.Share, stringResource(R.string.ytm_share), tint = Color.White)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = YtmDark)
@@ -530,6 +589,7 @@ fun YtmTrackListItem(
     onFavoriteToggle: () -> Unit,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val full = remember(track) { track.toFullTrack() }
     TrackRowItem(
         index = index + 1,
@@ -538,7 +598,11 @@ fun YtmTrackListItem(
         onClick = onClick,
         isLiked = isFavorite,
         isCurrentTrack = full.id == currentTrackId,
-        onLikeToggle = onFavoriteToggle
+        onLikeToggle = onFavoriteToggle,
+        // E40: the "more" (⋮) action shares the canonical YTM track link.
+        onMoreClick = {
+            ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)))
+        }
     )
 }
 

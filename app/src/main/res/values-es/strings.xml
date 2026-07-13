@@ -201,6 +201,9 @@
     <string name="ytm_unsave">Quitar</string>
     <string name="ytm_album_detail">Álbum</string>
     <string name="ytm_artist_detail">Artista</string>
+    <string name="ytm_share">Compartir</string>
+    <string name="ytm_paste_link">Pegar enlace de YouTube Music</string>
+    <string name="paste_no_ytm_link">No se encontró ningún enlace de YouTube Music en el portapapeles</string>
     <string name="enable_ytm_music">YouTube Music</string>
     <string name="enable_ytm_music_desc">Muestra la pestaña YouTube Music en tu biblioteca</string>
     <string name="settings_export_ytm">Exportar biblioteca YTM</string>
