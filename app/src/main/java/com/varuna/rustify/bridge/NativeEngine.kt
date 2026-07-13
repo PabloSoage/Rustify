@@ -337,6 +337,14 @@ object NativeEngine {
      */
     external fun getSpotifyTrackRadioNative(trackId: String): String
 
+    /**
+     * Fetches the Spotify Canvas (short looping mp4 shown behind the cover art)
+     * for a track. Accepts a track ID or a full `spotify:track:<id>` URI.
+     * @return A JSON string: {"url":"<mp4>"} when a canvas exists, {"url":null}
+     *         when the track has no canvas, or {"success":false,"error":"..."}.
+     */
+    external fun getSpotifyCanvasNative(trackUri: String): String
+
     // =====================================================================
     // SPOTIFY — SEARCH
     // =====================================================================

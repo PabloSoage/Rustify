@@ -63,6 +63,9 @@
     <string name="track_menu_go_album">アルバムへ移動</string>
     <string name="track_options_view_artist">アーティストを見る</string>
     <string name="track_menu_view_youtube">別のYouTubeバージョン</string>
+    <string name="track_tab_image">画像</string>
+    <string name="track_tab_canvas">キャンバス</string>
+    <string name="track_canvas_none">キャンバスは利用できません</string>
     <string name="track_menu_share">共有</string>
     <string name="track_menu_share_rustify">Rustifyリンクで共有</string>
     <string name="share_track">トラックを共有</string>
@@ -136,4 +139,43 @@
     <string name="settings_local_data">ローカルデータ（プレイリスト + お気に入り）</string>
     <string name="settings_export_local_empty">エクスポートするローカルデータがありません</string>
 
+    <!-- E90 — DJ IA -->
+    <string name="dj_title">DJ</string>
+    <string name="dj_subtitle">あなた専用のDJが再生履歴からオートミックスを作成します。リクエストするか、そのまま開始してください。</string>
+    <string name="dj_request_hint">DJにリクエスト（例：「落ち着いた曲」「Radioheadみたいな曲」）</string>
+    <string name="dj_start">DJを開始</string>
+    <string name="dj_enqueue">キューに追加</string>
+    <string name="dj_intro_label">DJ</string>
+    <string name="dj_queue_built">キュー作成：%1$d曲</string>
+    <string name="dj_no_results">DJは曲を見つけられませんでした。別のリクエストを試してください。</string>
+    <string name="dj_current_mode">モード：%1$s</string>
+    <string name="dj_change_in_settings">設定で変更</string>
+    <string name="dj_mode_heuristic">ヒューリスティック（オフライン）</string>
+    <string name="dj_mode_api">外部AI（API）</string>
+    <string name="dj_mode_local">ローカルLLM（実験的）</string>
+    <string name="settings_dj">DJ</string>
+    <string name="settings_dj_mode">DJモード</string>
+    <string name="settings_dj_mode_desc">ヒューリスティックはオフラインで動作します。外部AIは再生コンテキストをOpenAI互換エンドポイントに送信します（オプトイン）。ローカルLLMは未実装です。</string>
+    <string name="settings_dj_base_url">ベースURL</string>
+    <string name="settings_dj_model">モデル</string>
+    <string name="settings_dj_api_key">APIキー（任意）</string>
+    <string name="settings_dj_api_desc">デフォルトのエンドポイントはPollinations AI（無料・キー不要・ベストエフォート）です。OpenAI互換のAPIを指定できます。リクエストは端末外に送信されます。</string>
+    <string name="settings_dj_local_note">端末上のローカルLLMは未実装です。ヒューリスティックDJにフォールバックします。</string>
+
+    <!-- E50 — Google Drive 同期 -->
+    <string name="settings_drive_title">Google Drive</string>
+    <string name="settings_drive_desc">マッピング、ローカルのプレイリスト/お気に入り、YouTube Music ライブラリ、統計を Drive の非公開フォルダ（AppData）に同期します。</string>
+    <string name="settings_drive_link">アカウントを連携</string>
+    <string name="settings_drive_unlink">連携を解除</string>
+    <string name="settings_drive_sync_now">今すぐ同期</string>
+    <string name="settings_drive_auto">自動同期</string>
+    <string name="settings_drive_auto_desc">アプリ起動時に自動で同期します。</string>
+    <string name="settings_drive_never_synced">未同期</string>
+    <string name="settings_drive_last_sync">最終同期: %1$s</string>
+    <string name="settings_drive_linked">アカウント連携済み</string>
+    <string name="settings_drive_not_linked">未連携</string>
+    <string name="settings_drive_syncing">同期中…</string>
+    <string name="settings_drive_sync_ok">同期完了</string>
+    <string name="settings_drive_sync_error">同期エラー: %1$s</string>
+    <string name="settings_drive_not_configured">Google Drive がまだ設定されていません。default_web_client_id と Cloud の OAuth クライアントを設定してください（ドキュメント参照）。</string>
 </resources>

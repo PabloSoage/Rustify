@@ -73,6 +73,9 @@
     <string name="track_menu_go_album">Ir al Álbum</string>
     <string name="track_options_view_artist">Ver artista</string>
     <string name="track_menu_view_youtube">Versión alternativa de YouTube</string>
+    <string name="track_tab_image">Imagen</string>
+    <string name="track_tab_canvas">Canvas</string>
+    <string name="track_canvas_none">Sin canvas disponible</string>
     <string name="track_menu_download">Descargar canción</string>
     <string name="track_menu_getting_url">Obteniendo URL…</string>
     <string name="track_menu_url_not_found">No se pudo encontrar el audio</string>
@@ -234,4 +237,44 @@
     <string name="ytm_playlist_created">Lista creada</string>
     <string name="ytm_load_error">No se pudo cargar. Revisa tu conexión e inténtalo de nuevo.</string>
     <string name="ytm_retry">Reintentar</string>
+
+    <!-- E90 — DJ IA -->
+    <string name="dj_title">DJ</string>
+    <string name="dj_subtitle">Tu DJ personal monta un automix con lo que escuchas. Pídele algo o simplemente empieza.</string>
+    <string name="dj_request_hint">Pídele algo al DJ (p. ej. \"algo tranquilo\", \"más de Radiohead\")</string>
+    <string name="dj_start">Iniciar DJ</string>
+    <string name="dj_enqueue">Añadir a la cola</string>
+    <string name="dj_intro_label">DJ</string>
+    <string name="dj_queue_built">Cola generada: %1$d canciones</string>
+    <string name="dj_no_results">El DJ no encontró canciones. Prueba con otra petición o semilla.</string>
+    <string name="dj_current_mode">Modo: %1$s</string>
+    <string name="dj_change_in_settings">Cambiar en Ajustes</string>
+    <string name="dj_mode_heuristic">Heurístico (sin conexión)</string>
+    <string name="dj_mode_api">IA externa (API)</string>
+    <string name="dj_mode_local">LLM local (experimental)</string>
+    <string name="settings_dj">DJ</string>
+    <string name="settings_dj_mode">Modo del DJ</string>
+    <string name="settings_dj_mode_desc">El heurístico funciona sin conexión. La IA externa envía tu contexto de escucha a un endpoint compatible con OpenAI (opt-in). El LLM local aún no está implementado.</string>
+    <string name="settings_dj_base_url">URL base</string>
+    <string name="settings_dj_model">Modelo</string>
+    <string name="settings_dj_api_key">Clave API (opcional)</string>
+    <string name="settings_dj_api_desc">El endpoint por defecto es Pollinations AI (gratuito, sin clave, best-effort). Puedes apuntarlo a cualquier API compatible con OpenAI. Las peticiones salen de tu dispositivo.</string>
+    <string name="settings_dj_local_note">El LLM local en el dispositivo aún no está implementado; recurre al DJ heurístico.</string>
+
+    <!-- E50 — Sincronización con Google Drive -->
+    <string name="settings_drive_title">Google Drive</string>
+    <string name="settings_drive_desc">Sincroniza tus mapeos, playlists/favoritos locales, biblioteca de YouTube Music y métricas en una carpeta privada de Drive (AppData).</string>
+    <string name="settings_drive_link">Vincular cuenta</string>
+    <string name="settings_drive_unlink">Desvincular cuenta</string>
+    <string name="settings_drive_sync_now">Sincronizar ahora</string>
+    <string name="settings_drive_auto">Sincronización automática</string>
+    <string name="settings_drive_auto_desc">Sincroniza automáticamente al abrir la app.</string>
+    <string name="settings_drive_never_synced">Nunca sincronizado</string>
+    <string name="settings_drive_last_sync">Última sync: %1$s</string>
+    <string name="settings_drive_linked">Cuenta vinculada</string>
+    <string name="settings_drive_not_linked">Sin vincular</string>
+    <string name="settings_drive_syncing">Sincronizando…</string>
+    <string name="settings_drive_sync_ok">Sincronización completada</string>
+    <string name="settings_drive_sync_error">Error de sync: %1$s</string>
+    <string name="settings_drive_not_configured">Google Drive aún no está configurado. Rellena default_web_client_id y los OAuth clients en Cloud (ver docs).</string>
 </resources>

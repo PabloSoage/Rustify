@@ -108,6 +108,7 @@ import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.SettingsScreen
+import com.varuna.rustify.ui.screens.DjScreen
 import com.varuna.rustify.ui.screens.TrackScreen
 import com.varuna.rustify.ui.screens.YtMusicSearchScreen
 import com.varuna.rustify.ui.screens.YtMusicAlbumScreen
@@ -139,6 +140,8 @@ sealed class Screen {
     object Downloads : Screen()
     object LogViewer : Screen()
     object Metrics : Screen()
+    // E90 — DJ IA (automix / peticiones en lenguaje natural).
+    object Dj : Screen()
 }
 
 /**
@@ -430,6 +433,31 @@ fun EngineTester(
         }
     }
 
+    // E50 — Auto-sync silencioso al abrir la app: solo si la cuenta está vinculada,
+    // el toggle "auto-sync" está activo y hay un token disponible SIN pedir consentimiento
+    // (refresh en segundo plano). Si requiere UI de consentimiento, se pospone a que el
+    // usuario pulse "Sincronizar ahora" en Ajustes. Nunca lanza diálogo aquí.
+    LaunchedEffect(Unit) {
+        val appCtx = context.applicationContext
+        if (com.varuna.rustify.sync.DriveSyncPrefs.isLinked(appCtx) &&
+            com.varuna.rustify.sync.DriveSyncPrefs.isAutoSync(appCtx)
+        ) {
+            val drive = com.varuna.rustify.sync.GoogleDriveSync(appCtx)
+            drive.authorize(
+                onToken = { token ->
+                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching {
+                            com.varuna.rustify.sync.DriveSyncManager(appCtx, drive, spotifyRepo, ytmRepo)
+                                .syncNow(token)
+                        }
+                    }
+                },
+                onNeedConsent = { /* posponer: requiere UI; el usuario sincroniza desde Ajustes */ },
+                onError = { /* silencioso en auto-sync */ }
+            )
+        }
+    }
+
     // Physical / Gesture Back Button handling
     BackHandler(enabled = navigationStack.size > 1) {
         navigationStack.removeAt(navigationStack.lastIndex)
@@ -672,6 +700,7 @@ fun EngineTester(
             is Screen.LogViewer -> "LogViewer"
             is Screen.Metrics -> "Metrics"
             is Screen.NewReleases -> "NewReleases"
+            is Screen.Dj -> "Dj"
         }
 
         val screenContent = remember(currentScreen) {
@@ -719,6 +748,9 @@ fun EngineTester(
                             },
                             onMetricsClick = {
                                 navigationStack.add(Screen.Metrics)
+                            },
+                            onDjClick = {
+                                navigationStack.add(Screen.Dj)
                             }
                         )
                     }
@@ -923,6 +955,7 @@ fun EngineTester(
                 is Screen.Settings -> {
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
+                        ytmRepository = ytmRepo,
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
                         onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
@@ -951,6 +984,17 @@ fun EngineTester(
                 is Screen.Metrics -> {
                     MetricsScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.Dj -> {
+                    DjScreen(
+                        spotifyRepo = spotifyRepo,
+                        nowPlaying = currentTrack,
+                        queue = playerState.queue,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onOpenSettings = { navigationStack.add(Screen.Settings) }
                     )
                 }
             }

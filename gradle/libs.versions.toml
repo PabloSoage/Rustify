@@ -14,6 +14,13 @@ youtubedl = "0.18.1"
 appcompat = "1.7.1"
 documentfile = "1.1.0"
 profileinstaller = "1.4.1"
+# E50 — Google Drive sync (AppData). play-services-auth aporta AuthorizationClient
+# (Identity.getAuthorizationClient) para el access token con scope drive.appdata.
+playServicesAuth = "21.4.0"
+# OkHttp para las llamadas REST a Drive v3. Coil ya lo trae transitivamente, pero
+# lo declaramos explícito para poder usar su API directamente sin depender del
+# grafo transitivo de Coil.
+okhttp = "4.12.0"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -38,6 +45,8 @@ youtubedl-ffmpeg = { group = "io.github.junkfood02.youtubedl-android", name = "f
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

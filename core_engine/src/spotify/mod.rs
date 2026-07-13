@@ -12,3 +12,4 @@ pub mod playlist;
 pub mod track;
 pub mod search;
 pub mod browse;
+pub mod canvas;

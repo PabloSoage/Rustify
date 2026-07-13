@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,6 +53,7 @@ fun HomeScreen(
     onDownloadsClick: () -> Unit,
     onNewReleasesClick: () -> Unit,
     onMetricsClick: () -> Unit,
+    onDjClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -119,6 +121,14 @@ fun HomeScreen(
                         )
                         Row {
                             val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
+
+                            IconButton(onClick = onDjClick) {
+                                Icon(
+                                    imageVector = Icons.Default.Radio,
+                                    contentDescription = "DJ",
+                                    tint = Color(0xFF1DB954)
+                                )
+                            }
 
                             IconButton(onClick = onNewReleasesClick) {
                                 Icon(

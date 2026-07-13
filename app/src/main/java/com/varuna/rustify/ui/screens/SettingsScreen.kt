@@ -85,8 +85,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
+import androidx.activity.result.IntentSenderRequest
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.YtMusicRepository
+import com.varuna.rustify.sync.DriveSyncManager
+import com.varuna.rustify.sync.DriveSyncPrefs
+import com.varuna.rustify.sync.GoogleDriveSync
 import com.varuna.rustify.util.AppLinksHosts
 import com.varuna.rustify.util.LogCapture
 import com.yausername.youtubedl_android.YoutubeDL
@@ -103,6 +108,7 @@ fun SettingsScreen(
     onNavigateLogViewer: () -> Unit = {},
     onLocaleChanged: ((String) -> Unit)? = null,
     onNavigateMetrics: () -> Unit = {},
+    ytmRepository: YtMusicRepository? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -132,6 +138,12 @@ fun SettingsScreen(
         }
     }
     var shareAsRustify by remember { mutableStateOf(prefs.getBoolean("share_as_rustify_link", false)) }
+
+    // E90 — DJ IA: modo (heurístico / API / local) + config del endpoint OpenAI-compatible.
+    var djMode by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_MODE, "heuristic") ?: "heuristic") }
+    var djApiBaseUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_BASE_URL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) }
+    var djApiModel by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) }
+    var djApiKey by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_KEY, "") ?: "") }
 
     var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
     var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
@@ -280,6 +292,83 @@ fun SettingsScreen(
                 } catch (e: Exception) { e.printStackTrace(); withContext(Dispatchers.Main) { Toast.makeText(context, localImportErrorMsg, Toast.LENGTH_SHORT).show() } }
             }
         }
+    }
+
+    // ── E50 — Google Drive sync ───────────────────────────────────────────────
+    val drive = remember { GoogleDriveSync(context.applicationContext) }
+    val syncManager = remember {
+        DriveSyncManager(context.applicationContext, drive, spotifyRepository, ytmRepository)
+    }
+    // Web client id: si está vacío, la app no está configurada (ver GoogleDriveSync.kt).
+    val webClientId = stringResource(R.string.default_web_client_id)
+    var driveLinked by remember { mutableStateOf(DriveSyncPrefs.isLinked(context)) }
+    var driveAutoSync by remember { mutableStateOf(DriveSyncPrefs.isAutoSync(context)) }
+    var driveLastSync by remember { mutableLongStateOf(DriveSyncPrefs.lastSyncMs(context)) }
+    var driveSyncing by remember { mutableStateOf(false) }
+    var driveStatus by remember { mutableStateOf("") }
+
+    val driveNeverSynced = stringResource(R.string.settings_drive_never_synced)
+    val driveSyncOkMsg = stringResource(R.string.settings_drive_sync_ok)
+    val driveSyncErrTmpl = stringResource(R.string.settings_drive_sync_error)
+    val driveNotConfiguredMsg = stringResource(R.string.settings_drive_not_configured)
+
+    // Ejecuta una sync completa con un access token ya obtenido.
+    fun runDriveSync(token: String) {
+        driveSyncing = true
+        coroutineScope.launch(Dispatchers.IO) {
+            val result = runCatching { syncManager.syncNow(token) }
+            withContext(Dispatchers.Main) {
+                driveSyncing = false
+                result.fold(
+                    onSuccess = {
+                        driveLastSync = DriveSyncPrefs.lastSyncMs(context)
+                        driveStatus = driveSyncOkMsg
+                        Toast.makeText(context, driveSyncOkMsg, Toast.LENGTH_SHORT).show()
+                    },
+                    onFailure = { e ->
+                        val msg = String.format(driveSyncErrTmpl, e.message ?: e.javaClass.simpleName)
+                        driveStatus = msg
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
+        }
+    }
+
+    // Launcher para el flujo de consentimiento OAuth (IntentSender de AuthorizationClient).
+    val driveConsentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        drive.handleAuthorizationResult(
+            activityResult.data,
+            onToken = { token ->
+                DriveSyncPrefs.setLinked(context, true); driveLinked = true
+                runDriveSync(token)
+            },
+            onError = { e ->
+                driveStatus = String.format(driveSyncErrTmpl, e.message ?: "auth")
+                Toast.makeText(context, driveStatus, Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    // Pide token (y lanza consentimiento si hace falta), luego ejecuta [onToken].
+    fun driveAuthorizeThen(onToken: (String) -> Unit) {
+        if (webClientId.isBlank()) {
+            driveStatus = driveNotConfiguredMsg
+            Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show()
+            return
+        }
+        drive.authorize(
+            onToken = onToken,
+            onNeedConsent = { intentSender ->
+                driveConsentLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            },
+            onError = { e ->
+                driveStatus = String.format(driveSyncErrTmpl, e.message ?: "auth")
+                Toast.makeText(context, driveStatus, Toast.LENGTH_LONG).show()
+            }
+        )
     }
 
     Scaffold(
@@ -718,6 +807,110 @@ if (localMusicDirs.isEmpty()) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // ── E50 — Google Drive sync ───────────────────────────────────────
+            Text(
+                text = stringResource(R.string.settings_drive_title),
+                color = Color(0xFF1DB954),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.settings_drive_desc),
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        stringResource(
+                            if (driveLinked) R.string.settings_drive_linked
+                            else R.string.settings_drive_not_linked
+                        ),
+                        color = if (driveLinked) Color(0xFF1DB954) else Color.Gray, fontSize = 12.sp
+                    )
+                    val lastSyncText = if (driveLastSync <= 0L) driveNeverSynced
+                        else java.text.DateFormat.getDateTimeInstance().format(java.util.Date(driveLastSync))
+                    Text(
+                        stringResource(R.string.settings_drive_last_sync, lastSyncText),
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                    if (driveStatus.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(driveStatus, color = Color.Gray, fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                if (driveLinked) {
+                                    drive.unlink()
+                                    DriveSyncPrefs.setLinked(context, false)
+                                    driveLinked = false
+                                    driveStatus = ""
+                                } else {
+                                    driveAuthorizeThen { token ->
+                                        DriveSyncPrefs.setLinked(context, true); driveLinked = true
+                                        runDriveSync(token)
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (driveLinked) R.string.settings_drive_unlink
+                                    else R.string.settings_drive_link
+                                ),
+                                color = Color.White, fontSize = 12.sp
+                            )
+                        }
+                        Button(
+                            onClick = { if (!driveSyncing) driveAuthorizeThen { token -> runDriveSync(token) } },
+                            enabled = !driveSyncing,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (driveSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp), color = Color(0xFF1DB954), strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(stringResource(R.string.settings_drive_sync_now), color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.settings_drive_auto), color = Color.White, fontSize = 14.sp)
+                            Text(stringResource(R.string.settings_drive_auto_desc), color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = driveAutoSync,
+                            onCheckedChange = { checked ->
+                                driveAutoSync = checked
+                                DriveSyncPrefs.setAutoSync(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Storage breakdown section (BUG-12+17)
             Text(
                 text = stringResource(R.string.settings_storage),
@@ -1144,6 +1337,98 @@ if (localMusicDirs.isEmpty()) {
                                 checkedTrackColor = Color(0xFF1DB954)
                             )
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // E90 — Sección DJ IA.
+            Text(
+                text = stringResource(R.string.settings_dj),
+                color = Color(0xFF1DB954),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(stringResource(R.string.settings_dj_mode), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(stringResource(R.string.settings_dj_mode_desc), color = Color.Gray, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val djModes = listOf(
+                        "heuristic" to stringResource(R.string.dj_mode_heuristic),
+                        "api" to stringResource(R.string.dj_mode_api),
+                        "local" to stringResource(R.string.dj_mode_local)
+                    )
+                    djModes.forEach { (code, name) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    djMode = code
+                                    prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_MODE, code) }
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = djMode == code,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                            )
+                            Spacer(modifier = Modifier.padding(start = 12.dp))
+                            Text(name, color = Color.White, fontSize = 15.sp)
+                        }
+                    }
+
+                    if (djMode == "api") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val djFieldColors = TextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF121212),
+                            unfocusedContainerColor = Color(0xFF121212)
+                        )
+                        OutlinedTextField(
+                            value = djApiBaseUrl,
+                            onValueChange = { djApiBaseUrl = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_API_BASE_URL, it) } },
+                            label = { Text(stringResource(R.string.settings_dj_base_url)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = djFieldColors
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = djApiModel,
+                            onValueChange = { djApiModel = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, it) } },
+                            label = { Text(stringResource(R.string.settings_dj_model)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = djFieldColors
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = djApiKey,
+                            onValueChange = { djApiKey = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_API_KEY, it) } },
+                            label = { Text(stringResource(R.string.settings_dj_api_key)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = djFieldColors
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(stringResource(R.string.settings_dj_api_desc), color = Color.Gray, fontSize = 12.sp)
+                    }
+
+                    if (djMode == "local") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(stringResource(R.string.settings_dj_local_note), color = Color.Gray, fontSize = 12.sp)
                     }
                 }
             }

@@ -68,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,6 +77,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -434,23 +436,14 @@ fun TrackScreen(
                                         .padding(horizontal = 24.dp, vertical = 16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Cover Art
-                                    Surface(
-                                        modifier = Modifier
-                                            .size(180.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        color = Color.DarkGray
-                                    ) {
-                                        if (!imgUrl.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = imgUrl,
-                                                contentDescription = track.name,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        }
-                                    }
-                                    
+                                    // Cover Art / Canvas
+                                    TrackCoverWithCanvas(
+                                        trackId = track.id ?: trackId,
+                                        imgUrl = imgUrl,
+                                        contentDescription = track.name,
+                                        size = 180.dp
+                                    )
+
                                     Spacer(modifier = Modifier.width(24.dp))
                                     
                                     Column(
@@ -492,23 +485,14 @@ fun TrackScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    // Big Cover Art
-                                    Surface(
-                                        modifier = Modifier
-                                            .size(280.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        color = Color.DarkGray
-                                    ) {
-                                        if (!imgUrl.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = imgUrl,
-                                                contentDescription = track.name,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        }
-                                    }
-                                    
+                                    // Big Cover Art / Canvas
+                                    TrackCoverWithCanvas(
+                                        trackId = track.id ?: trackId,
+                                        imgUrl = imgUrl,
+                                        contentDescription = track.name,
+                                        size = 280.dp
+                                    )
+
                                     Spacer(modifier = Modifier.height(24.dp))
                                     
                                     TrackScreenControls(
@@ -1253,4 +1237,175 @@ fun LyricsView(
             }
         }
     }
+}
+
+/**
+ * Cover art with a tab selector ("Imagen" | "Canvas") on top (part of E80).
+ *
+ * The Spotify Canvas is a short looping mp4 shown behind the cover art. We fetch its
+ * URL lazily from the native engine (protobuf canvaz endpoint) and, when the user
+ * selects the "Canvas" tab, play it MUTED and LOOPING in a SECOND, independent
+ * ExoPlayer instance (NOT the global playback player). The player is created and
+ * released via DisposableEffect and rendered into a SurfaceView through AndroidView,
+ * so no media3-ui / PlayerView dependency is required.
+ *
+ * The YouTube "Vídeo" tab is intentionally left for a later iteration.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+fun TrackCoverWithCanvas(
+    trackId: String,
+    imgUrl: String?,
+    contentDescription: String,
+    size: androidx.compose.ui.unit.Dp
+) {
+    val spotifyGreen = Color(0xFF1DB954)
+
+    // Canvas fetch state. null = not yet loaded / loading; then a Result-like pair.
+    var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
+    var canvasLoading by remember(trackId) { mutableStateOf(true) }
+    var canvasResolved by remember(trackId) { mutableStateOf(false) }
+    // Selected tab: 0 = Imagen, 1 = Canvas
+    var selectedTab by rememberSaveable(trackId) { mutableStateOf(0) }
+
+    LaunchedEffect(trackId) {
+        canvasLoading = true
+        canvasResolved = false
+        canvasUrl = null
+        try {
+            val json = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                NativeEngine.getSpotifyCanvasNative(trackId)
+            }
+            val obj = JSONObject(json)
+            // {"url":"..."} present & non-null → has canvas; {"url":null} or error → none.
+            canvasUrl = if (obj.has("url") && !obj.isNull("url")) obj.optString("url") else null
+        } catch (_: Exception) {
+            canvasUrl = null
+        } finally {
+            canvasResolved = true
+            canvasLoading = false
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Tab selector
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White.copy(alpha = 0.08f))
+                .padding(2.dp)
+        ) {
+            listOf(
+                0 to stringResource(R.string.track_tab_image),
+                1 to stringResource(R.string.track_tab_canvas)
+            ).forEach { (index, label) ->
+                val selected = selectedTab == index
+                Text(
+                    text = label,
+                    color = if (selected) Color.Black else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (selected) spotifyGreen else Color.Transparent)
+                        .clickable { selectedTab = index }
+                        .padding(horizontal = 18.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Surface(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(8.dp)),
+            color = Color.DarkGray
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val url = canvasUrl
+                if (selectedTab == 1 && !url.isNullOrEmpty()) {
+                    CanvasVideoPlayer(url = url)
+                } else if (selectedTab == 1 && canvasLoading) {
+                    // Canvas selected but still resolving
+                    if (!imgUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = imgUrl,
+                            contentDescription = contentDescription,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            alpha = 0.4f
+                        )
+                    }
+                    CircularProgressIndicator(color = spotifyGreen, modifier = Modifier.size(32.dp))
+                } else if (selectedTab == 1 && canvasResolved && url.isNullOrEmpty()) {
+                    // No canvas → fall back to the image with a subtle hint
+                    if (!imgUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = imgUrl,
+                            contentDescription = contentDescription,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.track_canvas_none),
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(vertical = 4.dp)
+                    )
+                } else {
+                    // Imagen tab (default)
+                    if (!imgUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = imgUrl,
+                            contentDescription = contentDescription,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Renders a looping, muted mp4 canvas in an independent ExoPlayer + SurfaceView.
+ * The player is fully owned by this composable and released on dispose.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+fun CanvasVideoPlayer(url: String) {
+    val context = LocalContext.current
+
+    val exoPlayer = remember(url) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            volume = 0f
+            playWhenReady = true
+            prepare()
+        }
+    }
+
+    DisposableEffect(url) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { ctx ->
+            android.view.SurfaceView(ctx).also { surface ->
+                exoPlayer.setVideoSurfaceView(surface)
+            }
+        }
+    )
 }

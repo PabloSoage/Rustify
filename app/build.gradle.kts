@@ -118,6 +118,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.profileinstaller)
+    // E50 — Google Drive sync (AppData folder + REST v3).
+    implementation(libs.play.services.auth)
+    implementation(libs.okhttp)
 }
 
 // --- RUST CORE INTEGRATION ---

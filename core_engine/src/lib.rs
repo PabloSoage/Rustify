@@ -971,6 +971,38 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyTra
     })
 }
 
+/// JNI Bridge: Get the Spotify Canvas (looping mp4 url) for a track.
+/// Accepts a track id or a full `spotify:track:<id>` uri.
+/// Returns a JSON object: `{"url":"<mp4>"}` when a canvas exists,
+/// `{"url":null}` when the track has no canvas, or
+/// `{"success":false,"error":"..."}` on failure.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyCanvasNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_uri: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let mutf8 = track_uri.mutf8_chars(env)?;
+        let uri = mutf8.to_string();
+        let async_result = get_runtime().block_on(async {
+            let client = spotify::client::get_spotify_client().read().unwrap();
+            client.get_track_canvas(&uri).await
+        });
+        match async_result {
+            Ok(url_opt) => {
+                serde_json::json!({ "url": url_opt }).to_string()
+            }
+            Err(e) => {
+                eprintln!("Rust Engine Error (canvas): {}", e);
+                let error_response = spotify::models::OperationResult::err(e.to_string());
+                serde_json::to_string(&error_response)
+                    .unwrap_or_else(|_| r#"{"success":false,"error":"canvas error"}"#.to_string())
+            }
+        }
+    })
+}
+
 /// JNI Bridge: Initialize cache directory
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_initSpotifyCacheDirNative<'local>(
