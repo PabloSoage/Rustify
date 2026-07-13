@@ -1,10 +1,14 @@
 package com.varuna.rustify.player
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Build
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -13,8 +17,47 @@ class RustifyForegroundService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
 
+    companion object {
+        // BUG B: dedicated channel id for the playback notification. Media3's
+        // DefaultMediaNotificationProvider must target an EXISTING channel or the
+        // startForeground promotion can fail silently and the notification never shows.
+        private const val NOTIFICATION_CHANNEL_ID = "rustify_playback"
+    }
+
+    // BUG B: ensure a valid notification channel exists BEFORE Media3 tries to
+    // promote the service to foreground (which happens while the player may still be
+    // buffering the E60 chain). Without this the notification can silently fail to
+    // appear and Android suspends background playback.
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            if (manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "Reproducción",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Controles de reproducción de Rustify"
+                    setShowBadge(false)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                }
+                manager.createNotificationChannel(channel)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+
+        // BUG B: create the channel first, then install a DefaultMediaNotificationProvider
+        // bound to it so Media3 reliably calls startForeground with an immediately-showable
+        // notification (metadata of the current item) even while the player is buffering.
+        ensureNotificationChannel()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setChannelId(NOTIFICATION_CHANNEL_ID)
+                .build()
+        )
 
         // E12: guarantee AudioPlayerService + ExoPlayer exist; the no-op re-read was removed.
         AudioPlayerService.getInstance(this)

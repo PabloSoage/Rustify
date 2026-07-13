@@ -63,8 +63,10 @@ class AudioSourceChain(
             try {
                 if (!p.isAvailableFor(track)) continue
             } catch (e: Exception) { errors += e; continue }
+            // A full download (yt-dlp -x mp3 320K) routinely exceeds the resolve timeout; use a much
+            // larger ceiling so real downloads aren't cancelled mid-transfer (E60 fix).
             val r = runCatching {
-                withTimeout(perProviderTimeoutMs) { p.downloadTo(track, dst, onProgress).getOrThrow() }
+                withTimeout(DOWNLOAD_TIMEOUT_MS) { p.downloadTo(track, dst, onProgress).getOrThrow() }
             }
             if (r.isSuccess) {
                 lastGood[trackId] = p.capabilities.id
@@ -92,5 +94,7 @@ class AudioSourceChain(
 
     companion object {
         const val DEFAULT_TIMEOUT_MS = 15_000L
+        /** Downloads are full file transfers (can take minutes); resolve-sized timeouts would abort them. */
+        const val DOWNLOAD_TIMEOUT_MS = 20 * 60_000L
     }
 }

@@ -204,4 +204,19 @@
     <string name="settings_import_ytm">Importar biblioteca YTM</string>
     <string name="settings_ytm_export_success">Biblioteca YTM exportada</string>
     <string name="settings_ytm_export_empty">Sin biblioteca YTM que exportar</string>
+    <string name="ytm_title">YouTube Music</string>
+    <string name="ytm_search_action">Buscar en YouTube Music</string>
+    <string name="ytm_section_tracks">Canciones</string>
+    <string name="ytm_section_albums">Álbumes</string>
+    <string name="ytm_section_artists">Artistas</string>
+    <string name="ytm_section_playlists">Listas</string>
+    <string name="ytm_top_tracks">Canciones populares</string>
+    <string name="ytm_no_playlists">Aún no hay listas guardadas.</string>
+    <string name="ytm_no_albums">Aún no hay álbumes guardados.</string>
+    <string name="ytm_no_artists">Aún no hay artistas guardados.</string>
+    <string name="ytm_create_playlist">Crear lista</string>
+    <string name="ytm_playlist_name_hint">Nombre de la lista</string>
+    <string name="ytm_delete">Eliminar</string>
+    <string name="ytm_not_found">No encontrado</string>
+    <string name="ytm_library_empty">Tu biblioteca de YouTube Music está vacía.\nPulsa buscar para empezar.</string>
 </resources>

@@ -225,20 +225,27 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     private fun saveLocalPlaylists() {
-        runCatching {
-            val arr = JSONArray()
-            // Copia snapshot (evita ConcurrentModification durante serialización).
-            val snapshot = localPlaylists.toList()
-            snapshot.forEach { arr.put(it.toJson()) }
-            atomicWrite(getLocalPlaylistsFile(), arr.toString())
+        // E30 fix: snapshot on the caller thread (avoids ConcurrentModification), then write off the
+        // main thread. These were called from Compose click handlers → synchronous disk I/O on the UI
+        // thread = jank/ANR (matches the "app freezes" report when mutating local playlists).
+        val snapshot = localPlaylists.toList()
+        repositoryScope.launch(Dispatchers.IO) {
+            runCatching {
+                val arr = JSONArray()
+                snapshot.forEach { arr.put(it.toJson()) }
+                atomicWrite(getLocalPlaylistsFile(), arr.toString())
+            }
         }
     }
 
     private fun saveLocalFavorites() {
-        runCatching {
-            val arr = JSONArray()
-            localFavoriteIds.filterValues { it }.keys.forEach { arr.put(it) }
-            atomicWrite(getLocalFavoritesFile(), arr.toString())
+        val keys = localFavoriteIds.filterValues { it }.keys.toList()
+        repositoryScope.launch(Dispatchers.IO) {
+            runCatching {
+                val arr = JSONArray()
+                keys.forEach { arr.put(it) }
+                atomicWrite(getLocalFavoritesFile(), arr.toString())
+            }
         }
     }
 

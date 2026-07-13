@@ -18,10 +18,16 @@ use std::sync::OnceLock;
 /// This eliminates repeated disk cache reads, version fetches, and TLS setup overhead on every track resolution.
 static RUSTYPIPE_CLIENT: OnceLock<rustypipe::client::RustyPipe> = OnceLock::new();
 
-/// Public no-arg getter for YTM modules. Uses the default Android cache directory.
-pub fn get_client() -> rustypipe::client::RustyPipe {
-    get_client_internal("/data/data/com.varuna.rustify/cache")
-        .expect("Failed to build RustyPipe client")
+/// Public no-arg getter for YTM modules. Returns a `Result` (never panics) so that
+/// callers can serialize a graceful `null`/`[]` instead of crashing the whole app.
+///
+/// The cache directory is the one registered by the JNI layer via `init_cache_dir`
+/// (`youtube::server::get_cache_dir`), falling back to the default Android app cache
+/// path when it has not been set yet.
+pub fn get_client() -> Result<rustypipe::client::RustyPipe, Box<dyn std::error::Error>> {
+    let cache_dir = crate::youtube::server::get_cache_dir()
+        .unwrap_or_else(|| "/data/data/com.varuna.rustify/cache".to_string());
+    get_client_internal(&cache_dir)
 }
 
 /// Get or initialise the global RustyPipe client.

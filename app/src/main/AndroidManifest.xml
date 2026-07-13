@@ -48,7 +48,11 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="music.youtube.com" />
+                <!-- E40: scope to real YTM entities so we don't hijack every music.youtube.com URL. -->
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/watch" />
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/playlist" />
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/browse" />
+                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/channel" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

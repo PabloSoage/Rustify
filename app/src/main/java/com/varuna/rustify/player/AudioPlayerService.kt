@@ -152,7 +152,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     init {
         // Initialize the YouTube resolver cache + mappings (replaces removed loopback server, E11).
-        val cachePath = context.cacheDir.absolutePath
+        // NOTE: must be filesDir (persistent), NOT cacheDir: youtube_mappings.json holds the user's
+        // confirmed YouTube alternatives and Settings/export read it from filesDir. Using cacheDir made
+        // the confirmed matchings invisible ("0 matchings") and wiped by the OS clearing the cache.
+        val cachePath = context.filesDir.absolutePath
         NativeEngine.initCacheDirNative(cachePath)
 
         loadUrlCache()
@@ -347,7 +350,17 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     // E12: explicit, deterministic foreground-service bind, not inside the cancelable playJob.
     private fun ensureForegroundServiceBound() {
-        if (mediaControllerFuture != null) return
+        // BUG B: don't early-return just because we bound ONCE. If the OS killed the foreground
+        // service (notification vanishes, background playback dies until cache clear), the completed
+        // future is still non-null but its controller is disconnected → we must re-arm, not give up.
+        val existing = mediaControllerFuture
+        if (existing != null) {
+            if (!existing.isDone) return // bind in progress, leave it
+            val controller = runCatching { existing.get() }.getOrNull()
+            if (controller != null && controller.isConnected) return // healthy, nothing to do
+            controller?.let { runCatching { it.release() } } // dead/disconnected → release & re-arm
+            mediaControllerFuture = null
+        }
         val startIntent = Intent(context, RustifyForegroundService::class.java)
         androidx.core.content.ContextCompat.startForegroundService(context, startIntent)
         val token = androidx.media3.session.SessionToken(
@@ -376,6 +389,12 @@ class AudioPlayerService private constructor(private val context: Context) {
         // otherwise scheduleExtractionRetry/onPlayerError can never reach the give-up threshold.
         if (!isAutoRetry) retryCountMap.remove(trackId)
         isRetrying = false
+
+        // E70: flush the OUTGOING listening session HERE (deterministically, at the moment of switch),
+        // not after the new track resolves. Doing it after resolution (below) meant a manual skip / a
+        // slow-or-failing next track never flushed the previous session, so only tracks that reached
+        // STATE_ENDED were counted. onTrackStarted no-ops if it's the same track (retry/alternative).
+        listenerTracker.onTrackStarted(track)
 
         // Register metadata in Rust so the resolver can match the track (only if not local)
         if (!trackId.startsWith("local:") && !trackId.startsWith("ytm:")) {
@@ -510,7 +529,8 @@ class AudioPlayerService private constructor(private val context: Context) {
                     exoPlayer.seekTo(_state.value.positionMs)
                 }
                 exoPlayer.play()
-                listenerTracker.onTrackStarted(track)
+                // (E70: onTrackStarted moved to the top of playTrack so the previous session flushes
+                //  deterministically on every switch, incl. manual skip / failing next track.)
 
                 // Pre-buffer the next track in the queue
                 preBufferNextTrack()
@@ -901,9 +921,16 @@ class AudioPlayerService private constructor(private val context: Context) {
             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it)
         }
 
+        // BUG B: when the user explicitly picks an alternative source (explicit youtubeId,
+        // not an auto-retry), keep playing from the current position instead of restarting
+        // from 0. playTrack() seeks to _state.positionMs when > 0, so preserving it here makes
+        // the alternative continue where the user was. Auto-retry (extraction failure) keeps 0.
+        val isAlternativeSelection = youtubeId != null && !isAutoRetry
+        val preservedPosition = if (isAlternativeSelection) exoPlayer.currentPosition.coerceAtLeast(0L) else 0L
+
         _state.value = st.copy(
             currentTrack = track,
-            positionMs = 0L,
+            positionMs = preservedPosition,
             isPlaying = false,
             isError = false,
             errorMessage = ""

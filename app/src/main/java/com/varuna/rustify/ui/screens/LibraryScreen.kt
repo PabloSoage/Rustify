@@ -113,6 +113,12 @@ fun LibraryScreen(
     onArtistClick: (String) -> Unit,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onOpenSettings: () -> Unit,
+    // E40 — YTM: shared repo + navigation callbacks to first-level NavHost screens.
+    ytmRepo: YtMusicRepository? = null,
+    onYtmOpenSearch: () -> Unit = {},
+    onYtmOpenAlbum: (String, String) -> Unit = { _, _ -> },
+    onYtmOpenArtist: (String, String) -> Unit = { _, _ -> },
+    onYtmOpenLocalPlaylist: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
@@ -219,11 +225,16 @@ fun LibraryScreen(
                     onGroupSelected = onGroupSelected
                 )
                 LibraryTab.YTMUSIC -> {
-                    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
-                    YtMusicScreen(
-                        repo = ytmRepo,
+                    // Fallback repo if the caller didn't hoist one (keeps preview/testing simple).
+                    val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+                    YtMusicLibraryContent(
+                        repo = repo,
+                        onOpenSearch = onYtmOpenSearch,
                         onTrackClick = onTrackClick,
-                        onBack = { /* stays in tab, no-op */ }
+                        onOpenAlbum = onYtmOpenAlbum,
+                        onOpenArtist = onYtmOpenArtist,
+                        onOpenLocalPlaylist = onYtmOpenLocalPlaylist,
+                        currentTrackId = currentTrackId
                     )
                 }
             }
@@ -305,7 +316,7 @@ fun LibraryScreen(
                         LibraryTab.ARTISTS -> stringResource(R.string.library_tab_artists)
                         LibraryTab.LOCAL -> stringResource(R.string.library_tab_local_music)
                         LibraryTab.TRACKS -> stringResource(R.string.library_tab_liked_tracks)
-                        LibraryTab.YTMUSIC -> "YouTube Music"
+                        LibraryTab.YTMUSIC -> stringResource(R.string.ytm_title)
                     }
                     Tab(
                         selected = selectedTab == tab,

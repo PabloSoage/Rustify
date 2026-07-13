@@ -109,6 +109,12 @@ import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.SettingsScreen
 import com.varuna.rustify.ui.screens.TrackScreen
+import com.varuna.rustify.ui.screens.YtMusicSearchScreen
+import com.varuna.rustify.ui.screens.YtMusicAlbumScreen
+import com.varuna.rustify.ui.screens.YtMusicArtistScreen
+import com.varuna.rustify.ui.screens.YtMusicPlaylistScreen
+import com.varuna.rustify.ui.screens.YtMusicLocalPlaylistScreen
+import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.ui.theme.RustifyTheme
 import kotlinx.coroutines.launch
 
@@ -123,6 +129,12 @@ sealed class Screen {
     data class ArtistDetail(val id: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
     data class RadioDetail(val trackId: String, val trackName: String) : Screen()
+    // E40 — YouTube Music first-class destinations (no more embedded tab screen).
+    object YtmSearch : Screen()
+    data class YtmAlbumDetail(val browseId: String, val title: String) : Screen()
+    data class YtmArtistDetail(val channelId: String, val name: String) : Screen()
+    data class YtmPlaylistDetail(val playlistId: String, val title: String) : Screen()
+    data class YtmLocalPlaylistDetail(val localId: String) : Screen()
     object Settings : Screen()
     object Downloads : Screen()
     object LogViewer : Screen()
@@ -158,6 +170,21 @@ private fun navigateDeepLink(
         "album" -> navigationStack.add(Screen.AlbumDetail(parts[1], "", emptyList()))
         "playlist" -> navigationStack.add(Screen.PlaylistDetail(parts[1], "", emptyList()))
         "artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
+        // E40 — YouTube Music deep links.
+        "ytmtrack" -> {
+            // Build a minimal ytm: FullTrack and hand it to the existing player pipeline.
+            val yt = FullTrack(
+                id = "ytm:${parts[1]}",
+                name = "YouTube Music",
+                externalUri = "https://music.youtube.com/watch?v=${parts[1]}",
+                explicit = false, durationMs = 0, isrc = "",
+                artists = emptyList(), album = null
+            )
+            audioPlayerService.loadPlaylist(listOf(yt), 0)
+        }
+        "ytmalbum" -> navigationStack.add(Screen.YtmAlbumDetail(parts[1], ""))
+        "ytmartist" -> navigationStack.add(Screen.YtmArtistDetail(parts[1], ""))
+        "ytmplaylist" -> navigationStack.add(Screen.YtmPlaylistDetail(parts[1], ""))
         else -> navigationStack.add(Screen.TrackDetail(deepLink))
     }
 }
@@ -234,15 +261,21 @@ class MainActivity : ComponentActivity() {
                     return "${uri.host}:${pathSegments[0]}"
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com") {
+                // E40: route real YTM targets onto the nav stack (was Log.d-only before).
                 val v = uri.getQueryParameter("v")
-                if (v != null) {
-                    android.util.Log.d("MainActivity", "Received YouTube Deep Link: $v")
+                val list = uri.getQueryParameter("list")
+                val first = uri.pathSegments.firstOrNull()
+                val second = uri.pathSegments.getOrNull(1)
+                when {
+                    v != null -> return "ytmtrack:$v"                 // /watch?v=VIDEOID → play
+                    list != null -> return "ytmplaylist:$list"        // ?list=PLAYLISTID
+                    first == "playlist" && second != null -> return "ytmplaylist:$second"
+                    first == "browse" && second != null -> return "ytmalbum:$second"    // MPRE...
+                    first == "channel" && second != null -> return "ytmartist:$second"  // UC...
                 }
             } else if (uri?.host == "youtu.be") {
                 val v = uri.lastPathSegment
-                if (v != null) {
-                    android.util.Log.d("MainActivity", "Received YouTube Short Deep Link: $v")
-                }
+                if (v != null) return "ytmtrack:$v"
             }
         } else if (intent?.action == android.content.Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
@@ -357,6 +390,9 @@ fun EngineTester(
 ) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
+    // E40 — single shared YTM repository so favorites/playlists stay consistent across
+    // the library tab and all first-class YTM screens.
+    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
@@ -627,6 +663,11 @@ fun EngineTester(
             is Screen.ArtistDetail -> "ArtistDetail_${currentScreen.id}"
             is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
             is Screen.RadioDetail -> "RadioDetail_${currentScreen.trackId}"
+            is Screen.YtmSearch -> "YtmSearch"
+            is Screen.YtmAlbumDetail -> "YtmAlbumDetail_${currentScreen.browseId}"
+            is Screen.YtmArtistDetail -> "YtmArtistDetail_${currentScreen.channelId}"
+            is Screen.YtmPlaylistDetail -> "YtmPlaylistDetail_${currentScreen.playlistId}"
+            is Screen.YtmLocalPlaylistDetail -> "YtmLocalPlaylistDetail_${currentScreen.localId}"
             is Screen.Settings -> "Settings"
             is Screen.Downloads -> "Downloads"
             is Screen.LogViewer -> "LogViewer"
@@ -729,6 +770,11 @@ fun EngineTester(
                             onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
                             onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
                             onOpenSettings = { navigationStack.add(Screen.Settings) },
+                            ytmRepo = ytmRepo,
+                            onYtmOpenSearch = { navigationStack.add(Screen.YtmSearch) },
+                            onYtmOpenAlbum = { id, title -> navigationStack.add(Screen.YtmAlbumDetail(id, title)) },
+                            onYtmOpenArtist = { id, name -> navigationStack.add(Screen.YtmArtistDetail(id, name)) },
+                            onYtmOpenLocalPlaylist = { id -> navigationStack.add(Screen.YtmLocalPlaylistDetail(id)) },
                             currentTrackId = currentTrack?.id
                         )
                     }
@@ -822,6 +868,57 @@ fun EngineTester(
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) }
+                    )
+                }
+                is Screen.YtmSearch -> {
+                    YtMusicSearchScreen(
+                        repo = ytmRepo,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAlbum = { id, title -> navigationStack.add(Screen.YtmAlbumDetail(id, title)) },
+                        onArtist = { id, name -> navigationStack.add(Screen.YtmArtistDetail(id, name)) },
+                        onPlaylist = { id, title -> navigationStack.add(Screen.YtmPlaylistDetail(id, title)) },
+                        currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.YtmAlbumDetail -> {
+                    YtMusicAlbumScreen(
+                        repo = ytmRepo,
+                        browseId = currentScreen.browseId,
+                        title = currentScreen.title,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.YtmArtistDetail -> {
+                    YtMusicArtistScreen(
+                        repo = ytmRepo,
+                        channelId = currentScreen.channelId,
+                        name = currentScreen.name,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onAlbum = { id, title -> navigationStack.add(Screen.YtmAlbumDetail(id, title)) },
+                        currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.YtmPlaylistDetail -> {
+                    YtMusicPlaylistScreen(
+                        repo = ytmRepo,
+                        playlistId = currentScreen.playlistId,
+                        title = currentScreen.title,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.YtmLocalPlaylistDetail -> {
+                    YtMusicLocalPlaylistScreen(
+                        repo = ytmRepo,
+                        localId = currentScreen.localId,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.Settings -> {

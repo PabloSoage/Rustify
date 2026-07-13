@@ -224,6 +224,11 @@ fun YouTubeMappingDialog(
                                 
                                 // Preview play button
                                 IconButton(onClick = {
+                                    // Previewing an alternative also SELECTS it, so "Confirmar" becomes
+                                    // enabled. Otherwise a user who only taps preview (the natural way to
+                                    // try an alternative) leaves selectedTrackId null → Confirmar disabled
+                                    // → "the confirm button does nothing".
+                                    selectedTrackId = yt.id
                                     if (playingPreviewId == yt.id) {
                                         audioPlayerService.pause()
                                         playingPreviewId = null

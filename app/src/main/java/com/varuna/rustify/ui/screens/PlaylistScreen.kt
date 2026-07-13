@@ -69,6 +69,7 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
+import com.varuna.rustify.ui.components.LocalPlaylistCover
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
 import com.varuna.rustify.util.bouncingMarquee
@@ -93,6 +94,9 @@ fun PlaylistScreen(
     currentTrackId: String? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // E30: playlist local. El id ya viene resuelto por el enrutado (prefijo "localpl:").
+    val isLocal = playlistId.startsWith("localpl:")
+    val localPlaylist = if (isLocal) spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId } else null
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
@@ -231,32 +235,44 @@ fun PlaylistScreen(
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Surface(
-                                modifier = Modifier
-                                    .size(200.dp)
-                                    .shadow(16.dp, RoundedCornerShape(12.dp))
-                                    .clip(RoundedCornerShape(12.dp)),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                if (!primaryImageUrl.isNullOrEmpty()) {
-                                    AsyncImage(
-                                        model = primaryImageUrl,
-                                        contentDescription = "Cover Art",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.DarkGray),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = playlistName.take(1).uppercase(),
-                                            style = MaterialTheme.typography.headlineLarge,
-                                            color = Color.White
+                            if (isLocal) {
+                                // E30: mosaico 2x2 con las carátulas de las primeras 4 pistas locales.
+                                LocalPlaylistCover(
+                                    tracks = tracks,
+                                    modifier = Modifier
+                                        .size(200.dp)
+                                        .shadow(16.dp, RoundedCornerShape(12.dp)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    placeholderFontSize = 64.sp
+                                )
+                            } else {
+                                Surface(
+                                    modifier = Modifier
+                                        .size(200.dp)
+                                        .shadow(16.dp, RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    if (!primaryImageUrl.isNullOrEmpty()) {
+                                        AsyncImage(
+                                            model = primaryImageUrl,
+                                            contentDescription = "Cover Art",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
                                         )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.DarkGray),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = playlistName.take(1).uppercase(),
+                                                style = MaterialTheme.typography.headlineLarge,
+                                                color = Color.White
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -268,7 +284,7 @@ fun PlaylistScreen(
                                 horizontalAlignment = Alignment.Start
                             ) {
                                 Text(
-                                    text = "PLAYLIST",
+                                    text = if (isLocal) "LOCAL PLAYLIST" else "PLAYLIST",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.2.sp
@@ -277,7 +293,7 @@ fun PlaylistScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = playlistName,
+                                    text = if (isLocal) (localPlaylist?.name ?: playlistName) else playlistName,
                                     style = MaterialTheme.typography.headlineMedium.copy(
                                         fontWeight = FontWeight.ExtraBold
                                     ),
@@ -285,41 +301,52 @@ fun PlaylistScreen(
                                     maxLines = 1,
                                     modifier = Modifier.bouncingMarquee()
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                if (isLocal) {
+                                    // E30: sin "Spotify Playlist"/owner "Spotify". Subtítulo propio.
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val count = tracks.size
+                                    Text(
+                                        text = "Playlist local · $count ${if (count == 1) "canción" else "canciones"}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.LightGray
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.height(8.dp))
 
-                                val descriptionText = playlistDetails?.description ?: "Spotify Playlist"
+                                    val descriptionText = playlistDetails?.description ?: "Spotify Playlist"
 
-                                Text(
-                                    text = descriptionText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.LightGray,
-                                    maxLines = 1,
-                                    modifier = Modifier.bouncingMarquee()
-                                )
+                                    Text(
+                                        text = descriptionText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.LightGray,
+                                        maxLines = 1,
+                                        modifier = Modifier.bouncingMarquee()
+                                    )
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val subtitleText = playlistDetails?.owner?.name ?: "Spotify"
-                                    if (subtitleText.isNotEmpty()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val subtitleText = playlistDetails?.owner?.name ?: "Spotify"
+                                        if (subtitleText.isNotEmpty()) {
+                                            Text(
+                                                text = subtitleText,
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = " • ",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.Gray
+                                            )
+                                        }
                                         Text(
-                                            text = subtitleText,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = " • ",
+                                            text = "${playlistDetails?.totalTracks ?: tracks.size} tracks",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = Color.Gray
                                         )
                                     }
-                                    Text(
-                                        text = "${playlistDetails?.totalTracks ?: tracks.size} tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.Gray
-                                    )
                                 }
                             }
                         }
@@ -499,12 +526,14 @@ fun PlaylistScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (playlistId.startsWith("localpl:")) {
+                    if (isLocal) {
                         IconButton(onClick = { showDeleteLocalDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.local_playlist_delete), tint = Color.White)
                         }
                     }
-                    if (meId != null && playlistDetails?.owner?.id == meId) {
+                    // Edit/Follow son de Spotify: solo se muestran cuando hay playlistDetails
+                    // (null para playlists locales), por lo que quedan ocultos automáticamente.
+                    if (!isLocal && meId != null && playlistDetails?.owner?.id == meId) {
                         IconButton(onClick = { showEditDialog = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit playlist", tint = Color.White)
                         }

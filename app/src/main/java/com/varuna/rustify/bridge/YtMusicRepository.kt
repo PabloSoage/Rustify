@@ -48,7 +48,14 @@ class YtMusicRepository(private val appContext: Context) {
                 put("savedAlbums", YtmAlbumSlim.toJsonArray(savedAlbums.toList()))
                 put("savedArtists",YtmArtistRef.toJsonArray(savedArtists.toList()))
             }
-            libFile.writeText(json.toString())
+            // Atomic write (tmp + rename) so a crash mid-write can't corrupt the library.
+            val tmp = File(appContext.filesDir, "ytm_library.json.tmp")
+            tmp.writeText(json.toString())
+            if (!tmp.renameTo(libFile)) {
+                // Fallback: rename can fail across some FS states; copy then delete tmp.
+                libFile.writeText(tmp.readText())
+                tmp.delete()
+            }
         }
     }
 
@@ -95,26 +102,52 @@ class YtMusicRepository(private val appContext: Context) {
         scope.launch { saveLibrary() }
     }
 
+    // All native calls are wrapped in try/catch: a malformed / non-JSON payload from the
+    // JNI layer must degrade to an empty result (never crash the UI).
+    private val emptyResults = YtmSearchResults(emptyList(), emptyList(), emptyList(), emptyList())
+
     suspend fun search(query: String): YtmSearchResults = withContext(Dispatchers.IO) {
-        YtmSearchResults.fromJson(JSONObject(NativeEngine.searchYtMusicNative(query)))
+        runCatching {
+            YtmSearchResults.fromJson(JSONObject(NativeEngine.searchYtMusicNative(query)))
+        }.getOrDefault(emptyResults)
     }
 
     suspend fun getAlbum(browseId: String): YtmAlbum? = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getYtmAlbumNative(browseId)
-        if (json == "null" || json.isBlank()) null else YtmAlbum.fromJson(JSONObject(json))
+        runCatching {
+            val json = NativeEngine.getYtmAlbumNative(browseId)
+            if (json == "null" || json.isBlank()) null else YtmAlbum.fromJson(JSONObject(json))
+        }.getOrNull()
     }
 
     suspend fun getArtist(channelId: String): YtmArtist? = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getYtmArtistNative(channelId)
-        if (json == "null" || json.isBlank()) null else YtmArtist.fromJson(JSONObject(json))
+        runCatching {
+            val json = NativeEngine.getYtmArtistNative(channelId)
+            if (json == "null" || json.isBlank()) null else YtmArtist.fromJson(JSONObject(json))
+        }.getOrNull()
     }
 
     suspend fun getPlaylist(playlistId: String): YtmPlaylist? = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getYtmPlaylistNative(playlistId)
-        if (json == "null" || json.isBlank()) null else YtmPlaylist.fromJson(JSONObject(json))
+        runCatching {
+            val json = NativeEngine.getYtmPlaylistNative(playlistId)
+            if (json == "null" || json.isBlank()) null else YtmPlaylist.fromJson(JSONObject(json))
+        }.getOrNull()
     }
 
     suspend fun getRadio(videoId: String): List<YtmTrack> = withContext(Dispatchers.IO) {
-        YtmTrack.listFromJsonArray(JSONArray(NativeEngine.getYtmRadioNative(videoId)))
+        runCatching {
+            YtmTrack.listFromJsonArray(JSONArray(NativeEngine.getYtmRadioNative(videoId)))
+        }.getOrDefault(emptyList())
     }
+
+    /** Local playlist lookup for the detail screen. */
+    fun localPlaylist(localId: String): YtmLocalPlaylist? = playlists.firstOrNull { it.localId == localId }
+
+    /** Serialize the whole local library to JSON (for export, E50). */
+    fun exportJson(): String = JSONObject().apply {
+        put("version", 1)
+        put("favorites",   YtmTrack.toJsonArray(favorites.toList()))
+        put("playlists",   YtmLocalPlaylist.toJsonArray(playlists.toList()))
+        put("savedAlbums", YtmAlbumSlim.toJsonArray(savedAlbums.toList()))
+        put("savedArtists",YtmArtistRef.toJsonArray(savedArtists.toList()))
+    }.toString()
 }
