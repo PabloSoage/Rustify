@@ -159,7 +159,7 @@ fun SearchScreen(
                     .clip(RoundedCornerShape(24.dp)),
                 placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search), tint = Color.White)
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {

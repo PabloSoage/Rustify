@@ -107,7 +107,12 @@
     <string name="home_metrics">Metrics</string>
     <string name="home_downloads">Downloads</string>
     <string name="home_settings">Settings</string>
-    
+    <string name="home_error_loading">Error Loading Home</string>
+    <string name="a11y_open_menu">Open menu</string>
+    <string name="a11y_downloading">Downloading</string>
+    <string name="downloads_clear">Clear</string>
+    <string name="downloads_no_active">No active downloads</string>
+
     <!-- SearchScreen -->
     <string name="search_placeholder">What do you want to listen to?</string>
     <string name="search_filter_all">All</string>
@@ -172,7 +177,8 @@
     
     <!-- General -->
     <string name="general_error">Error</string>
-    
+    <string name="general_retry">Retry</string>
+
     <!-- Queue and Lyrics -->
     <string name="queue_next_up">Next up</string>
     <string name="queue_empty">Queue is empty</string>
@@ -328,6 +334,39 @@
     <string name="travel_dest_not_found">Destination not found.</string>
     <string name="travel_route_failed">Couldn\'t compute the route.</string>
     <string name="travel_no_tracks">No tracks to build the playlist. Like some songs first.</string>
+    <string name="travel_search_hint">Search destination or place</string>
+    <string name="travel_enable_location">Location is off. Enable it to calculate the route.</string>
+    <string name="travel_enable">Enable</string>
+    <string name="travel_playlist_mode">Playlist mode</string>
+    <string name="travel_mode_auto">Auto</string>
+    <string name="travel_mode_manual">Manual</string>
+    <string name="travel_add_tracks">Add tracks</string>
+    <string name="travel_pick_tracks">Pick tracks for the trip</string>
+    <string name="travel_coverage">Trip covered: %1$s of %2$s</string>
+    <string name="travel_manual_count">%1$d tracks added</string>
+    <string name="travel_maptiler_key">MapTiler API key (optional)</string>
+    <string name="travel_maptiler_key_desc">Leave blank to use the bundled keyless OSM basemap. To get sharper vector tiles, create a free account at maptiler.com and paste your key here.</string>
+    <string name="travel_preview">Preview</string>
+    <string name="travel_preview_auto">Preview playlist</string>
+    <string name="travel_preview_title">Playlist preview</string>
+    <string name="travel_preview_count">%1$d tracks</string>
+    <string name="travel_preview_total">Total: %1$s</string>
+    <string name="travel_drag_hint">Long-press to drag and reorder. Tap ✕ to remove.</string>
+    <string name="travel_play">Play</string>
+    <string name="travel_save_spotify">Save to Spotify</string>
+    <string name="travel_save_name">Playlist name</string>
+    <string name="travel_save_ok">Saved to your Spotify library.</string>
+    <string name="travel_save_fail">Couldn\'t save the playlist. Try again.</string>
+    <string name="travel_google_key">Google Geocoding API key (optional)</string>
+    <string name="travel_google_key_desc">Create a Google Cloud project and enable the Geocoding API. Overrides all keyless engines for spot-on search results (especially rural addresses). Tier free: $200/month.</string>
+    <string name="travel_google_key_on">Search uses Google Geocoding (excellent for any address).</string>
+    <string name="travel_google_key_off">Search uses Photon+Nominatim (OpenStreetMap, keyless).</string>
+    <string name="travel_route_mode">Route</string>
+    <string name="travel_time_mode">Manual</string>
+    <string name="travel_duration">Trip duration</string>
+    <string name="travel_duration_total">Total: %1$s</string>
+    <string name="travel_route_available">Route available as reference</string>
+    <string name="travel_clear">Clear</string>
 
     <!-- E50 — Google Drive sync.
          OAuth **Web** client ID from Google Cloud Console (see GoogleDriveSync.kt header).

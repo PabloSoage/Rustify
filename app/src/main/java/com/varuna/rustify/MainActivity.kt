@@ -144,6 +144,11 @@ sealed class Screen {
     // E90 — DJ IA (automix / peticiones en lenguaje natural).
     object Dj : Screen()
     object Travel : Screen()
+    /**
+     * E99+ — Travel con destino inicial pre-cargado (cuando se abre desde un link compartido
+     * de Google Maps o un link geo:). [lat]/[lon] se revierten a etiqueta via Nominatim/Google.
+     */
+    data class TravelWithDestination(val lat: Double, val lon: Double, val label: String? = null) : Screen()
 }
 
 /**
@@ -174,8 +179,18 @@ private fun navigateDeepLink(
         "track" -> navigationStack.add(Screen.TrackDetail(parts[1]))
         "album" -> navigationStack.add(Screen.AlbumDetail(parts[1], "", emptyList()))
         "playlist" -> navigationStack.add(Screen.PlaylistDetail(parts[1], "", emptyList()))
-        "artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
-        // E40 — YouTube Music deep links.
+"artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
+        // E99+ — Google Maps / geo: link compartido.
+        "travel" -> {
+            val inner = parts[1].split(",", limit = 3)
+            if (inner.size >= 2) {
+                val lat = inner[0].toDoubleOrNull() ?: return
+                val lon = inner[1].toDoubleOrNull() ?: return
+                val label = inner.getOrNull(2)?.replace("+", " ")
+                navigationStack.add(Screen.TravelWithDestination(lat, lon, label))
+            }
+        }
+        // E40 - YouTube Music deep links.
         "ytmtrack" -> {
             // Build a minimal ytm: FullTrack and hand it to the existing player pipeline.
             val yt = FullTrack(
@@ -192,6 +207,69 @@ private fun navigateDeepLink(
         "ytmplaylist" -> navigationStack.add(Screen.YtmPlaylistDetail(parts[1], ""))
         else -> navigationStack.add(Screen.TrackDetail(deepLink))
     }
+}
+
+/**
+ * Extrae un token "travel:lat,lng,label" desde enlaces de Google Maps o coordenadas geo:.
+ * Soporta: geo:lat,lng?q=label, maps.google.com/place/...@lat,lng, maps.app.goo.gl (short links).
+ * Devuelve null si no se reconoce un enlace de mapa.
+ */
+private fun extractTravelToken(text: String): String? {
+    val t = text.trim()
+    // geo: URI scheme (Android standard)
+    if (t.startsWith("geo:", ignoreCase = true)) {
+        var body = t.substring(4)
+        if (body.startsWith("//")) body = body.substring(2)
+        val coordPart = body.split("?", limit = 2)
+        val coords = coordPart[0].split(",")
+        if (coords.size >= 2) {
+            val lat = coords[0].toDoubleOrNull() ?: return null
+            val lon = coords[1].toDoubleOrNull() ?: return null
+            var label = ""
+            if (coordPart.size > 1) {
+                val q = coordPart[1].split("&").firstOrNull { it.startsWith("q=") }?.removePrefix("q=") ?: ""
+                label = try { java.net.URLDecoder.decode(q, "UTF-8") } catch (_: Exception) { "" }
+            }
+            return "travel:$lat,$lon,${label.replace(" ", "+")}"
+        }
+    }
+
+    // Google Maps URL: extrae lat,lng de la parte @lat,lng en la URL
+    val atRegex = Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""")
+    atRegex.find(t)?.let { m ->
+        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
+    }
+
+    // maps.app.goo.gl/... short link — resolver redirect para obtener @lat,lng
+    if (t.contains("goo.gl/maps", ignoreCase = true) || (t.contains("google.com/maps/place/", ignoreCase = true) && atRegex.find(t) == null)) {
+        try {
+            val conn = java.net.URL(t).openConnection() as java.net.HttpURLConnection
+            conn.setRequestProperty("User-Agent", "Rustify/1.0")
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 5000; conn.readTimeout = 5000
+            conn.connect()
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val dest = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (dest != null) {
+                    atRegex.find(dest)?.let { m ->
+                        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
+                    }
+                }
+            } else {
+                conn.disconnect()
+            }
+        } catch (_: Exception) { }
+    }
+
+    // maps.google.com/?q=lat,lng (directo)
+    val coordQ = Regex("""[?&]q=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)""").find(t)
+    coordQ?.let { m ->
+        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
+    }
+
+    return null
 }
 
 class MainActivity : ComponentActivity() {
@@ -246,6 +324,10 @@ class MainActivity : ComponentActivity() {
     private fun extractDeepLink(intent: android.content.Intent?): String? {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
+            // E99+: Google Maps / geo: link → travel token.
+            if (uri?.scheme == "geo") {
+                return extractTravelToken(uri.toString())
+            }
             // F1.A: wrapper Rustify autoverificable (host propio del usuario, §4.A.2).
             // El host se guarda en prefs para GENERAR el link; los hosts VERIFICADOS van fijados
             // en el manifest a build-time. Aquí desenvolvemos tanto el host de prefs como los
@@ -285,6 +367,12 @@ class MainActivity : ComponentActivity() {
             if (intent.type == "text/plain") {
                 val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
                 if (sharedText != null) {
+                    // E99+: si es un enlace de Google Maps / geo, tiene prioridad.
+                    val travel = extractTravelToken(sharedText)
+                    if (travel != null) {
+                        android.util.Log.d("MainActivity", "Extracted travel token: $travel")
+                        return travel
+                    }
                     val link = extractAnyLink(sharedText)   // Spotify o YTM (E40)
                     if (link != null) {
                         android.util.Log.d("MainActivity", "Extracted link from shared text: $link")
@@ -540,6 +628,7 @@ fun EngineTester(
     val currentScreen = navigationStack.lastOrNull() ?: Screen.Home
     val bottomNavScreens = listOf(Screen.Home, Screen.Search, Screen.Library)
     val isBottomNavScreen = bottomNavScreens.contains(currentScreen)
+    val isTravelScreen = currentScreen is Screen.Travel
 
     val playerState by audioPlayerService.state.collectAsState()
     val currentTrack = playerState.currentTrack
@@ -573,6 +662,7 @@ fun EngineTester(
 
     Scaffold(
         bottomBar = {
+            if (isTravelScreen) return@Scaffold // Travel pinta su propio miniplayer sobre el mapa.
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
                     val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack.id }
@@ -676,7 +766,7 @@ fun EngineTester(
             }
         },
         containerColor = Color(0xFF121212),
-        contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets
+        contentWindowInsets = if (isLandscape || isTravelScreen) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets
     ) { paddingValues ->
         val contentModifier = if (isLandscape) {
             modifier.fillMaxSize()
@@ -704,6 +794,7 @@ fun EngineTester(
             is Screen.NewReleases -> "NewReleases"
             is Screen.Dj -> "Dj"
             is Screen.Travel -> "Travel"
+            is Screen.TravelWithDestination -> "TravelDest_${currentScreen.lat}_${currentScreen.lon}"
         }
 
         val screenContent = remember(currentScreen) {
@@ -1032,7 +1123,43 @@ fun EngineTester(
                     TravelScreen(
                         spotifyRepo = spotifyRepo,
                         onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        currentTrack = currentTrack,
+                        isPlaying = playerState.isPlaying,
+                        isBuffering = playerState.isBuffering,
+                        positionMs = playerState.positionMs,
+                        durationMs = playerState.durationMs,
+                        hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
+                        hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
+                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
+                        onSkipPrev = { audioPlayerService.skipToPrevious() },
+                        onSkipNext = { audioPlayerService.skipToNext() },
+                        onMiniPlayerClick = {
+                            currentTrack?.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) }
+                        }
+                    )
+                }
+                is Screen.TravelWithDestination -> {
+                    TravelScreen(
+                        spotifyRepo = spotifyRepo,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        currentTrack = currentTrack,
+                        isPlaying = playerState.isPlaying,
+                        isBuffering = playerState.isBuffering,
+                        positionMs = playerState.positionMs,
+                        durationMs = playerState.durationMs,
+                        hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
+                        hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
+                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
+                        onSkipPrev = { audioPlayerService.skipToPrevious() },
+                        onSkipNext = { audioPlayerService.skipToNext() },
+                        onMiniPlayerClick = {
+                            currentTrack?.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) }
+                        },
+                        initialDestination = com.varuna.rustify.travel.TravelRouting.Geo(
+                            lat = currentScreen.lat, lon = currentScreen.lon, label = currentScreen.label ?: ""
+                        )
                     )
                 }
             }
@@ -1057,8 +1184,8 @@ fun EngineTester(
                                 navigationStack.add(Screen.Home)
                             }
                         },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home") },
+                        icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home)) },
+                        label = { Text(stringResource(R.string.nav_home)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),
@@ -1076,8 +1203,8 @@ fun EngineTester(
                                 navigationStack.add(Screen.Search)
                             }
                         },
-                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                        label = { Text("Search") },
+                        icon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search)) },
+                        label = { Text(stringResource(R.string.nav_search)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),
@@ -1095,8 +1222,8 @@ fun EngineTester(
                                 navigationStack.add(Screen.Library)
                             }
                         },
-                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                        label = { Text("Library") },
+                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(R.string.nav_library)) },
+                        label = { Text(stringResource(R.string.nav_library)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),

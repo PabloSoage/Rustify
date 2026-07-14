@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.ui.components.PlaylistItemCard
@@ -88,14 +90,14 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Error Loading Home", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.home_error_loading), color = MaterialTheme.colorScheme.error)
                 Text(errorMessage, color = Color.White)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = onRetry,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                 ) {
-                    Text("Retry", color = Color.White)
+                    Text(stringResource(R.string.general_retry), color = Color.White)
                 }
             }
         } else {
@@ -130,6 +132,15 @@ fun HomeScreen(
                             )
                         )
 
+                        // Pre-compute menu labels outside the DropdownMenu (which uses a Popup
+                        // that may not inherit the overridden LocalContext for i18n).
+                        val djLabel = stringResource(R.string.home_dj)
+                        val travelLabel = stringResource(R.string.home_travel)
+                        val newReleasesLabel = stringResource(R.string.home_new_releases)
+                        val metricsLabel = stringResource(R.string.home_metrics)
+                        val downloadsLabel = stringResource(R.string.home_downloads)
+                        val settingsLabel = stringResource(R.string.home_settings)
+
                         // Hamburger → a small context menu hangs from the icon (icons + labels
                         // aligned natively by DropdownMenuItem's leadingIcon slot).
                         Box {
@@ -142,10 +153,10 @@ fun HomeScreen(
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.Menu, contentDescription = "Open menu", tint = Color.White)
+                                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.a11y_open_menu), tint = Color.White)
                                     }
                                 } else {
-                                    Icon(Icons.Default.Menu, contentDescription = "Open menu", tint = Color.White)
+                                    Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.a11y_open_menu), tint = Color.White)
                                 }
                             }
 
@@ -155,27 +166,27 @@ fun HomeScreen(
                                 containerColor = Color(0xFF1E1E1E)
                             ) {
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_dj), color = Color.White) },
+                                    text = { Text(djLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null, tint = Color(0xFF1DB954)) },
                                     onClick = { menuOpen = false; onDjClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_travel), color = Color.White) },
+                                    text = { Text(travelLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.Map, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onTravelClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_new_releases), color = Color.White) },
+                                    text = { Text(newReleasesLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.NewReleases, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onNewReleasesClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_metrics), color = Color.White) },
+                                    text = { Text(metricsLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.BarChart, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onMetricsClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_downloads), color = Color.White) },
+                                    text = { Text(downloadsLabel, color = Color.White) },
                                     leadingIcon = {
                                         if (activeDownloads > 0) {
                                             androidx.compose.material3.BadgedBox(
@@ -194,7 +205,7 @@ fun HomeScreen(
                                     onClick = { menuOpen = false; onDownloadsClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_settings), color = Color.White) },
+                                    text = { Text(settingsLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onSettingsClick() }
                                 )
@@ -254,7 +265,7 @@ fun BrowseSectionView(
                     )
                     is BrowseSectionItem.ArtistItem -> PlaylistItemCard(
                         title = item.artist.name,
-                        subtitle = "Artist",
+                        subtitle = stringResource(R.string.search_subtitle_artist),
                         images = item.artist.images,
                         isCircle = true,
                         onClick = { onItemClick(item) }

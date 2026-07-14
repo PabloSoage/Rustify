@@ -221,7 +221,7 @@ fun PlaylistScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)
                     ) {
-                        Text("Retry", color = Color.White)
+                        Text(stringResource(R.string.general_retry), color = Color.White)
                     }
                 }
             } else {
@@ -539,7 +539,7 @@ fun PlaylistScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isLocal) {

@@ -53,16 +53,16 @@ fun DownloadsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Descargas", color = Color.White) },
+                title = { Text(stringResource(R.string.home_downloads), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {
                     if (downloads.any { it.status == DownloadStatus.COMPLETE || it.status == DownloadStatus.ERROR }) {
                         TextButton(onClick = { DownloadManager.clearCompleted() }) {
-                            Text("Limpiar", color = Color(0xFF1DB954))
+                            Text(stringResource(R.string.downloads_clear), color = Color(0xFF1DB954))
                         }
                     }
                 },
@@ -74,7 +74,7 @@ fun DownloadsScreen(
     ) { innerPadding ->
         if (downloads.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text("No hay descargas activas", color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.downloads_no_active), color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyColumn(
@@ -104,9 +104,9 @@ fun DownloadRow(task: DownloadTask) {
             contentAlignment = Alignment.Center
         ) {
             when (task.status) {
-                DownloadStatus.COMPLETE -> Icon(Icons.Default.CheckCircle, contentDescription = "Complete", tint = Color(0xFF1DB954))
-                DownloadStatus.ERROR -> Icon(Icons.Default.Error, contentDescription = "Error", tint = Color.Red)
-                else -> Icon(Icons.Default.FileDownload, contentDescription = "Downloading", tint = Color.White)
+                DownloadStatus.COMPLETE -> Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.track_menu_download_complete), tint = Color(0xFF1DB954))
+                DownloadStatus.ERROR -> Icon(Icons.Default.Error, contentDescription = stringResource(R.string.general_error), tint = Color.Red)
+                else -> Icon(Icons.Default.FileDownload, contentDescription = stringResource(R.string.a11y_downloading), tint = Color.White)
             }
         }
 

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -379,15 +380,17 @@ fun TrackScreen(
     // ── E80 — Canvas (full-screen behind cover) ──
     var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
     var mediaTab by rememberSaveable { mutableStateOf(0) } // 0=image, 1=canvas, 2=video
-    var videoUrl by remember(trackId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(mediaTab, trackId) {
+    var videoUrl by remember(trackId) { mutableStateOf<Pair<String, String?>?>(null) }
+    val prefs = context.getSharedPreferences("RustifyPrefs", android.content.Context.MODE_PRIVATE)
+    val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
+    LaunchedEffect(mediaTab, trackId, maxQuality) {
         if (mediaTab == 2 && videoUrl == null && !trackId.startsWith("local:")) {
             val ytId = if (trackId.startsWith("ytm:")) trackId.removePrefix("ytm:")
                 else runCatching {
                     Regex("[A-Za-z0-9_-]{11}")
                         .find(com.varuna.rustify.bridge.NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
                 }.getOrNull()
-            if (!ytId.isNullOrBlank()) videoUrl = com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId)
+            if (!ytId.isNullOrBlank()) videoUrl = com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
         }
     }
     LaunchedEffect(trackId) {
@@ -432,32 +435,22 @@ fun TrackScreen(
                                     isLoading = false
                                 }
                             }
-                        }) { Text("Retry") }
+                        }) { Text(stringResource(R.string.general_retry)) }
                     }
                 }
             } else {
                 trackToShow?.let { track ->
                     val showCanvas = mediaTab == 1 && !canvasUrl.isNullOrEmpty()
-                    val showVideo = mediaTab == 2 && !videoUrl.isNullOrEmpty()
+                    val showVideo = mediaTab == 2 && videoUrl != null
+                    val isVideoOrCanvas = showCanvas || showVideo
                     var uiVisible by remember { mutableStateOf(true) }
 
                     Box(modifier = Modifier.fillMaxSize()) {
                         // ── Background layer ──
                         if (showVideo) {
-                            YouTubeVideoPlayer(url = videoUrl!!, audioPlayerService = audioPlayerService)
+                            YouTubeVideoPlayer(videoUrlPair = videoUrl!!, audioPlayerService = audioPlayerService)
                         } else if (showCanvas) {
                             CanvasVideoPlayer(url = canvasUrl!!)
-                            // Tap to show UI when hidden
-                            if (!uiVisible) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clickable(
-                                            indication = null,
-                                            interactionSource = remember { MutableInteractionSource() }
-                                        ) { uiVisible = true }
-                                )
-                            }
                         } else if (!imgUrl.isNullOrEmpty()) {
                             AsyncImage(
                                 model = imgUrl,
@@ -467,6 +460,18 @@ fun TrackScreen(
                                     .blur(80.dp),
                                 contentScale = ContentScale.Crop,
                                 alpha = 0.5f
+                            )
+                        }
+
+                        // Tap to show UI when hidden
+                        if (isVideoOrCanvas && !uiVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { uiVisible = true }
                             )
                         }
 
@@ -482,7 +487,7 @@ fun TrackScreen(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .background(
-                                            if (showCanvas) {
+                                            if (isVideoOrCanvas) {
                                                 Brush.verticalGradient(
                                                     colors = listOf(Color(0xFF0A0A0A), Color.Transparent, Color.Transparent, Color(0xFF0A0A0A)),
                                                     startY = 0f,
@@ -507,7 +512,7 @@ fun TrackScreen(
                                             .padding(horizontal = 24.dp, vertical = 16.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (!showCanvas) {
+                                        if (!isVideoOrCanvas) {
                                             TrackCoverSimple(
                                                 imgUrl = imgUrl,
                                                 contentDescription = track.name,
@@ -567,7 +572,7 @@ fun TrackScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
-                                        if (!showCanvas) {
+                                        if (!isVideoOrCanvas) {
                                             TrackCoverSimple(
                                                 imgUrl = imgUrl,
                                                 contentDescription = track.name,
@@ -656,7 +661,7 @@ fun TrackScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     IconButton(onClick = onBackClick) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
                                     }
 
                                     // Image | Canvas | Video tab selector
@@ -1492,33 +1497,29 @@ fun CanvasVideoPlayer(url: String) {
  * the main audio while shown to avoid double audio; tap toggles play/pause.
  */
 @Composable
-fun YouTubeVideoPlayer(url: String, audioPlayerService: AudioPlayerService) {
+fun YouTubeVideoPlayer(videoUrlPair: Pair<String, String?>, audioPlayerService: AudioPlayerService) {
     val context = LocalContext.current
-    val exoPlayer = remember(url) {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
-            playWhenReady = true
-            prepare()
+    val videoRatio = audioPlayerService.state.collectAsState().value.videoSizeRatio
+
+    DisposableEffect(videoUrlPair) {
+        audioPlayerService.switchToVideoStream(videoUrlPair.first, videoUrlPair.second)
+        onDispose { 
+            audioPlayerService.switchToAudioStream()
+            // clear the surface view when leaving so the player doesn't hold onto a stale surface
+            AudioPlayerService.exoPlayerInstance?.clearVideoSurface()
         }
     }
-    var playing by remember(url) { mutableStateOf(true) }
-    DisposableEffect(url) {
-        audioPlayerService.pause() // avoid double audio — the video carries its own sound
-        onDispose { exoPlayer.release() }
-    }
-    Box(modifier = Modifier.fillMaxSize()) {
+    
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx -> android.view.SurfaceView(ctx).also { exoPlayer.setVideoSurfaceView(it) } }
-        )
-        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
-                    playing = !playing
-                    exoPlayer.playWhenReady = playing
-                }
+                .fillMaxWidth()
+                .then(if (videoRatio != null) Modifier.aspectRatio(videoRatio) else Modifier),
+            factory = { ctx -> 
+                android.view.SurfaceView(ctx).also { 
+                    AudioPlayerService.exoPlayerInstance?.setVideoSurfaceView(it)
+                } 
+            }
         )
     }
 }

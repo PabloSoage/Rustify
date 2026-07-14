@@ -1,0 +1,19 @@
+{
+  "version": 8,
+  "name": "Esri World Imagery (keyless satellite)",
+  "sources": {
+    "esri-satellite": {
+      "type": "raster",
+      "tiles": [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      ],
+      "tileSize": 256,
+      "maxzoom": 19,
+      "attribution": "&copy; Esri, Maxar, Earthstar Geographics"
+    }
+  },
+  "layers": [
+    { "id": "satellite-raster", "type": "raster", "source": "esri-satellite" }
+  ],
+  "id": "rustify-satellite-keyless"
+}

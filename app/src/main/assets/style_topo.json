@@ -1,0 +1,21 @@
+{
+  "version": 8,
+  "name": "OpenTopoMap (keyless topo / senderismo)",
+  "sources": {
+    "opentopomap": {
+      "type": "raster",
+      "tiles": [
+        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256,
+      "maxzoom": 17,
+      "attribution": "&copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap (CC-BY-SA)"
+    }
+  },
+  "layers": [
+    { "id": "topo-raster", "type": "raster", "source": "opentopomap" }
+  ],
+  "id": "rustify-topo-keyless"
+}

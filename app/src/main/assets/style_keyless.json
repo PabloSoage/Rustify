@@ -1,0 +1,22 @@
+{
+  "version": 8,
+  "name": "CARTO Voyager (keyless)",
+  "sources": {
+    "carto-voyager": {
+      "type": "raster",
+      "tiles": [
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256,
+      "maxzoom": 20,
+      "attribution": "&copy; OpenStreetMap contributors &copy; CARTO"
+    }
+  },
+  "layers": [
+    { "id": "voyager-raster", "type": "raster", "source": "carto-voyager" }
+  ],
+  "id": "rustify-voyager-keyless"
+}

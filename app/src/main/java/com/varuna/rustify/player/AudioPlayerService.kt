@@ -47,7 +47,9 @@ data class AudioPlayerState(
     val isRepeat: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val bufferPercent: Int = 0
+    val bufferPercent: Int = 0,
+    val isVideoMode: Boolean = false,
+    val videoSizeRatio: Float? = null
 )
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -177,6 +179,14 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    _state.value = _state.value.copy(
+                        videoSizeRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
+                    )
+                }
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
             }
@@ -1268,6 +1278,57 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e("AudioPlayerService", "Error loading state", e)
+        }
+    }
+
+    fun switchToVideoStream(videoUrl: String, audioUrl: String? = null) {
+        mainScope.launch {
+            val pos = exoPlayer.currentPosition
+            val isPlaying = exoPlayer.playWhenReady
+            val currentItem = exoPlayer.currentMediaItem ?: return@launch
+            val videoItem = currentItem.buildUpon().setUri(videoUrl).build()
+
+            val mediaSource = if (audioUrl != null) {
+                val audioItem = currentItem.buildUpon().setUri(audioUrl).build()
+                val videoSource = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
+                val audioSource = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(audioItem)
+                androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+            } else {
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
+            }
+            
+            exoPlayer.setMediaSource(mediaSource)
+            exoPlayer.prepare()
+            exoPlayer.seekTo(pos)
+            exoPlayer.playWhenReady = isPlaying
+            _state.value = _state.value.copy(isVideoMode = true)
+        }
+    }
+
+    fun switchToAudioStream() {
+        mainScope.launch {
+            val trackId = _state.value.currentTrack?.id ?: return@launch
+            val audioUrl = resolvedStreamUrls[trackId] ?: return@launch
+            val pos = exoPlayer.currentPosition
+            val isPlaying = exoPlayer.playWhenReady
+
+            val currentItem = exoPlayer.currentMediaItem ?: return@launch
+            val item = currentItem.buildUpon().setUri(audioUrl).build()
+
+            // Restore audio cache
+            val isLocalStream = trackId.startsWith("local:") || audioUrl.startsWith("content://") || audioUrl.startsWith("file://")
+            val mediaSource = if (isLocalStream) {
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
+                    .createMediaSource(item)
+            } else {
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
+                    .createMediaSource(item)
+            }
+            exoPlayer.setMediaSource(mediaSource)
+            exoPlayer.prepare()
+            exoPlayer.seekTo(pos)
+            exoPlayer.playWhenReady = isPlaying
+            _state.value = _state.value.copy(isVideoMode = false)
         }
     }
 }

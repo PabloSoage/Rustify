@@ -86,6 +86,11 @@
     <string name="home_metrics">統計</string>
     <string name="home_downloads">ダウンロード</string>
     <string name="home_settings">設定</string>
+    <string name="home_error_loading">ホームの読み込みエラー</string>
+    <string name="a11y_open_menu">メニューを開く</string>
+    <string name="a11y_downloading">ダウンロード中</string>
+    <string name="downloads_clear">クリア</string>
+    <string name="downloads_no_active">アクティブなダウンロードはありません</string>
     
     <!-- SearchScreen -->
     <string name="search_placeholder">何を聴きたいですか？</string>
@@ -128,8 +133,9 @@
     
     <!-- General -->
     <string name="general_error">エラー</string>
+    <string name="general_retry">再試行</string>
 
-<!-- E70 extras -->
+    <!-- E70 extras -->
     <string name="metrics_export">メトリクスをエクスポート (Spotify/stats.fm)</string>
     <string name="metrics_export_done">メトリクスをエクスポートしました</string>
     <string name="metrics_export_empty">エクスポートするメトリクスがありません</string>
@@ -220,6 +226,39 @@
     <string name="travel_dest_not_found">目的地が見つかりません。</string>
     <string name="travel_route_failed">ルートを計算できませんでした。</string>
     <string name="travel_no_tracks">プレイリストを作る曲がありません。まず曲をお気に入りにしてください。</string>
+    <string name="travel_search_hint">目的地または場所を検索</string>
+    <string name="travel_enable_location">位置情報がオフです。ルート計算には有効化が必要です。</string>
+    <string name="travel_enable">有効化</string>
+    <string name="travel_playlist_mode">プレイリストモード</string>
+    <string name="travel_mode_auto">自動</string>
+    <string name="travel_mode_manual">手動</string>
+    <string name="travel_add_tracks">曲を追加</string>
+    <string name="travel_pick_tracks">旅行用の曲を選ぶ</string>
+    <string name="travel_coverage">カバー済み: %1$s / %2$s</string>
+    <string name="travel_manual_count">%1$d 曲追加済み</string>
+    <string name="travel_maptiler_key">MapTiler API キー（任意）</string>
+    <string name="travel_maptiler_key_desc">空欄なら内蔵のキーレス OSM ベースマップを使います。より高精細なベクトルタイルを使うには maptiler.com で無料アカウントを作成してキーを貼り付けてください。</string>
+    <string name="travel_preview">プレビュー</string>
+    <string name="travel_preview_auto">プレイリストを見る</string>
+    <string name="travel_preview_title">プレイリストのプレビュー</string>
+    <string name="travel_preview_count">%1$d 曲</string>
+    <string name="travel_preview_total">合計: %1$s</string>
+    <string name="travel_drag_hint">長押しでドラッグ並べ替え。✕ で削除。</string>
+    <string name="travel_play">再生</string>
+    <string name="travel_save_spotify">Spotify に保存</string>
+    <string name="travel_save_name">プレイリスト名</string>
+    <string name="travel_save_ok">Spotify ライブラリに保存しました。</string>
+    <string name="travel_save_fail">保存できませんでした。もう一度お試しください。</string>
+    <string name="travel_google_key">Google Geocoding API キー (任意)</string>
+    <string name="travel_google_key_desc">Google Cloud プロジェクトを作成して Geocoding API を有効にしてください。キーレスエンジンより正確な結果が得られます（特に田舎の住所に有効です）。無料枠：月額$200。</string>
+    <string name="travel_google_key_on">Google Geocoding で検索します（どんな住所にも高精度）。</string>
+    <string name="travel_google_key_off">Photon + Nominatim（OpenStreetMap、キー不要）で検索します。</string>
+    <string name="travel_route_mode">ルート</string>
+    <string name="travel_time_mode">手動</string>
+    <string name="travel_duration">移動時間</string>
+    <string name="travel_duration_total">合計: %1$s</string>
+    <string name="travel_route_available">ルートを参考として利用可能</string>
+    <string name="travel_clear">クリア</string>
 
     <!-- E50 — Google Drive 同期 -->
     <string name="settings_drive_title">Google Drive</string>

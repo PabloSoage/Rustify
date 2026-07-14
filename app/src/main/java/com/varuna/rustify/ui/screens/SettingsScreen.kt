@@ -473,6 +473,30 @@ fun SettingsScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    var highQualityVideo by remember { mutableStateOf(prefs.getBoolean("high_quality_video", true)) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Máxima Calidad de Vídeo", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text("Actívalo para intentar cargar vídeos en 1080p o superior. Si va lento, desactívalo.", color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = highQualityVideo,
+                            onCheckedChange = { checked ->
+                                highQualityVideo = checked
+                                prefs.edit { putBoolean("high_quality_video", checked) }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF1DB954)
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         stringResource(R.string.settings_ytdlp_desc),
                         color = Color.Gray,
@@ -486,6 +510,7 @@ fun SettingsScreen(
             AudioBackendsSection(context)
             LyricsProvidersSection(context)
             AndroidAutoPreviewSection(context)
+            TravelMapSection(context)
             SpotifyHashInspectorSection()
 
             Text(
@@ -2093,6 +2118,113 @@ private fun SpotifyHashInspectorSection() {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TravelMapSection(context: android.content.Context) {
+    val prefs = remember { context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE) }
+    var mapTilerKey by remember {
+        mutableStateOf(
+            prefs.getString(com.varuna.rustify.travel.TravelSettings.KEY_MAPTILER_KEY, "") ?: ""
+        )
+    }
+    val green = Color(0xFF1DB954)
+
+    Spacer(modifier = Modifier.height(20.dp))
+    Text(
+        text = stringResource(R.string.travel_title),
+        color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.travel_maptiler_key),
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.travel_maptiler_key_desc),
+                color = Color.Gray, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = mapTilerKey,
+                onValueChange = {
+                    mapTilerKey = it.trim()
+                    prefs.edit { putString(com.varuna.rustify.travel.TravelSettings.KEY_MAPTILER_KEY, mapTilerKey) }
+                },
+                singleLine = true,
+                placeholder = { Text("abcDEF123456", color = Color(0xFF555555), fontSize = 13.sp) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0xFF2C2C2E), unfocusedContainerColor = Color(0xFF2C2C2E),
+                    focusedIndicatorColor = green, focusedLabelColor = green, cursorColor = green
+                )
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (mapTilerKey.isBlank())
+                    "Using bundled keyless basemap (CARTO Voyager / OpenStreetMap)."
+                else
+                    "Using MapTiler Cloud vector tiles with your key.",
+                color = Color.Gray, fontSize = 11.sp
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.travel_google_key),
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.travel_google_key_desc),
+                color = Color.Gray, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            var googleKey by remember {
+                mutableStateOf(
+                    prefs.getString(com.varuna.rustify.travel.TravelSettings.KEY_GEOCODING_API_KEY, "") ?: ""
+                )
+            }
+            OutlinedTextField(
+                value = googleKey,
+                onValueChange = {
+                    googleKey = it.trim()
+                    prefs.edit { putString(com.varuna.rustify.travel.TravelSettings.KEY_GEOCODING_API_KEY, googleKey) }
+                },
+                singleLine = true,
+                placeholder = { Text("AIzaSy...", color = Color(0xFF555555), fontSize = 13.sp) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0xFF2C2C2E), unfocusedContainerColor = Color(0xFF2C2C2E),
+                    focusedIndicatorColor = green, focusedLabelColor = green, cursorColor = green
+                )
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (googleKey.isBlank())
+                    stringResource(R.string.travel_google_key_off)
+                else
+                    stringResource(R.string.travel_google_key_on),
+                color = Color.Gray, fontSize = 11.sp
+            )
         }
     }
 }

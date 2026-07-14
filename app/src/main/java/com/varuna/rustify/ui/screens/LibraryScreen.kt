@@ -303,7 +303,7 @@ fun LibraryScreen(
                     shape = RoundedCornerShape(24.dp),
                     placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search), tint = Color.White)
                     },
                     trailingIcon = {
                         Row {
@@ -613,7 +613,7 @@ fun LibraryArtists(
         itemContent = { _, artist ->
             SearchResultRow(
                 title = artist.name,
-                subtitle = "Artist",
+                subtitle = stringResource(R.string.search_subtitle_artist),
                 imageUrl = artist.images?.firstOrNull()?.url,
                 isCircle = true,
                 onClick = { onArtistClick(artist.id) }
@@ -1223,7 +1223,7 @@ fun <T> LibraryContentList(
                         onClick = onRetry,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                     ) {
-                        Text("Retry", color = Color.White)
+                        Text(stringResource(R.string.general_retry), color = Color.White)
                     }
                 }
             } else if (filteredItems != null) {

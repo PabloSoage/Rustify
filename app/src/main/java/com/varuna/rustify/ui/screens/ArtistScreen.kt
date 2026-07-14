@@ -166,7 +166,7 @@ fun ArtistScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { loadData() }) { Text("Retry") }
+                    Button(onClick = { loadData() }) { Text(stringResource(R.string.general_retry)) }
                 }
                 }
             } else {
@@ -401,7 +401,7 @@ fun ArtistScreen(
                                 items(relatedArtists) { relArtist ->
                                     PlaylistItemCard(
                                         title = relArtist.name,
-                                        subtitle = "Artist",
+                                        subtitle = stringResource(R.string.search_subtitle_artist),
                                         images = relArtist.images,
                                         isCircle = true,
                                         onClick = { onArtistClick(relArtist.id) }
@@ -424,7 +424,7 @@ fun ArtistScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     artistDetails?.let { artist ->

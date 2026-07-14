@@ -12,14 +12,22 @@ import kotlinx.coroutines.withContext
  * ExoPlayer can play it directly without a DASH merge.
  */
 object YouTubeVideoResolver {
-    suspend fun resolve(youtubeId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun resolve(youtubeId: String, maxQuality: Boolean = true): Pair<String, String?>? = withContext(Dispatchers.IO) {
         runCatching {
             val req = YoutubeDLRequest("https://www.youtube.com/watch?v=$youtubeId").apply {
                 addOption("-g")
-                addOption("-f", "best[height<=720][ext=mp4]/best[ext=mp4]/18/best")
+                if (maxQuality) {
+                    // bestvideo+bestaudio returns two lines if it's a DASH format (like 1080p).
+                    // Fallback to progressive (best) if DASH isn't available.
+                    addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+                } else {
+                    addOption("-f", "best[height<=720][ext=mp4]/best[ext=mp4]/18/best")
+                }
             }
-            YoutubeDL.getInstance().execute(req).out
-                .trim().lines().firstOrNull { it.startsWith("http") }
+            val lines = YoutubeDL.getInstance().execute(req).out
+                .trim().lines().filter { it.startsWith("http") }
+            if (lines.isEmpty()) return@runCatching null
+            Pair(lines[0], lines.getOrNull(1))
         }.getOrNull()
     }
 }
