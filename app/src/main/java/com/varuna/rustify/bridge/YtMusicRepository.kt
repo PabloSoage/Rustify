@@ -3,6 +3,7 @@ package com.varuna.rustify.bridge
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.*
+import com.varuna.rustify.bridge.maximiseThumbnail
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -126,7 +127,7 @@ class YtMusicRepository(private val appContext: Context) {
                     artists = listOf(YtmArtistRef("", o.optString("author", ""))),
                     albumId = null,
                     durationSec = o.optInt("duration_sec", 0),
-                    thumbnailUrl = o.optString("thumbnail_url", "")
+                    thumbnailUrl = maximiseThumbnail(o.optString("thumbnail_url", ""))
                 )
             }
             YtmSearchResults(tracks, emptyList(), emptyList(), emptyList())

@@ -240,7 +240,11 @@ impl SpotifyClient {
                 let id = id_from_uri(uri)?.to_string();
 
                 let owner_data = &playlist_data["ownerV2"]["data"];
-                let owner_id = id_from_uri(owner_data["uri"].as_str()?).unwrap_or("").to_string();
+                // Use empty string as fallback if owner URI is missing (e.g. Spotify-owned playlists)
+                let owner_id = owner_data["uri"].as_str()
+                    .and_then(|u| id_from_uri(u))
+                    .unwrap_or("")
+                    .to_string();
 
                 let images = parse_images_nested(&playlist_data["images"]);
 

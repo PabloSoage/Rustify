@@ -486,6 +486,7 @@ fun SettingsScreen(
             AudioBackendsSection(context)
             LyricsProvidersSection(context)
             AndroidAutoPreviewSection(context)
+            SpotifyHashInspectorSection()
 
             Text(
                 text = stringResource(R.string.settings_cache_storage),
@@ -1601,14 +1602,53 @@ if (localMusicDirs.isEmpty()) {
                             }
                         )
                     }
-                    OutlinedTextField(
-                        value = djVoiceLang,
-                        onValueChange = { djVoiceLang = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_LANG, it) } },
-                        label = { Text(stringResource(R.string.settings_dj_voice_lang)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = djVoiceFieldColors
-                    )
+                    var voiceLangExpanded by remember { mutableStateOf(false) }
+                    LaunchedEffect(djMode) { voiceLangExpanded = false }
+                    val systemDefaultLabel = stringResource(R.string.settings_dj_voice_lang_system)
+                    val allVoiceLangs = listOf("en", "es", "ja", "fr", "de", "pt", "it", "ko", "zh")
+                    val voiceLangOptions = remember(djMode, systemDefaultLabel) {
+                        val appLang = prefs.getString("app_language", "system") ?: "system"
+                        val displayLocale = if (appLang == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLang)
+                        val filteredLangs = if (djMode == "api") allVoiceLangs else listOf("en", "es")
+                        listOf("" to systemDefaultLabel) + filteredLangs.map { code ->
+                            code to java.util.Locale.forLanguageTag(code).getDisplayName(displayLocale)
+                        }
+                    }
+                    val voiceLangLabel = voiceLangOptions.firstOrNull { it.first == djVoiceLang }?.second ?: djVoiceLang
+                    ExposedDropdownMenuBox(
+                        expanded = voiceLangExpanded,
+                        onExpandedChange = { voiceLangExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = voiceLangLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_dj_voice_lang)) },
+                            singleLine = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceLangExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth(),
+                            colors = djVoiceFieldColors
+                        )
+                        DropdownMenu(
+                            expanded = voiceLangExpanded,
+                            onDismissRequest = { voiceLangExpanded = false }
+                        ) {
+                            voiceLangOptions.forEach { (code, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        djVoiceLang = code
+                                        prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_LANG, code) }
+                                        voiceLangExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = djVoiceCloudUrl,
@@ -1892,3 +1932,168 @@ private fun AndroidAutoPreviewSection(context: android.content.Context) {
         }
     }
 }
+
+@Composable
+private fun SpotifyHashInspectorSection() {
+    val coroutineScope = rememberCoroutineScope()
+
+    // Map of operationName -> sha256 hash (empty = not cached)
+    var hashes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    var lastRefreshed by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+
+    fun loadHashes() {
+        try {
+            val json = org.json.JSONObject(com.varuna.rustify.bridge.NativeEngine.getSpotifyHashesNative())
+            val map = mutableMapOf<String, String>()
+            json.keys().forEach { key -> map[key] = json.getString(key) }
+            hashes = map.toSortedMap()
+        } catch (_: Exception) {
+            hashes = emptyMap()
+        }
+    }
+
+    LaunchedEffect(Unit) { loadHashes() }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        "Spotify GQL Hashes",
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    val cachedCount = hashes.count { it.value.isNotBlank() }
+                    Text(
+                        "${cachedCount} / ${hashes.size} hashes cached",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (lastRefreshed.isNotEmpty()) {
+                        Text(
+                            "Last refresh: $lastRefreshed",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Refresh button
+                    IconButton(
+                        onClick = {
+                            if (!isRefreshing) {
+                                isRefreshing = true
+                                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                    com.varuna.rustify.bridge.NativeEngine.warmupSpotifyHashesNative()
+                                    // Wait for warmup to propagate (it's async in Rust)
+                                    kotlinx.coroutines.delay(3500)
+                                    loadHashes()
+                                    val sdf = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        lastRefreshed = sdf.format(java.util.Date())
+                                        isRefreshing = false
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFF1DB954),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh hashes",
+                                tint = Color(0xFF1DB954)
+                            )
+                        }
+                    }
+                    // Expand/collapse toggle
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(
+                            if (expanded) "Hide" else "Show",
+                            color = Color(0xFF1DB954),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            if (expanded) {
+                if (hashes.isEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "No hashes cached. Tap refresh to scrape them from Spotify.",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    androidx.compose.material3.HorizontalDivider(color = Color(0xFF333333))
+                    Spacer(Modifier.height(8.dp))
+                    hashes.entries.forEach { (operation, hash) ->
+                        val isPresent = hash.isNotBlank()
+                        val isLong = hash.length >= 40
+                        // Color: green = good long hash, yellow = short/suspicious, red = missing
+                        val dotColor = when {
+                            !isPresent -> Color(0xFFEF5350)   // red
+                            !isLong    -> Color(0xFFFFB300)   // amber
+                            else       -> Color(0xFF66BB6A)   // green
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Color dot indicator
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(dotColor)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    operation,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    if (isPresent) hash.take(16) + "…" + hash.takeLast(8)
+                                    else "— not cached —",
+                                    color = if (isPresent) Color(0xFF888888) else Color(0xFFEF5350),
+                                    fontSize = 11.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

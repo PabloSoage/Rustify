@@ -295,7 +295,8 @@
     <string name="settings_dj_remove">Remove</string>
     <string name="settings_dj_voice">DJ voice</string>
     <string name="settings_dj_voice_enabled">The DJ speaks (voice)</string>
-    <string name="settings_dj_voice_lang">Voice language (e.g. es, en) — blank = app language</string>
+    <string name="settings_dj_voice_lang">Voice language</string>
+    <string name="settings_dj_voice_lang_system">System default (app language)</string>
     <string name="settings_dj_voice_cloud_url">Cloud TTS endpoint (optional, OpenAI-compatible)</string>
     <string name="settings_dj_auto_source">Auto DJ source</string>
     <string name="dj_auto_source_favorites">Only my favourites</string>

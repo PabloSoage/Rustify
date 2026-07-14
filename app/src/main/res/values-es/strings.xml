@@ -294,7 +294,8 @@
     <string name="settings_dj_remove">Quitar</string>
     <string name="settings_dj_voice">Voz del DJ</string>
     <string name="settings_dj_voice_enabled">El DJ habla (voz)</string>
-    <string name="settings_dj_voice_lang">Idioma de la voz (ej. es, en) — vacío = idioma de la app</string>
+    <string name="settings_dj_voice_lang">Idioma de la voz</string>
+    <string name="settings_dj_voice_lang_system">Por defecto (idioma de la app)</string>
     <string name="settings_dj_voice_cloud_url">Endpoint TTS en la nube (opcional, OpenAI-compatible)</string>
     <string name="settings_dj_auto_source">Fuente del DJ automático</string>
     <string name="dj_auto_source_favorites">Solo mis favoritas</string>

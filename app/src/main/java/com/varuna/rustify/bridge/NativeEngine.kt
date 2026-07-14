@@ -384,7 +384,16 @@ object NativeEngine {
     /**
      * Triggers the background scrape/warmup of Spotify GraphQL hashes in Rust.
      */
-    external fun warmupSpotifyHashesNative()    // =====================================================================
+    external fun warmupSpotifyHashesNative()
+
+    /**
+     * Returns a JSON object mapping GQL operation names to their current sha256 hashes.
+     * Example: `{"libraryV3":"2de10199b244...","fetchLibraryTracks":"087278b20b74..."}`
+     * Returns `{}` if no hashes are cached yet.
+     */
+    external fun getSpotifyHashesNative(): String
+
+
     // YOUTUBE MUSIC (E40)
     // =====================================================================
 

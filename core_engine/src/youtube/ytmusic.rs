@@ -46,7 +46,7 @@ fn map_track(t: &TrackItem) -> YtmTrack {
             .collect(),
         album_id: t.album.as_ref().map(|a| a.id.clone()),
         duration_sec: t.duration.unwrap_or(0),
-        thumbnail_url: t.cover.first().map(|c| c.url.clone()).unwrap_or_default(),
+        thumbnail_url: t.cover.last().map(|c| c.url.clone()).unwrap_or_default(),
         is_explicit: false, // RustyPipe TrackItem exposes no explicit flag.
     }
 }
@@ -57,7 +57,7 @@ fn map_album_slim(a: &AlbumItem) -> YtmAlbumSlim {
         browse_id: a.id.clone(),
         title: a.name.clone(),
         year: a.year.map(|y| y as u32),
-        thumbnail_url: a.cover.first().map(|c| c.url.clone()).unwrap_or_default(),
+        thumbnail_url: a.cover.last().map(|c| c.url.clone()).unwrap_or_default(),
     }
 }
 
@@ -75,7 +75,7 @@ fn map_playlist_item(p: &MusicPlaylistItem) -> YtmPlaylist {
         playlist_id: p.id.clone(),
         title: p.name.clone(),
         author: p.channel.as_ref().map(|ch| ch.name.clone()),
-        thumbnail_url: p.thumbnail.first().map(|c| c.url.clone()).unwrap_or_default(),
+        thumbnail_url: p.thumbnail.last().map(|c| c.url.clone()).unwrap_or_default(),
         tracks: vec![],
     }
 }
@@ -128,7 +128,7 @@ pub async fn ytm_get_album(browse_id: &str) -> Option<YtmAlbum> {
             })
             .collect(),
         year: album.year.map(|y| y as u32),
-        thumbnail_url: album.cover.first().map(|c| c.url.clone()).unwrap_or_default(),
+        thumbnail_url: album.cover.last().map(|c| c.url.clone()).unwrap_or_default(),
         // MusicAlbum::tracks is a plain Vec<TrackItem>.
         tracks: album
             .tracks
@@ -156,7 +156,7 @@ pub async fn ytm_get_artist(channel_id: &str) -> Option<YtmArtist> {
         // MusicArtist exposes the artist image as `header_image: Vec<Thumbnail>`.
         thumbnail_url: artist
             .header_image
-            .first()
+            .last()
             .map(|c| c.url.clone())
             .unwrap_or_default(),
         top_tracks: artist.tracks.iter().map(map_track).collect(),

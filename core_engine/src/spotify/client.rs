@@ -382,6 +382,12 @@ impl SpotifyClient {
         }
     }
 
+    /// Returns a snapshot of the current GQL operation hashes cache.
+    pub fn get_gql_hashes_snapshot(&self) -> HashMap<String, String> {
+        self.gql_hashes.read().unwrap().clone()
+    }
+
+
     fn get_hashes_file_path(&self) -> Option<std::path::PathBuf> {
         let dir = self.cache_dir.read().unwrap();
         dir.as_ref().map(|d| std::path::Path::new(d).join("spotify_gql_hashes.json"))

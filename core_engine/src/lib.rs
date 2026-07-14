@@ -1048,6 +1048,24 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
     });
 }
 
+/// JNI Bridge: Return a JSON object with all current GQL operation hashes.
+/// Returns: `{"operationName": "sha256hash", ...}` or `{}` if none cached yet.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyHashesNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let client = spotify::client::get_spotify_client().read().unwrap();
+        let snapshot = client.get_gql_hashes_snapshot();
+        serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+
+
+
+
 /// JNI Bridge: Check if tracks are saved
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_checkSpotifySavedTracksNative<'local>(

@@ -681,7 +681,7 @@ data class YtmTrack(
             o.optString("video_id",""), o.optString("title",""),
             YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
             o.optString("album_id","").ifBlank { null }, o.optInt("duration_sec"),
-            o.optString("thumbnail_url",""), o.optBoolean("is_explicit")
+            maximiseThumbnail(o.optString("thumbnail_url","")), o.optBoolean("is_explicit")
         )
         fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
         fun toJsonArray(list: List<YtmTrack>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
@@ -689,7 +689,7 @@ data class YtmTrack(
 }
 
 /** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w0-h0`). */
-private fun maximiseThumbnail(url: String): String {
+internal fun maximiseThumbnail(url: String): String {
     if (url.isBlank()) return url
     return url
         .replace(Regex("""=w\d+-h\d+"""), "=w720-h720")
@@ -711,7 +711,7 @@ data class YtmAlbum(
         fun fromJson(o: JSONObject) = YtmAlbum(
             o.optString("browse_id",""), o.optString("title",""),
             YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
-            o.optInt("year").takeIf { it > 0 }, o.optString("thumbnail_url",""),
+            o.optInt("year").takeIf { it > 0 }, maximiseThumbnail(o.optString("thumbnail_url","")),
             YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
         )
     }
@@ -724,7 +724,7 @@ data class YtmAlbumSlim(
         put("browse_id", browseId); put("title", title); put("year", year?:0); put("thumbnail_url", thumbnailUrl)
     }
     companion object {
-        fun fromJson(o: JSONObject) = YtmAlbumSlim(o.optString("browse_id",""), o.optString("title",""), o.optInt("year").takeIf { it > 0 }, o.optString("thumbnail_url",""))
+        fun fromJson(o: JSONObject) = YtmAlbumSlim(o.optString("browse_id",""), o.optString("title",""), o.optInt("year").takeIf { it > 0 }, maximiseThumbnail(o.optString("thumbnail_url","")))
         fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
         fun toJsonArray(list: List<YtmAlbumSlim>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
     }
@@ -736,7 +736,7 @@ data class YtmArtist(
 ) {
     companion object {
         fun fromJson(o: JSONObject) = YtmArtist(
-            o.optString("channel_id",""), o.optString("name",""), o.optString("thumbnail_url",""),
+            o.optString("channel_id",""), o.optString("name",""), maximiseThumbnail(o.optString("thumbnail_url","")),
             YtmTrack.listFromJsonArray(o.optJSONArray("top_tracks")),
             YtmAlbumSlim.listFromJsonArray(o.optJSONArray("albums"))
         )
@@ -750,7 +750,7 @@ data class YtmPlaylist(
     companion object {
         fun fromJson(o: JSONObject) = YtmPlaylist(
             o.optString("playlist_id",""), o.optString("title",""),
-            o.optString("author","").ifBlank { null }, o.optString("thumbnail_url",""),
+            o.optString("author","").ifBlank { null }, maximiseThumbnail(o.optString("thumbnail_url","")),
             YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
         )
         fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList<YtmPlaylist>() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }

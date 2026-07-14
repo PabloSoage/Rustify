@@ -23,7 +23,7 @@ playServicesAuth = "21.4.0"
 okhttp = "4.12.0"
 # E99 — MapLibre GL (open-source, keyless map). Routing via OSRM + geocoding via Nominatim are
 # plain HTTP (no extra dependency). Verify this artifact resolves on your first Gradle sync.
-maplibre = "11.5.2"
+maplibre = "13.3.1"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

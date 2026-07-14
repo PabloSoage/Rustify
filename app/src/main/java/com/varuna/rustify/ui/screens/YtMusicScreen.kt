@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.YtMusicRepository
@@ -210,6 +211,7 @@ private fun YtmBrowseHome(
             R.string.dj_mood_focus to "focus instrumental study"
         )
     }
+    val cache = remember { mutableMapOf<String, List<YtmTrack>>() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)) {
         item {
             Text(
@@ -219,7 +221,7 @@ private fun YtmBrowseHome(
             )
         }
         items(categories) { (labelRes, q) ->
-            YtmBrowseRow(labelRes, q, repo, onTrackClick, currentTrackId)
+            YtmBrowseRow(labelRes, q, repo, onTrackClick, currentTrackId, cache)
         }
     }
 }
@@ -230,13 +232,18 @@ private fun YtmBrowseRow(
     query: String,
     repo: YtMusicRepository,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
-    currentTrackId: String?
+    currentTrackId: String?,
+    cache: MutableMap<String, List<YtmTrack>>
 ) {
-    var tracks by remember(query) { mutableStateOf<List<YtmTrack>>(emptyList()) }
-    var loading by remember(query) { mutableStateOf(true) }
+    val cached = cache[query]
+    var tracks by remember(query) { mutableStateOf(cached ?: emptyList()) }
+    var loading by remember(query) { mutableStateOf(cached == null) }
     LaunchedEffect(query) {
+        if (cached != null) return@LaunchedEffect
         loading = true
-        tracks = runCatching { repo.search(query).tracks.take(12) }.getOrDefault(emptyList())
+        val result = runCatching { repo.search(query).tracks.take(12) }.getOrDefault(emptyList())
+        tracks = result
+        cache[query] = result
         loading = false
     }
     if (!loading && tracks.isEmpty()) return
@@ -256,7 +263,11 @@ private fun YtmBrowseRow(
                     val playing = currentTrackId == "ytm:${t.videoId}"
                     Column(Modifier.width(140.dp).clickable { onTrackClick(full, i) }) {
                         AsyncImage(
-                            model = t.thumbnailUrl,
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(t.thumbnailUrl)
+                                .crossfade(true)
+                                .size(420)
+                                .build(),
                             contentDescription = null,
                             modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
                             contentScale = ContentScale.Crop

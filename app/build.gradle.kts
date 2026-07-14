@@ -41,6 +41,7 @@ android {
             keepDebugSymbols.add("**/libffmpeg.zip.so")
             keepDebugSymbols.add("**/libffprobe.zip.so")
             keepDebugSymbols.add("**/libytdlp.zip.so")
+            keepDebugSymbols.add("**/libpython.zip.so")
         }
     }
 
@@ -76,12 +77,7 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            keepDebugSymbols.add("**/libpython.zip.so")
-        }
-    }
+
 }
 
 kotlin {

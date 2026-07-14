@@ -28,7 +28,7 @@ import java.util.Locale
 object DjVoice {
     private var tts: TextToSpeech? = null
     @Volatile private var ready = false
-    @Volatile private var appCtx: android.content.Context? = null
+    @Volatile private var appCtx: android.app.Application? = null
     private val pending = ArrayList<String>()
 
     // Ducking: baja el volumen de la música mientras el DJ habla y lo restaura al terminar.
@@ -41,7 +41,7 @@ object DjVoice {
     fun init(context: Context) {
         if (tts != null) return
         val app = context.applicationContext
-        appCtx = app
+        appCtx = app as android.app.Application
         tts = TextToSpeech(app) { status ->
             ready = status == TextToSpeech.SUCCESS
             if (ready) {
@@ -59,7 +59,7 @@ object DjVoice {
     private fun applyVoiceConfig(context: Context) {
         val t = tts ?: return
         val langCode = DjSettings.voiceLanguage(context)
-        val locale = if (langCode.isNotBlank()) Locale(langCode) else Locale.getDefault()
+        val locale = if (langCode.isNotBlank()) Locale.forLanguageTag(langCode) else Locale.getDefault()
         runCatching { t.language = locale }
         t.setPitch(1.15f)        // ligeramente agudo = más "cheerful"
         t.setSpeechRate(1.03f)
@@ -71,7 +71,7 @@ object DjVoice {
     /** Habla [text]. Cloud si está configurado; si no (o si falla), TTS nativo. */
     fun speak(context: Context, text: String) {
         if (!DjSettings.voiceEnabled(context) || text.isBlank()) return
-        appCtx = context.applicationContext
+        appCtx = context.applicationContext as android.app.Application
         val cloud = DjSettings.voiceCloudUrl(context)
         if (cloud.isNotBlank()) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -132,7 +132,7 @@ object DjVoice {
         conn.outputStream.use { it.write(body.toByteArray()) }
         if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext false }
         val tmp = File(context.cacheDir, "dj_voice.mp3")
-        conn.inputStream.use { input -> tmp.outputStream.use { input.copyTo(it) } }
+        conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
         conn.disconnect()
         withContext(Dispatchers.Main) {
             releaseCloud()

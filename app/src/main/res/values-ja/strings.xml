@@ -187,7 +187,8 @@
     <string name="settings_dj_remove">削除</string>
     <string name="settings_dj_voice">DJの声</string>
     <string name="settings_dj_voice_enabled">DJが話す（音声）</string>
-    <string name="settings_dj_voice_lang">音声の言語（例: es, en）— 空欄でアプリの言語</string>
+    <string name="settings_dj_voice_lang">音声の言語</string>
+    <string name="settings_dj_voice_lang_system">システム既定（アプリの言語）</string>
     <string name="settings_dj_voice_cloud_url">クラウドTTSエンドポイント（任意、OpenAI互換）</string>
     <string name="settings_dj_auto_source">オートDJのソース</string>
     <string name="dj_auto_source_favorites">お気に入りのみ</string>
