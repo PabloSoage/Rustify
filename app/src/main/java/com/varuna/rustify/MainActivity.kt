@@ -109,6 +109,7 @@ import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.SettingsScreen
 import com.varuna.rustify.ui.screens.DjScreen
+import com.varuna.rustify.ui.screens.TravelScreen
 import com.varuna.rustify.ui.screens.TrackScreen
 import com.varuna.rustify.ui.screens.YtMusicSearchScreen
 import com.varuna.rustify.ui.screens.YtMusicAlbumScreen
@@ -142,6 +143,7 @@ sealed class Screen {
     object Metrics : Screen()
     // E90 — DJ IA (automix / peticiones en lenguaje natural).
     object Dj : Screen()
+    object Travel : Screen()
 }
 
 /**
@@ -701,6 +703,7 @@ fun EngineTester(
             is Screen.Metrics -> "Metrics"
             is Screen.NewReleases -> "NewReleases"
             is Screen.Dj -> "Dj"
+            is Screen.Travel -> "Travel"
         }
 
         val screenContent = remember(currentScreen) {
@@ -751,6 +754,9 @@ fun EngineTester(
                             },
                             onDjClick = {
                                 navigationStack.add(Screen.Dj)
+                            },
+                            onTravelClick = {
+                                navigationStack.add(Screen.Travel)
                             }
                         )
                     }
@@ -1020,6 +1026,13 @@ fun EngineTester(
                         onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onOpenSettings = { navigationStack.add(Screen.Settings) }
+                    )
+                }
+                is Screen.Travel -> {
+                    TravelScreen(
+                        spotifyRepo = spotifyRepo,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
             }

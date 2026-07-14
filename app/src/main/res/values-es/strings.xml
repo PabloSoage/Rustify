@@ -312,6 +312,20 @@
     <string name="settings_auto_preview_hint">Aproximación del árbol de navegación que mostraría Android Auto.</string>
     <string name="settings_auto_preview_empty">Aquí no hay nada aún.</string>
     <string name="settings_back">Atrás</string>
+    <!-- E99 — playlist de viaje -->
+    <string name="home_travel">Playlist de viaje</string>
+    <string name="travel_title">Playlist de viaje</string>
+    <string name="travel_subtitle">Elige un destino; montamos una playlist que dura todo el trayecto.</string>
+    <string name="travel_destination">Destino (dirección o lugar)</string>
+    <string name="travel_calc_route">Calcular ruta</string>
+    <string name="travel_eta">ETA: %1$d min · %2$d km</string>
+    <string name="travel_buffer">Colchón por tráfico: %1$d min</string>
+    <string name="travel_start">Empezar viaje</string>
+    <string name="travel_grant_location">Dar ubicación</string>
+    <string name="travel_no_location">No se pudo obtener tu ubicación.</string>
+    <string name="travel_dest_not_found">Destino no encontrado.</string>
+    <string name="travel_route_failed">No se pudo calcular la ruta.</string>
+    <string name="travel_no_tracks">No hay canciones para la playlist. Marca algunas como favoritas primero.</string>
 
     <!-- E50 — Sincronización con Google Drive -->
     <string name="settings_drive_title">Google Drive</string>

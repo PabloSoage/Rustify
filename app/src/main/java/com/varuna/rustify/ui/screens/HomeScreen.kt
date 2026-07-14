@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Radio
@@ -58,6 +59,7 @@ fun HomeScreen(
     onNewReleasesClick: () -> Unit,
     onMetricsClick: () -> Unit,
     onDjClick: () -> Unit = {},
+    onTravelClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val darkBackground = Color(0xFF121212)
@@ -156,6 +158,11 @@ fun HomeScreen(
                                     text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_dj), color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null, tint = Color(0xFF1DB954)) },
                                     onClick = { menuOpen = false; onDjClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_travel), color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Map, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onTravelClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(androidx.compose.ui.res.stringResource(com.varuna.rustify.R.string.home_new_releases), color = Color.White) },

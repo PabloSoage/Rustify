@@ -313,6 +313,20 @@
     <string name="settings_auto_preview_hint">Approximation of the browse tree Android Auto would show.</string>
     <string name="settings_auto_preview_empty">Nothing here yet.</string>
     <string name="settings_back">Back</string>
+    <!-- E99 — travel playlist -->
+    <string name="home_travel">Travel playlist</string>
+    <string name="travel_title">Travel playlist</string>
+    <string name="travel_subtitle">Pick a destination; we build a playlist that lasts the whole drive.</string>
+    <string name="travel_destination">Destination (address or place)</string>
+    <string name="travel_calc_route">Calculate route</string>
+    <string name="travel_eta">ETA: %1$d min · %2$d km</string>
+    <string name="travel_buffer">Traffic buffer: %1$d min</string>
+    <string name="travel_start">Start trip</string>
+    <string name="travel_grant_location">Grant location</string>
+    <string name="travel_no_location">Couldn\'t get your location.</string>
+    <string name="travel_dest_not_found">Destination not found.</string>
+    <string name="travel_route_failed">Couldn\'t compute the route.</string>
+    <string name="travel_no_tracks">No tracks to build the playlist. Like some songs first.</string>
 
     <!-- E50 — Google Drive sync.
          OAuth **Web** client ID from Google Cloud Console (see GoogleDriveSync.kt header).

@@ -121,6 +121,8 @@ dependencies {
     // E50 — Google Drive sync (AppData folder + REST v3).
     implementation(libs.play.services.auth)
     implementation(libs.okhttp)
+    // E99 — open-source keyless map (travel playlist).
+    implementation(libs.maplibre.android)
 }
 
 // --- RUST CORE INTEGRATION ---
