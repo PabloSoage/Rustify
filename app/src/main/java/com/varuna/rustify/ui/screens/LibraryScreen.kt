@@ -138,6 +138,14 @@ fun LibraryScreen(
     val enableYtmMusic = prefs.getBoolean("enable_ytm_music", true)
     var ytmResultFilter by remember { mutableStateOf("all") }
     var ytmUseScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+    // React to the scraper toggle being changed elsewhere (Settings) while this screen is alive.
+    androidx.compose.runtime.DisposableEffect(prefs) {
+        val djScraperListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "ytm_search_mode") ytmUseScraper = p?.getString("ytm_search_mode", "api") == "scraper"
+        }
+        prefs.registerOnSharedPreferenceChangeListener(djScraperListener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(djScraperListener) }
+    }
     var ytmPendingPlaylistTrack by remember { mutableStateOf<YtmTrack?>(null) }
     var showYtmCreatePlaylistDialog by remember { mutableStateOf(false) }
     var ytmNewPlaylistName by remember { mutableStateOf("") }

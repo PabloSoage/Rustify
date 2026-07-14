@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -1150,6 +1151,20 @@ fun TrackScreenControls(
                 }
             } else {
                 Spacer(modifier = Modifier.size(48.dp))
+            }
+
+            // DJ (Livi): only during an autonomous DJ session — tap to change mood from playback.
+            val djActive = com.varuna.rustify.dj.DjAutoController.state.collectAsState().value != null
+            val djCtx = androidx.compose.ui.platform.LocalContext.current
+            if (djActive) {
+                IconButton(onClick = { com.varuna.rustify.dj.DjAutoController.next(djCtx) }) {
+                    Icon(
+                        imageVector = Icons.Default.Radio,
+                        contentDescription = "DJ",
+                        tint = Color(0xFF1DB954),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
 
             // Shuffle / Repeat Mode Button

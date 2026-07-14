@@ -572,6 +572,30 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        var coversFullRes by remember { mutableStateOf(prefs.getBoolean("settings_local_covers_full_res", true)) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                                Text(stringResource(R.string.settings_local_covers_fullres), color = Color.White, fontSize = 14.sp)
+                                Text(stringResource(R.string.settings_local_covers_fullres_desc), color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Switch(
+                                checked = coversFullRes,
+                                onCheckedChange = { checked ->
+                                    coversFullRes = checked
+                                    prefs.edit { putBoolean("settings_local_covers_full_res", checked) }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF1DB954)
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
 
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -597,6 +621,13 @@ fun SettingsScreen(
 
                         // YTM Search mode (API vs Scraper)
                         var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+                        androidx.compose.runtime.DisposableEffect(prefs) {
+                            val scraperListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+                                if (key == "ytm_search_mode") ytmScraper = p?.getString("ytm_search_mode", "api") == "scraper"
+                            }
+                            prefs.registerOnSharedPreferenceChangeListener(scraperListener)
+                            onDispose { prefs.unregisterOnSharedPreferenceChangeListener(scraperListener) }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1263,8 +1294,8 @@ if (localMusicDirs.isEmpty()) {
                             else putString("rustify_wrapper_host", value.trim())
                         }
                     }
-                    val customOption = "Personalizado…"
-                    val blankOption = "(En blanco → rustify://)"
+                    val customOption = stringResource(R.string.settings_wrapper_custom)
+                    val blankOption = stringResource(R.string.settings_wrapper_blank)
                     val fieldColors = TextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -1416,6 +1447,92 @@ if (localMusicDirs.isEmpty()) {
 
                     if (djMode == "api") {
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // Proveedor de IA: lista gratuita/keyless + indicador de latencia + añadir/quitar.
+                        Text(stringResource(R.string.settings_dj_provider), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        var providersVersion by remember { mutableStateOf(0) }
+                        val djProviders = remember(providersVersion) { com.varuna.rustify.dj.DjProviders.visibleProviders(context) }
+                        val djSelectedId = remember(providersVersion) { com.varuna.rustify.dj.DjProviders.selectedId(context) }
+                        val djLatencies = remember { androidx.compose.runtime.mutableStateMapOf<String, com.varuna.rustify.dj.DjProviders.Latency>() }
+                        androidx.compose.runtime.LaunchedEffect(providersVersion) {
+                            djProviders.forEach { p ->
+                                val ms = com.varuna.rustify.dj.DjProviders.measureLatency(p.baseUrl)
+                                djLatencies[p.id] = com.varuna.rustify.dj.DjProviders.classify(ms)
+                            }
+                        }
+                        djProviders.forEach { p ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        com.varuna.rustify.dj.DjProviders.select(context, p)
+                                        djApiBaseUrl = p.baseUrl; djApiModel = p.model; djApiKey = p.apiKey
+                                        providersVersion++
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = djSelectedId == p.id,
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                                )
+                                Spacer(modifier = Modifier.padding(start = 8.dp))
+                                val dotColor = when (djLatencies[p.id] ?: com.varuna.rustify.dj.DjProviders.Latency.UNKNOWN) {
+                                    com.varuna.rustify.dj.DjProviders.Latency.FAST -> Color(0xFF1DB954)
+                                    com.varuna.rustify.dj.DjProviders.Latency.OK -> Color(0xFFFFC107)
+                                    com.varuna.rustify.dj.DjProviders.Latency.SLOW -> Color(0xFFFF7043)
+                                    com.varuna.rustify.dj.DjProviders.Latency.DOWN -> Color(0xFFE53935)
+                                    else -> Color.Gray
+                                }
+                                Text("●", color = dotColor, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.padding(start = 8.dp))
+                                Text(p.label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    com.varuna.rustify.dj.DjProviders.removeProvider(context, p)
+                                    providersVersion++
+                                }) {
+                                    Text(stringResource(R.string.settings_dj_remove), color = Color.Gray, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        var showAddProvider by remember { mutableStateOf(false) }
+                        TextButton(onClick = { showAddProvider = true }) {
+                            Text(stringResource(R.string.settings_dj_add_provider), color = Color(0xFF1DB954))
+                        }
+                        if (showAddProvider) {
+                            var npLabel by remember { mutableStateOf("") }
+                            var npUrl by remember { mutableStateOf("") }
+                            var npModel by remember { mutableStateOf("") }
+                            var npKey by remember { mutableStateOf("") }
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { showAddProvider = false },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        if (npUrl.isNotBlank() && npModel.isNotBlank()) {
+                                            com.varuna.rustify.dj.DjProviders.addCustom(context, npLabel, npUrl, npModel, npKey)
+                                            showAddProvider = false; providersVersion++
+                                        }
+                                    }) { Text(stringResource(R.string.settings_dj_add_provider), color = Color(0xFF1DB954)) }
+                                },
+                                dismissButton = { TextButton(onClick = { showAddProvider = false }) { Text("Cancel") } },
+                                title = { Text(stringResource(R.string.settings_dj_add_provider)) },
+                                text = {
+                                    Column {
+                                        OutlinedTextField(value = npLabel, onValueChange = { npLabel = it }, label = { Text("Name") }, singleLine = true)
+                                        Spacer(Modifier.height(6.dp))
+                                        OutlinedTextField(value = npUrl, onValueChange = { npUrl = it }, label = { Text("Base URL") }, singleLine = true)
+                                        Spacer(Modifier.height(6.dp))
+                                        OutlinedTextField(value = npModel, onValueChange = { npModel = it }, label = { Text("Model") }, singleLine = true)
+                                        Spacer(Modifier.height(6.dp))
+                                        OutlinedTextField(value = npKey, onValueChange = { npKey = it }, label = { Text("API key (optional)") }, singleLine = true)
+                                    }
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
                         val djFieldColors = TextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -1455,6 +1572,79 @@ if (localMusicDirs.isEmpty()) {
                     if (djMode == "local") {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(stringResource(R.string.settings_dj_local_note), color = Color.Gray, fontSize = 12.sp)
+                    }
+
+                    // ── Voz del DJ (híbrido: TTS nativo + endpoint nube opcional) ──
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(stringResource(R.string.settings_dj_voice), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    val djVoiceFieldColors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF121212),
+                        unfocusedContainerColor = Color(0xFF121212)
+                    )
+                    var djVoiceEnabled by remember { mutableStateOf(prefs.getBoolean(com.varuna.rustify.dj.DjSettings.KEY_VOICE_ENABLED, true)) }
+                    var djVoiceLang by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_LANG, "") ?: "") }
+                    var djVoiceCloudUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_URL, "") ?: "") }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stringResource(R.string.settings_dj_voice_enabled), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = djVoiceEnabled,
+                            onCheckedChange = {
+                                djVoiceEnabled = it
+                                prefs.edit { putBoolean(com.varuna.rustify.dj.DjSettings.KEY_VOICE_ENABLED, it) }
+                            }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = djVoiceLang,
+                        onValueChange = { djVoiceLang = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_LANG, it) } },
+                        label = { Text(stringResource(R.string.settings_dj_voice_lang)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = djVoiceFieldColors
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = djVoiceCloudUrl,
+                        onValueChange = { djVoiceCloudUrl = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_URL, it) } },
+                        label = { Text(stringResource(R.string.settings_dj_voice_cloud_url)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = djVoiceFieldColors
+                    )
+
+                    // ── Fuente del DJ automático (favoritas / balance / descubrir) ──
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(stringResource(R.string.settings_dj_auto_source), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    var djAutoSource by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_AUTO_SOURCE, "balanced") ?: "balanced") }
+                    val djAutoSources = listOf(
+                        "favorites" to stringResource(R.string.dj_auto_source_favorites),
+                        "balanced" to stringResource(R.string.dj_auto_source_balanced),
+                        "discover" to stringResource(R.string.dj_auto_source_discover)
+                    )
+                    djAutoSources.forEach { (code, name) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    djAutoSource = code
+                                    prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_AUTO_SOURCE, code) }
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = djAutoSource == code,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                            )
+                            Spacer(modifier = Modifier.padding(start = 12.dp))
+                            Text(name, color = Color.White, fontSize = 14.sp)
+                        }
                     }
                 }
             }

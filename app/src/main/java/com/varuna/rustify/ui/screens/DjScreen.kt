@@ -17,7 +17,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -33,12 +36,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.varuna.rustify.dj.DjAutoController
+import com.varuna.rustify.dj.DjSpeech
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -106,6 +115,7 @@ fun DjScreen(
                 resultTracks = res.tracks
                 if (res.tracks.isNotEmpty()) {
                     onPlayTracks(res.tracks)
+                    com.varuna.rustify.dj.DjVoice.speak(context, res.intro)  // habla la intro (respeta el toggle de voz)
                 } else {
                     errorMsg = emptyResultMsg
                 }
@@ -115,6 +125,51 @@ fun DjScreen(
             isLoading = false
         }
     }
+
+    // ── DJ autónomo (Livi) + voz ──────────────────────────────────────────────────────
+    val autoState by DjAutoController.state.collectAsState()
+    val speech = remember { DjSpeech(context) }
+    val micUnavailableMsg = stringResource(R.string.dj_mic_unavailable)
+    val voiceLang = DjSettings.voiceLanguage(context)
+
+    // Favoritas del usuario (liked songs); si aún no están cacheadas, se piden a la API.
+    val favoritesProvider: suspend () -> List<FullTrack> = {
+        spotifyRepo.likedTracks.toList().ifEmpty {
+            runCatching { spotifyRepo.getSavedTracks(limit = 50).items }.getOrDefault(emptyList())
+        }
+    }
+
+    fun listen() {
+        speech.start(
+            languageTag = voiceLang,
+            onResult = { text ->
+                request = text
+                val lower = text.lowercase()
+                val wantsNext = listOf("siguiente", "cambia", "next", "change", "otro").any { lower.contains(it) }
+                if (DjAutoController.isActive && wantsNext) DjAutoController.next(context) else startDj()
+            },
+            onError = {
+                android.widget.Toast.makeText(context, micUnavailableMsg, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    val micPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) listen() }
+
+    fun onMicClick() {
+        if (!speech.isAvailable()) {
+            android.widget.Toast.makeText(context, micUnavailableMsg, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) listen() else micPermLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+
+    DisposableEffect(Unit) { onDispose { speech.stop() } }
 
     Scaffold(
         topBar = {
@@ -158,6 +213,11 @@ fun DjScreen(
                 onValueChange = { request = it },
                 label = { Text(stringResource(R.string.dj_request_hint)) },
                 modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    IconButton(onClick = { onMicClick() }) {
+                        Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.dj_mic), tint = green)
+                    }
+                },
                 colors = TextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
@@ -190,6 +250,52 @@ fun DjScreen(
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.dj_enqueue), color = Color.White)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            // Autonomous "DJ Livi"-style: press once, it announces a mood (voice) and queues a block.
+            if (autoState == null) {
+                OutlinedButton(
+                    onClick = { DjAutoController.start(context, spotifyRepo, favoritesProvider) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null, tint = green)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.dj_auto_start), color = Color.White)
+                }
+            } else {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF102010)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            stringResource(R.string.dj_auto_now, autoState!!.moodLabel),
+                            color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { DjAutoController.next(context) },
+                                colors = ButtonDefaults.buttonColors(containerColor = green),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.Black)
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(R.string.dj_auto_next), color = Color.Black)
+                            }
+                            OutlinedButton(
+                                onClick = { DjAutoController.stop() },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(R.string.dj_auto_stop), color = Color.White)
+                            }
+                        }
+                    }
                 }
             }
 

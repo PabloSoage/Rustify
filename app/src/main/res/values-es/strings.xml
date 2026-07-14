@@ -148,6 +148,8 @@
     <string name="track_menu_go_artist">Ir al artista</string>
     <string name="settings_match_local_first">Priorizar música local</string>
     <string name="settings_match_local_first_desc">Reproduce archivos locales antes que streams de YouTube si coinciden título y artista.</string>
+    <string name="settings_local_covers_fullres">Carátulas locales en alta resolución</string>
+    <string name="settings_local_covers_fullres_desc">Mantiene la carátula original incrustada (más nítida). Desactivado = reescala a 512px para ahorrar espacio. En ambos casos se deduplican por álbum.</string>
 <string name="local_group_tracks">Canciones</string>
 <string name="local_group_albums">Álbumes</string>
 <string name="local_group_artists">Artistas</string>
@@ -238,8 +240,9 @@
     <string name="ytm_delete">Eliminar</string>
     <string name="ytm_not_found">No encontrado</string>
     <string name="ytm_library_empty">Tu biblioteca de YouTube Music está vacía.\nPulsa buscar para empezar.</string>
-    <string name="ytm_saved_favorite">Añadido a favoritos</string>
-    <string name="ytm_removed_favorite">Quitado de favoritos</string>
+    <string name="ytm_search_filter_title">Filtrar resultados</string>
+    <string name="settings_wrapper_custom">Personalizado…</string>
+    <string name="settings_wrapper_blank">(En blanco → rustify://)</string>
     <string name="ytm_saved_album">Álbum guardado</string>
     <string name="ytm_removed_album">Álbum quitado</string>
     <string name="ytm_saved_artist">Artista guardado</string>
@@ -270,6 +273,30 @@
     <string name="settings_dj_api_key">Clave API (opcional)</string>
     <string name="settings_dj_api_desc">El endpoint por defecto es Pollinations AI (gratuito, sin clave, best-effort). Puedes apuntarlo a cualquier API compatible con OpenAI. Las peticiones salen de tu dispositivo.</string>
     <string name="settings_dj_local_note">El LLM local en el dispositivo aún no está implementado; recurre al DJ heurístico.</string>
+    <!-- DJ v2.8: moods, modo autónomo, voz, proveedores -->
+    <string name="dj_mood_chill">Tranquilo</string>
+    <string name="dj_mood_energetic">Con energía</string>
+    <string name="dj_mood_happy">Buen rollo</string>
+    <string name="dj_mood_focus">Concentración</string>
+    <string name="dj_mood_melancholic">Melancólico</string>
+    <string name="dj_auto_start">DJ automático</string>
+    <string name="dj_auto_next">Cambiar mood</string>
+    <string name="dj_auto_stop">Parar DJ</string>
+    <string name="dj_auto_now">Sonando: %1$s</string>
+    <string name="dj_mic">Habla al DJ</string>
+    <string name="dj_mic_unavailable">Reconocimiento de voz no disponible en este dispositivo</string>
+    <string name="dj_mic_permission">Se necesita permiso de micrófono para hablar con el DJ</string>
+    <string name="settings_dj_provider">Proveedor de IA</string>
+    <string name="settings_dj_add_provider">Añadir proveedor personalizado</string>
+    <string name="settings_dj_remove">Quitar</string>
+    <string name="settings_dj_voice">Voz del DJ</string>
+    <string name="settings_dj_voice_enabled">El DJ habla (voz)</string>
+    <string name="settings_dj_voice_lang">Idioma de la voz (ej. es, en) — vacío = idioma de la app</string>
+    <string name="settings_dj_voice_cloud_url">Endpoint TTS en la nube (opcional, OpenAI-compatible)</string>
+    <string name="settings_dj_auto_source">Fuente del DJ automático</string>
+    <string name="dj_auto_source_favorites">Solo mis favoritas</string>
+    <string name="dj_auto_source_balanced">Favoritas + sugerencias</string>
+    <string name="dj_auto_source_discover">Descubrir (sugerencias)</string>
 
     <!-- E50 — Sincronización con Google Drive -->
     <string name="settings_drive_title">Google Drive</string>

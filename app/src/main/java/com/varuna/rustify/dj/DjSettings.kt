@@ -48,4 +48,34 @@ object DjSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return prefs.getString(KEY_API_KEY, "") ?: ""
     }
+
+    // ── Voz (DJ hablado, estilo "DJ Livi") ──────────────────────────────────────────────
+    const val KEY_VOICE_ENABLED = "dj_voice_enabled"       // el DJ habla las intros/transiciones
+    const val KEY_VOICE_LANG = "dj_voice_lang"             // idioma de la VOZ, independiente del de la app ("" = idioma de la app)
+    const val KEY_VOICE_CLOUD_URL = "dj_voice_cloud_url"   // endpoint TTS en la nube opcional (OpenAI-compatible /audio/speech); "" = TTS nativo
+    const val KEY_VOICE_CLOUD_KEY = "dj_voice_cloud_key"
+    const val KEY_VOICE_CLOUD_VOICE = "dj_voice_cloud_voice"
+
+    // ── Modo autónomo (automix por moods, tú solo le das al botón) ───────────────────────
+    const val KEY_AUTO_SOURCE = "dj_auto_source"           // "favorites" | "balanced" | "discover"
+
+    fun voiceEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_VOICE_ENABLED, true)
+
+    /** Código de idioma de la voz (ej. "es", "en"); en blanco ⇒ usar el idioma de la app / sistema. */
+    fun voiceLanguage(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_LANG, "") ?: ""
+
+    fun voiceCloudUrl(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_URL, "") ?: ""
+
+    fun voiceCloudKey(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_KEY, "") ?: ""
+
+    fun voiceCloudVoice(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_VOICE, "alloy") ?: "alloy"
+
+    /** favorites = solo favoritas · balanced = favoritas + alguna sugerencia · discover = mayormente sugerencias. */
+    fun autoSource(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_AUTO_SOURCE, "balanced") ?: "balanced"
 }

@@ -457,10 +457,22 @@ class AudioPlayerService private constructor(private val context: Context) {
                     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
 
                     if (matchLocalFirst && localMusicDirs.isNotEmpty()) {
-                        val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
-                        if (match != null) {
-                            streamUrl = match.id?.removePrefix("local:")
-                            android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $streamUrl")
+                        // An explicit YouTube alternative — a just-picked hint OR a user-confirmed
+                        // persisted mapping — must WIN over the local match. Otherwise picking a
+                        // YouTube alternative for a locally-matched track silently does nothing (the
+                        // local file keeps playing), which is exactly the "alternatives don't work on
+                        // matched tracks" bug.
+                        val hasUserAlternative = !effectiveYoutubeId.isNullOrBlank() ||
+                            runCatching { NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() }
+                                .getOrDefault(false)
+                        if (!hasUserAlternative) {
+                            val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
+                            if (match != null) {
+                                streamUrl = match.id?.removePrefix("local:")
+                                android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $streamUrl")
+                            }
+                        } else {
+                            android.util.Log.d("AudioPlayerService", "User YouTube alternative present for $trackId — skipping local match")
                         }
                     }
 
@@ -841,6 +853,12 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         requestSave()
     }
+
+    // DJ voice ducking (E90): lower/restore playback volume while the DJ speaks. The TTS callbacks
+    // arrive off the main thread, so post to the player's main looper before touching ExoPlayer.
+    private val djDuckHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    fun duckForVoice() { djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
+    fun unduckFromVoice() { djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
 
     fun pause() {
         exoPlayer.pause()

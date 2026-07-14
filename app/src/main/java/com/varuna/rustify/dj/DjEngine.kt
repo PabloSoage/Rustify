@@ -76,7 +76,11 @@ class DjEngine(
             tracks.forEach { t -> t.id?.let { id -> if (!pool.containsKey(id)) pool[id] = t } }
         }
 
-        var radioSeedTrackId: String? = nowPlaying?.id
+        // The radio seed must come from the REQUEST's resolved seed, not from the currently-playing
+        // track. Seeding from now-playing made every session re-seed off whatever was on (so asking
+        // "energetic" while a chill track played kept returning chill). Fall back to now-playing only
+        // if the request produced no usable seed (e.g. a blank automix request that resolved nothing).
+        var radioSeedTrackId: String? = null
 
         for (seed in seeds) {
             if (pool.size >= targetCount * 2) break
@@ -98,6 +102,9 @@ class DjEngine(
                 }
             }
         }
+
+        // Fall back to the now-playing track only if the request produced no usable seed.
+        if (radioSeedTrackId == null) radioSeedTrackId = nowPlaying?.id
 
         // Señal principal: radio de la mejor semilla (≈50 tracks afines).
         radioSeedTrackId?.let { id ->

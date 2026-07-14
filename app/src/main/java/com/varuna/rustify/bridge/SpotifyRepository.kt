@@ -577,7 +577,10 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     fun addToLocalPlaylist(playlistId: String, trackId: String) {
-        if (trackId.isBlank()) return
+        // Local playlists resolve their track ids against scanned local files only
+        // (see localPlaylistTracks), so a non-"local:" id (Spotify/YTM) would be stored but silently
+        // never render — "added" yet invisible. Keep non-local tracks out.
+        if (!trackId.startsWith("local:")) return
         val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
         val pl = localPlaylists[i]
         if (trackId in pl.trackIds) return
@@ -703,6 +706,15 @@ loadLocalTracksFromCache()
                 val existingTracks = localTracks.associateBy { it.id }
                 val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "webm", "aac")
                 val coversDir = java.io.File(appCtx.filesDir, "covers").also { it.mkdirs() }
+                // Covers are deduplicated per album (see below). Resolution mode: full-res (default,
+                // sharpest) vs downscaled 512px (smaller). Wipe & rebuild covers when the mode changes —
+                // this also migrates away from the old per-track full-res scheme that bloated User Data.
+                val coversFullRes = settingsPrefs.getBoolean("settings_local_covers_full_res", true)
+                val coversMode = if (coversFullRes) "full" else "512"
+                if (settingsPrefs.getString("covers_res_mode", null) != coversMode) {
+                    coversDir.listFiles()?.forEach { runCatching { it.delete() } }
+                    settingsPrefs.edit().putString("covers_res_mode", coversMode).apply()
+                }
                 val newLocalTracks = java.util.Collections.synchronizedList(mutableListOf<FullTrack>())
                 val totalFileCount = java.util.concurrent.atomic.AtomicInteger(0)
 
@@ -732,17 +744,38 @@ loadLocalTracksFromCache()
                         val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                         val durationMs = durationStr?.toLongOrNull() ?: 0L
 
-                        // Extract cover art to dedicated directory
-                        var coverUri = existingTrack?.externalUri?.takeIf {
-                            it.isNotBlank() && java.io.File(it.removePrefix("file://")).exists()
-                        } ?: ""
+                        // Cover art: ONE file per ALBUM (deduplicated) + downscaled/recompressed, so a
+                        // large local library doesn't bloat User Data. Key by album+artist so all tracks
+                        // of an album share a single ~512px JPEG instead of each storing full-res art.
+                        val coverKey = "$album|$artist".lowercase().hashCode()
+                        val coverFile = java.io.File(coversDir, "$coverKey.jpg")
+                        var coverUri = if (coverFile.exists()) "file://${coverFile.absolutePath}" else ""
                         if (coverUri.isBlank()) {
                             try {
                                 val coverBytes = retriever.embeddedPicture
                                 if (coverBytes != null && coverBytes.isNotEmpty()) {
-                                    val coverFile = java.io.File(coversDir, "${trackId.hashCode()}.jpg")
-                                    coverFile.writeBytes(coverBytes)
-                                    coverUri = "file://${coverFile.absolutePath}"
+                                    if (coversFullRes) {
+                                        // Full resolution (default): keep the original embedded art — sharpest.
+                                        // Dedup-by-album already keeps this from bloating User Data.
+                                        coverFile.writeBytes(coverBytes)
+                                        coverUri = "file://${coverFile.absolutePath}"
+                                    } else {
+                                        val bmp = android.graphics.BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size)
+                                        if (bmp != null) {
+                                            val maxPx = 512
+                                            val scale = minOf(1f, maxPx.toFloat() / maxOf(bmp.width, bmp.height))
+                                            val out = if (scale < 1f)
+                                                android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                                            else bmp
+                                            java.io.FileOutputStream(coverFile).use { out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+                                            if (out !== bmp) out.recycle()
+                                            bmp.recycle()
+                                            coverUri = "file://${coverFile.absolutePath}"
+                                        } else {
+                                            coverFile.writeBytes(coverBytes)
+                                            coverUri = "file://${coverFile.absolutePath}"
+                                        }
+                                    }
                                 }
                             } catch (_: Exception) { }
                         }
@@ -830,6 +863,14 @@ loadLocalTracksFromCache()
                     }.awaitAll().forEach { dirTracks ->
                         newLocalTracks.addAll(dirTracks)
                     }
+                }
+
+                // Reclaim orphaned covers (albums/tracks no longer present in the library).
+                runCatching {
+                    val referenced = newLocalTracks.mapNotNull {
+                        it.externalUri.removePrefix("file://").substringAfterLast('/').ifBlank { null }
+                    }.toHashSet()
+                    coversDir.listFiles()?.forEach { f -> if (f.name !in referenced) runCatching { f.delete() } }
                 }
 
                 withContext(Dispatchers.Main) {
