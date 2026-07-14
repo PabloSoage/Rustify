@@ -484,6 +484,8 @@ fun SettingsScreen(
 
 
             AudioBackendsSection(context)
+            LyricsProvidersSection(context)
+            AndroidAutoPreviewSection(context)
 
             Text(
                 text = stringResource(R.string.settings_cache_storage),
@@ -1763,6 +1765,128 @@ private fun ReorderableBackendList(
                     Switch(checked = entry.enabled, onCheckedChange = { checked ->
                         val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = checked); order = mutable; onOrderChanged(order)
                     }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954)))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsProvidersSection(context: android.content.Context) {
+    var entries by remember { mutableStateOf(com.varuna.rustify.bridge.LyricsSettings.load(context)) }
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(stringResource(R.string.settings_lyrics_providers), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            ReorderableLyricsList(entries) { newOrder ->
+                entries = newOrder
+                com.varuna.rustify.bridge.LyricsSettings.save(context, newOrder)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.settings_lyrics_providers_hint), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun ReorderableLyricsList(
+    entries: List<com.varuna.rustify.bridge.LyricsSettings.ProviderEntry>,
+    onOrderChanged: (List<com.varuna.rustify.bridge.LyricsSettings.ProviderEntry>) -> Unit
+) {
+    val density = LocalDensity.current
+    val rowHeightPx = with(density) { 56.dp.toPx() }
+    var order by remember(entries) { mutableStateOf(entries) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    Column {
+        order.forEachIndexed { index, entry ->
+            key(entry.id) {
+                val currentIndex by rememberUpdatedState(index)
+                val currentOrder by rememberUpdatedState(order)
+                val isDragging = draggingIndex == currentIndex
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                        .graphicsLayer { translationY = if (isDragging) dragOffset else 0f }
+                        .background(if (isDragging) Color(0xFF2A2A2A) else Color.Transparent)
+                        .pointerInput(entry.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { draggingIndex = currentIndex; dragOffset = 0f },
+                                onDragEnd = { if (draggingIndex != null) onOrderChanged(order); draggingIndex = null; dragOffset = 0f },
+                                onDragCancel = { draggingIndex = null; dragOffset = 0f },
+                                onDrag = { change, dragAmount ->
+                                    change.consume(); dragOffset += dragAmount.y
+                                    val moved = draggingIndex ?: return@detectDragGesturesAfterLongPress
+                                    val targetDelta = (dragOffset / rowHeightPx).toInt()
+                                    if (targetDelta != 0) {
+                                        val target = (moved + targetDelta).coerceIn(0, currentOrder.lastIndex)
+                                        if (target != moved) {
+                                            val mutable = currentOrder.toMutableList(); mutable.add(target, mutable.removeAt(moved))
+                                            order = mutable; dragOffset -= (target - moved) * rowHeightPx; draggingIndex = target; onOrderChanged(order)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.DragHandle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    val nameRes = com.varuna.rustify.bridge.LyricsProviders.byId(entry.id)?.displayNameRes
+                    Text(
+                        if (nameRes != null) stringResource(nameRes) else entry.id,
+                        color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f)
+                    )
+                    Switch(checked = entry.enabled, onCheckedChange = { checked ->
+                        val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = checked); order = mutable; onOrderChanged(order)
+                    }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954)))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AndroidAutoPreviewSection(context: android.content.Context) {
+    val prefs = remember { context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE) }
+    var enabled by remember { mutableStateOf(prefs.getBoolean("debug_auto_preview", false)) }
+    val ytmRepo = remember { com.varuna.rustify.bridge.YtMusicRepository(context.applicationContext) }
+    var path by remember { mutableStateOf(listOf("root")) }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(stringResource(R.string.settings_debug), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text(stringResource(R.string.settings_auto_preview), color = Color.White, fontSize = 14.sp)
+                    Text(stringResource(R.string.settings_auto_preview_hint), color = Color.Gray, fontSize = 12.sp)
+                }
+                Switch(checked = enabled, onCheckedChange = { enabled = it; prefs.edit { putBoolean("debug_auto_preview", it) } },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954)))
+            }
+            if (enabled) {
+                Spacer(Modifier.height(12.dp))
+                val nodes = remember(path) { com.varuna.rustify.player.AndroidAutoBrowse.children(context, path.last(), ytmRepo) }
+                if (path.size > 1) {
+                    Text("← " + stringResource(R.string.settings_back), color = Color(0xFF1DB954), fontSize = 13.sp,
+                        modifier = Modifier.clickable { path = path.dropLast(1) }.padding(vertical = 6.dp))
+                }
+                if (nodes.isEmpty()) {
+                    Text(stringResource(R.string.settings_auto_preview_empty), color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
+                } else nodes.take(60).forEach { node ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .let { m -> if (node.browsable) m.clickable { path = path + node.id } else m }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(if (node.browsable) "▸" else "♪", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.width(20.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(node.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
+                            if (node.subtitle.isNotBlank()) Text(node.subtitle, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
                 }
             }
         }

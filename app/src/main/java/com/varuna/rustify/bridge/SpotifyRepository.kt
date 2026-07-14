@@ -55,7 +55,9 @@ class SpotifyRepository(context: Context) {
         private const val KEY_EXPIRATION = "expiration_timestamp"
 
         @Volatile
-        private var instance: SpotifyRepository? = null
+        // internal (not private): the Android Auto MediaLibrarySession (RustifyForegroundService, E96)
+        // reads the live repo to build its browsable tree.
+        internal var instance: SpotifyRepository? = null
 
         // Local music bridge: temporary storage for local album/artist tracks
         // Used to pass local track data to AlbumScreen/ArtistScreen without API calls

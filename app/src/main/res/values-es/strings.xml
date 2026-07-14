@@ -75,6 +75,7 @@
     <string name="track_menu_view_youtube">Versión alternativa de YouTube</string>
     <string name="track_tab_image">Imagen</string>
     <string name="track_tab_canvas">Canvas</string>
+    <string name="track_tab_video">Vídeo</string>
     <string name="track_canvas_none">Sin canvas disponible</string>
     <string name="track_menu_download">Descargar canción</string>
     <string name="track_menu_getting_url">Obteniendo URL…</string>
@@ -206,6 +207,8 @@
     <string name="ytm_search_placeholder">Buscar en YouTube Music</string>
     <string name="ytm_search_empty">Busca canciones, álbumes, artistas o playlists</string>
     <string name="ytm_explore_empty">Busca en YouTube Music usando la barra de arriba</string>
+    <string name="ytm_home_browse">Explorar</string>
+    <string name="ytm_home_top">Éxitos del momento</string>
     <string name="ytm_no_results">Sin resultados</string>
     <string name="ytm_no_favorites">Sin favoritos aún. Busca y pulsa el corazón.</string>
     <string name="ytm_play_all">Reproducir todo</string>
@@ -297,6 +300,18 @@
     <string name="dj_auto_source_favorites">Solo mis favoritas</string>
     <string name="dj_auto_source_balanced">Favoritas + sugerencias</string>
     <string name="dj_auto_source_discover">Descubrir (sugerencias)</string>
+    <!-- Proveedores de letras (chain) + Depuración (preview de Android Auto) -->
+    <string name="lyrics_provider_lrclib">LRCLIB</string>
+    <string name="lyrics_provider_musixmatch">Musixmatch</string>
+    <string name="lyrics_provider_genius">Genius</string>
+    <string name="lyrics_provider_petitlyrics">PetitLyrics</string>
+    <string name="settings_lyrics_providers">Proveedores de letras</string>
+    <string name="settings_lyrics_providers_hint">Mantén pulsado y arrastra para reordenar. Los activados se prueban de arriba abajo; gana el primero que devuelva letra. Los que no son LRCLIB son best-effort.</string>
+    <string name="settings_debug">Depuración</string>
+    <string name="settings_auto_preview">Vista previa de Android Auto</string>
+    <string name="settings_auto_preview_hint">Aproximación del árbol de navegación que mostraría Android Auto.</string>
+    <string name="settings_auto_preview_empty">Aquí no hay nada aún.</string>
+    <string name="settings_back">Atrás</string>
 
     <!-- E50 — Sincronización con Google Drive -->
     <string name="settings_drive_title">Google Drive</string>
@@ -313,5 +328,5 @@
     <string name="settings_drive_syncing">Sincronizando…</string>
     <string name="settings_drive_sync_ok">Sincronización completada</string>
     <string name="settings_drive_sync_error">Error de sync: %1$s</string>
-    <string name="settings_drive_not_configured">Google Drive aún no está configurado. Rellena default_web_client_id y los OAuth clients en Cloud (ver docs).</string>
+    <string name="settings_drive_not_configured">La copia en Google Drive necesita una configuración única en Google Cloud: crea tus OAuth clients y rellena default_web_client_id (guía en el README).</string>
 </resources>

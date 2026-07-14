@@ -67,6 +67,7 @@
     <string name="track_menu_view_youtube">別のYouTubeバージョン</string>
     <string name="track_tab_image">画像</string>
     <string name="track_tab_canvas">キャンバス</string>
+    <string name="track_tab_video">動画</string>
     <string name="track_canvas_none">キャンバスは利用できません</string>
     <string name="track_menu_share">共有</string>
     <string name="track_menu_share_rustify">Rustifyリンクで共有</string>
@@ -192,6 +193,18 @@
     <string name="dj_auto_source_favorites">お気に入りのみ</string>
     <string name="dj_auto_source_balanced">お気に入り＋おすすめ</string>
     <string name="dj_auto_source_discover">発見（おすすめ）</string>
+    <!-- Lyrics providers (chain) + Debug (Android Auto preview) -->
+    <string name="lyrics_provider_lrclib">LRCLIB</string>
+    <string name="lyrics_provider_musixmatch">Musixmatch</string>
+    <string name="lyrics_provider_genius">Genius</string>
+    <string name="lyrics_provider_petitlyrics">PetitLyrics</string>
+    <string name="settings_lyrics_providers">歌詞プロバイダー</string>
+    <string name="settings_lyrics_providers_hint">長押ししてドラッグで並べ替え。有効なプロバイダーを上から順に試し、最初に歌詞を返したものを使います。LRCLIB以外はベストエフォートです。</string>
+    <string name="settings_debug">デバッグ</string>
+    <string name="settings_auto_preview">Android Auto プレビュー</string>
+    <string name="settings_auto_preview_hint">Android Auto に表示される閲覧ツリーの概略です。</string>
+    <string name="settings_auto_preview_empty">まだ何もありません。</string>
+    <string name="settings_back">戻る</string>
 
     <!-- E50 — Google Drive 同期 -->
     <string name="settings_drive_title">Google Drive</string>
@@ -208,9 +221,11 @@
     <string name="settings_drive_syncing">同期中…</string>
     <string name="settings_drive_sync_ok">同期完了</string>
     <string name="settings_drive_sync_error">同期エラー: %1$s</string>
-    <string name="settings_drive_not_configured">Google Drive がまだ設定されていません。default_web_client_id と Cloud の OAuth クライアントを設定してください（ドキュメント参照）。</string>
+    <string name="settings_drive_not_configured">Google Drive バックアップには Google Cloud の初回設定が必要です。OAuth クライアントを作成し default_web_client_id を設定してください（README のガイド参照）。</string>
     <string name="ytm_tab_explore">探索</string>
     <string name="ytm_explore_empty">上の検索バーで YouTube Music を検索</string>
+    <string name="ytm_home_browse">見つける</string>
+    <string name="ytm_home_top">トップヒット</string>
     <string name="settings_ytm_scraper">YouTube Scraper を使用</string>
     <string name="settings_ytm_scraper_on">Scraper: 非公式/カバーを含む。遅いが結果が多い。</string>
     <string name="settings_ytm_scraper_off">API: 公式 YouTube Music 結果。高速だが署名付きコンテンツのみ。</string>

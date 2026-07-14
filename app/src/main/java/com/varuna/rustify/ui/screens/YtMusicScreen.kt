@@ -191,6 +191,86 @@ fun YtMusicLibraryContent(
     }
 }
 
+/**
+ * E40 — Home/browse por defecto de la pestaña Explore de YTM: filas por mood/categoría (usando el
+ * search de YTM que ya existe), para que no esté vacía cuando no tienes nada guardado ni query.
+ */
+@Composable
+private fun YtmBrowseHome(
+    repo: YtMusicRepository,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
+    currentTrackId: String?
+) {
+    val categories = remember {
+        listOf(
+            R.string.ytm_home_top to "top hits",
+            R.string.dj_mood_chill to "chill lofi relax",
+            R.string.dj_mood_energetic to "energetic workout gym",
+            R.string.dj_mood_happy to "feel good happy hits",
+            R.string.dj_mood_focus to "focus instrumental study"
+        )
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)) {
+        item {
+            Text(
+                stringResource(R.string.ytm_home_browse),
+                color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+            )
+        }
+        items(categories) { (labelRes, q) ->
+            YtmBrowseRow(labelRes, q, repo, onTrackClick, currentTrackId)
+        }
+    }
+}
+
+@Composable
+private fun YtmBrowseRow(
+    labelRes: Int,
+    query: String,
+    repo: YtMusicRepository,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
+    currentTrackId: String?
+) {
+    var tracks by remember(query) { mutableStateOf<List<YtmTrack>>(emptyList()) }
+    var loading by remember(query) { mutableStateOf(true) }
+    LaunchedEffect(query) {
+        loading = true
+        tracks = runCatching { repo.search(query).tracks.take(12) }.getOrDefault(emptyList())
+        loading = false
+    }
+    if (!loading && tracks.isEmpty()) return
+    Column(Modifier.padding(vertical = 8.dp)) {
+        YtmSectionHeader(stringResource(labelRes))
+        if (loading) {
+            Box(Modifier.fillMaxWidth().padding(16.dp)) {
+                CircularProgressIndicator(color = Green, modifier = Modifier.size(22.dp))
+            }
+        } else {
+            val full = tracks.map { it.toFullTrack() }
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                itemsIndexed(tracks) { i, t ->
+                    val playing = currentTrackId == "ytm:${t.videoId}"
+                    Column(Modifier.width(140.dp).clickable { onTrackClick(full, i) }) {
+                        AsyncImage(
+                            model = t.thumbnailUrl,
+                            contentDescription = null,
+                            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(t.title, color = if (playing) Green else Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun FavoritesSection(
     repo: YtMusicRepository,
@@ -385,10 +465,8 @@ private fun ExploreSection(
     currentTrackId: String?
 ) {
     if (query.isBlank()) {
-        Box(Modifier.fillMaxSize(), Alignment.Center) {
-            Text(stringResource(R.string.ytm_explore_empty), color = Color.Gray,
-                modifier = Modifier.padding(24.dp))
-        }
+        // Default browse home so Explore isn't empty when you have nothing saved / no query yet.
+        YtmBrowseHome(repo, onTrackClick, currentTrackId)
         return
     }
     if (searching) {

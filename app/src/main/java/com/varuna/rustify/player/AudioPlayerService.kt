@@ -680,6 +680,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val artist = track.artists.firstOrNull()?.name ?: return@launch
                 val durationSec = track.durationMs / 1000
                 val result = LyricsRepository.getLyrics(
+                    context = context,
                     trackId = trackId,
                     artist = artist,
                     title = track.name,
