@@ -251,6 +251,7 @@
     <string name="travel_pick_destination">目的地</string>
     <string name="travel_pick_origin">出発地</string>
     <string name="travel_origin_prefix">出発: %1$s</string>
+    <string name="travel_navigate_gmaps">Google マップでナビ</string>
     <string name="travel_enable_location">位置情報がオフです。ルート計算には有効化が必要です。</string>
     <string name="travel_enable">有効化</string>
     <string name="travel_playlist_mode">プレイリストモード</string>

@@ -359,6 +359,7 @@
     <string name="travel_pick_destination">Destination</string>
     <string name="travel_pick_origin">Origin</string>
     <string name="travel_origin_prefix">From: %1$s</string>
+    <string name="travel_navigate_gmaps">Navigate in Google Maps</string>
     <string name="travel_enable_location">Location is off. Enable it to calculate the route.</string>
     <string name="travel_enable">Enable</string>
     <string name="travel_playlist_mode">Playlist mode</string>

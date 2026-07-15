@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
@@ -850,6 +851,29 @@ fun TravelScreen(
                             Icon(Icons.Filled.Visibility, contentDescription = null, tint = cardText, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.travel_preview_auto), color = cardText, fontSize = 13.sp)
+                        }
+                    }
+
+                    // Navegar en Google Maps: abre la ruta (respetando el origen fijado) para conducir
+                    // mientras Rustify reproduce la playlist. Sin API key ni SDK — vía intent al mapa.
+                    pickedDestination?.let { dest ->
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val sb = StringBuilder("https://www.google.com/maps/dir/?api=1")
+                                originOverride?.let { sb.append("&origin=${it.lat},${it.lon}") }
+                                sb.append("&destination=${dest.lat},${dest.lon}&travelmode=driving")
+                                val uri = android.net.Uri.parse(sb.toString())
+                                val gmaps = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")
+                                runCatching { context.startActivity(gmaps) }
+                                    .onFailure { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Navigation, contentDescription = null, tint = green, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.travel_navigate_gmaps), color = cardText, fontSize = 13.sp)
                         }
                     }
 

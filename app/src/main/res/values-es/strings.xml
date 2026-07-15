@@ -358,6 +358,7 @@
     <string name="travel_pick_destination">Destino</string>
     <string name="travel_pick_origin">Origen</string>
     <string name="travel_origin_prefix">Desde: %1$s</string>
+    <string name="travel_navigate_gmaps">Navegar en Google Maps</string>
     <string name="travel_enable_location">La ubicación está desactivada. Actívala para calcular la ruta.</string>
     <string name="travel_enable">Activar</string>
     <string name="travel_playlist_mode">Modo de playlist</string>
