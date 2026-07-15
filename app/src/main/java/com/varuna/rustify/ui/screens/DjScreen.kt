@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -271,14 +272,30 @@ fun DjScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(16.dp)) {
-                        Text(
-                            stringResource(R.string.dj_auto_now, autoState!!.moodLabel),
-                            color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
-                        )
+                        if (autoState!!.preparing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    color = green,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    stringResource(R.string.dj_auto_preparing),
+                                    color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
+                                )
+                            }
+                        } else {
+                            Text(
+                                stringResource(R.string.dj_auto_now, autoState!!.moodLabel),
+                                color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
+                            )
+                        }
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = { DjAutoController.next(context) },
+                                enabled = !autoState!!.preparing,
                                 colors = ButtonDefaults.buttonColors(containerColor = green),
                                 modifier = Modifier.weight(1f)
                             ) {

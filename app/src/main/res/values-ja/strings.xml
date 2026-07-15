@@ -11,6 +11,8 @@
     <string name="settings_title">設定</string>
     <string name="settings_extraction_engine">抽出エンジン</string>
     <string name="settings_ytdlp_desc">ブロックなしで直接リンクを取得するための内部エンジン。曲のエラーが発生した場合は更新してください。</string>
+    <string name="settings_canvas_fit_title">Canvasを幅に合わせる</string>
+    <string name="settings_canvas_fit_desc">Canvas動画の縦横比を保ちます（幅に合わせる）。オフにすると全画面に引き伸ばします。</string>
     <string name="settings_ytdlp_current_version">現在のバージョン: %1$s</string>
     <string name="settings_ytdlp_updated">yt-dlp を更新しました</string>
     <string name="settings_nightly_version">Nightly バージョン</string>
@@ -62,6 +64,11 @@
     <string name="track_menu_add_playlist">プレイリストに追加</string>
     <string name="track_menu_remove_playlist">プレイリストから削除</string>
     <string name="track_menu_go_queue">キューに追加</string>
+    <string name="track_menu_lyrics_offset">歌詞のタイミングを調整</string>
+    <string name="lyrics_offset_title">歌詞のタイミング</string>
+    <string name="lyrics_offset_hint">この曲の同期歌詞をずらします。プラスで早く、マイナスで遅くなります。</string>
+    <string name="lyrics_offset_reset">リセット</string>
+    <string name="lyrics_offset_done">完了</string>
     <string name="track_menu_go_album">アルバムへ移動</string>
     <string name="track_options_view_artist">アーティストを見る</string>
     <string name="track_menu_view_youtube">別のYouTubeバージョン</string>
@@ -126,6 +133,10 @@
     <string name="library_tab_playlists">プレイリスト</string>
     <string name="library_tab_albums">アルバム</string>
     <string name="library_tab_artists">アーティスト</string>
+    <string name="auto_section_queue">再生中</string>
+    <string name="auto_section_local">ローカル</string>
+    <string name="auto_local_favorites">お気に入り</string>
+    <string name="auto_local_tracks">すべての曲</string>
     <string name="library_tab_local_music">ローカル音楽</string>
     <string name="library_local_not_configured">ローカル音楽が設定されていません</string>
     <string name="library_local_configure_btn">設定を開く</string>
@@ -185,6 +196,7 @@
     <string name="dj_auto_next">ムードを変える</string>
     <string name="dj_auto_stop">DJを停止</string>
     <string name="dj_auto_now">再生中: %1$s</string>
+    <string name="dj_auto_preparing">セッションを準備中…</string>
     <string name="dj_mic">DJに話しかける</string>
     <string name="dj_mic_unavailable">この端末では音声認識を利用できません</string>
     <string name="dj_mic_permission">DJに話しかけるにはマイクの権限が必要です</string>
@@ -195,6 +207,15 @@
     <string name="settings_dj_voice_enabled">DJが話す（音声）</string>
     <string name="settings_dj_voice_lang">音声の言語</string>
     <string name="settings_dj_voice_lang_system">システム既定（アプリの言語）</string>
+    <string name="settings_dj_tts_engine">音声エンジン</string>
+    <string name="settings_dj_tts_native">Android（オフライン・無料）</string>
+    <string name="settings_dj_tts_pollinations">ナチュラル音声（Pollinations・無料）</string>
+    <string name="settings_dj_tts_openai">カスタムOpenAIエンドポイント</string>
+    <string name="settings_dj_tts_pollinations_note">OpenAI品質の音声を無料・トークン不要で。接続が必要です。</string>
+    <string name="settings_dj_voice_native">Androidの音声</string>
+    <string name="settings_dj_voice_native_system">言語の既定音声</string>
+    <string name="settings_dj_voice_pick">音声</string>
+    <string name="settings_dj_voice_cloud_key">クラウドAPIキー（任意）</string>
     <string name="settings_dj_voice_cloud_url">クラウドTTSエンドポイント（任意、OpenAI互換）</string>
     <string name="settings_dj_auto_source">オートDJのソース</string>
     <string name="dj_auto_source_favorites">お気に入りのみ</string>
@@ -227,6 +248,9 @@
     <string name="travel_route_failed">ルートを計算できませんでした。</string>
     <string name="travel_no_tracks">プレイリストを作る曲がありません。まず曲をお気に入りにしてください。</string>
     <string name="travel_search_hint">目的地または場所を検索</string>
+    <string name="travel_pick_destination">目的地</string>
+    <string name="travel_pick_origin">出発地</string>
+    <string name="travel_origin_prefix">出発: %1$s</string>
     <string name="travel_enable_location">位置情報がオフです。ルート計算には有効化が必要です。</string>
     <string name="travel_enable">有効化</string>
     <string name="travel_playlist_mode">プレイリストモード</string>

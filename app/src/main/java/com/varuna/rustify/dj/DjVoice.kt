@@ -2,6 +2,8 @@ package com.varuna.rustify.dj
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.varuna.rustify.player.AudioPlayerService
@@ -13,6 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
 
 /**
@@ -61,25 +64,70 @@ object DjVoice {
         val langCode = DjSettings.voiceLanguage(context)
         val locale = if (langCode.isNotBlank()) Locale.forLanguageTag(langCode) else Locale.getDefault()
         runCatching { t.language = locale }
+        // Voz nativa concreta elegida en Ajustes (si sigue instalada); si no, la del idioma.
+        val voiceName = DjSettings.voiceNativeName(context)
+        if (voiceName.isNotBlank()) {
+            runCatching { t.voices?.firstOrNull { it.name == voiceName }?.let { t.voice = it } }
+        }
         t.setPitch(1.15f)        // ligeramente agudo = más "cheerful"
         t.setSpeechRate(1.03f)
     }
 
-    /** Reaplica el idioma/tono de voz tras cambiarlo en Ajustes. */
+    /** Reaplica el idioma/voz/tono tras cambiarlo en Ajustes. */
     fun refreshConfig(context: Context) { if (ready) applyVoiceConfig(context) }
 
-    /** Habla [text]. Cloud si está configurado; si no (o si falla), TTS nativo. */
+    /**
+     * Enumera las voces nativas instaladas para [langCode] (vacío = todos los idiomas) como pares
+     * `(id, etiqueta)`. Reutiliza el motor si ya está listo; si no, crea uno temporal solo para
+     * consultar y lo apaga. El callback llega siempre en el hilo Main.
+     */
+    fun queryVoices(context: Context, langCode: String, onResult: (List<Pair<String, String>>) -> Unit) {
+        fun collect(engine: TextToSpeech): List<Pair<String, String>> {
+            val target = if (langCode.isBlank()) null else Locale.forLanguageTag(langCode).language.lowercase()
+            return runCatching { engine.voices }.getOrNull().orEmpty()
+                .filter { v -> target == null || v.locale?.language?.lowercase() == target }
+                .sortedByDescending { it.quality }
+                .map { it.name to voiceLabel(it) }
+        }
+        val existing = tts
+        if (ready && existing != null) { onResult(collect(existing)); return }
+        var tmp: TextToSpeech? = null
+        tmp = TextToSpeech(context.applicationContext) { status ->
+            val list = if (status == TextToSpeech.SUCCESS) collect(tmp!!) else emptyList()
+            Handler(Looper.getMainLooper()).post { onResult(list) }
+            runCatching { tmp?.shutdown() }
+        }
+    }
+
+    private fun voiceLabel(v: android.speech.tts.Voice): String = buildString {
+        append(v.locale?.displayName ?: v.name)
+        val q = when {
+            v.quality >= 500 -> "HQ"; v.quality >= 400 -> "High"
+            v.quality >= 300 -> "Normal"; else -> "Low"
+        }
+        append(" · "); append(q)
+        val tail = v.name.substringAfterLast('-', "")
+        if (tail.isNotEmpty() && tail != v.name) { append(" · "); append(tail) }
+        if (v.isNetworkConnectionRequired) append(" · net")
+    }
+
+    /** Habla [text] con el motor elegido (native / pollinations / openai); cae a nativo si falla. */
     fun speak(context: Context, text: String) {
         if (!DjSettings.voiceEnabled(context) || text.isBlank()) return
         appCtx = context.applicationContext as android.app.Application
-        val cloud = DjSettings.voiceCloudUrl(context)
-        if (cloud.isNotBlank()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val ok = runCatching { speakCloud(context, cloud, text) }.getOrDefault(false)
+        when (DjSettings.ttsEngine(context)) {
+            "pollinations" -> CoroutineScope(Dispatchers.IO).launch {
+                val ok = runCatching { speakPollinations(context, text) }.getOrDefault(false)
                 if (!ok) withContext(Dispatchers.Main) { ensureAndSpeak(context, text) }
             }
-        } else {
-            ensureAndSpeak(context, text)
+            "openai" -> {
+                val cloud = DjSettings.voiceCloudUrl(context)
+                if (cloud.isNotBlank()) CoroutineScope(Dispatchers.IO).launch {
+                    val ok = runCatching { speakCloud(context, cloud, text) }.getOrDefault(false)
+                    if (!ok) withContext(Dispatchers.Main) { ensureAndSpeak(context, text) }
+                } else ensureAndSpeak(context, text)
+            }
+            else -> ensureAndSpeak(context, text)
         }
     }
 
@@ -134,17 +182,46 @@ object DjVoice {
         val tmp = File(context.cacheDir, "dj_voice.mp3")
         conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
         conn.disconnect()
-        withContext(Dispatchers.Main) {
-            releaseCloud()
-            duck(); onSpeakStart?.invoke()
-            cloudPlayer = MediaPlayer().apply {
-                setDataSource(tmp.absolutePath)
-                setOnCompletionListener { unduck(); onSpeakDone?.invoke() }
-                setOnErrorListener { _, _, _ -> unduck(); onSpeakDone?.invoke(); true }
-                prepare()
-                start()
-            }
-        }
+        if (tmp.length() < 512) return@withContext false
+        withContext(Dispatchers.Main) { playMp3(tmp) }
         true
+    }
+
+    /**
+     * Pollinations TTS — voces OpenAI **gratis y sin token**:
+     * `GET https://text.pollinations.ai/{texto}?model=openai-audio&voice={voz}` → MP3.
+     */
+    private suspend fun speakPollinations(context: Context, text: String): Boolean = withContext(Dispatchers.IO) {
+        val voice = DjSettings.voiceCloudVoice(context).ifBlank { "alloy" }
+        // El texto va en el path: codifica y usa %20 (no '+') para los espacios.
+        val enc = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
+        val url = "${DjSettings.POLLINATIONS_TTS_BASE}/$enc?model=openai-audio&voice=$voice"
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000; readTimeout = 20000
+            setRequestProperty("Accept", "audio/mpeg")
+        }
+        if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext false }
+        // Si el servicio devolviera un error de texto en vez de audio, no lo reproduzcas.
+        val ctype = conn.contentType ?: ""
+        val tmp = File(context.cacheDir, "dj_voice.mp3")
+        conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+        conn.disconnect()
+        if (!ctype.contains("audio", true) || tmp.length() < 512) return@withContext false
+        withContext(Dispatchers.Main) { playMp3(tmp) }
+        true
+    }
+
+    /** Reproduce un MP3 (voz nube) con ducking; reemplaza al reproductor anterior. */
+    private fun playMp3(file: File) {
+        releaseCloud()
+        duck(); onSpeakStart?.invoke()
+        cloudPlayer = MediaPlayer().apply {
+            setDataSource(file.absolutePath)
+            setOnCompletionListener { unduck(); onSpeakDone?.invoke() }
+            setOnErrorListener { _, _, _ -> unduck(); onSpeakDone?.invoke(); true }
+            prepare()
+            start()
+        }
     }
 }

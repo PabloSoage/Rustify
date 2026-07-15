@@ -141,75 +141,64 @@ object TravelRouting {
             if (g.isNotEmpty()) return@withContext g
         }
 
+        val cc = context?.let { deviceCountry(it) } ?: ""
+        val lang = context?.let { deviceLang(it) } ?: "en"
+        val vb = viewboxParam(biasLat, biasLon)
+
         val photon = runCatching {
             val sb = StringBuilder("https://photon.komoot.io/api/?q=")
-                .append(URLEncoder.encode(q, "UTF-8")).append("&limit=").append(limit)
+                .append(URLEncoder.encode(q, "UTF-8")).append("&limit=").append(limit).append("&lang=").append(lang)
             if (biasLat != null && biasLon != null && biasLat != 0.0 && biasLon != 0.0) {
                 sb.append("&lon=").append(biasLon).append("&lat=").append(biasLat)
             }
-            val body = httpGet(sb.toString()) ?: return@runCatching emptyList()
-            val obj = JSONObject(body)
-            val arr = obj.optJSONArray("features") ?: JSONArray()
-            (0 until arr.length()).map { i ->
-                val f = arr.getJSONObject(i)
-                val coords = f.optJSONObject("geometry")?.optJSONArray("coordinates")
-                if (coords == null || coords.length() < 2) null else {
-                    val lon = coords.getDouble(0)
-                    val lat = coords.getDouble(1)
-                    val p = f.optJSONObject("properties") ?: JSONObject()
-                    val name = p.optString("name", "")
-                    val street = p.optString("street", "")
-                    val housenumber = p.optString("housenumber", "")
-                    val city = p.optString("city", "")
-                    val postcode = p.optString("postcode", "")
-                    val state = p.optString("state", "")
-                    val country = p.optString("country", "")
-                    val parts = listOf(name, (if (housenumber.isNotEmpty()) "$housenumber $street" else street), postcode, city, state, country)
-                        .filter { it.isNotBlank() }
-                    val label = if (parts.isNotEmpty()) parts.joinToString(", ") else "$lat, $lon"
-                    Geo(lat, lon, label)
-                }
-            }.filterNotNull()
+            parsePhoton(httpGet(sb.toString()))
         }.getOrDefault(emptyList())
 
+        // Nominatim free-form, sesgado (no restringido) a la zona del usuario con viewbox+bounded=0.
         val nominatim = runCatching {
-            val body = httpGet("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=$limit&q=" +
-                URLEncoder.encode(q, "UTF-8")) ?: return@runCatching emptyList()
-            val arr = JSONArray(body)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                val lat = o.getString("lat").toDouble()
-                val lon = o.getString("lon").toDouble()
-                val display = o.optString("display_name", q)
-                Geo(lat, lon, display)
-            }
+            parseNominatim(httpGet(
+                "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&limit=$limit$vb&q=" +
+                    URLEncoder.encode(q, "UTF-8")), q)
         }.getOrDefault(emptyList())
 
-        // Fallback estructurado: si la query contiene ",", intentamos street=<parte1>&city=<resto>
-        // Esto recupera direcciones rurales que Nominatim free-form no encuentra (ej. Cercedo-Cotobade).
-        val structured = if (q.contains(",")) {
-            runCatching {
-                val parts = q.split(",", limit = 2).map { it.trim() }.filter { it.isNotEmpty() }
-                if (parts.size < 2) return@runCatching emptyList()
-                val url = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=$limit" +
-                    "&street=" + URLEncoder.encode(parts[0], "UTF-8") +
-                    "&city=" + URLEncoder.encode(parts[1], "UTF-8")
-                val body = httpGet(url) ?: return@runCatching emptyList()
-                val arr = JSONArray(body)
-                (0 until arr.length()).map { i ->
-                    val o = arr.getJSONObject(i)
-                    val lat = o.getString("lat").toDouble()
-                    val lon = o.getString("lon").toDouble()
-                    val display = o.optString("display_name", q)
-                    Geo(lat, lon, display)
-                }
+        // Fallbacks para direcciones rurales concretas (lo que Google encuentra y el free-form no).
+        // Solo se disparan si los resultados principales son escasos, para no penalizar la latencia.
+        val extra = ArrayList<Geo>()
+        if (photon.size + nominatim.size < 4) {
+            // (a) restringido al país del dispositivo — mejora el recall local (ej. Galicia).
+            if (cc.isNotEmpty()) extra += runCatching {
+                parseNominatim(httpGet(
+                    "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&countrycodes=$cc&limit=$limit&q=" +
+                        URLEncoder.encode(q, "UTF-8")), q)
             }.getOrDefault(emptyList())
-        } else emptyList()
+            // (b) structured street+city (+ postalcode si aparece un código de 5 cifras).
+            if (q.contains(",")) extra += runCatching {
+                val parts = q.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val street = parts.first()
+                val postal = parts.firstOrNull { it.matches(Regex("\\d{5}")) } ?: ""
+                val city = parts.drop(1).firstOrNull { !it.matches(Regex("\\d{5}")) } ?: ""
+                val sb = StringBuilder("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&limit=$limit")
+                if (cc.isNotEmpty()) sb.append("&countrycodes=").append(cc)
+                sb.append("&street=").append(URLEncoder.encode(street, "UTF-8"))
+                if (city.isNotEmpty()) sb.append("&city=").append(URLEncoder.encode(city, "UTF-8"))
+                if (postal.isNotEmpty()) sb.append("&postalcode=").append(postal)
+                parseNominatim(httpGet(sb.toString()), q)
+            }.getOrDefault(emptyList())
+            // (c) sin número de portal: OSM a menudo no lo tiene; al menos ubica la calle/lugar.
+            stripTrailingNumber(q)?.let { stripped ->
+                extra += runCatching {
+                    val sb = StringBuilder("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&limit=$limit$vb")
+                    if (cc.isNotEmpty()) sb.append("&countrycodes=").append(cc)
+                    sb.append("&q=").append(URLEncoder.encode(stripped, "UTF-8"))
+                    parseNominatim(httpGet(sb.toString()), stripped)
+                }.getOrDefault(emptyList())
+            }
+        }
 
         // Dedupe por (lat,lon) redondeado a 5 decimales (~1 m) para no mostrar duplicados por número de casa.
         val seen = HashSet<Long>()
         val combined = ArrayList<Geo>()
-        (photon + nominatim + structured).forEach { g ->
+        (photon + nominatim + extra).forEach { g ->
             val key = (Math.round(g.lat * 1e5) * 1000000L) + Math.round(g.lon * 1e5)
             if (seen.add(key)) combined.add(g)
         }
@@ -222,6 +211,65 @@ object TravelRouting {
             }
         }
         combined
+    }
+
+    // ── Helpers de geocoding ─────────────────────────────────────────────────────────────
+    private fun deviceCountry(context: Context): String = runCatching {
+        context.resources.configuration.locales[0].country?.takeIf { it.isNotBlank() }?.lowercase() ?: ""
+    }.getOrDefault("")
+
+    private fun deviceLang(context: Context): String = runCatching {
+        context.resources.configuration.locales[0].language?.takeIf { it.isNotBlank() } ?: "en"
+    }.getOrDefault("en")
+
+    /** viewbox = lonMin,latMin,lonMax,latMax con bounded=0 ⇒ **sesga** hacia la zona sin excluir. */
+    private fun viewboxParam(lat: Double?, lon: Double?): String {
+        if (lat == null || lon == null || lat == 0.0 || lon == 0.0) return ""
+        val d = 1.5
+        return "&viewbox=${lon - d},${lat - d},${lon + d},${lat + d}&bounded=0"
+    }
+
+    /** Quita un número de portal final ("Rúa X 5" → "Rúa X") para al menos ubicar la vía. */
+    private fun stripTrailingNumber(q: String): String? {
+        val t = q.trim()
+        val m = Regex("^(.*?)[,\\s]+\\d{1,4}\\s*$").find(t) ?: return null
+        val base = m.groupValues[1].trim()
+        return if (base.length >= 3 && base != t) base else null
+    }
+
+    private fun parseNominatim(body: String?, fallbackLabel: String): List<Geo> {
+        body ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(body)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                Geo(o.getString("lat").toDouble(), o.getString("lon").toDouble(), o.optString("display_name", fallbackLabel))
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parsePhoton(body: String?): List<Geo> {
+        body ?: return emptyList()
+        return runCatching {
+            val arr = JSONObject(body).optJSONArray("features") ?: JSONArray()
+            (0 until arr.length()).mapNotNull { i ->
+                val f = arr.getJSONObject(i)
+                val coords = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: return@mapNotNull null
+                if (coords.length() < 2) return@mapNotNull null
+                val lon = coords.getDouble(0); val lat = coords.getDouble(1)
+                val p = f.optJSONObject("properties") ?: JSONObject()
+                val name = p.optString("name", "")
+                val street = p.optString("street", "")
+                val housenumber = p.optString("housenumber", "")
+                val city = p.optString("city", "")
+                val postcode = p.optString("postcode", "")
+                val state = p.optString("state", "")
+                val country = p.optString("country", "")
+                val parts = listOf(name, (if (housenumber.isNotEmpty()) "$housenumber $street" else street), postcode, city, state, country)
+                    .filter { it.isNotBlank() }
+                Geo(lat, lon, if (parts.isNotEmpty()) parts.joinToString(", ") else "$lat, $lon")
+            }
+        }.getOrDefault(emptyList())
     }
 
     suspend fun route(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): Route? = withContext(Dispatchers.IO) {

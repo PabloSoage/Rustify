@@ -41,27 +41,51 @@ object DjMoods {
  *
  * Singleton: mantiene la sesión viva para que el icono del reproductor pueda avanzar sin re-crear
  * nada. Encola vía [AudioPlayerService] (métodos públicos), no lo modifica.
+ *
+ * Robustez (v3.0):
+ *  - **Feedback inmediato**: `State.preparing` se activa en cuanto pulsas, así la UI muestra un
+ *    spinner y no puedes volver a pulsar (antes no había feedback → doble pulsación → doble voz y
+ *    doble encolado).
+ *  - **Single-flight**: nunca se solapan dos construcciones de bloque (era lo que metía "un montón"
+ *    de temas cuando el observer y una pulsación competían). Se cancela la anterior y gana la última.
+ *  - **Variedad real**: el mood inicial y el orden de rotación se barajan (ya no empieza siempre en
+ *    "chill"), las selecciones se barajan y se evitan los temas recientes (ya no repite lo mismo).
  */
 object DjAutoController {
 
-    data class State(val moodId: String, val moodLabel: String, val segment: Int)
+    /** [preparing] = construyendo un bloque (mostrar spinner, no permitir otra acción). */
+    data class State(
+        val moodId: String,
+        val moodLabel: String,
+        val segment: Int,
+        val preparing: Boolean = false
+    )
 
     private val _state = MutableStateFlow<State?>(null)
     val state: StateFlow<State?> = _state
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var moodIndex = 0
+    private var moodOrder: List<Int> = DjMoods.MOODS.indices.toList()
     private var favoritesProvider: (suspend () -> List<FullTrack>)? = null
     private var repoRef: SpotifyRepository? = null
     private var observerJob: kotlinx.coroutines.Job? = null
+    private var segmentJob: kotlinx.coroutines.Job? = null
     private var advanceGuardId: String? = null
+    /** Ids servidos recientemente para no repetirlos entre bloques (ventana rodante). */
+    private val recentTrackIds = ArrayDeque<String>()
 
     val isActive: Boolean get() = _state.value != null
 
     fun start(context: Context, repo: SpotifyRepository, favoritesProvider: suspend () -> List<FullTrack>) {
+        // Ya activo → ignora la re-pulsación (evita reiniciar la sesión y una segunda voz).
+        if (isActive) return
         this.repoRef = repo
         this.favoritesProvider = favoritesProvider
+        // Baraja mood inicial + orden de rotación: no empieza siempre en "chill".
+        this.moodOrder = DjMoods.MOODS.indices.shuffled()
         this.moodIndex = 0
+        this.recentTrackIds.clear()
         DjVoice.init(context)
         runSegment(context.applicationContext, first = true)
         startObserver(context.applicationContext)
@@ -69,7 +93,8 @@ object DjAutoController {
 
     /**
      * Auto-avance tipo Livi: cuando el último tema del bloque está a punto de terminar, encola el
-     * siguiente mood automáticamente (sin que el usuario tenga que pulsar nada).
+     * siguiente mood automáticamente (sin que el usuario tenga que pulsar nada). No avanza mientras
+     * se está preparando/construyendo un bloque (evita solapes).
      */
     private fun startObserver(context: Context) {
         observerJob?.cancel()
@@ -77,7 +102,8 @@ object DjAutoController {
         observerJob = scope.launch {
             val svc = AudioPlayerService.getInstance(context)
             svc.state.collect { st ->
-                if (_state.value == null) return@collect
+                val cs = _state.value ?: return@collect
+                if (cs.preparing || segmentJob?.isActive == true) return@collect
                 val cur = st.currentTrack ?: return@collect
                 val q = st.queue
                 val isLast = q.isNotEmpty() && q.last().id == cur.id
@@ -99,6 +125,7 @@ object DjAutoController {
     }
 
     fun stop() {
+        segmentJob?.cancel(); segmentJob = null
         observerJob?.cancel(); observerJob = null
         advanceGuardId = null
         _state.value = null
@@ -107,13 +134,26 @@ object DjAutoController {
 
     private fun runSegment(context: Context, first: Boolean) {
         val repo = repoRef ?: return
-        val mood = DjMoods.MOODS[moodIndex % DjMoods.MOODS.size]
-        scope.launch {
+        // Single-flight: cancela cualquier construcción en curso; solo vale la última petición.
+        segmentJob?.cancel()
+        // Feedback inmediato (síncrono): la UI ve `preparing` antes de que empiece el trabajo async.
+        _state.value = (_state.value ?: State(moodId = "", moodLabel = "", segment = 0)).copy(preparing = true)
+        // Rebaraja el orden al completar una vuelta completa, para más variedad a largo plazo.
+        if (moodIndex > 0 && moodIndex % moodOrder.size == 0) moodOrder = DjMoods.MOODS.indices.shuffled()
+        val mood = DjMoods.MOODS[moodOrder[moodIndex % moodOrder.size]]
+        segmentJob = scope.launch {
             val tracks = buildSegment(context, repo, mood)
-            if (tracks.isEmpty()) return@launch
+            if (tracks.isEmpty()) {
+                // Sin nada que reproducir: si era el arranque, libera la sesión (el botón vuelve a
+                // "Iniciar"); si era un avance, solo quita el spinner y deja seguir el bloque actual.
+                if (first) stop() else _state.value = _state.value?.copy(preparing = false)
+                return@launch
+            }
             val svc = AudioPlayerService.getInstance(context)
             if (first) svc?.loadPlaylist(tracks, 0) else svc?.enqueueAll(tracks)
-            _state.value = State(mood.id, mood.label(context), moodIndex + 1)
+            recentTrackIds.addAll(tracks.mapNotNull { it.id })
+            while (recentTrackIds.size > 60) recentTrackIds.removeFirst()
+            _state.value = State(mood.id, mood.label(context), moodIndex + 1, preparing = false)
             // Spoken text uses the VOICE language (separate from app language), from DjPhrases.
             val phrase = DjPhrases.announce(DjSettings.voiceLanguage(context), mood.id, first)
             DjVoice.speak(context, phrase)
@@ -124,7 +164,9 @@ object DjAutoController {
         val size = 5
         val source = DjSettings.autoSource(context)
         val favs = runCatching { favoritesProvider?.invoke() ?: emptyList() }.getOrDefault(emptyList())
-        val suggestions = runCatching { repo.searchTracks(mood.query, limit = 12).items }.getOrDefault(emptyList())
+        // Baraja las sugerencias para no servir siempre los primeros resultados de Spotify.
+        val suggestions = runCatching { repo.searchTracks(mood.query, limit = 20).items }
+            .getOrDefault(emptyList()).shuffled()
 
         // Sin audio-features de Spotify (API bloqueada), clasificamos las favoritas CACHEADAS por
         // SOLAPAMIENTO DE ARTISTA con el mood: una favorita "es de este mood" si comparte artista con
@@ -137,35 +179,34 @@ object DjAutoController {
         val favForMood = favs.filter { fav -> fav.artists.any { norm(it.name) in moodArtists } }
 
         // Metadata-vector ranking (DjVectors): ordena las favoritas por similitud coseno al "sonido"
-        // del mood (centroide de sus sugerencias) y luego rota dentro del pool más relevante para variar.
+        // del mood (centroide de sus sugerencias) y baraja la franja más relevante para variar.
         val moodCentroid = DjVectors.centroid(suggestions)
-        fun pickFavs(pool: List<FullTrack>, n: Int): List<FullTrack> {
-            if (pool.isEmpty()) return emptyList()
-            val top = DjVectors.rankBySimilarity(pool, moodCentroid).take(maxOf(n * 3, n))
-            return rotating(top, n)
+
+        fun pick(avoidRecent: Boolean): List<FullTrack> {
+            fun keep(list: List<FullTrack>) =
+                list.filter { it.id != null && (!avoidRecent || it.id !in recentTrackIds) }
+            fun pickFavs(pool: List<FullTrack>, n: Int): List<FullTrack> {
+                val kept = keep(pool)
+                if (kept.isEmpty()) return emptyList()
+                return DjVectors.rankBySimilarity(kept, moodCentroid).take(maxOf(n * 4, n)).shuffled().take(n)
+            }
+            return when (source) {
+                // Solo favoritas: las que casan con el mood (rankeadas); si hay muy pocas, cae a todas.
+                "favorites" -> pickFavs(if (favForMood.size >= 2) favForMood else favs, size)
+                "discover" -> keep(suggestions).take(size)
+                else /* balanced */ -> {
+                    val f = pickFavs(if (favForMood.isNotEmpty()) favForMood else favs, 3)
+                    val s = keep(suggestions).filter { sg -> f.none { it.id == sg.id } }.take(size - f.size)
+                    interleave(f, s)
+                }
+            }.filter { it.id != null }.distinctBy { it.id }.take(size)
         }
 
-        val picked: List<FullTrack> = when (source) {
-            // Solo favoritas: las que casan con el mood (rankeadas); si hay muy pocas, cae a todas.
-            "favorites" -> pickFavs(if (favForMood.size >= 2) favForMood else favs, size)
-            "discover" -> suggestions.take(size)
-            else /* balanced */ -> {
-                val f = pickFavs(if (favForMood.isNotEmpty()) favForMood else favs, 3)
-                val s = suggestions.filter { sg -> f.none { it.id == sg.id } }.take(size - f.size)
-                interleave(f, s)
-            }
-        }
-        return picked.filter { it.id != null }.distinctBy { it.id }.take(size)
+        // Primero evitando repeticiones; si la biblioteca es pequeña y se vacía, reintenta sin evitar.
+        return pick(avoidRecent = true).ifEmpty { pick(avoidRecent = false) }
     }
 
     private fun norm(s: String): String = s.trim().lowercase()
-
-    /** Ventana rotatoria determinista sobre la lista (varía por segmento sin repetir siempre lo mismo). */
-    private fun rotating(list: List<FullTrack>, n: Int): List<FullTrack> {
-        if (list.isEmpty()) return emptyList()
-        val start = (moodIndex * n) % list.size
-        return (0 until minOf(n, list.size)).map { list[(start + it) % list.size] }
-    }
 
     private fun interleave(a: List<FullTrack>, b: List<FullTrack>): List<FullTrack> {
         val out = ArrayList<FullTrack>(a.size + b.size)

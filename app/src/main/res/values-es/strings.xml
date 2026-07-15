@@ -11,6 +11,8 @@
     <string name="settings_title">Ajustes</string>
     <string name="settings_extraction_engine">Motor de Extracción</string>
     <string name="settings_ytdlp_desc">El motor interno encargado de obtener los enlaces directos sin cortes ni bloqueos. Actualízalo si alguna canción empieza a dar error.</string>
+    <string name="settings_canvas_fit_title">Ajustar Canvas al ancho</string>
+    <string name="settings_canvas_fit_desc">Mantiene la proporción del vídeo del Canvas (ajustado al ancho). Desactívalo para estirarlo a pantalla completa.</string>
     <string name="settings_ytdlp_current_version">Versión actual: %1$s</string>
     <string name="settings_ytdlp_updated">yt-dlp actualizado</string>
     <string name="settings_nightly_version">Versión Nightly</string>
@@ -70,6 +72,11 @@
     <string name="track_menu_add_playlist">Añadir a Playlist</string>
     <string name="track_menu_remove_playlist">Quitar de esta Playlist</string>
     <string name="track_menu_go_queue">Ir a la cola</string>
+    <string name="track_menu_lyrics_offset">Ajustar sincronía de la letra</string>
+    <string name="lyrics_offset_title">Sincronía de la letra</string>
+    <string name="lyrics_offset_hint">Desplaza la letra sincronizada de esta canción. Positivo la adelanta, negativo la retrasa.</string>
+    <string name="lyrics_offset_reset">Restablecer</string>
+    <string name="lyrics_offset_done">Hecho</string>
     <string name="track_menu_go_album">Ir al Álbum</string>
     <string name="track_options_view_artist">Ver artista</string>
     <string name="track_menu_view_youtube">Versión alternativa de YouTube</string>
@@ -91,6 +98,10 @@
     <string name="library_tab_playlists">Playlists</string>
     <string name="library_tab_albums">Álbumes</string>
     <string name="library_tab_artists">Artistas</string>
+    <string name="auto_section_queue">Reproduciendo</string>
+    <string name="auto_section_local">Local</string>
+    <string name="auto_local_favorites">Favoritas</string>
+    <string name="auto_local_tracks">Todas las canciones</string>
     <string name="library_tab_local_music">Música Local</string>
     <string name="library_local_not_configured">Música local no configurada</string>
     <string name="library_local_configure_btn">Configurar en Ajustes</string>
@@ -292,6 +303,7 @@
     <string name="dj_auto_next">Cambiar mood</string>
     <string name="dj_auto_stop">Parar DJ</string>
     <string name="dj_auto_now">Sonando: %1$s</string>
+    <string name="dj_auto_preparing">Preparando tu sesión…</string>
     <string name="dj_mic">Habla al DJ</string>
     <string name="dj_mic_unavailable">Reconocimiento de voz no disponible en este dispositivo</string>
     <string name="dj_mic_permission">Se necesita permiso de micrófono para hablar con el DJ</string>
@@ -302,6 +314,15 @@
     <string name="settings_dj_voice_enabled">El DJ habla (voz)</string>
     <string name="settings_dj_voice_lang">Idioma de la voz</string>
     <string name="settings_dj_voice_lang_system">Por defecto (idioma de la app)</string>
+    <string name="settings_dj_tts_engine">Motor de voz</string>
+    <string name="settings_dj_tts_native">Android (offline, gratis)</string>
+    <string name="settings_dj_tts_pollinations">Voces naturales (Pollinations, gratis)</string>
+    <string name="settings_dj_tts_openai">Endpoint OpenAI propio</string>
+    <string name="settings_dj_tts_pollinations_note">Voces con calidad OpenAI, gratis y sin token. Necesita conexión.</string>
+    <string name="settings_dj_voice_native">Voz de Android</string>
+    <string name="settings_dj_voice_native_system">Por defecto del idioma</string>
+    <string name="settings_dj_voice_pick">Voz</string>
+    <string name="settings_dj_voice_cloud_key">Clave API de la nube (opcional)</string>
     <string name="settings_dj_voice_cloud_url">Endpoint TTS en la nube (opcional, OpenAI-compatible)</string>
     <string name="settings_dj_auto_source">Fuente del DJ automático</string>
     <string name="dj_auto_source_favorites">Solo mis favoritas</string>
@@ -334,6 +355,9 @@
     <string name="travel_route_failed">No se pudo calcular la ruta.</string>
     <string name="travel_no_tracks">No hay canciones para la playlist. Marca algunas como favoritas primero.</string>
     <string name="travel_search_hint">Buscar destino o lugar</string>
+    <string name="travel_pick_destination">Destino</string>
+    <string name="travel_pick_origin">Origen</string>
+    <string name="travel_origin_prefix">Desde: %1$s</string>
     <string name="travel_enable_location">La ubicación está desactivada. Actívala para calcular la ruta.</string>
     <string name="travel_enable">Activar</string>
     <string name="travel_playlist_mode">Modo de playlist</string>

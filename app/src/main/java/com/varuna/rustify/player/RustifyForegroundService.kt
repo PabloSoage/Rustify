@@ -21,6 +21,8 @@ import com.varuna.rustify.bridge.YtMusicRepository
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * E96 — Now a [MediaLibraryService] (a superset of the former MediaSessionService) so Android Auto
@@ -38,6 +40,8 @@ class RustifyForegroundService : MediaLibraryService() {
 
     private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
     private val ytmRepo by lazy { YtMusicRepository(applicationContext) }
+    // E96 — scope para resolver ramas del árbol de Android Auto que requieren red (playlists/álbumes).
+    private val autoScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "rustify_playback"
@@ -146,9 +150,15 @@ class RustifyForegroundService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            return Futures.immediateFuture(
-                LibraryResult.ofItemList(ImmutableList.copyOf(buildChildren(parentId)), params)
-            )
+            // Async: los nodos Spotify de playlist/álbum/artista se resuelven por red.
+            val future = com.google.common.util.concurrent.SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+            autoScope.launch {
+                val items = runCatching {
+                    AndroidAutoBrowse.childrenAsync(this@RustifyForegroundService, parentId, ytmRepo).map { nodeItem(it) }
+                }.getOrDefault(emptyList())
+                future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+            }
+            return future
         }
 
         override fun onGetItem(
@@ -169,17 +179,25 @@ class RustifyForegroundService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>
         ): ListenableFuture<MutableList<MediaItem>> {
-            val tracks = mediaItems.mapNotNull { resolveTrack(it.mediaId) }
-            if (tracks.isNotEmpty()) {
-                AudioPlayerService.getInstance(this@RustifyForegroundService).loadPlaylist(tracks, 0)
+            val svc = AudioPlayerService.getInstance(this@RustifyForegroundService)
+            val first = mediaItems.firstOrNull()?.mediaId
+            // Un ítem de la sección "cola" salta a ese punto sin recargar la lista.
+            if (first != null && first.startsWith("queue:")) {
+                svc.playSpecificTrackInQueue(first.removePrefix("queue:"))
+                return Futures.immediateFuture(mutableListOf())
             }
+            val tracks = mediaItems.mapNotNull { resolveTrack(it.mediaId) }
+            if (tracks.isNotEmpty()) svc.loadPlaylist(tracks, 0)
             return Futures.immediateFuture(mutableListOf())
         }
     }
 
-    private fun browsable(id: String, title: String): MediaItem =
+    private fun browsable(id: String, title: String, subtitle: String = "", imageUrl: String? = null): MediaItem =
         MediaItem.Builder().setMediaId(id).setMediaMetadata(
-            MediaMetadata.Builder().setTitle(title).setIsBrowsable(true).setIsPlayable(false).build()
+            MediaMetadata.Builder().setTitle(title)
+                .apply { if (subtitle.isNotBlank()) setSubtitle(subtitle) }
+                .apply { if (!imageUrl.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(imageUrl)) }
+                .setIsBrowsable(true).setIsPlayable(false).build()
         ).build()
 
     private fun trackItem(t: FullTrack): MediaItem {
@@ -193,10 +211,19 @@ class RustifyForegroundService : MediaLibraryService() {
         ).build()
     }
 
-    private fun buildChildren(parentId: String): List<MediaItem> =
-        AndroidAutoBrowse.children(this, parentId, ytmRepo).map {
-            if (it.browsable) browsable(it.id, it.title) else trackItem(it.track!!)
-        }
+    /** Construye el MediaItem de un [AndroidAutoBrowse.Node] (carpeta con carátula o pista). */
+    private fun nodeItem(n: AndroidAutoBrowse.Node): MediaItem {
+        if (n.browsable) return browsable(n.id, n.title, n.subtitle, n.imageUrl)
+        val t = n.track!!
+        val art = n.imageUrl ?: t.album?.images?.firstOrNull()?.url
+        return MediaItem.Builder().setMediaId(n.id).setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(t.name)
+                .setArtist(t.artists.joinToString(", ") { it.name })
+                .apply { if (!art.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(art)) }
+                .setIsBrowsable(false).setIsPlayable(true).build()
+        ).build()
+    }
 
     private fun resolveTrack(mediaId: String): FullTrack? =
         AndroidAutoBrowse.resolveTrack(mediaId, ytmRepo)
@@ -231,6 +258,7 @@ class RustifyForegroundService : MediaLibraryService() {
         AudioPlayerService.instance?.saveNow()
         mediaSession?.release()
         mediaSession = null
+        autoScope.cancel()
         super.onDestroy()
     }
 }

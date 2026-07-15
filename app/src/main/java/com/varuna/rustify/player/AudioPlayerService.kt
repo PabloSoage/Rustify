@@ -989,12 +989,17 @@ class AudioPlayerService private constructor(private val context: Context) {
             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it)
         }
 
-        // BUG B: when the user explicitly picks an alternative source (explicit youtubeId,
-        // not an auto-retry), keep playing from the current position instead of restarting
-        // from 0. playTrack() seeks to _state.positionMs when > 0, so preserving it here makes
-        // the alternative continue where the user was. Auto-retry (extraction failure) keeps 0.
-        val isAlternativeSelection = youtubeId != null && !isAutoRetry
-        val preservedPosition = if (isAlternativeSelection) exoPlayer.currentPosition.coerceAtLeast(0L) else 0L
+        // BUG (offline retry restart): whenever we re-resolve the SAME track — an explicit
+        // alternative pick, an auto-retry after an extraction/network failure, an expired-URL
+        // refresh, or a network-reconnect retry — we must resume from where the user was, not
+        // restart from 0. Previously only explicit alternative selections preserved the position,
+        // so a background auto-retry (e.g. after coming back online) would yank a mid-song track
+        // back to the beginning. playTrack() seeks to _state.positionMs when > 0, so we compute
+        // the best-known position here. Only a switch to a DIFFERENT track (fallbackTrackId that
+        // isn't the current track) legitimately starts from 0.
+        val retryingSameTrack = fallbackTrackId == null || fallbackTrackId == st.currentTrack?.id
+        val livePos = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val preservedPosition = if (retryingSameTrack) maxOf(livePos, st.positionMs).coerceAtLeast(0L) else 0L
 
         _state.value = st.copy(
             currentTrack = track,

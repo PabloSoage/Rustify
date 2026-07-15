@@ -156,6 +156,10 @@ fun TravelScreen(
     var searching by remember { mutableStateOf(false) }
     var showSuggestions by remember { mutableStateOf(false) }
     var pickedDestination by remember { mutableStateOf<TravelRouting.Geo?>(null) }
+    // Origen explícito opcional: si es null se usa la ubicación GPS actual como origen.
+    var originOverride by remember { mutableStateOf<TravelRouting.Geo?>(null) }
+    // Lo que fija el buscador / long-press: 0 = destino, 1 = origen.
+    var pickMode by remember { mutableStateOf(0) }
 
     var route by remember { mutableStateOf<TravelRouting.Route?>(null) }
     var bufferMin by remember { mutableStateOf(10f) }
@@ -205,6 +209,7 @@ fun TravelScreen(
             current?.let { loc ->
                 userSourceRef[0]?.setGeoJson(pointFeatureJson(loc.latitude, loc.longitude))
             }
+            originOverride?.let { o -> originSourceRef[0]?.setGeoJson(pointFeatureJson(o.lat, o.lon)) }
             pickedDestination?.let { d ->
                 destSourceRef[0]?.setGeoJson(pointFeatureJson(d.lat, d.lon))
                 route?.geometryGeoJson?.let { geoStr ->
@@ -327,15 +332,23 @@ fun TravelScreen(
         routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
     }
 
+    // Origen efectivo: el punto fijado a mano si existe; si no, la ubicación GPS actual.
+    fun originLatLon(): Pair<Double, Double>? {
+        originOverride?.let { return it.lat to it.lon }
+        current?.let { return it.latitude to it.longitude }
+        return null
+    }
+
     fun computeRoute(dest: TravelRouting.Geo) {
-        val loc = current
-        if (loc == null) {
+        val o = originLatLon()
+        if (o == null) {
             status = noLocationMsg
             return
         }
+        val (oLat, oLon) = o
         loading = true; status = null; route = null
         scope.launch {
-            val r = TravelRouting.route(loc.latitude, loc.longitude, dest.lat, dest.lon)
+            val r = TravelRouting.route(oLat, oLon, dest.lat, dest.lon)
             route = r
             loading = false
             if (r == null) {
@@ -353,10 +366,10 @@ fun TravelScreen(
                     }
                     routeSourceRef[0]?.setGeoJson(fc.toString())
                 }
-                val centerLat = (loc.latitude + dest.lat) / 2.0
-                val centerLon = (loc.longitude + dest.lon) / 2.0
+                val centerLat = (oLat + dest.lat) / 2.0
+                val centerLon = (oLon + dest.lon) / 2.0
                 val approxDistanceKm = android.location.Location("a").apply {
-                    latitude = loc.latitude; longitude = loc.longitude
+                    latitude = oLat; longitude = oLon
                 }.distanceTo(android.location.Location("b").apply {
                     latitude = dest.lat; longitude = dest.lon
                 }) / 1000.0
@@ -372,6 +385,13 @@ fun TravelScreen(
                 )
             }
         }
+    }
+
+    // Fija (o limpia con null) el origen explícito, dibuja su marcador azul y recomputa la ruta.
+    fun setOrigin(g: TravelRouting.Geo?) {
+        originOverride = g
+        originSourceRef[0]?.setGeoJson(if (g == null) EMPTY_POINT_GEO_JSON else pointFeatureJson(g.lat, g.lon))
+        pickedDestination?.let { computeRoute(it) }
     }
 
     fun startTrip(map: List<FullTrack>) {
@@ -401,26 +421,42 @@ fun TravelScreen(
                 map.addOnMapLongClickListener { point ->
                     val lat = point.latitude
                     val lon = point.longitude
-                    pickedDestination = TravelRouting.Geo(lat, lon, "%.5f, %.5f".format(lat, lon))
-                    query = ""
-                    suggestions = emptyList()
-                    showSuggestions = false
-                    destSourceRef[0]?.setGeoJson(pointFeatureJson(lat, lon))
-                    routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
-                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
-                    ensureCache()
-                    computeRoute(pickedDestination!!)
-                    // Reverse geocode en segundo plano para reemplazar "lat, lon" por la etiqueta.
-                    scope.launch {
-                        val label = TravelRouting.reverseGeocode(lat, lon, context)
-                        pickedDestination = pickedDestination?.copy(label = label)
-                        query = label
+                    val coordLabel = "%.5f, %.5f".format(lat, lon)
+                    if (pickMode == 1) {
+                        // Long-press en modo Origen → fija el origen en ese punto.
+                        val g = TravelRouting.Geo(lat, lon, coordLabel)
+                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
+                        ensureCache()
+                        setOrigin(g)
+                        scope.launch {
+                            val label = TravelRouting.reverseGeocode(lat, lon, context)
+                            if (originOverride?.lat == g.lat && originOverride?.lon == g.lon) {
+                                originOverride = originOverride?.copy(label = label)
+                            }
+                        }
+                    } else {
+                        pickedDestination = TravelRouting.Geo(lat, lon, coordLabel)
+                        query = ""
+                        suggestions = emptyList()
+                        showSuggestions = false
+                        destSourceRef[0]?.setGeoJson(pointFeatureJson(lat, lon))
+                        routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
+                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
+                        ensureCache()
+                        computeRoute(pickedDestination!!)
+                        // Reverse geocode en segundo plano para reemplazar "lat, lon" por la etiqueta.
+                        scope.launch {
+                            val label = TravelRouting.reverseGeocode(lat, lon, context)
+                            pickedDestination = pickedDestination?.copy(label = label)
+                            query = label
+                        }
                     }
                     true
                 }
                 current?.let { loc ->
                     userSourceRef[0]?.setGeoJson(pointFeatureJson(loc.latitude, loc.longitude))
                 }
+                originOverride?.let { o -> originSourceRef[0]?.setGeoJson(pointFeatureJson(o.lat, o.lon)) }
                 pickedDestination?.let { d ->
                     destSourceRef[0]?.setGeoJson(pointFeatureJson(d.lat, d.lon))
                     route?.geometryGeoJson?.let { geoStr ->
@@ -542,6 +578,39 @@ fun TravelScreen(
 
         // ── Overlay búsqueda (debajo de la top bar, sobre el mapa) ─────────────────────────
         Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 56.dp).padding(horizontal = 10.dp)) {
+            // Selector de qué fija el buscador/long-press: Destino (rojo) u Origen (azul).
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = pickMode == 0, onClick = { pickMode = 0 },
+                    shape = SegmentedButtonDefaults.itemShape(0, 2)
+                ) { Text(stringResource(R.string.travel_pick_destination), color = if (pickMode == 0) Color.Black else onMapTextColor) }
+                SegmentedButton(
+                    selected = pickMode == 1, onClick = { pickMode = 1 },
+                    shape = SegmentedButtonDefaults.itemShape(1, 2)
+                ) { Text(stringResource(R.string.travel_pick_origin), color = if (pickMode == 1) Color.Black else onMapTextColor) }
+            }
+            Spacer(Modifier.height(4.dp))
+            // Chip del origen fijado (si lo hay), con botón para volver a la ubicación actual.
+            originOverride?.let { o ->
+                Surface(color = scrimColor, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.MyLocation, contentDescription = null, tint = Color(0xFF2196F3), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.travel_origin_prefix, o.label),
+                            color = onMapTextColor, fontSize = 12.sp, maxLines = 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { setOrigin(null) }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Filled.Clear, contentDescription = null, tint = onMapIconColor, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
             Surface(color = scrimColor, shape = RoundedCornerShape(10.dp)) {
                 OutlinedTextField(
                     value = query,
@@ -581,16 +650,22 @@ fun TravelScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        pickedDestination = s
-                                        query = s.label
                                         showSuggestions = false
-                                        destSourceRef[0]?.setGeoJson(pointFeatureJson(s.lat, s.lon))
-                                        routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
                                         mapRef[0]?.animateCamera(
                                             CameraUpdateFactory.newLatLngZoom(LatLng(s.lat, s.lon), 10.0)
                                         )
                                         ensureCache()
-                                        computeRoute(s)
+                                        if (pickMode == 1) {
+                                            query = ""
+                                            suggestions = emptyList()
+                                            setOrigin(s)
+                                        } else {
+                                            pickedDestination = s
+                                            query = s.label
+                                            destSourceRef[0]?.setGeoJson(pointFeatureJson(s.lat, s.lon))
+                                            routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
+                                            computeRoute(s)
+                                        }
                                     }
                                     .padding(horizontal = 14.dp, vertical = 10.dp)
                             )
@@ -1113,6 +1188,7 @@ private val mapRef = arrayOfNulls<MapLibreMap>(1)
 private val userSourceRef = arrayOfNulls<GeoJsonSource>(1)
 private val destSourceRef = arrayOfNulls<GeoJsonSource>(1)
 private val routeSourceRef = arrayOfNulls<GeoJsonSource>(1)
+private val originSourceRef = arrayOfNulls<GeoJsonSource>(1)
 
 private const val EMPTY_POINT_GEO_JSON = """{"type":"Feature","geometry":{"type":"Point","coordinates":[0.0,0.0]},"properties":{}}"""
 private const val EMPTY_LINE_GEO_JSON = """{"type":"FeatureCollection","features":[]}"""
@@ -1145,6 +1221,21 @@ private fun registerLayers(style: Style) {
                 CircleLayer("dest-layer", "dest-source")
                     .withProperties(
                         PropertyFactory.circleColor("#E53935"),
+                        PropertyFactory.circleRadius(10f),
+                        PropertyFactory.circleStrokeColor("#FFFFFF"),
+                        PropertyFactory.circleStrokeWidth(2f)
+                    )
+            )
+        }
+        // Origen explícito (azul) — solo visible cuando el usuario fija un origen distinto del GPS.
+        if (style.getSource("origin-source") == null) {
+            val os = GeoJsonSource("origin-source", EMPTY_POINT_GEO_JSON)
+            style.addSource(os)
+            originSourceRef[0] = os
+            style.addLayer(
+                CircleLayer("origin-layer", "origin-source")
+                    .withProperties(
+                        PropertyFactory.circleColor("#2196F3"),
                         PropertyFactory.circleRadius(10f),
                         PropertyFactory.circleStrokeColor("#FFFFFF"),
                         PropertyFactory.circleStrokeWidth(2f)

@@ -52,9 +52,23 @@ object DjSettings {
     // ── Voz (DJ hablado, estilo "DJ Livi") ──────────────────────────────────────────────
     const val KEY_VOICE_ENABLED = "dj_voice_enabled"       // el DJ habla las intros/transiciones
     const val KEY_VOICE_LANG = "dj_voice_lang"             // idioma de la VOZ, independiente del de la app ("" = idioma de la app)
-    const val KEY_VOICE_CLOUD_URL = "dj_voice_cloud_url"   // endpoint TTS en la nube opcional (OpenAI-compatible /audio/speech); "" = TTS nativo
+    const val KEY_VOICE_NATIVE_NAME = "dj_voice_native_name" // voz nativa concreta (TextToSpeech.Voice.name); "" = por defecto del idioma
+    const val KEY_VOICE_CLOUD_URL = "dj_voice_cloud_url"   // endpoint TTS OpenAI-compatible (/audio/speech) para el motor "openai"; "" = sin configurar
     const val KEY_VOICE_CLOUD_KEY = "dj_voice_cloud_key"
     const val KEY_VOICE_CLOUD_VOICE = "dj_voice_cloud_voice"
+
+    /**
+     * Motor de voz: "native" (TextToSpeech de Android, offline), "pollinations" (voces OpenAI
+     * gratuitas y **sin token**, mucho más naturales que el TTS nativo) u "openai" (endpoint
+     * OpenAI-compatible propio). Ver [ttsEngine].
+     */
+    const val KEY_TTS_ENGINE = "dj_tts_engine"
+
+    /** Base keyless de Pollinations TTS (GET /{texto}?model=openai-audio&voice=...). */
+    const val POLLINATIONS_TTS_BASE = "https://text.pollinations.ai"
+
+    /** Voces OpenAI compartidas por Pollinations y por endpoints OpenAI-compatibles. */
+    val OPENAI_VOICES = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer")
 
     // ── Modo autónomo (automix por moods, tú solo le das al botón) ───────────────────────
     const val KEY_AUTO_SOURCE = "dj_auto_source"           // "favorites" | "balanced" | "discover"
@@ -74,6 +88,21 @@ object DjSettings {
 
     fun voiceCloudVoice(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_VOICE, "alloy") ?: "alloy"
+
+    /** Voz nativa concreta (Voice.name); en blanco ⇒ la que Android elija para el idioma. */
+    fun voiceNativeName(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_NATIVE_NAME, "") ?: ""
+
+    /**
+     * Motor de voz efectivo. Si el usuario nunca lo eligió explícitamente, migramos el
+     * comportamiento previo: si había un endpoint nube configurado ⇒ "openai", si no ⇒ "native".
+     */
+    fun ttsEngine(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val explicit = prefs.getString(KEY_TTS_ENGINE, "") ?: ""
+        if (explicit.isNotBlank()) return explicit
+        return if ((prefs.getString(KEY_VOICE_CLOUD_URL, "") ?: "").isNotBlank()) "openai" else "native"
+    }
 
     /** favorites = solo favoritas · balanced = favoritas + alguna sugerencia · discover = mayormente sugerencias. */
     fun autoSource(context: Context): String =

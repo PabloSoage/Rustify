@@ -450,7 +450,11 @@ fun TrackScreen(
                         if (showVideo) {
                             YouTubeVideoPlayer(videoUrlPair = videoUrl!!, audioPlayerService = audioPlayerService)
                         } else if (showCanvas) {
-                            CanvasVideoPlayer(url = canvasUrl!!)
+                            val canvasFitWidth = remember {
+                                context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                                    .getBoolean("canvas_fit_width", true)
+                            }
+                            CanvasVideoPlayer(url = canvasUrl!!, fitWidth = canvasFitWidth)
                         } else if (!imgUrl.isNullOrEmpty()) {
                             AsyncImage(
                                 model = imgUrl,
@@ -1002,12 +1006,19 @@ fun TrackScreenControls(
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
 
-    // Auto-scroll to current lyric line
-    LaunchedEffect(currentPosition, showLyrics) {
+    // Ajuste manual de sincronía por pista (el diálogo del menú lo persiste y bumpea `version`).
+    val lyricsCtx = androidx.compose.ui.platform.LocalContext.current
+    val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
+    val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
+        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx, track.id ?: "")
+    }
+
+    // Auto-scroll to current lyric line (aplica el offset: + adelanta la letra)
+    LaunchedEffect(currentPosition, showLyrics, lyricOffsetMs) {
         if (!showLyrics) return@LaunchedEffect
         val synced = lyricsResult?.synced ?: return@LaunchedEffect
         if (synced.isEmpty()) return@LaunchedEffect
-        val idx = synced.indexOfLast { it.timeMs <= currentPosition }.coerceAtLeast(0)
+        val idx = synced.indexOfLast { it.timeMs <= currentPosition + lyricOffsetMs }.coerceAtLeast(0)
         try {
             lyricsListState.animateScrollToItem(idx)
         } catch (_: Exception) {}
@@ -1327,6 +1338,7 @@ fun TrackScreenControls(
                 lyricsResult = lyricsResult,
                 isLoading = lyricsLoading,
                 currentPositionMs = currentPosition,
+                offsetMs = lyricOffsetMs,
                 listState = lyricsListState
             )
         }
@@ -1338,6 +1350,7 @@ fun LyricsView(
     lyricsResult: LyricsResult?,
     isLoading: Boolean,
     currentPositionMs: Long,
+    offsetMs: Long = 0L,
     listState: LazyListState
 ) {
     val spotifyGreen = Color(0xFF1DB954)
@@ -1367,7 +1380,7 @@ fun LyricsView(
             }
             lyricsResult.synced.isNotEmpty() -> {
                 val synced = lyricsResult.synced
-                val currentIdx = synced.indexOfLast { it.timeMs <= currentPositionMs }.coerceAtLeast(0)
+                val currentIdx = synced.indexOfLast { it.timeMs <= currentPositionMs + offsetMs }.coerceAtLeast(0)
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -1459,11 +1472,15 @@ fun TrackCoverSimple(
 /**
  * Renders a looping, muted mp4 canvas in an independent ExoPlayer + SurfaceView.
  * The player is fully owned by this composable and released on dispose.
+ *
+ * [fitWidth] = true (default): scale to the screen width preserving aspect ratio (may leave bars
+ * top/bottom, but never stretches). false: fill the whole screen (legacy behaviour, can stretch).
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun CanvasVideoPlayer(url: String) {
+fun CanvasVideoPlayer(url: String, fitWidth: Boolean = true) {
     val context = LocalContext.current
+    var ratio by remember(url) { mutableStateOf<Float?>(null) }
 
     val exoPlayer = remember(url) {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
@@ -1471,6 +1488,13 @@ fun CanvasVideoPlayer(url: String) {
             repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
             volume = 0f
             playWhenReady = true
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                    if (videoSize.width > 0 && videoSize.height > 0) {
+                        ratio = videoSize.width.toFloat() / videoSize.height.toFloat()
+                    }
+                }
+            })
             prepare()
         }
     }
@@ -1481,14 +1505,25 @@ fun CanvasVideoPlayer(url: String) {
         }
     }
 
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            android.view.SurfaceView(ctx).also { surface ->
-                exoPlayer.setVideoSurfaceView(surface)
+    val surface: @Composable (Modifier) -> Unit = { mod ->
+        AndroidView(
+            modifier = mod,
+            factory = { ctx ->
+                android.view.SurfaceView(ctx).also { it ->
+                    exoPlayer.setVideoSurfaceView(it)
+                }
             }
+        )
+    }
+
+    if (fitWidth) {
+        // Fit to width, keep aspect ratio; centre vertically. Default 9:16 until the real size lands.
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            surface(Modifier.fillMaxWidth().aspectRatio(ratio ?: (9f / 16f)))
         }
-    )
+    } else {
+        surface(Modifier.fillMaxSize())
+    }
 }
 
 /**

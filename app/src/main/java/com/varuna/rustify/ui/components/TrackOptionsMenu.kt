@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,6 +88,7 @@ fun TrackOptionsMenuBottomSheet(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     var showPlaylistSelector by remember { mutableStateOf(false) }
+    var showLyricsOffsetDialog by remember { mutableStateOf(false) }
     // E30 — selector de playlist local + diálogo de creación.
     var showLocalPlaylistSelector by remember { mutableStateOf(false) }
     var showCreateLocalPlaylistDialog by remember { mutableStateOf(false) }
@@ -100,6 +103,52 @@ fun TrackOptionsMenuBottomSheet(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         // Handle if needed
+    }
+
+    // Ajuste de sincronía de la letra (±) persistido por pista en LyricsOffsetStore.
+    if (showLyricsOffsetDialog) {
+        val tid = track.id ?: ""
+        var offsetMs by remember(tid) { mutableStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(context, tid)) }
+        fun apply(newMs: Long) {
+            offsetMs = newMs.coerceIn(-10_000L, 10_000L)
+            com.varuna.rustify.bridge.LyricsOffsetStore.set(context, tid, offsetMs)
+        }
+        AlertDialog(
+            onDismissRequest = { showLyricsOffsetDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text(stringResource(R.string.lyrics_offset_title), color = Color.White) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.lyrics_offset_hint), color = Color.Gray, fontSize = 13.sp)
+                    Spacer(Modifier.height(18.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(onClick = { apply(offsetMs - 500) }) { Text("-0.5s", color = Color.White) }
+                        TextButton(onClick = { apply(offsetMs - 100) }) { Text("-0.1s", color = Color.White) }
+                        Text(
+                            String.format("%+.1f s", offsetMs / 1000f),
+                            color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        TextButton(onClick = { apply(offsetMs + 100) }) { Text("+0.1s", color = Color.White) }
+                        TextButton(onClick = { apply(offsetMs + 500) }) { Text("+0.5s", color = Color.White) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLyricsOffsetDialog = false }) {
+                    Text(stringResource(R.string.lyrics_offset_done), color = Color(0xFF1DB954))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { apply(0L) }) {
+                    Text(stringResource(R.string.lyrics_offset_reset), color = Color.Gray)
+                }
+            }
+        )
     }
 
     // E30 — selector de playlist local (tracks "local:") + diálogo de creación.
@@ -404,6 +453,13 @@ fun TrackOptionsMenuBottomSheet(
                     icon = Icons.AutoMirrored.Filled.PlaylistPlay,
                     label = stringResource(R.string.track_menu_go_queue),
                     onClick = onGoToQueue
+                )
+
+                // Ajuste manual de sincronía de la letra (para canciones ligeramente desfasadas).
+                MenuOptionItem(
+                    icon = Icons.Default.Schedule,
+                    label = stringResource(R.string.track_menu_lyrics_offset),
+                    onClick = { showLyricsOffsetDialog = true }
                 )
 
                 if (track.album != null && !isYtmTrack) {

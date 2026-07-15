@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -496,6 +497,31 @@ fun SettingsScreen(
                             )
                         )
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var canvasFitWidth by remember { mutableStateOf(prefs.getBoolean("canvas_fit_width", true)) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.settings_canvas_fit_title), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.settings_canvas_fit_desc), color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = canvasFitWidth,
+                            onCheckedChange = { checked ->
+                                canvasFitWidth = checked
+                                prefs.edit { putBoolean("canvas_fit_width", checked) }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF1DB954)
+                            )
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         stringResource(R.string.settings_ytdlp_desc),
@@ -1614,6 +1640,10 @@ if (localMusicDirs.isEmpty()) {
                     var djVoiceEnabled by remember { mutableStateOf(prefs.getBoolean(com.varuna.rustify.dj.DjSettings.KEY_VOICE_ENABLED, true)) }
                     var djVoiceLang by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_LANG, "") ?: "") }
                     var djVoiceCloudUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_URL, "") ?: "") }
+                    var djVoiceCloudKey by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_KEY, "") ?: "") }
+                    var djTtsEngine by remember { mutableStateOf(com.varuna.rustify.dj.DjSettings.ttsEngine(context)) }
+                    var djVoiceNativeName by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_NATIVE_NAME, "") ?: "") }
+                    var djCloudVoice by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_VOICE, "alloy") ?: "alloy") }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1674,15 +1704,137 @@ if (localMusicDirs.isEmpty()) {
                             }
                         }
                     }
+                    // ── Motor de voz (nativo Android / Pollinations keyless / OpenAI propio) ──
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = djVoiceCloudUrl,
-                        onValueChange = { djVoiceCloudUrl = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_URL, it) } },
-                        label = { Text(stringResource(R.string.settings_dj_voice_cloud_url)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = djVoiceFieldColors
+                    var ttsEngineExpanded by remember { mutableStateOf(false) }
+                    val ttsEngineOptions = listOf(
+                        "native" to stringResource(R.string.settings_dj_tts_native),
+                        "pollinations" to stringResource(R.string.settings_dj_tts_pollinations),
+                        "openai" to stringResource(R.string.settings_dj_tts_openai)
                     )
+                    val ttsEngineLabel = ttsEngineOptions.firstOrNull { it.first == djTtsEngine }?.second ?: djTtsEngine
+                    ExposedDropdownMenuBox(expanded = ttsEngineExpanded, onExpandedChange = { ttsEngineExpanded = it }) {
+                        OutlinedTextField(
+                            value = ttsEngineLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_dj_tts_engine)) },
+                            singleLine = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ttsEngineExpanded) },
+                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            colors = djVoiceFieldColors
+                        )
+                        DropdownMenu(expanded = ttsEngineExpanded, onDismissRequest = { ttsEngineExpanded = false }) {
+                            ttsEngineOptions.forEach { (code, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        djTtsEngine = code
+                                        prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_TTS_ENGINE, code) }
+                                        ttsEngineExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    when (djTtsEngine) {
+                        // Voz nativa concreta filtrada por el idioma de voz elegido.
+                        "native" -> {
+                            var nativeVoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+                            LaunchedEffect(djVoiceLang) {
+                                com.varuna.rustify.dj.DjVoice.queryVoices(context, djVoiceLang) { nativeVoices = it }
+                            }
+                            var nativeVoiceExpanded by remember { mutableStateOf(false) }
+                            val systemVoiceLabel = stringResource(R.string.settings_dj_voice_native_system)
+                            val nativeOptions = remember(nativeVoices, systemVoiceLabel) {
+                                listOf("" to systemVoiceLabel) + nativeVoices
+                            }
+                            val nativeVoiceLabel = nativeOptions.firstOrNull { it.first == djVoiceNativeName }?.second
+                                ?: (djVoiceNativeName.ifBlank { systemVoiceLabel })
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ExposedDropdownMenuBox(expanded = nativeVoiceExpanded, onExpandedChange = { nativeVoiceExpanded = it }) {
+                                OutlinedTextField(
+                                    value = nativeVoiceLabel,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text(stringResource(R.string.settings_dj_voice_native)) },
+                                    singleLine = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = nativeVoiceExpanded) },
+                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                                    colors = djVoiceFieldColors
+                                )
+                                DropdownMenu(expanded = nativeVoiceExpanded, onDismissRequest = { nativeVoiceExpanded = false }) {
+                                    nativeOptions.forEach { (id, name) ->
+                                        DropdownMenuItem(
+                                            text = { Text(name) },
+                                            onClick = {
+                                                djVoiceNativeName = id
+                                                prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_NATIVE_NAME, id) }
+                                                com.varuna.rustify.dj.DjVoice.refreshConfig(context)
+                                                nativeVoiceExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Voces OpenAI (Pollinations keyless u OpenAI propio) + campos del endpoint.
+                        else -> {
+                            var cloudVoiceExpanded by remember { mutableStateOf(false) }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ExposedDropdownMenuBox(expanded = cloudVoiceExpanded, onExpandedChange = { cloudVoiceExpanded = it }) {
+                                OutlinedTextField(
+                                    value = djCloudVoice,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text(stringResource(R.string.settings_dj_voice_pick)) },
+                                    singleLine = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cloudVoiceExpanded) },
+                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                                    colors = djVoiceFieldColors
+                                )
+                                DropdownMenu(expanded = cloudVoiceExpanded, onDismissRequest = { cloudVoiceExpanded = false }) {
+                                    com.varuna.rustify.dj.DjSettings.OPENAI_VOICES.forEach { v ->
+                                        DropdownMenuItem(
+                                            text = { Text(v.replaceFirstChar { it.uppercase() }) },
+                                            onClick = {
+                                                djCloudVoice = v
+                                                prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_VOICE, v) }
+                                                cloudVoiceExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            if (djTtsEngine == "pollinations") {
+                                Text(
+                                    stringResource(R.string.settings_dj_tts_pollinations_note),
+                                    color = Color.Gray, fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = djVoiceCloudUrl,
+                                    onValueChange = { djVoiceCloudUrl = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_URL, it) } },
+                                    label = { Text(stringResource(R.string.settings_dj_voice_cloud_url)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = djVoiceFieldColors
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = djVoiceCloudKey,
+                                    onValueChange = { djVoiceCloudKey = it; prefs.edit { putString(com.varuna.rustify.dj.DjSettings.KEY_VOICE_CLOUD_KEY, it) } },
+                                    label = { Text(stringResource(R.string.settings_dj_voice_cloud_key)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = djVoiceFieldColors
+                                )
+                            }
+                        }
+                    }
 
                     // ── Fuente del DJ automático (favoritas / balance / descubrir) ──
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1932,25 +2084,50 @@ private fun AndroidAutoPreviewSection(context: android.content.Context) {
             }
             if (enabled) {
                 Spacer(Modifier.height(12.dp))
-                val nodes = remember(path) { com.varuna.rustify.player.AndroidAutoBrowse.children(context, path.last(), ytmRepo) }
+                // Carga async (igual que en el coche): resuelve también playlists/álbumes de Spotify.
+                var nodes by remember { mutableStateOf<List<com.varuna.rustify.player.AndroidAutoBrowse.Node>>(emptyList()) }
+                var loadingNodes by remember { mutableStateOf(false) }
+                LaunchedEffect(path) {
+                    loadingNodes = true
+                    nodes = com.varuna.rustify.player.AndroidAutoBrowse.childrenAsync(context, path.last(), ytmRepo)
+                    loadingNodes = false
+                }
                 if (path.size > 1) {
                     Text("← " + stringResource(R.string.settings_back), color = Color(0xFF1DB954), fontSize = 13.sp,
                         modifier = Modifier.clickable { path = path.dropLast(1) }.padding(vertical = 6.dp))
                 }
-                if (nodes.isEmpty()) {
+                if (loadingNodes && nodes.isEmpty()) {
+                    CircularProgressIndicator(color = Color(0xFF1DB954), strokeWidth = 2.dp, modifier = Modifier.size(20.dp).padding(vertical = 4.dp))
+                } else if (nodes.isEmpty()) {
                     Text(stringResource(R.string.settings_auto_preview_empty), color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
                 } else nodes.take(60).forEach { node ->
+                    val art = node.imageUrl ?: node.track?.album?.images?.firstOrNull()?.url
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .let { m -> if (node.browsable) m.clickable { path = path + node.id } else m }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(if (node.browsable) "▸" else "♪", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.width(20.dp))
+                        // Carátula (como se vería en el coche); fallback a icono ▸/♪.
+                        Box(
+                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF2A2A2A)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!art.isNullOrBlank()) {
+                                coil.compose.AsyncImage(
+                                    model = art, contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(if (node.browsable) "▸" else "♪", color = Color.Gray, fontSize = 16.sp)
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(node.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
                             if (node.subtitle.isNotBlank()) Text(node.subtitle, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
                         }
+                        if (node.browsable) Text("›", color = Color.Gray, fontSize = 18.sp)
                     }
                 }
             }
