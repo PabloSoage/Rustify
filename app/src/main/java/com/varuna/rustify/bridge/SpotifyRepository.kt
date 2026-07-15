@@ -565,6 +565,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         if (!id.startsWith("local:")) return
         localFavoriteIds[id] = !(localFavoriteIds[id] == true)
         saveLocalFavorites()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     /** Tracks locales marcados como favoritos (vivos, con cover/duración). Ignora huérfanos. */
@@ -579,6 +580,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylists.add(pl)
         saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
         return pl
     }
 
@@ -596,6 +598,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun removeFromLocalPlaylist(playlistId: String, trackId: String) {
@@ -607,12 +610,14 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun deleteLocalPlaylist(playlistId: String) {
         localPlaylists.removeAll { it.id == playlistId }
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun renameLocalPlaylist(playlistId: String, newName: String) {
@@ -623,6 +628,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         if (pl.name == trimmed) return
         localPlaylists[i] = pl.copy(name = trimmed, updatedAt = System.currentTimeMillis())
         saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     /** Resuelve ids "local:" → FullTrack vivos (con cover/duración). Ignora huérfanos. */
@@ -1102,6 +1108,7 @@ loadLocalTracksFromCache()
                     likedTracks.add(0, newTrack)
                 }
                 saveLikedTracksToCache()
+                com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
             }
         }
         result
@@ -1121,6 +1128,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (saved) savedAlbums.removeAll { it.id == id }
             else if (savedAlbums.none { it.id == id }) savedAlbums.add(0, album)
+            com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
         }
         result
     }
@@ -1133,6 +1141,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (followed) followedArtists.removeAll { it.id == id }
             else if (followedArtists.none { it.id == id }) followedArtists.add(0, artist)
+            com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
         }
         result
     }
@@ -1145,6 +1154,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (followed) savedPlaylists.removeAll { it.id == id }
             else if (savedPlaylists.none { it.id == id }) savedPlaylists.add(0, playlist)
+            com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
         }
         result
     }

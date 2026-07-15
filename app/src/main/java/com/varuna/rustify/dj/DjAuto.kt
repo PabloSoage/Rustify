@@ -150,7 +150,10 @@ object DjAutoController {
                 return@launch
             }
             val svc = AudioPlayerService.getInstance(context)
-            if (first) svc?.loadPlaylist(tracks, 0) else svc?.enqueueAll(tracks)
+            // `first` arranca la sesión desde cero. En los avances (cambio de mood o auto-advance)
+            // reemplazamos el bloque pendiente tras la pista actual en lugar de apilarlo encima del
+            // anterior: si no, las canciones del mood viejo se quedaban en la cola.
+            if (first) svc?.loadPlaylist(tracks, 0) else svc?.replaceAutoQueueAfterCurrent(tracks)
             recentTrackIds.addAll(tracks.mapNotNull { it.id })
             while (recentTrackIds.size > 60) recentTrackIds.removeFirst()
             _state.value = State(mood.id, mood.label(context), moodIndex + 1, preparing = false)

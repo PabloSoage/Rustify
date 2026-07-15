@@ -163,6 +163,20 @@
             </intent-filter>
         </activity>
 
+        <!-- E96 — FileProvider que expone las carátulas locales (filesDir/covers) a otros procesos
+             (p. ej. el renderer de Android Auto, que se ejecuta en su propio proceso y no puede leer
+             nuestro almacenamiento privado vía file://). Mapea covers/ a un URI content:// temporal
+             con permiso de lectura. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.varuna.rustify.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

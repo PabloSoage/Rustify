@@ -18,14 +18,32 @@ class YtMusicRepository(private val appContext: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val libFile get() = File(appContext.filesDir, "ytm_library.json")
 
-    val favorites  = mutableStateListOf<YtmTrack>()
-    val playlists  = mutableStateListOf<YtmLocalPlaylist>()
-    val savedAlbums  = mutableStateListOf<YtmAlbumSlim>()
-    val savedArtists = mutableStateListOf<YtmArtistRef>()
+    // El estado de la biblioteca es COMPARTIDO entre todas las instancias (la app crea varias y el
+    // servicio de Android Auto crea la suya). Si cada una tuviera su propia lista, un favorito
+    // añadido en la app no se vería en el coche (cada instancia cargaría su snapshot del JSON y nunca
+    // se enteraría). Compartiendo las listas, cualquier instancia vé los cambios al instante.
+    val favorites  = State.favorites
+    val playlists  = State.playlists
+    val savedAlbums  = State.savedAlbums
+    val savedArtists = State.savedArtists
 
-    init { scope.launch { loadLibrary() } }
+    init {
+        synchronized(State) {
+            if (!State.loaded) { State.loaded = true; scope.launch { loadLibrary() } }
+        }
+    }
 
-    fun reloadLibrary() { scope.launch { loadLibrary() } }
+    companion object {
+        private object State {
+            val favorites  = mutableStateListOf<YtmTrack>()
+            val playlists  = mutableStateListOf<YtmLocalPlaylist>()
+            val savedAlbums  = mutableStateListOf<YtmAlbumSlim>()
+            val savedArtists = mutableStateListOf<YtmArtistRef>()
+            @Volatile var loaded = false
+        }
+    }
+
+    fun reloadLibrary() { scope.launch { loadLibrary(); com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged() } }
 
     private suspend fun loadLibrary() = withContext(Dispatchers.IO) {
         runCatching {
@@ -66,12 +84,14 @@ class YtMusicRepository(private val appContext: Context) {
         val idx = favorites.indexOfFirst { it.videoId == track.videoId }
         if (idx >= 0) favorites.removeAt(idx) else favorites.add(track)
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun createPlaylist(name: String): YtmLocalPlaylist {
         val pl = YtmLocalPlaylist(localId = "ytmpl:${java.util.UUID.randomUUID()}", name = name, items = emptyList(), createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
         playlists.add(pl)
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
         return pl
     }
 
@@ -79,21 +99,24 @@ class YtMusicRepository(private val appContext: Context) {
         val i = playlists.indexOfFirst { it.localId == localId }.takeIf { it >= 0 } ?: return
         playlists[i] = playlists[i].copy(items = playlists[i].items + track, updatedAt = System.currentTimeMillis())
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun removeFromPlaylist(localId: String, videoId: String) {
         val i = playlists.indexOfFirst { it.localId == localId }.takeIf { it >= 0 } ?: return
         playlists[i] = playlists[i].copy(items = playlists[i].items.filter { it.videoId != videoId }, updatedAt = System.currentTimeMillis())
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
-    fun deletePlaylist(localId: String) { playlists.removeAll { it.localId == localId }; scope.launch { saveLibrary() } }
+    fun deletePlaylist(localId: String) { playlists.removeAll { it.localId == localId }; scope.launch { saveLibrary() }; com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged() }
 
     fun isAlbumSaved(browseId: String) = savedAlbums.any { it.browseId == browseId }
     fun toggleSavedAlbum(album: YtmAlbumSlim) {
         val idx = savedAlbums.indexOfFirst { it.browseId == album.browseId }
         if (idx >= 0) savedAlbums.removeAt(idx) else savedAlbums.add(album)
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     fun isArtistSaved(channelId: String) = savedArtists.any { it.id == channelId }
@@ -101,6 +124,7 @@ class YtMusicRepository(private val appContext: Context) {
         val idx = savedArtists.indexOfFirst { it.id == artist.id }
         if (idx >= 0) savedArtists.removeAt(idx) else savedArtists.add(artist)
         scope.launch { saveLibrary() }
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
     // All native calls are wrapped in try/catch: a malformed / non-JSON payload from the

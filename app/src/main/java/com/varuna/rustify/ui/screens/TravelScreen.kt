@@ -517,11 +517,11 @@ fun TravelScreen(
                 IconButton(onClick = {
                     followUser = true
                     current?.let { loc ->
+                        // Zoom-in al centrar: si el zoom actual es muy lejano (vista de mundo/país),
+                        // acercamos a 14. Si ya está más cerca, respetamos el zoom del usuario.
+                        val z = (mapRef[0]?.cameraPosition?.zoom ?: 14.0).coerceAtLeast(14.0)
                         mapRef[0]?.animateCamera(
-                            CameraUpdateFactory.newLatLngZoom(
-                                LatLng(loc.latitude, loc.longitude),
-                                mapRef[0]?.cameraPosition?.zoom ?: 14.0
-                            )
+                            CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), z)
                         )
                     }
                 }) {
@@ -685,7 +685,9 @@ fun TravelScreen(
         )
 
         // ── Card inferior: destino/tiempo + buffer + modo + acciones ─────────────────────────
-        if (route != null || showManualCard) {
+        // Mostramos la card siempre que haya un destino elegido (aunque la ruta OSRM falle o no haya
+        // GPS), para que el botón "Navegar en Google Maps" y el modo manual sigan disponibles.
+        if (route != null || showManualCard || pickedDestination != null) {
             val cardScrim = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
             val cardText = if (isDarkMap) Color.White else Color.Black
             val cardSub = if (isDarkMap) Color(0xFFCCCCCC) else Color(0xFF555555)
@@ -1214,7 +1216,7 @@ private val destSourceRef = arrayOfNulls<GeoJsonSource>(1)
 private val routeSourceRef = arrayOfNulls<GeoJsonSource>(1)
 private val originSourceRef = arrayOfNulls<GeoJsonSource>(1)
 
-private const val EMPTY_POINT_GEO_JSON = """{"type":"Feature","geometry":{"type":"Point","coordinates":[0.0,0.0]},"properties":{}}"""
+private const val EMPTY_POINT_GEO_JSON = """{"type":"FeatureCollection","features":[]}"""
 private const val EMPTY_LINE_GEO_JSON = """{"type":"FeatureCollection","features":[]}"""
 
 private fun pointFeatureJson(lat: Double, lon: Double): String =

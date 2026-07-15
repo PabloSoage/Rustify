@@ -59,14 +59,13 @@ pub fn get_cache_dir() -> Option<String> {
 }
 
 pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&str>, cache_dir: &str) -> Option<String> {
-    // User-confirmed mapping ALWAYS takes priority over auto-matched hints
-    if let Some(mapped) = get_alternative_track(track_id) {
-        log_info!("[Resolver] Using mapped YT id={} for spotify_id={} (user mapping wins over hint)", mapped, track_id);
-        return Some(mapped);
-    }
     if let Some(yt_id) = youtube_id_opt {
-        set_alternative_track(track_id.to_string(), yt_id.to_string());
+        log_info!("[Resolver] Using explicit/hint YT id={} for spotify_id={}", yt_id, track_id);
         return Some(yt_id.to_string());
+    }
+    if let Some(mapped) = get_alternative_track(track_id) {
+        log_info!("[Resolver] Using mapped YT id={} for spotify_id={} (user mapping wins over auto-resolve)", mapped, track_id);
+        return Some(mapped);
     }
     resolve_youtube_id(track_id, cache_dir).await
 }

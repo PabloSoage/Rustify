@@ -721,6 +721,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         val ids = queue.mapNotNull { it.id }
         val json = "[" + ids.joinToString(",") { "\"$it\"" } + "]"
         NativeEngine.updateQueueNative(json)
+        // E96: refresca el nodo "Cola" del árbol de Android Auto (su contenido es la cola de
+        // reproducción; si no avisamos, el coche sigue mostrando la cola vieja en caché).
+        MediaBrowserNotifier.notifyChildrenChanged("sec_queue")
     }
 
     fun loadAndPlay(track: FullTrack) {
@@ -1076,6 +1079,29 @@ class AudioPlayerService private constructor(private val context: Context) {
         _state.value = _state.value.copy(queue = currentQueue, originalQueue = currentOrig)
         preBufferNextTrack()
         notifyQueueChanged(currentQueue)
+        requestSave()
+    }
+
+    /**
+     * Reemplaza todo lo que hay DESPUÉS de la pista actual por [tracks] (sin tocar la pista que
+     * suena ahora). Pensado para el DJ autónomo al cambiar de mood: descarta el bloque anterior que
+     * aún no se ha reproducido y pone el bloque nuevo a continuación de la pista actual, en lugar de
+     * apilarlo sobre el anterior (que era lo que hacía `enqueueAll` y dejaba canciones viejas).
+     * Vacía `userQueue` porque, en modo DJ, esos items eran precisamente los segmentos encolados
+     * automáticamente (no cola manual del usuario).
+     */
+    fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>) {
+        if (tracks.isEmpty()) return
+        val st = _state.value
+        val current = st.currentTrack
+        val currentIdx = st.queue.indexOfFirst { it.id == current?.id }
+        val head = if (currentIdx >= 0) st.queue.subList(0, currentIdx + 1).toList() else st.queue.toList()
+        val newQueue = head + tracks
+        synchronized(userQueue) { userQueue.clear() }
+        preResolvedUrls.clear()
+        _state.value = st.copy(queue = newQueue, originalQueue = newQueue)
+        preBufferNextTrack()
+        notifyQueueChanged(newQueue)
         requestSave()
     }
 

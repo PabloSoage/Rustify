@@ -41,6 +41,13 @@ object DjVoice {
     var onSpeakStart: (() -> Unit)? = null
     var onSpeakDone: (() -> Unit)? = null
 
+    /**
+     * Callback de un solo uso que se dispara al terminar la frase de preview (ya sea nativa o nube).
+     * Se limpia automáticamente tras invocarse; no afecta el [onSpeakDone] global.
+     */
+    @Volatile
+    private var previewOnDone: (() -> Unit)? = null
+
     fun init(context: Context) {
         if (tts != null) return
         val app = context.applicationContext
@@ -51,8 +58,8 @@ object DjVoice {
                 applyVoiceConfig(app)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) { duck(); onSpeakStart?.invoke() }
-                    override fun onDone(utteranceId: String?) { unduck(); onSpeakDone?.invoke() }
-                    @Deprecated("deprecated in API 21") override fun onError(utteranceId: String?) { unduck(); onSpeakDone?.invoke() }
+                    override fun onDone(utteranceId: String?) { unduck(); onSpeakDone?.invoke(); finishPreview() }
+                    @Deprecated("deprecated in API 21") override fun onError(utteranceId: String?) { unduck(); onSpeakDone?.invoke(); finishPreview() }
                 })
                 synchronized(pending) { pending.forEach { speakNative(it) }; pending.clear() }
             }
@@ -112,8 +119,8 @@ object DjVoice {
     }
 
     /** Habla [text] con el motor elegido (native / pollinations / openai); cae a nativo si falla. */
-    fun speak(context: Context, text: String) {
-        if (!DjSettings.voiceEnabled(context) || text.isBlank()) return
+    fun speak(context: Context, text: String, force: Boolean = false) {
+        if ((!DjSettings.voiceEnabled(context) && !force) || text.isBlank()) return
         appCtx = context.applicationContext as android.app.Application
         when (DjSettings.ttsEngine(context)) {
             "pollinations" -> CoroutineScope(Dispatchers.IO).launch {
@@ -129,6 +136,18 @@ object DjVoice {
             }
             else -> ensureAndSpeak(context, text)
         }
+    }
+
+    /**
+     * Previsualiza la voz actualmente seleccionada con una frase de prueba, IGNORANDO si el DJ está
+     * activado o no (para que el usuario la oiga al elegir voz desde Ajustes aunque tenga el DJ off).
+     * Usa el motor/voz/idioma que haya elegido en este momento. [onDone] se invoca al terminar de
+     * hablar (o si falla); puede ser null.
+     */
+    fun preview(context: Context, onDone: (() -> Unit)? = null) {
+        val phrase = DjPhrases.previewPhrase(DjSettings.voiceLanguage(context))
+        previewOnDone = onDone
+        speak(context, phrase, force = true)
     }
 
     private fun ensureAndSpeak(context: Context, text: String) {
@@ -218,10 +237,15 @@ object DjVoice {
         duck(); onSpeakStart?.invoke()
         cloudPlayer = MediaPlayer().apply {
             setDataSource(file.absolutePath)
-            setOnCompletionListener { unduck(); onSpeakDone?.invoke() }
-            setOnErrorListener { _, _, _ -> unduck(); onSpeakDone?.invoke(); true }
+            setOnCompletionListener { unduck(); onSpeakDone?.invoke(); finishPreview() }
+            setOnErrorListener { _, _, _ -> unduck(); onSpeakDone?.invoke(); finishPreview(); true }
             prepare()
             start()
         }
+    }
+
+    private fun finishPreview() {
+        val cb = previewOnDone
+        if (cb != null) { previewOnDone = null; cb() }
     }
 }

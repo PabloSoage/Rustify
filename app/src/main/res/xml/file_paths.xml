@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Carátulas de pistas locales extraídas por SpotifyRepository.scanLocalMusic.
+         Se guardan en filesDir/covers/, así que las exponemos como content:// para que procesos
+         externos (Android Auto) puedan leerlas. -->
+    <files-path name="covers" path="covers/" />
+</paths>

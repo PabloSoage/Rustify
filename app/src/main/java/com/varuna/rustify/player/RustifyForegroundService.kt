@@ -121,6 +121,9 @@ class RustifyForegroundService : MediaLibraryService() {
             mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, forwardingPlayer, LibraryCallback())
                 .setSessionActivity(pendingIntent)
                 .build()
+            // E96: expone la sesión a los repositorios para que puedan invalidar el árbol de Auto
+            // (notifyChildrenChanged) cuando el usuario cambia favoritos/_playlists desde la app.
+            MediaBrowserNotifier.bind(mediaSession)
         } else {
             android.util.Log.e("RustifyForegroundService", "ExoPlayer is null, cannot create MediaSession")
             stopSelf()
@@ -196,12 +199,12 @@ class RustifyForegroundService : MediaLibraryService() {
         MediaItem.Builder().setMediaId(id).setMediaMetadata(
             MediaMetadata.Builder().setTitle(title)
                 .apply { if (subtitle.isNotBlank()) setSubtitle(subtitle) }
-                .apply { if (!imageUrl.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(imageUrl)) }
+                .apply { if (!imageUrl.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(coverArtUri(imageUrl))) }
                 .setIsBrowsable(true).setIsPlayable(false).build()
         ).build()
 
     private fun trackItem(t: FullTrack): MediaItem {
-        val art = t.album?.images?.firstOrNull()?.url
+        val art = coverArtUri(t.album?.images?.firstOrNull()?.url)
         return MediaItem.Builder().setMediaId(t.id ?: "").setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(t.name)
@@ -215,7 +218,7 @@ class RustifyForegroundService : MediaLibraryService() {
     private fun nodeItem(n: AndroidAutoBrowse.Node): MediaItem {
         if (n.browsable) return browsable(n.id, n.title, n.subtitle, n.imageUrl)
         val t = n.track!!
-        val art = n.imageUrl ?: t.album?.images?.firstOrNull()?.url
+        val art = coverArtUri(n.imageUrl ?: t.album?.images?.firstOrNull()?.url)
         return MediaItem.Builder().setMediaId(n.id).setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(t.name)
@@ -223,6 +226,26 @@ class RustifyForegroundService : MediaLibraryService() {
                 .apply { if (!art.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(art)) }
                 .setIsBrowsable(false).setIsPlayable(true).build()
         ).build()
+    }
+
+    /**
+     * Convierte la URI de carátula de una pista/carpeta local al esquema `content://` cuando hace
+     * falta. Las carátulas locales se guardan en `filesDir/covers/` como `file://...` (legible por
+     * la propia app), pero el renderer de Android Auto corre en OTRO proceso y no tiene permiso para
+     * leer nuestro almacenamiento privado. Exponiéndolas vía FileProvider obtiene un `content://`
+     * temporal con permiso de lectura. Las carátulas remotas (https://) se devuelven tal cual.
+     */
+    private fun coverArtUri(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        if (!url.startsWith("file://") || !url.contains("/covers/")) return url
+        return runCatching {
+            val path = android.net.Uri.parse(url).path ?: return url
+            val file = java.io.File(path)
+            if (!file.exists()) return url
+            androidx.core.content.FileProvider.getUriForFile(
+                this, "com.varuna.rustify.fileprovider", file
+            ).toString()
+        }.getOrNull() ?: url
     }
 
     private fun resolveTrack(mediaId: String): FullTrack? =
@@ -256,6 +279,7 @@ class RustifyForegroundService : MediaLibraryService() {
 
     override fun onDestroy() {
         AudioPlayerService.instance?.saveNow()
+        MediaBrowserNotifier.unbind()
         mediaSession?.release()
         mediaSession = null
         autoScope.cancel()

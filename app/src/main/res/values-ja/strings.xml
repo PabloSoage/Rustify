@@ -217,6 +217,7 @@
     <string name="settings_dj_voice_pick">音声</string>
     <string name="settings_dj_voice_cloud_key">クラウドAPIキー（任意）</string>
     <string name="settings_dj_voice_cloud_url">クラウドTTSエンドポイント（任意、OpenAI互換）</string>
+    <string name="settings_dj_voice_preview">声を試聴</string>
     <string name="settings_dj_auto_source">オートDJのソース</string>
     <string name="dj_auto_source_favorites">お気に入りのみ</string>
     <string name="dj_auto_source_balanced">お気に入り＋おすすめ</string>

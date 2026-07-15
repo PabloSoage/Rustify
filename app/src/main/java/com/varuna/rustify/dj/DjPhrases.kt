@@ -39,4 +39,14 @@ object DjPhrases {
             if (l == "es") "Cambiamos de rollo: ahora $mood." else "Switching it up: now $mood."
         }
     }
+
+    /** Frase corta de prueba para previsualizar una voz (en el idioma de la voz). */
+    fun previewPhrase(voiceLang: String): String {
+        val l = lang(voiceLang)
+        return when (l) {
+            "es" -> "Hola, esta es una prueba de mi voz. ¿Cómo sueno?"
+            "ja" -> "こんにちは、これは声のテストです。どう聞こえますか？"
+            else -> "Hi, this is a test of my voice. How do I sound?"
+        }
+    }
 }

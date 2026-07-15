@@ -324,6 +324,7 @@
     <string name="settings_dj_voice_pick">Voz</string>
     <string name="settings_dj_voice_cloud_key">Clave API de la nube (opcional)</string>
     <string name="settings_dj_voice_cloud_url">Endpoint TTS en la nube (opcional, OpenAI-compatible)</string>
+    <string name="settings_dj_voice_preview">Probar voz</string>
     <string name="settings_dj_auto_source">Fuente del DJ automático</string>
     <string name="dj_auto_source_favorites">Solo mis favoritas</string>
     <string name="dj_auto_source_balanced">Favoritas + sugerencias</string>

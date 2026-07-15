@@ -325,6 +325,7 @@
     <string name="settings_dj_voice_pick">Voice</string>
     <string name="settings_dj_voice_cloud_key">Cloud API key (optional)</string>
     <string name="settings_dj_voice_cloud_url">Cloud TTS endpoint (optional, OpenAI-compatible)</string>
+    <string name="settings_dj_voice_preview">Preview voice</string>
     <string name="settings_dj_auto_source">Auto DJ source</string>
     <string name="dj_auto_source_favorites">Only my favourites</string>
     <string name="dj_auto_source_balanced">Favourites + suggestions</string>

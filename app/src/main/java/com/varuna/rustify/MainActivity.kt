@@ -240,8 +240,11 @@ private fun extractTravelToken(text: String): String? {
         return "travel:${m.groupValues[1]},${m.groupValues[2]},"
     }
 
-    // maps.app.goo.gl/... short link — resolver redirect para obtener @lat,lng
-    if (t.contains("goo.gl/maps", ignoreCase = true) || (t.contains("google.com/maps/place/", ignoreCase = true) && atRegex.find(t) == null)) {
+    // maps.app.goo.gl/... short link (formato moderno) y goo.gl/maps (legado) —
+    // resolver redirect para obtener la URL larga con @lat,lng.
+    if (t.contains("goo.gl/maps", ignoreCase = true) ||
+        t.contains("maps.app.goo.gl", ignoreCase = true) ||
+        (t.contains("google.com/maps/place/", ignoreCase = true) && atRegex.find(t) == null)) {
         try {
             val conn = java.net.URL(t).openConnection() as java.net.HttpURLConnection
             conn.setRequestProperty("User-Agent", "Rustify/1.0")

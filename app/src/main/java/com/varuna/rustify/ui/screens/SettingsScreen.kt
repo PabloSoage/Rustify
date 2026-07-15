@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -1905,6 +1906,40 @@ if (localMusicDirs.isEmpty()) {
                                     colors = djVoiceFieldColors
                                 )
                             }
+                        }
+                    }
+
+                    // Previsualiza la voz seleccionada con una frase de prueba (ignora el toggle
+                    // "DJ activado", así se puede oír al elegir voz desde Ajustes).
+                    var previewLoading by remember { mutableStateOf(false) }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            previewLoading = true
+                            com.varuna.rustify.dj.DjVoice.init(context)
+                            com.varuna.rustify.dj.DjVoice.refreshConfig(context)
+                            com.varuna.rustify.dj.DjVoice.preview(context) { previewLoading = false }
+                        },
+                        enabled = !previewLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (previewLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.Black
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Loading...", color = Color.Black, fontSize = 14.sp)
+                        } else {
+                            androidx.compose.material3.Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.settings_dj_voice_preview), fontWeight = FontWeight.SemiBold)
                         }
                     }
 
