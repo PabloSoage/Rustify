@@ -17,7 +17,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-
+        // E50 (B) — AppAuth requires this placeholder to merge its manifest; our own
+        // RedirectUriReceiverActivity (tools:node="replace") uses an https App Link instead, so this
+        // custom scheme is effectively unused but must be defined to satisfy the merge.
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.varuna.rustify"
     }
 
     splits {
@@ -123,6 +126,8 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
     // E50 — Google Drive sync (AppData folder + REST v3).
     implementation(libs.play.services.auth)
+    // E50 (B) — AppAuth browser/PKCE backend (cert-independent single client).
+    implementation(libs.appauth)
     implementation(libs.okhttp)
     // E99 — open-source keyless map (travel playlist).
     implementation(libs.maplibre.android)

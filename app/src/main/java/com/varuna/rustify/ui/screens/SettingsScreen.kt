@@ -297,6 +297,9 @@ fun SettingsScreen(
 
     // ── E50 — Google Drive sync ───────────────────────────────────────────────
     val drive = remember { GoogleDriveSync(context.applicationContext) }
+    // B — backend AppAuth (navegador/PKCE), coexiste con A (Play Services).
+    val appAuth = remember { com.varuna.rustify.sync.AppAuthDriveAuth(context.applicationContext) }
+    var driveAuthMethod by remember { mutableStateOf(DriveSyncPrefs.authMethod(context)) }
     val syncManager = remember {
         DriveSyncManager(context.applicationContext, drive, spotifyRepository, ytmRepository)
     }
@@ -353,8 +356,46 @@ fun SettingsScreen(
         )
     }
 
+    // B — launcher del Custom Tab de AppAuth (Intent, no IntentSender). Al volver, intercambia el
+    // code por tokens y sincroniza.
+    val driveBrowserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { activityResult ->
+        appAuth.handleResponse(
+            activityResult.data,
+            onToken = { token ->
+                DriveSyncPrefs.setLinked(context, true); driveLinked = true
+                runDriveSync(token)
+            },
+            onError = { e ->
+                driveStatus = String.format(driveSyncErrTmpl, e.message ?: "auth")
+                Toast.makeText(context, driveStatus, Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
     // Pide token (y lanza consentimiento si hace falta), luego ejecuta [onToken].
     fun driveAuthorizeThen(onToken: (String) -> Unit) {
+        if (driveAuthMethod == "browser") {
+            // B — AppAuth: token fresco en silencio; si no hay autorización, abre el navegador.
+            if (!appAuth.isConfigured()) {
+                driveStatus = driveNotConfiguredMsg
+                Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show()
+                return
+            }
+            val launchInteractive = {
+                val intent = appAuth.authRequestIntent()
+                if (intent != null) driveBrowserLauncher.launch(intent)
+                else { driveStatus = driveNotConfiguredMsg; Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show() }
+            }
+            appAuth.getFreshToken(
+                onToken = onToken,
+                onNone = { launchInteractive() },
+                onError = { launchInteractive() }
+            )
+            return
+        }
+        // A — Play Services AuthorizationClient.
         if (webClientId.isBlank()) {
             driveStatus = driveNotConfiguredMsg
             Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show()
@@ -955,12 +996,43 @@ if (localMusicDirs.isEmpty()) {
                         Text(driveStatus, color = Color.Gray, fontSize = 12.sp)
                     }
 
+                    // Método de auth: A (Play Services, tu build oficial) o B (navegador, cualquier build).
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(stringResource(R.string.settings_drive_method), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.weight(1f).clickable {
+                                driveAuthMethod = "play"; DriveSyncPrefs.setAuthMethod(context, "play")
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = driveAuthMethod == "play", onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                            )
+                            Text(stringResource(R.string.settings_drive_method_play), color = Color.White, fontSize = 12.sp)
+                        }
+                        Row(
+                            modifier = Modifier.weight(1f).clickable {
+                                driveAuthMethod = "browser"; DriveSyncPrefs.setAuthMethod(context, "browser")
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = driveAuthMethod == "browser", onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
+                            )
+                            Text(stringResource(R.string.settings_drive_method_browser), color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
                                 if (driveLinked) {
                                     drive.unlink()
+                                    appAuth.signOut()
                                     DriveSyncPrefs.setLinked(context, false)
                                     driveLinked = false
                                     driveStatus = ""

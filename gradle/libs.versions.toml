@@ -25,6 +25,9 @@ okhttp = "4.12.0"
 # E99 — MapLibre GL (open-source, keyless map). Routing via OSRM + geocoding via Nominatim are
 # plain HTTP (no extra dependency). Verify this artifact resolves on your first Gradle sync.
 maplibre = "13.3.1"
+# E50 (B) — AppAuth (RFC 8252 + PKCE): browser-based Google OAuth with a single cert-independent
+# client, so Drive backup works on any build (including forks), like the paimon.moe web model.
+appauth = "0.11.1"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -53,6 +56,7 @@ androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profi
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 maplibre-android = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibre" }
+appauth = { group = "net.openid", name = "appauth", version.ref = "appauth" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -393,6 +393,9 @@
     <string name="travel_clear">Limpiar</string>
 
     <!-- E50 — Sincronización con Google Drive -->
+    <string name="settings_drive_method">Método de inicio de sesión</string>
+    <string name="settings_drive_method_play">Google (Play Services)</string>
+    <string name="settings_drive_method_browser">Navegador (sin Google Play)</string>
     <string name="settings_drive_title">Google Drive</string>
     <string name="settings_drive_desc">Sincroniza tus mapeos, playlists/favoritos locales, biblioteca de YouTube Music y métricas en una carpeta privada de Drive (AppData).</string>
     <string name="settings_drive_link">Vincular cuenta</string>

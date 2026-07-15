@@ -533,18 +533,29 @@ fun EngineTester(
             com.varuna.rustify.sync.DriveSyncPrefs.isAutoSync(appCtx)
         ) {
             val drive = com.varuna.rustify.sync.GoogleDriveSync(appCtx)
-            drive.authorize(
-                onToken = { token ->
-                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        runCatching {
-                            com.varuna.rustify.sync.DriveSyncManager(appCtx, drive, spotifyRepo, ytmRepo)
-                                .syncNow(token)
-                        }
+            val syncWith = { token: String ->
+                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching {
+                        com.varuna.rustify.sync.DriveSyncManager(appCtx, drive, spotifyRepo, ytmRepo).syncNow(token)
                     }
-                },
-                onNeedConsent = { /* posponer: requiere UI; el usuario sincroniza desde Ajustes */ },
-                onError = { /* silencioso en auto-sync */ }
-            )
+                }
+                Unit
+            }
+            if (com.varuna.rustify.sync.DriveSyncPrefs.authMethod(appCtx) == "browser") {
+                // B — refresco silencioso con AppAuth; si hace falta consentimiento se pospone a Ajustes.
+                com.varuna.rustify.sync.AppAuthDriveAuth(appCtx).getFreshToken(
+                    onToken = syncWith,
+                    onNone = { /* requiere UI; el usuario sincroniza desde Ajustes */ },
+                    onError = { /* silencioso en auto-sync */ }
+                )
+            } else {
+                // A — Play Services (token silencioso si hay consentimiento cacheado).
+                drive.authorize(
+                    onToken = syncWith,
+                    onNeedConsent = { /* posponer: requiere UI; el usuario sincroniza desde Ajustes */ },
+                    onError = { /* silencioso en auto-sync */ }
+                )
+            }
         }
     }
 

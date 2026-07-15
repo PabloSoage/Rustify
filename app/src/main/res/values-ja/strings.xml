@@ -286,6 +286,9 @@
     <string name="travel_clear">クリア</string>
 
     <!-- E50 — Google Drive 同期 -->
+    <string name="settings_drive_method">ログイン方法</string>
+    <string name="settings_drive_method_play">Google（Play Services）</string>
+    <string name="settings_drive_method_browser">ブラウザ（Google Play 不要）</string>
     <string name="settings_drive_title">Google Drive</string>
     <string name="settings_drive_desc">マッピング、ローカルのプレイリスト/お気に入り、YouTube Music ライブラリ、統計を Drive の非公開フォルダ（AppData）に同期します。</string>
     <string name="settings_drive_link">アカウントを連携</string>

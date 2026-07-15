@@ -15,6 +15,14 @@ object DriveSyncPrefs {
     private const val K_LINKED = "drive_sync_linked"
     private const val K_AUTO = "drive_sync_auto"
     private const val K_LAST = "drive_sync_last_ms"
+    private const val K_METHOD = "drive_auth_method"   // "play" (Play Services) | "browser" (AppAuth)
+
+    /** Método de auth de Drive: "play" (A, Play Services) por defecto, o "browser" (B, AppAuth). */
+    fun authMethod(ctx: Context): String =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_METHOD, "play") ?: "play"
+
+    fun setAuthMethod(ctx: Context, method: String) =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(K_METHOD, method) }
 
     fun isLinked(ctx: Context): Boolean =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(K_LINKED, false)

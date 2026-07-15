@@ -144,6 +144,25 @@
             </intent-filter>
         </service>
 
+        <!-- E50 (B) — AppAuth OAuth redirect. Uses an HTTPS App Link on our already-verified
+             domain (same host as the /r/ share links) so the OAuth client is NOT tied to the APK
+             signing certificate; one client works on any build. Requires an assetlinks.json on the
+             host and https://rustify-music.github.io/oauth2redirect to exist (a blank page is fine).
+             tools:node="replace" overrides AppAuth's default custom-scheme intent-filter. -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            android:exported="true"
+            tools:node="replace">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                    android:host="rustify-music.github.io"
+                    android:pathPrefix="/oauth2redirect" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>
