@@ -110,6 +110,7 @@ fun SettingsScreen(
     onNavigateLogViewer: () -> Unit = {},
     onLocaleChanged: ((String) -> Unit)? = null,
     onNavigateMetrics: () -> Unit = {},
+    onNavigateMatchEditor: () -> Unit = {},
     ytmRepository: YtMusicRepository? = null,
 ) {
     val context = LocalContext.current
@@ -889,7 +890,16 @@ if (localMusicDirs.isEmpty()) {
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    // View/Edit mappings button (BUG-24)
+                    // Editor estructurado: lista con nombres, editar/preview/borrar, añadir manual.
+                    Button(
+                        onClick = onNavigateMatchEditor,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.settings_edit_matches), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Editor de texto crudo (avanzado) — se mantiene como fallback.
                     var showMappingsDialog by remember { mutableStateOf(false) }
                     val mappingsContent = remember {
                         val file = File(context.filesDir, "youtube_mappings.json")
@@ -936,10 +946,11 @@ if (localMusicDirs.isEmpty()) {
                             confirmButton = {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton(onClick = {
-                                        val file = File(context.filesDir, "youtube_mappings.json")
+                                        // FIX: recargar el mapa en Rust (initCacheDir) tras escribir; si no,
+                                        // borrar/editar y Guardar no tenía efecto (el mapa vivo seguía igual).
                                         try {
-                                            file.writeText(editableContent)
-                                            Toast.makeText(context, "Mappings saved", Toast.LENGTH_SHORT).show()
+                                            val ok = com.varuna.rustify.bridge.MatchStore.replaceFromJson(context, editableContent)
+                                            Toast.makeText(context, if (ok) "Mappings saved" else "Invalid JSON", Toast.LENGTH_SHORT).show()
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
                                         }

@@ -49,7 +49,10 @@ data class AudioPlayerState(
     val durationMs: Long = 0L,
     val bufferPercent: Int = 0,
     val isVideoMode: Boolean = false,
-    val videoSizeRatio: Float? = null
+    val videoSizeRatio: Float? = null,
+    // true cuando la pista actual se resolvió a un ARCHIVO LOCAL (match local o track "local:").
+    // Lo usa la UI para poner en verde el botón de alternativas e indicar el match actual.
+    val isLocalSource: Boolean = false
 )
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -472,9 +475,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                         // YouTube alternative for a locally-matched track silently does nothing (the
                         // local file keeps playing), which is exactly the "alternatives don't work on
                         // matched tracks" bug.
+                        // Solo una alternativa REALMENTE elegida por el usuario (hint en curso o
+                        // marcada en UserAlternatives) gana al match local. Un mapping auto-persistido
+                        // por el resolver antiguo NO cuenta → el match local vuelve a ganar.
                         val hasUserAlternative = !effectiveYoutubeId.isNullOrBlank() ||
-                            runCatching { NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() }
-                                .getOrDefault(false)
+                            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
                         if (!hasUserAlternative) {
                             val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
                             if (match != null) {
@@ -501,7 +506,8 @@ class AudioPlayerService private constructor(private val context: Context) {
                             // old auto-match — skip cache and force re-resolution through the resolver
                             // which checks get_alternative_track first.
                             val mappedId = NativeEngine.getAlternativeTrackNative(trackId)
-                            val hasUserMapping = mappedId.isNotBlank()
+                            val hasUserMapping = mappedId.isNotBlank() &&
+                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
                             if (expired || hasUserMapping) {
                                 if (expired) android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
                                 if (hasUserMapping) android.util.Log.d("AudioPlayerService", "User mapping found for $trackId ($mappedId); skipping cached URL")
@@ -562,6 +568,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                 resolvedStreamUrls[trackId] = streamUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
                 val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
+                // Expone a la UI si la pista actual suena desde un archivo local (para el botón verde).
+                if (_state.value.currentTrack?.id == track.id) {
+                    _state.value = _state.value.copy(isLocalSource = isLocalStream)
+                }
                 if (!trackId.startsWith("local:") && !isLocalStream) {
                     putCachedStreamUrl(trackId, streamUrl)
                 }

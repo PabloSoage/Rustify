@@ -164,6 +164,11 @@ fun YouTubeMappingDialog(
     
     val coroutineScope = rememberCoroutineScope()
     val playerState by audioPlayerService.state.collectAsState()
+    // Match actual de esta pista, para indicarlo y resaltar la opción vigente en la lista.
+    val currentAltId = remember(track.id) {
+        runCatching { NativeEngine.getAlternativeTrackNative(track.id ?: "") }.getOrDefault("")
+    }
+    val isCurrentAndLocal = playerState.currentTrack?.id == track.id && playerState.isLocalSource
 
     LaunchedEffect(Unit) {
         isSearching = true
@@ -179,6 +184,14 @@ fun YouTubeMappingDialog(
         title = { Text("Asignar video de YouTube") },
         text = {
             Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                Text(
+                    when {
+                        isCurrentAndLocal -> "Match actual: archivo local"
+                        currentAltId.isNotBlank() -> "Match actual: YouTube ($currentAltId)"
+                        else -> "Match actual: automático"
+                    },
+                    color = Color(0xFF1DB954), fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
+                )
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -215,7 +228,13 @@ fun YouTubeMappingDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { selectedTrackId = yt.id }
-                                    .background(if (selectedTrackId == yt.id) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                    .background(
+                                        when {
+                                            selectedTrackId == yt.id -> Color.White.copy(alpha = 0.1f)
+                                            yt.id == currentAltId && currentAltId.isNotBlank() -> Color(0xFF1DB954).copy(alpha = 0.14f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -227,7 +246,10 @@ fun YouTubeMappingDialog(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(yt.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(
+                                        yt.title + (if (yt.id == currentAltId && currentAltId.isNotBlank()) "  · actual" else ""),
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 14.sp
+                                    )
                                     Text(yt.author, fontSize = 12.sp, color = Color.Gray)
                                 }
                                 
@@ -723,6 +745,8 @@ fun TrackScreen(
                     showMappingDialog = false
                     track.id?.let { tid ->
                         NativeEngine.setAlternativeTrackNative(tid, ytId)
+                        // Márcalo como elección REAL del usuario (gana al match local; ver UserAlternatives).
+                        com.varuna.rustify.bridge.UserAlternatives.add(context, tid)
                         LyricsRepository.invalidateLyrics(tid)
                         // Clear cached stream URL so the new mapping takes effect immediately
                         audioPlayerService.removeCachedStreamUrl(tid)
@@ -1178,7 +1202,8 @@ fun TrackScreenControls(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.CallSplit,
                         contentDescription = stringResource(R.string.track_menu_view_youtube),
-                        tint = Color.White,
+                        // Verde cuando la pista actual suena desde un archivo LOCAL (match local).
+                        tint = if (isCurrentTrack && playerState.isLocalSource) Color(0xFF1DB954) else Color.White,
                         modifier = Modifier.size(28.dp)
                     )
                 }

@@ -51,6 +51,7 @@
     
     <string name="settings_advanced_data">Datos (Avanzado)</string>
     <string name="settings_youtube_mappings">Mapeos de YouTube</string>
+    <string name="settings_edit_matches">Editar matches</string>
     <string name="settings_export">Exportar</string>
     <string name="settings_import">Importar</string>
     <string name="settings_export_success">Exportación exitosa</string>

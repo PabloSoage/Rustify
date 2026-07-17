@@ -237,10 +237,53 @@ fun TravelScreen(
     val routeFailedMsg = stringResource(R.string.travel_route_failed)
     val noTracksMsg = stringResource(R.string.travel_no_tracks)
 
+    val activity = context as? android.app.Activity
+    // "Denegado para siempre": el usuario marcó "no volver a preguntar" o revocó el permiso desde
+    // Ajustes de Android. En ese caso el diálogo del sistema ya no aparece; hay que mandarlo a Ajustes.
+    var permPermanentlyDenied by remember { mutableStateOf(false) }
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPerm = granted
         locationEnabled = TravelRouting.isLocationEnabled(context)
-        if (granted && locationEnabled) current = lastKnownLocation(context)
+        if (granted) {
+            permPermanentlyDenied = false
+            if (locationEnabled) current = lastKnownLocation(context)
+        } else {
+            // Si no se puede volver a pedir (rationale=false tras denegar) → denegado para siempre.
+            permPermanentlyDenied = activity?.let {
+                !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.ACCESS_FINE_LOCATION)
+            } ?: false
+        }
+    }
+
+    // Re-chequea el permiso al volver a primer plano: si el usuario lo REVOCÓ desde Ajustes de Android,
+    // hasPerm vuelve a false y el botón "Conceder ubicación" reaparece (antes se quedaba oculto para
+    // siempre porque hasPerm solo se leía una vez al entrar).
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasPerm = hasLocationPermission(context)
+                locationEnabled = TravelRouting.isLocationEnabled(context)
+                if (hasPerm) { permPermanentlyDenied = false; if (locationEnabled && current == null) current = lastKnownLocation(context) }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    // Pide el permiso; si está denegado para siempre, abre los Ajustes de la app en su lugar.
+    fun requestLocationPermission() {
+        if (permPermanentlyDenied) {
+            runCatching {
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", context.packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        } else {
+            permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
     }
 
     val locationSettingsLauncher =
@@ -260,6 +303,9 @@ fun TravelScreen(
     }
 
     LaunchedEffect(Unit) { locationEnabled = TravelRouting.isLocationEnabled(context) }
+    // Precarga las favoritas al entrar para que "Empezar viaje" en modo Auto funcione sin tener que
+    // abrir antes la hoja de Preview (que era lo único que las cargaba).
+    LaunchedEffect(Unit) { ensureCache() }
     // Pre-cargar destino si vino desde un link compartido (geo: o Google Maps).
     LaunchedEffect(initialDestination) {
         val dest = initialDestination ?: return@LaunchedEffect
@@ -866,9 +912,17 @@ fun TravelScreen(
                                 originOverride?.let { sb.append("&origin=${it.lat},${it.lon}") }
                                 sb.append("&destination=${dest.lat},${dest.lon}&travelmode=driving")
                                 val uri = android.net.Uri.parse(sb.toString())
-                                val gmaps = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")
-                                runCatching { context.startActivity(gmaps) }
-                                    .onFailure { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } }
+                                // 1) intenta abrir directamente la app de Google Maps; 2) si no está
+                                // (o no es visible), abre la URL con cualquier navegador/app de mapas;
+                                // 3) último recurso, un intent geo: turn-by-turn. FLAG_ACTIVITY_NEW_TASK
+                                // por si el context no es una Activity.
+                                fun launch(i: Intent): Boolean = runCatching {
+                                    context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+                                }.getOrDefault(false)
+                                val ok = launch(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")) ||
+                                    launch(Intent(Intent.ACTION_VIEW, uri)) ||
+                                    launch(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=${dest.lat},${dest.lon}&mode=d")))
+                                if (!ok) android.widget.Toast.makeText(context, "Google Maps no disponible", android.widget.Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE)),
                             modifier = Modifier.fillMaxWidth()
@@ -921,7 +975,7 @@ fun TravelScreen(
                         ) { Text(stringResource(R.string.travel_enable), color = Color.Black, fontWeight = FontWeight.Bold) }
                         if (!hasPerm) {
                             Button(
-                                onClick = { permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                                onClick = { requestLocationPermission() },
                                 colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE))
                             ) { Text(stringResource(R.string.travel_grant_location), color = promptText) }
                         }

@@ -61,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -141,6 +142,8 @@ sealed class Screen {
     object Downloads : Screen()
     object LogViewer : Screen()
     object Metrics : Screen()
+    // Editor de matches YouTube (lista con nombres, editar/preview/borrar, añadir manual).
+    object MatchEditor : Screen()
     // E90 — DJ IA (automix / peticiones en lenguaje natural).
     object Dj : Screen()
     object Travel : Screen()
@@ -190,6 +193,16 @@ private fun navigateDeepLink(
                 navigationStack.add(Screen.TravelWithDestination(lat, lon, label))
             }
         }
+        // Short link / place de Google Maps: resolvemos el redirect en IO (no en el hilo principal).
+        "travelresolve" -> {
+            val url = parts[1]
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val coords = resolveMapsRedirect(url)
+                if (coords != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    navigationStack.add(Screen.TravelWithDestination(coords.first, coords.second, null))
+                }
+            }
+        }
         // E40 - YouTube Music deep links.
         "ytmtrack" -> {
             // Build a minimal ytm: FullTrack and hand it to the existing player pipeline.
@@ -234,45 +247,62 @@ private fun extractTravelToken(text: String): String? {
         }
     }
 
-    // Google Maps URL: extrae lat,lng de la parte @lat,lng en la URL
+    // Google Maps URL: extrae lat,lng de la parte @lat,lng en la URL (síncrono, sin red)
     val atRegex = Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""")
     atRegex.find(t)?.let { m ->
         return "travel:${m.groupValues[1]},${m.groupValues[2]},"
     }
 
-    // maps.app.goo.gl/... short link (formato moderno) y goo.gl/maps (legado) —
-    // resolver redirect para obtener la URL larga con @lat,lng.
-    if (t.contains("goo.gl/maps", ignoreCase = true) ||
-        t.contains("maps.app.goo.gl", ignoreCase = true) ||
-        (t.contains("google.com/maps/place/", ignoreCase = true) && atRegex.find(t) == null)) {
-        try {
-            val conn = java.net.URL(t).openConnection() as java.net.HttpURLConnection
-            conn.setRequestProperty("User-Agent", "Rustify/1.0")
-            conn.instanceFollowRedirects = false
-            conn.connectTimeout = 5000; conn.readTimeout = 5000
-            conn.connect()
-            val code = conn.responseCode
-            if (code in 300..399) {
-                val dest = conn.getHeaderField("Location")
-                conn.disconnect()
-                if (dest != null) {
-                    atRegex.find(dest)?.let { m ->
-                        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
-                    }
-                }
-            } else {
-                conn.disconnect()
-            }
-        } catch (_: Exception) { }
-    }
-
-    // maps.google.com/?q=lat,lng (directo)
-    val coordQ = Regex("""[?&]q=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)""").find(t)
-    coordQ?.let { m ->
+    // maps.google.com/?q=lat,lng (directo, síncrono)
+    Regex("""[?&]q=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)""").find(t)?.let { m ->
         return "travel:${m.groupValues[1]},${m.groupValues[2]},"
     }
 
+    // Short links (maps.app.goo.gl / goo.gl/maps) o /place/ sin coordenadas: necesitan resolver un
+    // redirect por RED. NO lo hacemos aquí (esto corre en el hilo principal → NetworkOnMainThread);
+    // devolvemos un token diferido que navigateDeepLink resuelve en una corrutina IO. Este era el bug
+    // por el que compartir un enlace de Google Maps (que por defecto es un maps.app.goo.gl) no hacía nada.
+    if (t.contains("maps.app.goo.gl", ignoreCase = true) ||
+        t.contains("goo.gl/maps", ignoreCase = true) ||
+        (t.contains("google.com/maps", ignoreCase = true))) {
+        return "travelresolve:$t"
+    }
+
     return null
+}
+
+/**
+ * Resuelve un enlace corto/place de Google Maps siguiendo redirects y buscando `@lat,lng` en la
+ * cadena de URLs y en el cuerpo final. Bloqueante — llamar en Dispatchers.IO.
+ */
+private fun resolveMapsRedirect(startUrl: String): Pair<Double, Double>? {
+    val atRegex = Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""")
+    var url = startUrl
+    return try {
+        repeat(6) {
+            atRegex.find(url)?.let { m -> return m.groupValues[1].toDouble() to m.groupValues[2].toDouble() }
+            val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) Rustify")
+                instanceFollowRedirects = false
+                connectTimeout = 6000; readTimeout = 6000
+            }
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val loc = conn.getHeaderField("Location"); conn.disconnect()
+                if (loc.isNullOrBlank()) return null
+                url = if (loc.startsWith("http")) loc else java.net.URL(java.net.URL(url), loc).toString()
+            } else {
+                val body = runCatching { conn.inputStream.bufferedReader().use { it.readText() } }.getOrDefault("")
+                conn.disconnect()
+                (atRegex.find(url) ?: atRegex.find(body))?.let { m ->
+                    return m.groupValues[1].toDouble() to m.groupValues[2].toDouble()
+                }
+                return null
+            }
+        }
+        null
+    } catch (_: Exception) { null }
 }
 
 class MainActivity : ComponentActivity() {
@@ -644,8 +674,15 @@ fun EngineTester(
     val isBottomNavScreen = bottomNavScreens.contains(currentScreen)
     val isTravelScreen = currentScreen is Screen.Travel
 
-    val playerState by audioPlayerService.state.collectAsState()
-    val currentTrack = playerState.currentTrack
+    val playerStateHolder = audioPlayerService.state.collectAsState()
+    val playerState by playerStateHolder
+    // IMPORTANTE: currentTrack debe ser una lectura VIVA (derivedStateOf), no un snapshot plano.
+    // El contenido de pantalla se envuelve en `remember(currentScreen){ movableContentOf { … } }`
+    // (más abajo), que captura las variables una sola vez por pantalla. Un `val currentTrack =
+    // playerState.currentTrack` se congelaba ahí hasta cambiar de pantalla → el miniplayer y el
+    // resaltado verde de "sonando ahora" se quedaban en la canción anterior. Con derivedStateOf,
+    // leer `currentTrack` dentro del movableContent recompone al cambiar de pista.
+    val currentTrack by remember { derivedStateOf { playerStateHolder.value.currentTrack } }
 
     LaunchedEffect(currentTrack?.id) {
         val current = currentTrack?.id
@@ -802,6 +839,7 @@ fun EngineTester(
             is Screen.YtmPlaylistDetail -> "YtmPlaylistDetail_${currentScreen.playlistId}"
             is Screen.YtmLocalPlaylistDetail -> "YtmLocalPlaylistDetail_${currentScreen.localId}"
             is Screen.Settings -> "Settings"
+            is Screen.MatchEditor -> "MatchEditor"
             is Screen.Downloads -> "Downloads"
             is Screen.LogViewer -> "LogViewer"
             is Screen.Metrics -> "Metrics"
@@ -1095,6 +1133,7 @@ fun EngineTester(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
                         onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
+                        onNavigateMatchEditor = { navigationStack.add(Screen.MatchEditor) },
                         onLocaleChanged = { newCode ->
                             onLanguageChanged(newCode)
                             coroutineScope.launch {
@@ -1105,6 +1144,13 @@ fun EngineTester(
                                 }
                             }
                         }
+                    )
+                }
+                is Screen.MatchEditor -> {
+                    com.varuna.rustify.ui.screens.MatchEditorScreen(
+                        spotifyRepo = spotifyRepo,
+                        audioPlayerService = audioPlayerService,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
                 is Screen.Downloads -> {

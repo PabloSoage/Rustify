@@ -43,6 +43,7 @@
     
     <string name="settings_advanced_data">データ（詳細）</string>
     <string name="settings_youtube_mappings">YouTube マッピング</string>
+    <string name="settings_edit_matches">マッチを編集</string>
     <string name="settings_export">エクスポート</string>
     <string name="settings_import">インポート</string>
     <string name="settings_export_success">エクスポートに成功しました</string>

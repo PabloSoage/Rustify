@@ -91,10 +91,19 @@ object DjVoice {
     fun queryVoices(context: Context, langCode: String, onResult: (List<Pair<String, String>>) -> Unit) {
         fun collect(engine: TextToSpeech): List<Pair<String, String>> {
             val target = if (langCode.isBlank()) null else Locale.forLanguageTag(langCode).language.lowercase()
-            return runCatching { engine.voices }.getOrNull().orEmpty()
+            val voices = runCatching { engine.voices }.getOrNull().orEmpty()
                 .filter { v -> target == null || v.locale?.language?.lowercase() == target }
-                .sortedByDescending { it.quality }
-                .map { it.name to voiceLabel(it) }
+                // fuera las voces que requieren descarga (no reproducirían) para no ensuciar la lista.
+                .filter { v -> v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true }
+                .sortedWith(compareByDescending<android.speech.tts.Voice> { it.quality }.thenBy { it.name })
+            // Numera las voces dentro de cada locale para que sean DISTINGUIBLES: antes todas se
+            // llamaban igual ("español"); ahora "Español (España) · Voz 1 · HD", "· Voz 2", …
+            val perLocale = HashMap<String, Int>()
+            return voices.map { v ->
+                val key = v.locale?.toString() ?: ""
+                val n = (perLocale[key] ?: 0) + 1; perLocale[key] = n
+                v.name to friendlyVoiceLabel(v, n)
+            }
         }
         val existing = tts
         if (ready && existing != null) { onResult(collect(existing)); return }
@@ -106,16 +115,13 @@ object DjVoice {
         }
     }
 
-    private fun voiceLabel(v: android.speech.tts.Voice): String = buildString {
-        append(v.locale?.displayName ?: v.name)
-        val q = when {
-            v.quality >= 500 -> "HQ"; v.quality >= 400 -> "High"
-            v.quality >= 300 -> "Normal"; else -> "Low"
-        }
-        append(" · "); append(q)
-        val tail = v.name.substringAfterLast('-', "")
-        if (tail.isNotEmpty() && tail != v.name) { append(" · "); append(tail) }
-        if (v.isNetworkConnectionRequired) append(" · net")
+    /** Etiqueta legible y distinguible para una voz nativa. Android no expone nombre ni género, así
+     *  que sintetizamos: idioma (país) + un índice estable dentro del idioma + calidad + si necesita red. */
+    private fun friendlyVoiceLabel(v: android.speech.tts.Voice, index: Int): String {
+        val base = (v.locale?.getDisplayName(Locale.getDefault()) ?: v.name).replaceFirstChar { it.uppercase() }
+        val q = if (v.quality >= 400) " · HD" else ""
+        val net = if (v.isNetworkConnectionRequired) " · red" else ""
+        return "$base · Voz $index$q$net"
     }
 
     /** Habla [text] con el motor elegido (native / pollinations / openai); cae a nativo si falla. */
@@ -214,22 +220,42 @@ object DjVoice {
         val voice = DjSettings.voiceCloudVoice(context).ifBlank { "alloy" }
         // El texto va en el path: codifica y usa %20 (no '+') para los espacios.
         val enc = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
-        val url = "${DjSettings.POLLINATIONS_TTS_BASE}/$enc?model=openai-audio&voice=$voice"
+        // `referrer` identifica la app (recomendado por Pollinations); UA/Referer de navegador para
+        // evitar bloqueos que devolvían un error de texto (por eso caía a la voz nativa tras el timeout).
+        val url = "${DjSettings.POLLINATIONS_TTS_BASE}/$enc?model=openai-audio&voice=$voice&referrer=rustify"
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 8000; readTimeout = 20000
-            setRequestProperty("Accept", "audio/mpeg")
+            connectTimeout = 8000; readTimeout = 25000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) Rustify")
+            setRequestProperty("Accept", "audio/mpeg, audio/*;q=0.9, */*;q=0.5")
+            setRequestProperty("Referer", "https://rustify.app/")
         }
         if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext false }
-        // Si el servicio devolviera un error de texto en vez de audio, no lo reproduzcas.
-        val ctype = conn.contentType ?: ""
         val tmp = File(context.cacheDir, "dj_voice.mp3")
         conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
         conn.disconnect()
-        if (!ctype.contains("audio", true) || tmp.length() < 512) return@withContext false
+        // Validación por CONTENIDO (no por content-type, que Pollinations no siempre pone bien):
+        // un MP3/OGG/WAV empieza por bytes conocidos; un error de texto empieza por '{' o '<'.
+        if (tmp.length() < 1024 || !looksLikeAudio(tmp)) return@withContext false
         withContext(Dispatchers.Main) { playMp3(tmp) }
         true
     }
+
+    /** Heurística "esto es audio y no un error de texto/JSON/HTML". */
+    private fun looksLikeAudio(f: File): Boolean = runCatching {
+        val b = ByteArray(4)
+        f.inputStream().use { it.read(b) }
+        val s = String(b, Charsets.ISO_8859_1)
+        when {
+            s.startsWith("ID3") -> true                                        // MP3 con tag
+            b[0] == 0xFF.toByte() && (b[1].toInt() and 0xE0) == 0xE0 -> true    // MP3 frame sync
+            s.startsWith("OggS") -> true                                       // OGG
+            s.startsWith("RIFF") -> true                                       // WAV
+            s.startsWith("{") || s.startsWith("<") || s.startsWith("Error", true) -> false // texto de error
+            else -> true                                                       // binario desconocido: intenta
+        }
+    }.getOrDefault(false)
 
     /** Reproduce un MP3 (voz nube) con ducking; reemplaza al reproductor anterior. */
     private fun playMp3(file: File) {

@@ -13,6 +13,22 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- E99+: resolver short links de Google Maps (maps.app.goo.gl) → requiere network. -->
+
+    <!-- Android 11+ (package visibility): sin esto, setPackage("com.google.android.apps.maps") y
+         resolver actividades para http/geo son invisibles → el botón "Navegar en Google Maps" no abría
+         nada. Declaramos que consultamos apps que manejan VIEW http(s)/geo y el paquete de Maps. -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
