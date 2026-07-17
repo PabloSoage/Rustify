@@ -31,8 +31,12 @@ object AudioSourceRegistry {
         synchronized(this) {
             if (initialized) return
             // Orden del catálogo = orden de declaración. Nuevos providers se añaden aquí.
+            // E61 Invidious y E62 Deezer arrancan DESACTIVADOS para builds ya existentes (forward-compat
+            // de AudioBackendSettings); el usuario los activa en Ajustes.
             val built = listOf<AudioSourceProvider>(
-                YtDlpAudioSource(appContext)
+                YtDlpAudioSource(appContext),
+                InvidiousAudioSource(appContext),
+                DeezerAudioSource(appContext)
             )
             providers = built
             knownIds = built.map { it.capabilities.id }

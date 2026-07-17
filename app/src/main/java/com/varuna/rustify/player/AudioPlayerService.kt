@@ -568,24 +568,33 @@ class AudioPlayerService private constructor(private val context: Context) {
                 resolvedStreamUrls[trackId] = streamUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
                 val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
+                // E62: Deezer entrega una URI deezer://<sngId>?u=<b64> que descifra al vuelo un DataSource
+                // propio. No es cacheable (URL del CDN caduca + lleva clave por-track) ni pasa por el cache HTTP.
+                val isDeezerStream = streamUrl.startsWith("deezer://")
                 // Expone a la UI si la pista actual suena desde un archivo local (para el botón verde).
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
-                if (!trackId.startsWith("local:") && !isLocalStream) {
+                if (!trackId.startsWith("local:") && !isLocalStream && !isDeezerStream) {
                     putCachedStreamUrl(trackId, streamUrl)
                 }
 
-                val mediaSource = if (isLocalStream) {
-                    android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
-                    DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
-                        .createMediaSource(mediaItem)
-                } else {
-                    android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
-                    val cacheFactory = cacheDataSourceFactory
-
-                    DefaultMediaSourceFactory(cacheFactory)
-                        .createMediaSource(mediaItem)
+                val mediaSource = when {
+                    isDeezerStream -> {
+                        android.util.Log.d("AudioPlayerService", "Creating Deezer decrypting media source")
+                        DefaultMediaSourceFactory(com.varuna.rustify.audio.DeezerDecryptingDataSource.Factory())
+                            .createMediaSource(mediaItem)
+                    }
+                    isLocalStream -> {
+                        android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
+                        DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
+                            .createMediaSource(mediaItem)
+                    }
+                    else -> {
+                        android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
+                        DefaultMediaSourceFactory(cacheDataSourceFactory)
+                            .createMediaSource(mediaItem)
+                    }
                 }
 
                 exoPlayer.setMediaSource(mediaSource)

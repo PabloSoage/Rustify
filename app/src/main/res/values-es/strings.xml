@@ -24,6 +24,11 @@
     <string name="settings_backends_download_order">Orden de descarga</string>
     <string name="settings_backends_drag_hint">Mantén pulsado y arrastra para reordenar. Activa cada backend con el interruptor.</string>
     <string name="backend_ytdlp">yt-dlp (YouTube)</string>
+    <string name="backend_invidious">Invidious (YouTube)</string>
+    <string name="backend_deezer">Deezer (HiFi / FLAC)</string>
+    <string name="egg_found_title">🦀 ¡Lo encontraste!</string>
+    <string name="egg_found_msg">Hecho con Rust, Kotlin y demasiado café. Pícale al cangrejo…</string>
+    <string name="egg_jojo_msg">El tiempo se detiene. La historia continúa en otra parte…</string>
     <string name="backend_ytdlp_desc">Extracción directa con yt-dlp</string>
     <string name="backend_stream">stream</string>
     <string name="backend_download">descarga</string>

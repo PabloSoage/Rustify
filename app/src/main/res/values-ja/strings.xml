@@ -318,6 +318,11 @@
     <string name="added_to_playlist">%1$sに追加しました</string>
     <string name="added_to_queue">キューに追加しました</string>
     <string name="backend_ytdlp">yt-dlp（YouTube）</string>
+    <string name="backend_invidious">Invidious（YouTube）</string>
+    <string name="backend_deezer">Deezer（HiFi / FLAC）</string>
+    <string name="egg_found_title">🦀 見つけたね！</string>
+    <string name="egg_found_msg">RustとKotlin、そして大量のコーヒーで作りました。カニをつついてみて…</string>
+    <string name="egg_jojo_msg">時が止まる。物語は別の場所で続く…</string>
     <string name="backend_ytdlp_desc">yt-dlpによる直接抽出</string>
     <string name="backend_stream">ストリーム</string>
     <string name="backend_download">ダウンロード</string>

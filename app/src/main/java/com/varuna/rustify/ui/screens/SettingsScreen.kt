@@ -64,7 +64,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -577,6 +586,8 @@ fun SettingsScreen(
 
 
             AudioBackendsSection(context)
+            InvidiousBackendSection(context)
+            DeezerBackendSection(context)
             LyricsProvidersSection(context)
             AndroidAutoPreviewSection(context)
             TravelMapSection(context)
@@ -2009,6 +2020,100 @@ if (localMusicDirs.isEmpty()) {
             ) {
                 Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
             }
+
+            // 🦀 Easter egg (nivel 1): toca la versión 7 veces → cangrejo animado. Tócalo 9 veces
+            // ("ORA ORA ORA", Star Platinum) para el egg ANIDADO (nivel 2, jojoreferencia) que abre
+            // standle.net en el idioma de la app. Autocontenido, i18n, sin permisos nuevos.
+            var eggTaps by remember { mutableStateOf(0) }
+            var showEgg by remember { mutableStateOf(false) }
+            var showJojo by remember { mutableStateOf(false) }
+            var showWeb by remember { mutableStateOf(false) }
+            var oraCount by remember { mutableStateOf(0) }
+            val appVersion = remember {
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
+            }
+            val webLang = remember {
+                val appLang = prefs.getString("app_language", "system") ?: "system"
+                val base = if (appLang == "system") java.util.Locale.getDefault().language else appLang
+                when { base.startsWith("es") -> "es"; base.startsWith("ja") -> "ja"; else -> "en" }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                "Rustify $appVersion 🦀",
+                color = Color(0xFF555555), fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable { eggTaps++; if (eggTaps >= 7) { eggTaps = 0; oraCount = 0; showEgg = true } }
+                    .padding(vertical = 10.dp)
+            )
+
+            if (showEgg) {
+                val infinite = rememberInfiniteTransition(label = "egg")
+                val angle by infinite.animateFloat(
+                    initialValue = 0f, targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+                    label = "rot"
+                )
+                AlertDialog(
+                    onDismissRequest = { showEgg = false },
+                    containerColor = Color(0xFF1E1E1E),
+                    title = { Text(stringResource(R.string.egg_found_title), color = Color(0xFF1DB954)) },
+                    text = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Text("🦀", fontSize = 56.sp, modifier = Modifier.rotate(angle).clickable {
+                                oraCount++
+                                if (oraCount >= 9) { showEgg = false; showJojo = true }
+                            })
+                            Spacer(Modifier.height(10.dp))
+                            Text(stringResource(R.string.egg_found_msg), color = Color.White, fontSize = 13.sp)
+                            if (oraCount > 0) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(("ORA ".repeat(oraCount)).trim() + "!", color = Color(0xFF888888), fontSize = 12.sp)
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showEgg = false }) { Text("😎", color = Color(0xFF1DB954)) } }
+                )
+            }
+
+            if (showJojo) {
+                AlertDialog(
+                    onDismissRequest = { showJojo = false },
+                    containerColor = Color(0xFF0A0A0A),
+                    title = { Text("「ザ・ワールド」", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Text("ゴ ゴ ゴ ゴ", color = Color(0xFFFFD700), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text(stringResource(R.string.egg_jojo_msg), color = Color.White, fontSize = 13.sp)
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showJojo = false; showWeb = true }) { Text("To Be Continued  ➜", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold) } },
+                    dismissButton = { TextButton(onClick = { showJojo = false }) { Text("やれやれだぜ", color = Color.Gray) } }
+                )
+            }
+
+            if (showWeb) {
+                Dialog(onDismissRequest = { showWeb = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                    Box(Modifier.fillMaxSize().background(Color.Black)) {
+                        androidx.compose.ui.viewinterop.AndroidView(
+                            factory = { ctx ->
+                                android.webkit.WebView(ctx).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    webViewClient = android.webkit.WebViewClient()
+                                    loadUrl("https://standle.net/$webLang")
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TextButton(onClick = { showWeb = false }, modifier = Modifier.align(Alignment.TopEnd).padding(top = 28.dp, end = 8.dp)) {
+                            Text("✕", color = Color.White, fontSize = 20.sp)
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
@@ -2017,6 +2122,169 @@ if (localMusicDirs.isEmpty()) {
 // ---------------------------------------------------------------------------
 // E60 - Sección "Audio Backends" (drag&drop + toggles).
 // ---------------------------------------------------------------------------
+
+@Composable
+private fun backendFieldColors() = TextFieldDefaults.colors(
+    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+    focusedContainerColor = Color(0xFF121212), unfocusedContainerColor = Color(0xFF121212),
+    focusedLabelColor = Color(0xFF1DB954), focusedIndicatorColor = Color(0xFF1DB954)
+)
+
+// E61 — Config de instancias Invidious (el on/off y el orden van en Audio Backends).
+@Composable
+private fun InvidiousBackendSection(context: android.content.Context) {
+    val green = Color(0xFF1DB954)
+    val scope = rememberCoroutineScope()
+    val Inv = com.varuna.rustify.audio.InvidiousSettings
+    var mode by remember { mutableStateOf(Inv.mode(context)) }
+    var fixed by remember { mutableStateOf(Inv.fixedInstance(context)) }
+    var torOn by remember { mutableStateOf(Inv.torEnabled(context)) }
+    var anonOn by remember { mutableStateOf(Inv.allowAnonNetworks(context)) }
+    var custom by remember { mutableStateOf("") }
+    var customList by remember { mutableStateOf(Inv.customInstances(context)) }
+    var instances by remember { mutableStateOf<List<com.varuna.rustify.audio.InvidiousInstances.Instance>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var pings by remember { mutableStateOf(mapOf<String, Boolean?>()) }
+
+    fun refresh(force: Boolean) {
+        loading = true
+        scope.launch(Dispatchers.IO) {
+            val list = com.varuna.rustify.audio.InvidiousInstances.list(context, force).take(15)
+            withContext(Dispatchers.Main) { instances = list; loading = false }
+        }
+    }
+    LaunchedEffect(Unit) { refresh(false) }
+
+    Spacer(Modifier.height(24.dp))
+    Text("Invidious (respaldo YouTube)", color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Actívalo arriba en “Audio Backends”. Aquí eliges las instancias.", color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth()) {
+                listOf("auto" to "Auto (mejor salud)", "fixed" to "Instancia fija").forEach { (code, label) ->
+                    Row(Modifier.weight(1f).clickable { mode = code; Inv.setMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = mode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
+                        Text(label, color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
+            if (mode == "fixed") {
+                OutlinedTextField(value = fixed, onValueChange = { fixed = it; Inv.setFixedInstance(context, it) },
+                    label = { Text("URL de la instancia fija") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Instancias", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = green)
+                    TextButton(onClick = { refresh(true) }) { Text("Actualizar", color = green, fontSize = 12.sp) }
+                }
+                instances.forEach { inst ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val badge = when (inst.type) { "onion" -> "🧅"; "i2p" -> "📨"; "ygg" -> "🕸️"; else -> "🌐" }
+                        Text(badge, fontSize = 13.sp, modifier = Modifier.padding(end = 6.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(inst.baseUrl.removePrefix("https://"), color = Color.White, fontSize = 12.sp, maxLines = 1)
+                            Text((inst.health?.let { "salud ${it.toInt()}%" } ?: "salud ?") + (if (inst.isAnon) " · ⚠ red anónima" else ""), color = Color.Gray, fontSize = 10.sp)
+                        }
+                        Text(when (pings[inst.baseUrl]) { true -> "✅"; false -> "❌"; else -> "" }, fontSize = 12.sp)
+                        TextButton(onClick = { scope.launch { val ok = com.varuna.rustify.audio.InvidiousInstances.ping(context, inst); pings = pings + (inst.baseUrl to ok) } }) {
+                            Text("probar", color = green, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = custom, onValueChange = { custom = it }, label = { Text("Añadir instancia propia") }, singleLine = true, modifier = Modifier.weight(1f), colors = backendFieldColors())
+                TextButton(onClick = { if (custom.isNotBlank()) { Inv.addCustomInstance(context, custom); customList = Inv.customInstances(context); custom = "" } }) { Text("Añadir", color = green) }
+            }
+            customList.forEach { c ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(c, color = Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                    TextButton(onClick = { Inv.removeCustomInstance(context, c); customList = Inv.customInstances(context) }) { Text("quitar", color = Color(0xFFCC3333), fontSize = 11.sp) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Permitir redes anónimas (Tor/I2P/Ygg)", color = Color.White, fontSize = 13.sp)
+                    Text("Experimental — requieren Orbot / router propio. ⚠", color = Color.Gray, fontSize = 11.sp)
+                }
+                Switch(checked = anonOn, onCheckedChange = { anonOn = it; Inv.setAllowAnonNetworks(context, it) })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Enrutar .onion por Tor (Orbot 9050)", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(checked = torOn, onCheckedChange = { torOn = it; Inv.setTorEnabled(context, it) })
+            }
+        }
+    }
+}
+
+// E62 — Config del backend Deezer (ARL propio o fuente de ARLs). On/off en Audio Backends.
+@Composable
+private fun DeezerBackendSection(context: android.content.Context) {
+    val green = Color(0xFF1DB954)
+    val scope = rememberCoroutineScope()
+    val Dz = com.varuna.rustify.audio.DeezerSettings
+    var arlMode by remember { mutableStateOf(Dz.arlMode(context)) }
+    var arl by remember { mutableStateOf(Dz.arl(context)) }
+    var source by remember { mutableStateOf(Dz.sourceUrl(context)) }
+    var quality by remember { mutableStateOf(Dz.quality(context)) }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+
+    Spacer(Modifier.height(24.dp))
+    Text("Deezer (HiFi / FLAC)", color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Actívalo arriba en “Audio Backends”. Usa TU ARL de Deezer (uso personal). No proveemos ARLs.", color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth()) {
+                listOf("single" to "Mi ARL", "source" to "Fuente de ARLs (web)").forEach { (code, label) ->
+                    Row(Modifier.weight(1f).clickable { arlMode = code; Dz.setArlMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = arlMode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
+                        Text(label, color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
+            if (arlMode == "single") {
+                OutlinedTextField(value = arl, onValueChange = { arl = it; Dz.setArl(context, it) }, label = { Text("ARL") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                TextButton(onClick = {
+                    busy = true; status = ""
+                    scope.launch(Dispatchers.IO) {
+                        val ok = com.varuna.rustify.audio.DeezerClient().testArl(arl.trim())
+                        if (ok) { Dz.setWorkingArl(context, arl.trim()) }
+                        withContext(Dispatchers.Main) { status = if (ok) "ARL válido ✅" else "ARL no válido ❌"; busy = false }
+                    }
+                }, enabled = !busy) { Text("Probar ARL", color = green) }
+            } else {
+                OutlinedTextField(value = source, onValueChange = { source = it; Dz.setSourceUrl(context, it) }, label = { Text("URL de la web de ARLs") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                TextButton(onClick = {
+                    busy = true; status = ""
+                    scope.launch(Dispatchers.IO) {
+                        val w = com.varuna.rustify.audio.DeezerArl.refreshWorkingArl(context)
+                        withContext(Dispatchers.Main) { status = if (w != null) "ARL encontrado y guardado ✅" else "Ningún ARL de la web funcionó ❌"; busy = false }
+                    }
+                }, enabled = !busy) { Text("Buscar y probar ARLs", color = green) }
+                Text("Se prueban los ARLs publicados y se usa el primero que funciona (rotación).", color = Color.Gray, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Calidad", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth()) {
+                listOf("flac" to "FLAC", "mp3_320" to "MP3 320", "mp3_128" to "MP3 128").forEach { (code, label) ->
+                    Row(Modifier.weight(1f).clickable { quality = code; Dz.setQuality(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = quality == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
+                        Text(label, color = Color.White, fontSize = 11.sp)
+                    }
+                }
+            }
+            if (busy) { Spacer(Modifier.height(6.dp)); CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = green) }
+            if (status.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(status, color = Color.White, fontSize = 12.sp) }
+            Spacer(Modifier.height(6.dp))
+            Text("FLAC solo si tu cuenta es HiFi. Uso personal con tus credenciales.", color = Color(0xFF888888), fontSize = 11.sp)
+        }
+    }
+}
 
 @Composable
 private fun AudioBackendsSection(context: android.content.Context) {
