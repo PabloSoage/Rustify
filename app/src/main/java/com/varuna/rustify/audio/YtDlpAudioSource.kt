@@ -48,7 +48,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             return
         }
         // Auto-update en background (no bloquea el arranque). Mismo patrón que MainActivity pre-E60.
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 val prefs = appContext.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
                 val channelStr = prefs.getString("ytdlp_channel", "NIGHTLY")

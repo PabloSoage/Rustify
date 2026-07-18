@@ -546,7 +546,7 @@ fun EngineTester(
 
     LaunchedEffect(Unit) {
         if (initialDeepLink != null) {
-            navigateDeepLink(initialDeepLink!!, navigationStack, audioPlayerService)
+            navigateDeepLink(initialDeepLink, navigationStack, audioPlayerService)
         }
     }
 
@@ -716,12 +716,12 @@ fun EngineTester(
             if (isTravelScreen) return@Scaffold // Travel pinta su propio miniplayer sobre el mapa.
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
-                    val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack.id }
+                    val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack!!.id }
                     val hasPrevious = queueIndex > 0
                     val hasNext = queueIndex != -1 && queueIndex < playerState.queue.lastIndex
 
                     MiniPlayer(
-                        track = currentTrack,
+                        track = currentTrack!!,
                         isPlaying = playerState.isPlaying,
                         isBuffering = playerState.isBuffering,
                         positionMs = playerState.positionMs,
@@ -732,7 +732,7 @@ fun EngineTester(
                         onSkipPrevious = { audioPlayerService.skipToPrevious() },
                         onSkipNext = { audioPlayerService.skipToNext() },
                         onClick = {
-                            currentTrack.id?.let { id ->
+                            currentTrack!!.id?.let { id ->
                                 navigationStack.add(Screen.TrackDetail(id))
                             }
                         }
@@ -965,7 +965,7 @@ fun EngineTester(
                                     android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
                                 } else when (val link = com.varuna.rustify.util.YtMusicLinkParser.parse(pasted)) {
                                     is com.varuna.rustify.util.YtmLink.Track -> {
-                                        val yt = com.varuna.rustify.bridge.FullTrack(
+                                        val yt = FullTrack(
                                             id = "ytm:${link.videoId}", name = "YouTube Music",
                                             externalUri = "https://music.youtube.com/watch?v=${link.videoId}",
                                             explicit = false, durationMs = 0, isrc = "",

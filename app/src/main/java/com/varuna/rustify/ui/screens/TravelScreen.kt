@@ -258,7 +258,7 @@ fun TravelScreen(
     // Re-chequea el permiso al volver a primer plano: si el usuario lo REVOCÓ desde Ajustes de Android,
     // hasPerm vuelve a false y el botón "Conceder ubicación" reaparece (antes se quedaba oculto para
     // siempre porque hasPerm solo se leía una vez al entrar).
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -276,7 +276,8 @@ fun TravelScreen(
         if (permPermanentlyDenied) {
             runCatching {
                 context.startActivity(
-                    Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         android.net.Uri.fromParts("package", context.packageName, null))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
@@ -415,9 +416,9 @@ fun TravelScreen(
                 }
                 val centerLat = (oLat + dest.lat) / 2.0
                 val centerLon = (oLon + dest.lon) / 2.0
-                val approxDistanceKm = android.location.Location("a").apply {
+                val approxDistanceKm = Location("a").apply {
                     latitude = oLat; longitude = oLon
-                }.distanceTo(android.location.Location("b").apply {
+                }.distanceTo(Location("b").apply {
                     latitude = dest.lat; longitude = dest.lon
                 }) / 1000.0
                 val zoom = when {

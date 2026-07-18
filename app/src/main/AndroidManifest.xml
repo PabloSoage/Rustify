@@ -177,6 +177,14 @@
                     android:host="rustify-music.github.io"
                     android:pathPrefix="/oauth2redirect" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                    android:host="pablosoage.github.io"
+                    android:pathPrefix="/oauth2redirect" />
+            </intent-filter>
         </activity>
 
         <!-- E96 — FileProvider que expone las carátulas locales (filesDir/covers) a otros procesos

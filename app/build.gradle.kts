@@ -1,6 +1,15 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+val localProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -21,6 +30,15 @@ android {
         // RedirectUriReceiverActivity (tools:node="replace") uses an https App Link instead, so this
         // custom scheme is effectively unused but must be defined to satisfy the merge.
         manifestPlaceholders["appAuthRedirectScheme"] = "com.varuna.rustify"
+
+        // Inject Google Drive OAuth credentials dynamically
+        val defaultWebClientId = localProperties.getProperty("default_web_client_id", "")
+        val driveAppauthClientId = localProperties.getProperty("drive_appauth_client_id", "")
+        val driveAppauthClientSecret = localProperties.getProperty("drive_appauth_client_secret", "")
+
+        resValue("string", "default_web_client_id", defaultWebClientId)
+        resValue("string", "drive_appauth_client_id", driveAppauthClientId)
+        resValue("string", "drive_appauth_client_secret", driveAppauthClientSecret)
     }
 
     splits {
@@ -73,6 +91,7 @@ android {
 
     buildFeatures {
         compose = true
+        resValues = true
     }
 
     sourceSets {

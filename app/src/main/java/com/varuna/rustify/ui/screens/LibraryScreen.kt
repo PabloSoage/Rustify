@@ -836,7 +836,7 @@ fun LibraryLocalMusic(
     val artistGroups: List<Pair<String, List<FullTrack>>> = filteredTracks.groupBy { it.artists.firstOrNull()?.name ?: "Unknown Artist" }
         .toList().sortedBy { it.first.lowercase().trim() }
 
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val config = LocalConfiguration.current
     val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     val groupOptions = listOf(
@@ -1201,7 +1201,7 @@ fun <T> LibraryContentList(
         else items.filter { filterPredicate(it, searchQuery) }
     }
 
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val config = LocalConfiguration.current
     val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     

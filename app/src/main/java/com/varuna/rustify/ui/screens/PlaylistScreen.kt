@@ -585,7 +585,7 @@ fun PlaylistScreen(
         val pl = playlistDetails
         var editName by remember(pl?.id) { mutableStateOf(pl?.name ?: "") }
         var editDesc by remember(pl?.id) { mutableStateOf(pl?.description ?: "") }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showEditDialog = false },
             containerColor = Color(0xFF1E1E1E),
             title = { Text("Edit playlist", color = Color.White) },
@@ -606,7 +606,7 @@ fun PlaylistScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
+                TextButton(onClick = {
                     val id = pl?.id
                     showEditDialog = false
                     if (id != null && editName.isNotBlank()) {
@@ -620,7 +620,7 @@ fun PlaylistScreen(
                 }) { Text("Save", color = Color(0xFF1DB954)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showEditDialog = false }) {
+                TextButton(onClick = { showEditDialog = false }) {
                     Text("Cancel", color = Color.Gray)
                 }
             }

@@ -78,7 +78,7 @@ object TravelRouting {
      * Reverse geocoding (lat,lon → etiqueta legible). Usa Google si hay API key, sinon Nominatim.
      * Útil para etiquetar un punto marcado a mano (long-press en el mapa).
      */
-    suspend fun reverseGeocode(lat: Double, lon: Double, context: android.content.Context? = null): String = withContext(Dispatchers.IO) {
+    suspend fun reverseGeocode(lat: Double, lon: Double, context: Context? = null): String = withContext(Dispatchers.IO) {
         val key = context?.let { TravelSettings.geocodingApiKey(it).trim() } ?: ""
         if (key.isNotEmpty()) {
             runCatching {
@@ -129,7 +129,7 @@ object TravelRouting {
         limit: Int = 12,
         biasLat: Double? = null,
         biasLon: Double? = null,
-        context: android.content.Context? = null
+        context: Context? = null
     ): List<Geo> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val q = query.trim()

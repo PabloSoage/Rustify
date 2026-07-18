@@ -1,5 +1,6 @@
 package com.varuna.rustify.player
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -38,7 +39,7 @@ import kotlinx.coroutines.launch
 @UnstableApi
 class RustifyForegroundService : MediaLibraryService() {
 
-    private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
+    private var mediaSession: MediaLibrarySession? = null
     private val ytmRepo by lazy { YtMusicRepository(applicationContext) }
     // E96 — scope para resolver ramas del árbol de Android Auto que requieren red (playlists/álbumes).
     private val autoScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
@@ -47,6 +48,7 @@ class RustifyForegroundService : MediaLibraryService() {
         private const val NOTIFICATION_CHANNEL_ID = "rustify_playback"
     }
 
+    @SuppressLint("ObsoleteSdkInt")
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java) ?: return
@@ -118,7 +120,7 @@ class RustifyForegroundService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
-            mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, forwardingPlayer, LibraryCallback())
+            mediaSession = MediaLibrarySession.Builder(this, forwardingPlayer, LibraryCallback())
                 .setSessionActivity(pendingIntent)
                 .build()
             // E96: expone la sesión a los repositorios para que puedan invalidar el árbol de Auto
@@ -130,28 +132,28 @@ class RustifyForegroundService : MediaLibraryService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibraryService.MediaLibrarySession? {
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
 
     // ── E96 — Android Auto browsable tree + browse→play ─────────────────────────────────
-    private inner class LibraryCallback : MediaLibraryService.MediaLibrarySession.Callback {
+    private inner class LibraryCallback : MediaLibrarySession.Callback {
 
         override fun onGetLibraryRoot(
-            session: MediaLibraryService.MediaLibrarySession,
+            session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
-            params: MediaLibraryService.LibraryParams?
+            params: LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
             return Futures.immediateFuture(LibraryResult.ofItem(browsable("root", getString(R.string.app_name)), params))
         }
 
         override fun onGetChildren(
-            session: MediaLibraryService.MediaLibrarySession,
+            session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             parentId: String,
             page: Int,
             pageSize: Int,
-            params: MediaLibraryService.LibraryParams?
+            params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             // Async: los nodos Spotify de playlist/álbum/artista se resuelven por red.
             val future = com.google.common.util.concurrent.SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
@@ -165,7 +167,7 @@ class RustifyForegroundService : MediaLibraryService() {
         }
 
         override fun onGetItem(
-            session: MediaLibraryService.MediaLibrarySession,
+            session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             mediaId: String
         ): ListenableFuture<LibraryResult<MediaItem>> {

@@ -605,7 +605,7 @@ fun YtmTrackListItem(
 ) {
     val context = LocalContext.current
     val full = remember(track) { track.toFullTrack() }
-    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
     val shareAsRustify = prefs.getBoolean("share_as_rustify_link", false)
     var showMenu by remember { mutableStateOf(false) }
 

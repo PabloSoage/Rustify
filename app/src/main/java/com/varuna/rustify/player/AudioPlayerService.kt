@@ -1340,11 +1340,11 @@ class AudioPlayerService private constructor(private val context: Context) {
 
             val mediaSource = if (audioUrl != null) {
                 val audioItem = currentItem.buildUpon().setUri(audioUrl).build()
-                val videoSource = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
-                val audioSource = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(audioItem)
+                val videoSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
+                val audioSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(audioItem)
                 androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
             } else {
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
+                DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
             }
             
             exoPlayer.setMediaSource(mediaSource)
@@ -1368,10 +1368,10 @@ class AudioPlayerService private constructor(private val context: Context) {
             // Restore audio cache
             val isLocalStream = trackId.startsWith("local:") || audioUrl.startsWith("content://") || audioUrl.startsWith("file://")
             val mediaSource = if (isLocalStream) {
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
+                DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
                     .createMediaSource(item)
             } else {
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
+                DefaultMediaSourceFactory(cacheDataSourceFactory)
                     .createMediaSource(item)
             }
             exoPlayer.setMediaSource(mediaSource)

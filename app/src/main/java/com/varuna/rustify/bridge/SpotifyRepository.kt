@@ -227,7 +227,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
             withContext(Dispatchers.Main) {
                 localPlaylists.clear()
                 localFavoriteIds.clear()
-                SpotifyRepository.localPlaylistTracksCache.clear()
+                localPlaylistTracksCache.clear()
             }
             loadLocalUserData()
         }

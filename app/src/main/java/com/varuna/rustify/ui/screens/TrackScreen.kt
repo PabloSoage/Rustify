@@ -410,7 +410,7 @@ fun TrackScreen(
             val ytId = if (trackId.startsWith("ytm:")) trackId.removePrefix("ytm:")
                 else runCatching {
                     Regex("[A-Za-z0-9_-]{11}")
-                        .find(com.varuna.rustify.bridge.NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
+                        .find(NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
                 }.getOrNull()
             if (!ytId.isNullOrBlank()) videoUrl = com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
         }
@@ -736,7 +736,7 @@ fun TrackScreen(
 
     if (showMappingDialog) {
         trackToShow?.let { track ->
-            val alternativeChangedMsg = stringResource(com.varuna.rustify.R.string.track_alternative_changed)
+            val alternativeChangedMsg = stringResource(R.string.track_alternative_changed)
             YouTubeMappingDialog(
                 track = track,
                 audioPlayerService = audioPlayerService,
@@ -1031,7 +1031,7 @@ fun TrackScreenControls(
     val lyricsListState = rememberLazyListState()
 
     // Ajuste manual de sincronía por pista (el diálogo del menú lo persiste y bumpea `version`).
-    val lyricsCtx = androidx.compose.ui.platform.LocalContext.current
+    val lyricsCtx = LocalContext.current
     val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
     val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
         com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx, track.id ?: "")
@@ -1213,7 +1213,7 @@ fun TrackScreenControls(
 
             // DJ (Livi): only during an autonomous DJ session — tap to change mood from playback.
             val djActive = com.varuna.rustify.dj.DjAutoController.state.collectAsState().value != null
-            val djCtx = androidx.compose.ui.platform.LocalContext.current
+            val djCtx = LocalContext.current
             if (djActive) {
                 IconButton(onClick = { com.varuna.rustify.dj.DjAutoController.next(djCtx) }) {
                     Icon(
@@ -1534,7 +1534,7 @@ fun CanvasVideoPlayer(url: String, fitWidth: Boolean = true) {
         AndroidView(
             modifier = mod,
             factory = { ctx ->
-                android.view.SurfaceView(ctx).also { it ->
+                android.view.SurfaceView(ctx).also {
                     exoPlayer.setVideoSurfaceView(it)
                 }
             }

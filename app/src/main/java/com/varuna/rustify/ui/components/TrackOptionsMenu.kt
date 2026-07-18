@@ -526,7 +526,7 @@ fun TrackOptionsMenuBottomSheet(
                         onClick = {
                             val id = track.id
                             if (id.isNullOrBlank()) {
-                                android.widget.Toast.makeText(context, R.string.share_no_link, android.widget.Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
                                 onDismiss()
                                 return@MenuOptionItem
                             }
@@ -545,7 +545,7 @@ fun TrackOptionsMenuBottomSheet(
                             onClick = {
                                 val id = track.id
                                 if (id.isNullOrBlank()) {
-                                    android.widget.Toast.makeText(context, R.string.share_no_link, android.widget.Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
                                     onDismiss()
                                     return@MenuOptionItem
                                 }

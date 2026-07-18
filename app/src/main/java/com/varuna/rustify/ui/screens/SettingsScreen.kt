@@ -1655,7 +1655,7 @@ if (localMusicDirs.isEmpty()) {
                             var npUrl by remember { mutableStateOf("") }
                             var npModel by remember { mutableStateOf("") }
                             var npKey by remember { mutableStateOf("") }
-                            androidx.compose.material3.AlertDialog(
+                            AlertDialog(
                                 onDismissRequest = { showAddProvider = false },
                                 confirmButton = {
                                     TextButton(onClick = {
@@ -1955,7 +1955,7 @@ if (localMusicDirs.isEmpty()) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Loading...", color = Color.Black, fontSize = 14.sp)
                         } else {
-                            androidx.compose.material3.Icon(
+                            Icon(
                                 Icons.Filled.PlayArrow,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
@@ -2132,7 +2132,7 @@ private fun backendFieldColors() = TextFieldDefaults.colors(
 
 // E61 — Config de instancias Invidious (el on/off y el orden van en Audio Backends).
 @Composable
-private fun InvidiousBackendSection(context: android.content.Context) {
+private fun InvidiousBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
     val Inv = com.varuna.rustify.audio.InvidiousSettings
@@ -2222,7 +2222,7 @@ private fun InvidiousBackendSection(context: android.content.Context) {
 
 // E62 — Config del backend Deezer (ARL propio o fuente de ARLs). On/off en Audio Backends.
 @Composable
-private fun DeezerBackendSection(context: android.content.Context) {
+private fun DeezerBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
     val Dz = com.varuna.rustify.audio.DeezerSettings
@@ -2287,7 +2287,7 @@ private fun DeezerBackendSection(context: android.content.Context) {
 }
 
 @Composable
-private fun AudioBackendsSection(context: android.content.Context) {
+private fun AudioBackendsSection(context: Context) {
     val knownIds = remember { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
     val catalog = remember { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
     var streamOrder by remember { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
@@ -2375,7 +2375,7 @@ private fun ReorderableBackendList(
 }
 
 @Composable
-private fun LyricsProvidersSection(context: android.content.Context) {
+private fun LyricsProvidersSection(context: Context) {
     var entries by remember { mutableStateOf(com.varuna.rustify.bridge.LyricsSettings.load(context)) }
     Spacer(modifier = Modifier.height(24.dp))
     Text(stringResource(R.string.settings_lyrics_providers), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
@@ -2450,10 +2450,10 @@ private fun ReorderableLyricsList(
 }
 
 @Composable
-private fun AndroidAutoPreviewSection(context: android.content.Context) {
-    val prefs = remember { context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE) }
+private fun AndroidAutoPreviewSection(context: Context) {
+    val prefs = remember { context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE) }
     var enabled by remember { mutableStateOf(prefs.getBoolean("debug_auto_preview", false)) }
-    val ytmRepo = remember { com.varuna.rustify.bridge.YtMusicRepository(context.applicationContext) }
+    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
     var path by remember { mutableStateOf(listOf("root")) }
 
     Spacer(modifier = Modifier.height(24.dp))
@@ -2567,7 +2567,7 @@ private fun SpotifyHashInspectorSection() {
                 Column(Modifier.weight(1f)) {
                     val cachedCount = hashes.count { it.value.isNotBlank() }
                     Text(
-                        "${cachedCount} / ${hashes.size} hashes cached",
+                        "$cachedCount / ${hashes.size} hashes cached",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
@@ -2586,13 +2586,13 @@ private fun SpotifyHashInspectorSection() {
                         onClick = {
                             if (!isRefreshing) {
                                 isRefreshing = true
-                                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                coroutineScope.launch(Dispatchers.IO) {
                                     com.varuna.rustify.bridge.NativeEngine.warmupSpotifyHashesNative()
                                     // Wait for warmup to propagate (it's async in Rust)
                                     kotlinx.coroutines.delay(3500)
                                     loadHashes()
                                     val sdf = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    withContext(Dispatchers.Main) {
                                         lastRefreshed = sdf.format(java.util.Date())
                                         isRefreshing = false
                                     }
@@ -2686,8 +2686,8 @@ private fun SpotifyHashInspectorSection() {
 }
 
 @Composable
-private fun TravelMapSection(context: android.content.Context) {
-    val prefs = remember { context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE) }
+private fun TravelMapSection(context: Context) {
+    val prefs = remember { context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE) }
     var mapTilerKey by remember {
         mutableStateOf(
             prefs.getString(com.varuna.rustify.travel.TravelSettings.KEY_MAPTILER_KEY, "") ?: ""

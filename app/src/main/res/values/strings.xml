@@ -401,13 +401,7 @@
     <string name="travel_clear">Clear</string>
 
     <!-- E50 — Google Drive sync.
-         OAuth **Web** client ID from Google Cloud Console (see GoogleDriveSync.kt header).
-         Leave empty until you create the Cloud project; the sync will not work until set. -->
-    <string name="default_web_client_id" translatable="false"></string>
-    <!-- E50 (B) — AppAuth browser/PKCE Web OAuth client (cert-independent). Fill both to enable the
-         "Browser sign-in" method. See docs/50-google-drive-setup.md. -->
-    <string name="drive_appauth_client_id" translatable="false"></string>
-    <string name="drive_appauth_client_secret" translatable="false"></string>
+         Credentials are now injected at build time from local.properties to prevent secret leakage. -->
     <string name="settings_drive_method">Sign-in method</string>
     <string name="settings_drive_method_play">Google (Play Services)</string>
     <string name="settings_drive_method_browser">Browser (no Google Play)</string>
