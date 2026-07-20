@@ -93,7 +93,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -891,14 +894,31 @@ fun QueueBottomSheet(
                     Text(stringResource(R.string.queue_empty), color = Color.Gray)
                 }
             } else {
+                // Reordenado por arrastre. Bug anterior: la key incluía el índice y `pointerInput(originalIndex)`
+                // se reiniciaba tras cada micro-movimiento (moveQueueItem → nueva composición), cancelando el
+                // gesto → solo se podía mover 1 posición por arrastre. Ahora se reordena una copia LOCAL con un
+                // uid estable por fila (sobrevive al reordenado y admite pistas duplicadas) y solo se confirma
+                // UN movimiento neto al soltar; la fila arrastrada se traslada visualmente para seguir al dedo.
+                var localOrder by remember(nextUpTracks) {
+                    mutableStateOf(nextUpTracks.mapIndexed { i, t -> i to t })
+                }
+                var draggingUid by remember { mutableStateOf<Int?>(null) }
+                var dragOffsetY by remember { mutableStateOf(0f) }
+                var dragStartLocalIndex by remember { mutableStateOf(-1) }
+                val density = LocalDensity.current
+                val rowHeightPx = with(density) { 56.dp.toPx() }
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    itemsIndexed(nextUpTracks, key = { index, track -> "${track.id ?: "unknown"}_$index" }) { indexInNextUp, track ->
-                        val originalIndex = nextUpStartIndex + indexInNextUp
-                        
+                    itemsIndexed(localOrder, key = { _, item -> item.first }) { idx, item ->
+                        val uid = item.first
+                        val track = item.second
+                        val originalIndex = nextUpStartIndex + idx
+                        val isDragging = draggingUid == uid
+
                         val dismissState = rememberSwipeToDismissBoxState(
                             positionalThreshold = { it * 0.4f }
                         )
@@ -912,91 +932,108 @@ fun QueueBottomSheet(
                             }
                         }
 
-                        SwipeToDismissBox(
-                            state = dismissState,
-                            enableDismissFromStartToEnd = true,
-                            backgroundContent = {
-                                val direction = dismissState.dismissDirection
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFFCC2200))
-                                        .padding(horizontal = 20.dp),
-                                    contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete",
-                                        tint = Color.White
-                                    )
-                                }
-                            },
-                            content = {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFF1E1E1E))
-                                        .clickable {
-                                            track.id?.let { id ->
-                                                audioPlayerService.playSpecificTrackInQueue(id)
-                                            }
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    var accumulatedDragY = 0f
-                                    Icon(
-                                        imageVector = Icons.Default.DragHandle,
-                                        contentDescription = "Drag to reorder",
-                                        tint = Color.Gray,
+                        Box(
+                            modifier = Modifier
+                                .zIndex(if (isDragging) 1f else 0f)
+                                .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f }
+                        ) {
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromStartToEnd = true,
+                                backgroundContent = {
+                                    val direction = dismissState.dismissDirection
+                                    Box(
                                         modifier = Modifier
-                                            .padding(end = 12.dp)
-                                            .pointerInput(originalIndex) {
-                                                detectDragGestures(
-                                                    onDragStart = { accumulatedDragY = 0f },
-                                                    onDrag = { change, dragAmount ->
-                                                        change.consume()
-                                                        accumulatedDragY += dragAmount.y
-                                                        val threshold = 90f
-                                                        if (accumulatedDragY > threshold) {
-                                                            val target = originalIndex + 1
-                                                            if (target < queue.size) {
-                                                                audioPlayerService.moveQueueItem(originalIndex, target)
+                                            .fillMaxSize()
+                                            .background(Color(0xFFCC2200))
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color.White
+                                        )
+                                    }
+                                },
+                                content = {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(if (isDragging) Color(0xFF2A2A2A) else Color(0xFF1E1E1E))
+                                            .clickable {
+                                                track.id?.let { id ->
+                                                    audioPlayerService.playSpecificTrackInQueue(id)
+                                                }
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DragHandle,
+                                            contentDescription = "Drag to reorder",
+                                            tint = Color.Gray,
+                                            modifier = Modifier
+                                                .padding(end = 12.dp)
+                                                .pointerInput(uid) {
+                                                    detectDragGestures(
+                                                        onDragStart = {
+                                                            draggingUid = uid
+                                                            dragStartLocalIndex = localOrder.indexOfFirst { it.first == uid }
+                                                            dragOffsetY = 0f
+                                                        },
+                                                        onDragEnd = {
+                                                            val from = dragStartLocalIndex
+                                                            val to = localOrder.indexOfFirst { it.first == uid }
+                                                            if (from >= 0 && to >= 0 && from != to) {
+                                                                audioPlayerService.moveQueueItem(nextUpStartIndex + from, nextUpStartIndex + to)
                                                             }
-                                                            accumulatedDragY = 0f
-                                                        } else if (accumulatedDragY < -threshold) {
-                                                            val target = originalIndex - 1
-                                                            if (target > currentIdx) {
-                                                                audioPlayerService.moveQueueItem(originalIndex, target)
+                                                            draggingUid = null; dragOffsetY = 0f; dragStartLocalIndex = -1
+                                                        },
+                                                        onDragCancel = { draggingUid = null; dragOffsetY = 0f; dragStartLocalIndex = -1 },
+                                                        onDrag = { change, dragAmount ->
+                                                            change.consume()
+                                                            dragOffsetY += dragAmount.y
+                                                            val curIdx = localOrder.indexOfFirst { it.first == uid }
+                                                            if (curIdx != -1) {
+                                                                val targetDelta = (dragOffsetY / rowHeightPx).toInt()
+                                                                if (targetDelta != 0) {
+                                                                    val target = (curIdx + targetDelta).coerceIn(0, localOrder.lastIndex)
+                                                                    if (target != curIdx) {
+                                                                        val m = localOrder.toMutableList()
+                                                                        m.add(target, m.removeAt(curIdx))
+                                                                        localOrder = m
+                                                                        dragOffsetY -= (target - curIdx) * rowHeightPx
+                                                                    }
+                                                                }
                                                             }
-                                                            accumulatedDragY = 0f
                                                         }
-                                                    }
+                                                    )
+                                                }
+                                        )
+
+                                        val imgUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                                        Surface(
+                                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
+                                            color = Color.DarkGray
+                                        ) {
+                                            if (!imgUrl.isNullOrEmpty()) {
+                                                AsyncImage(
+                                                    model = imgUrl,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop
                                                 )
                                             }
-                                    )
-
-                                    val imgUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url
-                                    Surface(
-                                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
-                                        color = Color.DarkGray
-                                    ) {
-                                        if (!imgUrl.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = imgUrl,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop
-                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(track.name, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(track.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(track.name, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(track.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }

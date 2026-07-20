@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.animation.animateColorAsState
@@ -44,6 +46,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBox
@@ -695,7 +698,7 @@ fun LibraryTracks(
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                 onAddToQueue(track)
-                                android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
                         }
@@ -1206,7 +1209,16 @@ fun <T> LibraryContentList(
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        // Pull-to-refresh: fuerza una recarga real (onRetry → sync… de red) para las secciones
+        // cacheadas. Antes, si una sección se quedaba con caché vieja/vacía por un error de red, no
+        // había forma de reintentar salvo borrar la caché de imágenes y reabrir la app. El indicador
+        // se controla con isLoading (el flag de sync del repo). La lista vacía sigue siendo un
+        // LazyColumn desplazable, así que se puede tirar para recargar incluso sin resultados.
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = onRetry,
+            modifier = Modifier.fillMaxSize()
+        ) {
             if (isLoading && items == null) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),

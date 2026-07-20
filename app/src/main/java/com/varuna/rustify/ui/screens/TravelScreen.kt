@@ -435,6 +435,14 @@ fun TravelScreen(
         }
     }
 
+    // Si el destino llegó de un link compartido ANTES de tener ubicación GPS, el marcador ya se dibuja
+    // (onMapReady), pero la ruta no se computaba hasta reabrir la pantalla. En cuanto haya ubicación,
+    // la calculamos automáticamente — así un link de Maps muestra ubicación Y ruta, no un mapa vacío.
+    LaunchedEffect(current, pickedDestination) {
+        val d = pickedDestination
+        if (d != null && current != null && route == null && !loading) computeRoute(d)
+    }
+
     // Fija (o limpia con null) el origen explícito, dibuja su marcador azul y recomputa la ruta.
     fun setOrigin(g: TravelRouting.Geo?) {
         originOverride = g
@@ -688,7 +696,9 @@ fun TravelScreen(
             if (showSuggestions && suggestions.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Surface(color = scrimColor, shape = RoundedCornerShape(10.dp)) {
-                    LazyColumn(Modifier.fillMaxWidth()) {
+                    // Tope de altura: con muchas sugerencias la lista crecía sin límite y tapaba el mapa y
+                    // la card inferior ("se juntaban los menús"). Ahora es una lista acotada y desplazable.
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
                         items(suggestions) { s ->
                             Text(
                                 text = s.label,

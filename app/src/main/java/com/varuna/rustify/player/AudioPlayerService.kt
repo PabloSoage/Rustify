@@ -439,10 +439,6 @@ class AudioPlayerService private constructor(private val context: Context) {
         isResolving = true
         _state.value = _state.value.copy(isBuffering = true, isError = false, errorMessage = "")
 
-        // E12: bind the foreground service before launching the cancelable job so a rapid
-        // skip can't prevent the service/notification from starting.
-        ensureForegroundServiceBound()
-
         playJob?.cancel()
         playJob = mainScope.launch {
             val thisJob = coroutineContext[kotlinx.coroutines.Job]
@@ -528,8 +524,15 @@ class AudioPlayerService private constructor(private val context: Context) {
                             // (AudioSourceRegistry.streamChain). yt-dlp es el provider por defecto;
                             // el `hint` es el youtubeId explícito de una alternativa elegida.
                             android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
-                            val res = com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
-                                .resolveStreamUrl(track, hint = effectiveYoutubeId)
+                            // E101: resolve OFF the main thread. Providers already switch to IO internally,
+                            // but isAvailableFor() (e.g. Invidious fetching its instance directory) runs
+                            // outside their withContext, so a stalled directory fetch could still jank the
+                            // UI thread. Wrapping the whole chain call here guarantees the main thread stays
+                            // free during a slow/hung backend resolution.
+                            val res = withContext(Dispatchers.IO) {
+                                com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                                    .resolveStreamUrl(track, hint = effectiveYoutubeId)
+                            }
                             res.onSuccess { (providerId, info) ->
                                 streamUrl = info.uri
                                 lastResolveError = null   // E60: clear any stale failure reason on success
@@ -597,12 +600,28 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                 }
 
+                // E101: bind the foreground service HERE — one frame before playback — so the OS's
+                // startForeground() 5s window opens only when we're about to play. Binding it eagerly
+                // (before a slow resolution) caused a foreground-service ANR with Invidious/Deezer.
+                ensureForegroundServiceBound()
+
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
                 if (_state.value.positionMs > 0L) {
                     exoPlayer.seekTo(_state.value.positionMs)
                 }
-                exoPlayer.play()
+                // E101: never inherit a leftover DJ-duck volume onto a fresh track (stuck 0.22 = inaudible).
+                if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
+                // E101: if a call is active/ringing, DON'T start audio — this is the "song plays over the
+                // hands-free call when a track change coincides with an incoming call" bug. Stay paused;
+                // the player is prepared and seeked, so the user (or the media button) resumes instantly.
+                if (isInCall()) {
+                    exoPlayer.playWhenReady = false
+                    _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
+                    android.util.Log.d("AudioPlayerService", "In call — deferring playback of ${track.name}")
+                } else {
+                    exoPlayer.play()
+                }
                 // (E70: onTrackStarted moved to the top of playTrack so the previous session flushes
                 //  deterministically on every switch, incl. manual skip / failing next track.)
 
@@ -681,8 +700,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 // E60: pre-buffer a través de la misma cadena de backends que playTrack
                 // (single source of truth: un solo resolveStreamUrl, sin duplicar el patrón yt-dlp).
-                val res = com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
-                    .resolveStreamUrl(nextTrack, hint = null)
+                val res = withContext(Dispatchers.IO) {
+                    com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                        .resolveStreamUrl(nextTrack, hint = null)
+                }
                 res.onSuccess { (_, info) ->
                     preResolvedUrls[nextTrackId] = info.uri
                     resolvedStreamUrls[nextTrackId] = info.uri
@@ -746,7 +767,10 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun loadAndPlay(track: FullTrack) {
-        ensureForegroundServiceBound()
+        // E101: the foreground service is bound inside playTrack() right before playback starts, NOT
+        // here — binding it eagerly started the OS's 5s startForeground() clock while a slow backend
+        // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR ("Rustify no
+        // responde" with the UI still alive). yt-dlp masked it by resolving from cache in <5s.
         val queue = listOf(track) + userQueue
         _state.value = _state.value.copy(
             currentTrack = track,
@@ -766,7 +790,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
         if (tracks.isEmpty()) return
-        ensureForegroundServiceBound()
+        // E101: foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
 
@@ -890,8 +914,23 @@ class AudioPlayerService private constructor(private val context: Context) {
     // DJ voice ducking (E90): lower/restore playback volume while the DJ speaks. The TTS callbacks
     // arrive off the main thread, so post to the player's main looper before touching ExoPlayer.
     private val djDuckHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    fun duckForVoice() { djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
-    fun unduckFromVoice() { djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
+    // E101: track duck state so a fresh track never inherits a stuck 0.22 duck (which made a track
+    // "play but be inaudible" if unduck never fired, e.g. TTS error on a bad connection).
+    @Volatile private var isDucking = false
+    fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
+    fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
+
+    // E101: AudioManager.mode reflects an active/ringing call WITHOUT needing READ_PHONE_STATE. Used to
+    // avoid blasting audio over a hands-free call when a track finishes resolving mid-call.
+    private val audioManager by lazy { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
+    private fun isInCall(): Boolean = runCatching {
+        when (audioManager.mode) {
+            android.media.AudioManager.MODE_IN_CALL,
+            android.media.AudioManager.MODE_IN_COMMUNICATION,
+            android.media.AudioManager.MODE_RINGTONE -> true
+            else -> false
+        }
+    }.getOrDefault(false)
 
     fun pause() {
         exoPlayer.pause()

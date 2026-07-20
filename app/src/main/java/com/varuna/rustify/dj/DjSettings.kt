@@ -70,6 +70,30 @@ object DjSettings {
     /** Voces OpenAI compartidas por Pollinations y por endpoints OpenAI-compatibles. */
     val OPENAI_VOICES = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer")
 
+    /**
+     * Voces neurales de Microsoft Edge (motor "edge", gratis y sin token). Las *Multilingual* hablan
+     * cualquier idioma automáticamente (buenas por defecto); el resto son por idioma/región. `(id, etiqueta)`.
+     */
+    val EDGE_VOICES = listOf(
+        "en-US-EmmaMultilingualNeural" to "Emma · multilingüe",
+        "en-US-AvaMultilingualNeural" to "Ava · multilingüe",
+        "en-US-AndrewMultilingualNeural" to "Andrew · multilingüe",
+        "en-US-BrianMultilingualNeural" to "Brian · multilingüe",
+        "es-ES-ElviraNeural" to "Elvira · ES-ES",
+        "es-ES-AlvaroNeural" to "Álvaro · ES-ES",
+        "es-MX-DaliaNeural" to "Dalia · ES-MX",
+        "en-US-AriaNeural" to "Aria · EN-US",
+        "en-US-GuyNeural" to "Guy · EN-US",
+        "en-GB-SoniaNeural" to "Sonia · EN-GB",
+        "ja-JP-NanamiNeural" to "Nanami · JA",
+        "ja-JP-KeitaNeural" to "Keita · JA",
+        "fr-FR-DeniseNeural" to "Denise · FR",
+        "de-DE-KatjaNeural" to "Katja · DE",
+        "it-IT-ElsaNeural" to "Elsa · IT",
+        "pt-BR-FranciscaNeural" to "Francisca · PT-BR"
+    )
+    const val EDGE_DEFAULT_VOICE = "en-US-EmmaMultilingualNeural"
+
     // ── Modo autónomo (automix por moods, tú solo le das al botón) ───────────────────────
     const val KEY_AUTO_SOURCE = "dj_auto_source"           // "favorites" | "balanced" | "discover"
 

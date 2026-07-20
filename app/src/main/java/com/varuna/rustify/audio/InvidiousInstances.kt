@@ -34,6 +34,15 @@ object InvidiousInstances {
         val isAnon: Boolean get() = type == "onion" || type == "i2p" || type == "ygg"
     }
 
+    // E101 — Fallback bootstrap list of public clearnet instances, used ONLY when the directory
+    // (api.invidious.io/instances.json, frequently down) can't be fetched and there's no cache. Without
+    // this, a dead directory left `selected()` empty → the Invidious backend silently never resolved
+    // ("Invidious no funciona"). These are best-effort defaults; the user can override in Settings.
+    private val BOOTSTRAP: List<Instance> = listOf(
+        "https://inv.nadeko.net", "https://invidious.nerdvpn.de", "https://yewtu.be",
+        "https://invidious.jing.rocks", "https://iv.melmac.space", "https://invidious.privacyredirect.com"
+    ).map { Instance(it, "https", apiUp = true, health = null) }
+
     private val plainClient by lazy {
         OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     }
@@ -101,10 +110,17 @@ object InvidiousInstances {
             plainClient.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
         }.getOrNull()
         if (fetched != null) {
-            prefs.edit { putString(K_CACHE, fetched); putLong(K_CACHE_TS, System.currentTimeMillis()) }
-            parse(fetched)
+            val parsed = parse(fetched)
+            if (parsed.isNotEmpty()) {
+                prefs.edit { putString(K_CACHE, fetched); putLong(K_CACHE_TS, System.currentTimeMillis()) }
+                parsed
+            } else {
+                // Directory reachable but empty/format changed → fall back to cache, then bootstrap.
+                prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
+            }
         } else {
-            prefs.getString(K_CACHE, null)?.let { parse(it) } ?: emptyList()
+            // Directory unreachable → last-known cache, else bootstrap so Invidious still has candidates.
+            prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
         }
     }
 

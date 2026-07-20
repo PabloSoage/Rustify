@@ -8,6 +8,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+/** E105 — Una fila del home de YTM: título de la categoría, la query que la generó y sus pistas. */
+data class YtmHomeRow(val title: String, val query: String, val tracks: List<YtmTrack>)
+
 /**
  * E40 — Repositorio de YouTube Music. Persiste favoritos, playlists, álbumes y
  * artistas YTM guardados localmente en `filesDir/ytm_library.json`. La resolución
@@ -26,6 +29,9 @@ class YtMusicRepository(private val appContext: Context) {
     val playlists  = State.playlists
     val savedAlbums  = State.savedAlbums
     val savedArtists = State.savedArtists
+    // E105 — Home feed cacheado (secciones dinámicas por mood/género vía search, con TTL en disco).
+    val homeRows = State.homeRows
+    val homeFetchedAt: Long get() = State.homeFetchedAt
 
     init {
         synchronized(State) {
@@ -39,6 +45,9 @@ class YtMusicRepository(private val appContext: Context) {
             val playlists  = mutableStateListOf<YtmLocalPlaylist>()
             val savedAlbums  = mutableStateListOf<YtmAlbumSlim>()
             val savedArtists = mutableStateListOf<YtmArtistRef>()
+            val homeRows = mutableStateListOf<YtmHomeRow>()
+            @Volatile var homeFetchedAt = 0L
+            @Volatile var homeLoading = false
             @Volatile var loaded = false
         }
     }
@@ -183,6 +192,80 @@ class YtMusicRepository(private val appContext: Context) {
         runCatching {
             YtmTrack.listFromJsonArray(JSONArray(NativeEngine.getYtmRadioNative(videoId)))
         }.getOrDefault(emptyList())
+    }
+
+    // ── E105 — Home feed cacheado (arregla el "carga cada vez / secciones estáticas") ──────────────
+    private val homeFile get() = File(appContext.filesDir, "ytm_home_cache.json")
+    private val homeTtlMs = 8 * 60 * 60 * 1000L // 8h
+
+    /** Categorías del home (título mostrado, query de búsqueda). Mezcla moods y géneros populares. */
+    private val homeCategories = listOf(
+        "Top hits" to "top hits", "New music" to "new music this week", "Chill" to "chill lofi relax",
+        "Workout" to "energetic workout gym", "Focus" to "focus instrumental study",
+        "Feel good" to "feel good happy hits", "Party" to "party dance hits", "Sleep" to "sleep calm ambient",
+        "Romance" to "love romantic songs", "Latin" to "latin hits reggaeton", "Rock" to "rock classics",
+        "Hip-Hop" to "hip hop rap hits", "R&B" to "rnb soul hits", "Electronic" to "electronic edm hits",
+        "Throwback" to "2010s throwback hits"
+    )
+
+    /**
+     * Asegura que [homeRows] esté poblado: usa la caché en disco si es fresca (< 8h), y solo si no hay
+     * o [force] es true reconstruye el feed lanzando las búsquedas EN PARALELO (rápido) y lo guarda.
+     */
+    suspend fun ensureHome(force: Boolean = false) = withContext(Dispatchers.IO) {
+        if (State.homeLoading) return@withContext
+        val fresh = System.currentTimeMillis() - State.homeFetchedAt < homeTtlMs
+        if (!force) {
+            if (State.homeRows.isNotEmpty() && fresh) return@withContext
+            if (State.homeRows.isEmpty()) {
+                loadHomeCache()
+                if (State.homeRows.isNotEmpty() && System.currentTimeMillis() - State.homeFetchedAt < homeTtlMs) return@withContext
+            }
+        }
+        State.homeLoading = true
+        try {
+            val rows = coroutineScope {
+                homeCategories.map { (title, q) ->
+                    async { YtmHomeRow(title, q, runCatching { search(q).tracks.take(16) }.getOrDefault(emptyList())) }
+                }.awaitAll()
+            }.filter { it.tracks.isNotEmpty() }
+            if (rows.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.Main) { State.homeRows.clear(); State.homeRows.addAll(rows) }
+                State.homeFetchedAt = now
+                saveHomeCache(rows, now)
+            }
+        } finally { State.homeLoading = false }
+    }
+
+    private suspend fun loadHomeCache() = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!homeFile.exists()) return@withContext
+            val json = JSONObject(homeFile.readText())
+            val fetchedAt = json.optLong("fetchedAt", 0L)
+            val arr = json.optJSONArray("rows") ?: return@withContext
+            val rows = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                YtmHomeRow(o.optString("title"), o.optString("query"), YtmTrack.listFromJsonArray(o.optJSONArray("tracks")))
+            }.filter { it.tracks.isNotEmpty() }
+            withContext(Dispatchers.Main) { State.homeRows.clear(); State.homeRows.addAll(rows) }
+            State.homeFetchedAt = fetchedAt
+        }
+    }
+
+    private fun saveHomeCache(rows: List<YtmHomeRow>, fetchedAt: Long) {
+        runCatching {
+            val arr = JSONArray()
+            rows.forEach { r ->
+                arr.put(JSONObject().apply {
+                    put("title", r.title); put("query", r.query); put("tracks", YtmTrack.toJsonArray(r.tracks))
+                })
+            }
+            val json = JSONObject().apply { put("fetchedAt", fetchedAt); put("rows", arr) }
+            val tmp = File(appContext.filesDir, "ytm_home_cache.json.tmp")
+            tmp.writeText(json.toString())
+            if (!tmp.renameTo(homeFile)) { homeFile.writeText(tmp.readText()); tmp.delete() }
+        }
     }
 
     /** Local playlist lookup for the detail screen. */

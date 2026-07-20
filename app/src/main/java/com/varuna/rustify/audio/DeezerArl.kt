@@ -15,7 +15,8 @@ import okhttp3.Request
  * agrupan por el país que aparezca justo antes si lo hay.
  */
 object DeezerArl {
-    data class ArlEntry(val country: String, val arl: String)
+    /** [updated] = texto de fecha "actualizado" que aparezca junto al ARL en la web (best-effort, crudo). */
+    data class ArlEntry(val country: String, val arl: String, val updated: String = "")
 
     private val COUNTRIES = linkedMapOf(
         "estados unidos" to "US", "united states" to "US", "mexic" to "MX", "brasil" to "BR",
@@ -23,6 +24,9 @@ object DeezerArl {
         "canad" to "CA", "franc" to "FR"
     )
     private val ARL_RE = Regex("[0-9a-fA-F]{100,256}")
+    // E62 — Fecha "actualizado" junto a un ARL (dd/mm/yyyy, yyyy-mm-dd, etc.). Best-effort: las webs
+    // varían, así que se muestra cruda tal cual; si no hay ninguna cerca, el ARL sale sin fecha.
+    private val DATE_RE = Regex("\\b(\\d{4}[/.\\-]\\d{1,2}[/.\\-]\\d{1,2}|\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{2,4})\\b")
 
     /** Descarga la web y extrae la lista de ARLs (país + token). */
     suspend fun fetch(context: Context, sourceUrl: String): List<ArlEntry> = withContext(Dispatchers.IO) {
@@ -43,6 +47,7 @@ object DeezerArl {
             .replace(Regex("(?is)<iframe.*?</iframe>"), " ")
             .replace(Regex("(?is)<noscript.*?</noscript>"), " ")
         val lower = cleaned.lowercase()
+        val dates = DATE_RE.findAll(cleaned).map { it.range.first to it.value }.toList()
         val out = ArrayList<ArlEntry>()
         for (m in ARL_RE.findAll(cleaned)) {
             val pos = m.range.first
@@ -51,7 +56,9 @@ object DeezerArl {
                 val idx = lower.lastIndexOf(kw, pos)
                 if (idx in 0..pos && idx > bestIdx) { bestIdx = idx; country = code }
             }
-            out.add(ArlEntry(country, m.value.lowercase()))
+            // Fecha "actualizado" más cercana ANTES del ARL (best-effort), cruda tal cual la web.
+            val updated = dates.lastOrNull { it.first <= pos }?.second ?: ""
+            out.add(ArlEntry(country, m.value.lowercase(), updated))
         }
         return out.distinctBy { it.arl }
     }

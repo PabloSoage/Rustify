@@ -140,6 +140,8 @@ sealed class Screen {
     data class YtmLocalPlaylistDetail(val localId: String) : Screen()
     object Settings : Screen()
     object Downloads : Screen()
+    // E103 — Descargas personalizadas (pega una URL, elige calidad de vídeo/audio, carpeta aparte).
+    object CustomDownload : Screen()
     object LogViewer : Screen()
     object Metrics : Screen()
     // Editor de matches YouTube (lista con nombres, editar/preview/borrar, añadir manual).
@@ -197,9 +199,9 @@ private fun navigateDeepLink(
         "travelresolve" -> {
             val url = parts[1]
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val coords = resolveMapsRedirect(url)
-                if (coords != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    navigationStack.add(Screen.TravelWithDestination(coords.first, coords.second, null))
+                val geo = resolveMapsRedirect(url)
+                if (geo != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    navigationStack.add(Screen.TravelWithDestination(geo.lat, geo.lon, geo.label.ifBlank { null }))
                 }
             }
         }
@@ -247,27 +249,51 @@ private fun extractTravelToken(text: String): String? {
         }
     }
 
-    // Google Maps URL: extrae lat,lng de la parte @lat,lng en la URL (síncrono, sin red)
-    val atRegex = Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""")
-    atRegex.find(t)?.let { m ->
-        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
-    }
+    // Coordenadas directas en la URL, sin red: @lat,lng (centro), !3d<lat>!4d<lon> (lugar/destino),
+    // destination=/q=/ll= lat,lon, etc.
+    mapsCoords(t)?.let { return "travel:${it.first},${it.second}," }
 
-    // maps.google.com/?q=lat,lng (directo, síncrono)
-    Regex("""[?&]q=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)""").find(t)?.let { m ->
-        return "travel:${m.groupValues[1]},${m.groupValues[2]},"
-    }
-
-    // Short links (maps.app.goo.gl / goo.gl/maps) o /place/ sin coordenadas: necesitan resolver un
-    // redirect por RED. NO lo hacemos aquí (esto corre en el hilo principal → NetworkOnMainThread);
-    // devolvemos un token diferido que navigateDeepLink resuelve en una corrutina IO. Este era el bug
-    // por el que compartir un enlace de Google Maps (que por defecto es un maps.app.goo.gl) no hacía nada.
+    // Cualquier enlace de mapa (corto o largo, DIRECCIONES o LUGAR): resolvemos el redirect y, si no hay
+    // coordenadas, geocodificamos el nombre del lugar — por RED, en una corrutina IO (aquí estamos en el
+    // hilo principal → NetworkOnMainThread). Antes solo se difería goo.gl/google.com/maps y solo se sacaba
+    // @lat,lng, así que los links de /dir/… o de lugar sin @ abrían el mapa vacío (ni ubicación ni ruta).
     if (t.contains("maps.app.goo.gl", ignoreCase = true) ||
         t.contains("goo.gl/maps", ignoreCase = true) ||
-        (t.contains("google.com/maps", ignoreCase = true))) {
+        t.contains("google.com/maps", ignoreCase = true) ||
+        t.contains("maps.google", ignoreCase = true) ||
+        t.contains("g.co/kgs", ignoreCase = true)) {
         return "travelresolve:$t"
     }
 
+    return null
+}
+
+/** Extrae coordenadas de un texto/URL de Google Maps probando varios formatos (sin red). */
+private fun mapsCoords(text: String): Pair<Double, Double>? {
+    // Coords del lugar/destino embebidas en el parámetro data: !3d<lat>!4d<lon>.
+    Regex("""!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)""").find(text)?.let {
+        return it.groupValues[1].toDouble() to it.groupValues[2].toDouble()
+    }
+    // destino / consulta como lat,lon (coma literal o %2C).
+    Regex("""[?&](?:destination|daddr|q|ll|sll|center)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)""", RegexOption.IGNORE_CASE)
+        .find(text)?.let { return it.groupValues[1].toDouble() to it.groupValues[2].toDouble() }
+    // Centro del mapa @lat,lng (último recurso).
+    Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""").find(text)?.let {
+        return it.groupValues[1].toDouble() to it.groupValues[2].toDouble()
+    }
+    return null
+}
+
+/** Extrae un NOMBRE de lugar/destino de una URL de Maps para geocodificar si no hay coordenadas. */
+private fun mapsPlaceName(text: String): String? {
+    Regex("""/place/([^/@?]+)""").find(text)?.groupValues?.getOrNull(1)?.let { raw ->
+        val name = runCatching { java.net.URLDecoder.decode(raw.replace('+', ' '), "UTF-8") }.getOrDefault(raw).trim()
+        if (name.isNotBlank()) return name
+    }
+    Regex("""[?&](?:destination|daddr|q)=([^&]+)""").find(text)?.groupValues?.getOrNull(1)?.let { raw ->
+        val name = runCatching { java.net.URLDecoder.decode(raw.replace('+', ' '), "UTF-8") }.getOrDefault(raw).trim()
+        if (name.isNotBlank() && !Regex("""^-?\d+\.\d+\s*,\s*-?\d+\.\d+$""").matches(name)) return name
+    }
     return null
 }
 
@@ -275,12 +301,14 @@ private fun extractTravelToken(text: String): String? {
  * Resuelve un enlace corto/place de Google Maps siguiendo redirects y buscando `@lat,lng` en la
  * cadena de URLs y en el cuerpo final. Bloqueante — llamar en Dispatchers.IO.
  */
-private fun resolveMapsRedirect(startUrl: String): Pair<Double, Double>? {
-    val atRegex = Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""")
+private suspend fun resolveMapsRedirect(startUrl: String): com.varuna.rustify.travel.TravelRouting.Geo? {
+    fun geo(p: Pair<Double, Double>, srcUrl: String) =
+        com.varuna.rustify.travel.TravelRouting.Geo(p.first, p.second, mapsPlaceName(srcUrl) ?: "")
     var url = startUrl
-    return try {
-        repeat(6) {
-            atRegex.find(url)?.let { m -> return m.groupValues[1].toDouble() to m.groupValues[2].toDouble() }
+    mapsCoords(url)?.let { return geo(it, url) }
+    var finalUrl = url
+    try {
+        for (i in 0 until 6) {
             val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) Rustify")
@@ -290,19 +318,23 @@ private fun resolveMapsRedirect(startUrl: String): Pair<Double, Double>? {
             val code = conn.responseCode
             if (code in 300..399) {
                 val loc = conn.getHeaderField("Location"); conn.disconnect()
-                if (loc.isNullOrBlank()) return null
+                if (loc.isNullOrBlank()) break
                 url = if (loc.startsWith("http")) loc else java.net.URL(java.net.URL(url), loc).toString()
+                finalUrl = url
+                mapsCoords(url)?.let { return geo(it, url) }
             } else {
                 val body = runCatching { conn.inputStream.bufferedReader().use { it.readText() } }.getOrDefault("")
                 conn.disconnect()
-                (atRegex.find(url) ?: atRegex.find(body))?.let { m ->
-                    return m.groupValues[1].toDouble() to m.groupValues[2].toDouble()
-                }
-                return null
+                finalUrl = url
+                mapsCoords(url)?.let { return geo(it, url) }
+                mapsCoords(body)?.let { return geo(it, url) }
+                break
             }
         }
-        null
-    } catch (_: Exception) { null }
+    } catch (_: Exception) { return null }
+    // Sin coordenadas en la URL resuelta: geocodifica el nombre del lugar/destino como último recurso.
+    val name = mapsPlaceName(finalUrl) ?: return null
+    return runCatching { com.varuna.rustify.travel.TravelRouting.geocode(name) }.getOrNull()
 }
 
 class MainActivity : ComponentActivity() {
@@ -841,6 +873,7 @@ fun EngineTester(
             is Screen.Settings -> "Settings"
             is Screen.MatchEditor -> "MatchEditor"
             is Screen.Downloads -> "Downloads"
+            is Screen.CustomDownload -> "CustomDownload"
             is Screen.LogViewer -> "LogViewer"
             is Screen.Metrics -> "Metrics"
             is Screen.NewReleases -> "NewReleases"
@@ -1134,6 +1167,7 @@ fun EngineTester(
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
                         onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
                         onNavigateMatchEditor = { navigationStack.add(Screen.MatchEditor) },
+                        onNavigateCustomDownload = { navigationStack.add(Screen.CustomDownload) },
                         onLocaleChanged = { newCode ->
                             onLanguageChanged(newCode)
                             coroutineScope.launch {
@@ -1155,6 +1189,11 @@ fun EngineTester(
                 }
                 is Screen.Downloads -> {
                     com.varuna.rustify.ui.screens.DownloadsScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.CustomDownload -> {
+                    com.varuna.rustify.ui.screens.CustomDownloadScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }

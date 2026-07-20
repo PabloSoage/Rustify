@@ -21,6 +21,7 @@ class ListeningTracker(private val appContext: Context) {
     private data class Session(
         val track: FullTrack, val startedAt: Long,
         var lastPos: Long = 0, var listenedMs: Long = 0,
+        var lastTickAt: Long = 0,
         var completed: Boolean = false, var errored: Boolean = false
     )
 
@@ -31,11 +32,26 @@ class ListeningTracker(private val appContext: Context) {
         cur = Session(track, System.currentTimeMillis())
     }
 
+    /**
+     * Acumula tiempo REALMENTE escuchado. Bug anterior: solo sumaba `posDelta in 1..2000`, así que un
+     * tick del bucle de 500 ms que llegaba tarde (hilo ocupado) daba delta >2 s y se DESCARTABA — a lo
+     * largo de una sesión larga esos ticks perdidos sumaban horas mal contadas (90 min mostrados vs
+     * 2 h 30 reales). Ahora se cuenta `min(posDelta, wallDelta)`:
+     *  - reproducción normal: posDelta≈wallDelta≈500 ms → suma el tiempo real, incl. ticks tardíos;
+     *  - seek adelante: posDelta enorme pero wallDelta pequeño → suma solo lo escuchado (sin inflar);
+     *  - seek atrás / stall (buffering): posDelta ≤ 0 → no suma;
+     *  - hueco enorme (>10 s, app suspendida sin sonar): se ignora para no contar tiempo no reproducido.
+     */
     fun onProgress(posMs: Long) {
         val s = cur ?: return
-        val delta = posMs - s.lastPos
-        if (delta in 1..2000) s.listenedMs += delta
+        val now = System.currentTimeMillis()
+        val posDelta = posMs - s.lastPos
+        val wallDelta = if (s.lastTickAt > 0L) now - s.lastTickAt else 0L
+        if (posDelta > 0L && wallDelta in 1L..10_000L) {
+            s.listenedMs += minOf(posDelta, wallDelta)
+        }
         s.lastPos = posMs
+        s.lastTickAt = now
     }
 
     fun onEnded() { cur?.completed = true; flush() }
@@ -61,6 +77,9 @@ class ListeningTracker(private val appContext: Context) {
             put("artistNames", aNms)
             put("albumId", s.track.album?.id ?: "")
             put("albumName", s.track.album?.name ?: "")
+            // E102 — carátula del álbum, para mostrar covers en la pantalla de métricas (los eventos
+            // antiguos no la tienen → la UI cae a un placeholder). No rompe el formato (campo extra).
+            put("imageUrl", s.track.album?.images?.firstOrNull()?.url ?: "")
             put("durationMs", s.track.durationMs)
             put("startedAt", s.startedAt)
             put("listenedMs", s.listenedMs)

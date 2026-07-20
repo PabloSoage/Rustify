@@ -30,17 +30,22 @@ class AudioSourceChain(
         val errors = mutableListOf<Throwable>()
         for (p in ordered) {
             if (!p.capabilities.canStream) continue
-            try {
-                if (!p.isAvailableFor(track)) continue
-            } catch (e: Exception) { errors += labelError(p.capabilities.id, e); continue }
+            // E101: isAvailableFor() must be INSIDE the timeout. It can do network I/O (e.g. Invidious
+            // fetching its instance directory), and when it was outside, a stalled directory fetch hung
+            // the whole resolution with no upper bound — a prime cause of the play-time ANR. A null
+            // result means "not available for this track" → skip quietly (no error), same as before.
             val r = runCatching {
-                withTimeout(perProviderTimeoutMs) { p.resolveStreamUrl(track, hint).getOrThrow() }
+                withTimeout(perProviderTimeoutMs) {
+                    if (!p.isAvailableFor(track)) null
+                    else p.resolveStreamUrl(track, hint).getOrThrow()
+                }
             }
-            if (r.isSuccess) {
-                val info = r.getOrNull()!!
+            val info = r.getOrNull()
+            if (r.isSuccess && info != null) {
                 lastGood[trackId] = p.capabilities.id
                 return Result.success(p.capabilities.id to info)
             }
+            if (r.isSuccess) continue // provider unavailable for this track — skip without logging an error
             r.onFailure { e ->
                 // Tag the error with the provider id so the aggregated message names who failed and why.
                 errors += labelError(p.capabilities.id, e)

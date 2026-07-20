@@ -202,80 +202,75 @@ private fun YtmBrowseHome(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String?
 ) {
-    val categories = remember {
-        listOf(
-            R.string.ytm_home_top to "top hits",
-            R.string.dj_mood_chill to "chill lofi relax",
-            R.string.dj_mood_energetic to "energetic workout gym",
-            R.string.dj_mood_happy to "feel good happy hits",
-            R.string.dj_mood_focus to "focus instrumental study"
-        )
-    }
-    val cache = remember { mutableMapOf<String, List<YtmTrack>>() }
+    // E105 — Home cacheado: las filas viven en repo.homeRows (persistidas en disco con TTL de 8h), así
+    // que ya NO se recarga cada vez que entras. La primera vez (o al pulsar ↻) se reconstruyen en
+    // paralelo. Muchas más categorías (moods + géneros) que las 5 estáticas de antes.
+    val rows = repo.homeRows
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { repo.ensureHome(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)) {
         item {
-            Text(
-                stringResource(R.string.ytm_home_browse),
-                color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
-                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.ytm_home_browse),
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                if (refreshing) {
+                    CircularProgressIndicator(color = Green, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    TextButton(onClick = { scope.launch { refreshing = true; repo.ensureHome(true); refreshing = false } }) {
+                        Text("↻", color = Green, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
-        items(categories) { (labelRes, q) ->
-            YtmBrowseRow(labelRes, q, repo, onTrackClick, currentTrackId, cache)
+        if (rows.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Green)
+                }
+            }
+        } else {
+            items(rows) { row -> YtmHomeRowView(row, onTrackClick, currentTrackId) }
         }
     }
 }
 
 @Composable
-private fun YtmBrowseRow(
-    labelRes: Int,
-    query: String,
-    repo: YtMusicRepository,
+private fun YtmHomeRowView(
+    row: com.varuna.rustify.bridge.YtmHomeRow,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
-    currentTrackId: String?,
-    cache: MutableMap<String, List<YtmTrack>>
+    currentTrackId: String?
 ) {
-    val cached = cache[query]
-    var tracks by remember(query) { mutableStateOf(cached ?: emptyList()) }
-    var loading by remember(query) { mutableStateOf(cached == null) }
-    LaunchedEffect(query) {
-        if (cached != null) return@LaunchedEffect
-        loading = true
-        val result = runCatching { repo.search(query).tracks.take(12) }.getOrDefault(emptyList())
-        tracks = result
-        cache[query] = result
-        loading = false
-    }
-    if (!loading && tracks.isEmpty()) return
+    if (row.tracks.isEmpty()) return
+    val full = remember(row) { row.tracks.map { it.toFullTrack() } }
     Column(Modifier.padding(vertical = 8.dp)) {
-        YtmSectionHeader(stringResource(labelRes))
-        if (loading) {
-            Box(Modifier.fillMaxWidth().padding(16.dp)) {
-                CircularProgressIndicator(color = Green, modifier = Modifier.size(22.dp))
-            }
-        } else {
-            val full = tracks.map { it.toFullTrack() }
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                itemsIndexed(tracks) { i, t ->
-                    val playing = currentTrackId == "ytm:${t.videoId}"
-                    Column(Modifier.width(140.dp).clickable { onTrackClick(full, i) }) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(t.thumbnailUrl)
-                                .crossfade(true)
-                                .size(420)
-                                .build(),
-                            contentDescription = null,
-                            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(t.title, color = if (playing) Green else Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+        YtmSectionHeader(row.title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            itemsIndexed(row.tracks) { i, t ->
+                val playing = currentTrackId == "ytm:${t.videoId}"
+                Column(Modifier.width(140.dp).clickable { onTrackClick(full, i) }) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(t.thumbnailUrl)
+                            .crossfade(true)
+                            .size(420)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(t.title, color = if (playing) Green else Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

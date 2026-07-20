@@ -451,7 +451,7 @@ fun AlbumScreen(
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }

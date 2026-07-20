@@ -194,68 +194,81 @@ fun DjScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.dj_subtitle), color = Color.Gray, fontSize = 14.sp)
+            // Chip compacto del modo actual (toca para cambiarlo en Ajustes).
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.clickable { onOpenSettings() }
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.dj_current_mode, modeLabel), color = green, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.dj_change_in_settings), color = Color.Gray, fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(stringResource(R.string.dj_subtitle), color = Color.Gray, fontSize = 13.sp)
 
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.dj_current_mode, modeLabel), color = green, fontSize = 12.sp)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.dj_change_in_settings),
-                    color = Color.Gray,
-                    fontSize = 12.sp,
-                    modifier = Modifier.clickable { onOpenSettings() }
-                )
+            Spacer(Modifier.height(16.dp))
+            // ── Card: pídele al DJ (petición + micro + acciones) ──────────────────────────────
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = request,
+                        onValueChange = { request = it },
+                        label = { Text(stringResource(R.string.dj_request_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(onClick = { onMicClick() }) {
+                                Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.dj_mic), tint = green)
+                            }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF121212),
+                            unfocusedContainerColor = Color(0xFF121212),
+                            focusedLabelColor = green,
+                            focusedIndicatorColor = green
+                        )
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { startDj() },
+                            enabled = !isLoading,
+                            colors = ButtonDefaults.buttonColors(containerColor = green),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.dj_start), color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { if (resultTracks.isNotEmpty()) onEnqueueTracks(resultTracks) },
+                            enabled = !isLoading && resultTracks.isNotEmpty(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.dj_enqueue), color = Color.White)
+                        }
+                    }
+                    if (isLoading) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = green, modifier = Modifier.size(26.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
-                value = request,
-                onValueChange = { request = it },
-                label = { Text(stringResource(R.string.dj_request_hint)) },
-                modifier = Modifier.fillMaxWidth(),
-                trailingIcon = {
-                    IconButton(onClick = { onMicClick() }) {
-                        Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.dj_mic), tint = green)
-                    }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0xFF1E1E1E),
-                    unfocusedContainerColor = Color(0xFF1E1E1E),
-                    focusedLabelColor = green,
-                    focusedIndicatorColor = green
-                )
-            )
-
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = { startDj() },
-                    enabled = !isLoading,
-                    colors = ButtonDefaults.buttonColors(containerColor = green),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.dj_start), color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-                OutlinedButton(
-                    onClick = {
-                        if (resultTracks.isNotEmpty()) onEnqueueTracks(resultTracks)
-                    },
-                    enabled = !isLoading && resultTracks.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.dj_enqueue), color = Color.White)
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-            // Autonomous "DJ Livi"-style: press once, it announces a mood (voice) and queues a block.
+            // ── DJ autónomo ("Livi"): un toque, anuncia un mood (voz) y encola un bloque ──────
             if (autoState == null) {
                 OutlinedButton(
                     onClick = { DjAutoController.start(context, spotifyRepo, favoritesProvider) },
@@ -267,31 +280,21 @@ fun DjScreen(
                 }
             } else {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF102010)),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF14261A)),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         if (autoState!!.preparing) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    color = green,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                CircularProgressIndicator(color = green, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(10.dp))
-                                Text(
-                                    stringResource(R.string.dj_auto_preparing),
-                                    color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
-                                )
+                                Text(stringResource(R.string.dj_auto_preparing), color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
                         } else {
-                            Text(
-                                stringResource(R.string.dj_auto_now, autoState!!.moodLabel),
-                                color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp
-                            )
+                            Text(stringResource(R.string.dj_auto_now, autoState!!.moodLabel), color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = { DjAutoController.next(context) },
@@ -303,10 +306,7 @@ fun DjScreen(
                                 Spacer(Modifier.width(6.dp))
                                 Text(stringResource(R.string.dj_auto_next), color = Color.Black)
                             }
-                            OutlinedButton(
-                                onClick = { DjAutoController.stop() },
-                                modifier = Modifier.weight(1f)
-                            ) {
+                            OutlinedButton(onClick = { DjAutoController.stop() }, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
                                 Spacer(Modifier.width(6.dp))
                                 Text(stringResource(R.string.dj_auto_stop), color = Color.White)
@@ -316,24 +316,22 @@ fun DjScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            if (isLoading) {
-                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = green)
-                }
-            }
-
+            // ── Intro del DJ ──
             intro?.let { line ->
+                Spacer(Modifier.height(16.dp))
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(stringResource(R.string.dj_intro_label), color = green, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        Text(line, color = Color.White, fontSize = 15.sp)
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎧", fontSize = 22.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(stringResource(R.string.dj_intro_label), color = green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(3.dp))
+                            Text(line, color = Color.White, fontSize = 15.sp)
+                        }
                     }
                 }
             }
@@ -343,24 +341,36 @@ fun DjScreen(
                 Text(msg, color = Color(0xFFE57373), fontSize = 14.sp)
             }
 
+            // ── Resultado: cola generada, con la pista sonando resaltada ──
             if (resultTracks.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(R.string.dj_queue_built, resultTracks.size),
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
+                    color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(8.dp))
-                resultTracks.take(50).forEachIndexed { i, t ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            (i + 1).toString().padStart(2, '0'),
-                            color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp)
-                        )
-                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(t.name, color = Color.White, fontSize = 14.sp, maxLines = 1)
-                            Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(vertical = 6.dp)) {
+                        resultTracks.take(50).forEachIndexed { i, t ->
+                            val isNow = nowPlaying?.id != null && t.id == nowPlaying.id
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isNow) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = green, modifier = Modifier.size(20.dp).width(28.dp))
+                                } else {
+                                    Text((i + 1).toString().padStart(2, '0'), color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                                }
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(t.name, color = if (isNow) green else Color.White, fontSize = 14.sp, maxLines = 1, fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal)
+                                    Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                                }
+                            }
                         }
                     }
                 }
