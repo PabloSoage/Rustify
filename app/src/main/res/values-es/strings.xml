@@ -500,6 +500,9 @@
     <string name="settings_drive_link">Vincular cuenta</string>
     <string name="settings_drive_unlink">Desvincular cuenta</string>
     <string name="settings_drive_sync_now">Sincronizar ahora</string>
+    <string name="settings_drive_details">Qué se sincroniza</string>
+    <string name="settings_drive_details_desc">Estos elementos se respaldan en Drive en cada sincronización (unión + gana el más reciente).</string>
+    <string name="settings_close">Cerrar</string>
     <string name="settings_drive_auto">Sincronización automática</string>
     <string name="settings_drive_auto_desc">Sincroniza automáticamente al abrir la app.</string>
     <string name="settings_drive_never_synced">Nunca sincronizado</string>

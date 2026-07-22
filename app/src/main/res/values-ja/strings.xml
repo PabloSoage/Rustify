@@ -300,6 +300,9 @@
     <string name="settings_drive_link">アカウントを連携</string>
     <string name="settings_drive_unlink">連携を解除</string>
     <string name="settings_drive_sync_now">今すぐ同期</string>
+    <string name="settings_drive_details">同期される内容</string>
+    <string name="settings_drive_details_desc">これらの項目が同期のたびに Drive にバックアップされます（統合＋最新優先）。</string>
+    <string name="settings_close">閉じる</string>
     <string name="settings_drive_auto">自動同期</string>
     <string name="settings_drive_auto_desc">アプリ起動時に自動で同期します。</string>
     <string name="settings_drive_never_synced">未同期</string>

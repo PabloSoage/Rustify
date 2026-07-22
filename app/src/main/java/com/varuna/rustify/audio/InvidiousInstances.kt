@@ -97,6 +97,31 @@ object InvidiousInstances {
         }.getOrDefault(false)
     }
 
+    // "Me at the zoo" — el primer vídeo de YouTube: público, 19 s, prácticamente nunca bloqueado/con edad.
+    private const val CANARY_VIDEO = "jNQXAC9IVRw"
+
+    /**
+     * Prueba REAL de reproducción: pide `/api/v1/videos/{canario}` y comprueba que devuelve una URL de
+     * audio. Muchas instancias responden 200 en `/api/v1/stats` (ping ✅) pero fallan al resolver el
+     * vídeo (rate-limit / bloqueo de googlevideo) → parecían buenas y luego no iban como backend. Esto
+     * refleja lo que hace [InvidiousAudioSource] de verdad.
+     */
+    suspend fun probe(ctx: Context, inst: Instance): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val url = "${inst.baseUrl}/api/v1/videos/$CANARY_VIDEO?fields=adaptiveFormats&local=false"
+            val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
+            val body = clientFor(ctx, inst).newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@runCatching false
+                r.body?.string() ?: return@runCatching false
+            }
+            val adaptive = org.json.JSONObject(body).optJSONArray("adaptiveFormats") ?: return@runCatching false
+            (0 until adaptive.length()).any { i ->
+                val f = adaptive.optJSONObject(i)
+                f != null && f.optString("type").startsWith("audio", true) && f.optString("url").isNotBlank()
+            }
+        }.getOrDefault(false)
+    }
+
     private suspend fun cachedOrFetch(ctx: Context, force: Boolean): List<Instance> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val ts = prefs.getLong(K_CACHE_TS, 0L)
@@ -130,8 +155,15 @@ object InvidiousInstances {
             val pair = arr.optJSONArray(i) ?: return@mapNotNull null
             val d = pair.optJSONObject(1) ?: return@mapNotNull null
             val uri = d.optString("uri").trimEnd('/')
-            if (uri.isBlank()) return@mapNotNull null
-            val type = d.optString("type", guessType(uri))
+            if (!isValidInstanceUri(uri)) return@mapNotNull null
+            // El sufijo de la URL manda para redes anónimas (el `type` del directorio a veces viene mal,
+            // p. ej. una .ygg marcada como "https"); si no, usamos el type del directorio o "https".
+            val type = when {
+                uri.contains(".onion") -> "onion"
+                uri.contains(".i2p") -> "i2p"
+                uri.contains(".ygg") -> "ygg"
+                else -> d.optString("type", "https").ifBlank { "https" }
+            }
             val api = d.optBoolean("api", type == "https")
             // monitor.uptime varía; probamos varios campos con tolerancia.
             val monitor = d.optJSONObject("monitor")
@@ -147,6 +179,18 @@ object InvidiousInstances {
     private fun guessType(url: String): String = when {
         url.contains(".onion") -> "onion"
         url.contains(".i2p") -> "i2p"
+        url.contains(".ygg") -> "ygg"
         else -> "https"
+    }
+
+    /**
+     * Descarta URIs basura del directorio (que ahora devuelve entradas rotas): exige esquema http(s) y un
+     * host con dominio real. Así se van "http://", "http://inv" y similares que salían en la lista.
+     */
+    private fun isValidInstanceUri(uri: String): Boolean {
+        if (!uri.startsWith("http", ignoreCase = true)) return false
+        val host = uri.substringAfter("://", "").substringBefore('/')
+        // Debe tener al menos un punto (dominio) y una longitud mínima razonable.
+        return host.length >= 4 && host.contains('.')
     }
 }

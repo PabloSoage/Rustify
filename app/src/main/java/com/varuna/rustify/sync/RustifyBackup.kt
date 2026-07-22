@@ -95,6 +95,26 @@ object RustifyBackup {
 
     fun buildString(ctx: Context): String = build(ctx).toString()
 
+    /** Una categoría del backup con cuántos elementos lleva (para la pantalla "qué se sincroniza"). */
+    data class Category(val key: String, val label: String, val count: Int)
+
+    /** Recuento por categoría de lo que se subiría a Drive AHORA (lee disco, no toca red). */
+    fun summarize(ctx: Context): List<Category> {
+        val c = build(ctx)
+        val local = c.optJSONObject("local") ?: JSONObject()
+        val ytm = c.optJSONObject("ytm") ?: JSONObject()
+        return listOf(
+            Category("mappings", "YouTube matches", c.optJSONObject("mappings")?.length() ?: 0),
+            Category("local_playlists", "Listas locales", local.optJSONArray("playlists")?.length() ?: 0),
+            Category("local_favorites", "Favoritos locales", local.optJSONArray("favorites")?.length() ?: 0),
+            Category("ytm_favorites", "YT Music: favoritos", ytm.optJSONArray("favorites")?.length() ?: 0),
+            Category("ytm_playlists", "YT Music: listas", ytm.optJSONArray("playlists")?.length() ?: 0),
+            Category("ytm_albums", "YT Music: álbumes", ytm.optJSONArray("savedAlbums")?.length() ?: 0),
+            Category("ytm_artists", "YT Music: artistas", ytm.optJSONArray("savedArtists")?.length() ?: 0),
+            Category("metrics", "Eventos de escucha", c.optJSONArray("metrics")?.length() ?: 0),
+        )
+    }
+
     // ---------------------------------------------------------------------
     // IMPORT — escribir cada bloque a disco y recargar por las vías existentes.
     // ---------------------------------------------------------------------

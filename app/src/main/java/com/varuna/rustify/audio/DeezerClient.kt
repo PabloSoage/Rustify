@@ -51,6 +51,25 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
     /** ¿Este ARL sirve? (auth OK). Para el tester de la fuente de ARLs. */
     suspend fun testArl(arl: String): Boolean = auth(arl) != null
 
+    /** Resultado de comprobar un ARL a fondo: auth + si de verdad puede **reproducir** (no solo autenticar). */
+    data class ArlCheck(val auth: Boolean, val canStream: Boolean, val detail: String)
+
+    // Pista pública muy popular usada como "canario" para saber si el ARL tiene derechos de streaming
+    // (Daft Punk — Harder, Better, Faster, Stronger). Auth OK pero get_url vacío ⇒ cuenta gratuita/sin HiFi.
+    private val CANARY_SNG_ID = "3135556"
+
+    /**
+     * Comprobación real: muchos ARLs de webs públicas son de cuentas **gratuitas** → autentican (testArl
+     * ✅) pero NO pueden reproducir pistas completas (Deezer solo da preview de 30 s), así que get_url
+     * devuelve vacío y "Test playback" falla. Esto lo distingue: ✅ premium / ⚠️ gratis / ❌ inválido.
+     */
+    suspend fun checkArl(arl: String): ArlCheck {
+        val session = auth(arl) ?: return ArlCheck(false, false, "auth failed (invalid/expired)")
+        val m = media(session, CANARY_SNG_ID, listOf("MP3_128", "MP3_320", "FLAC"))
+        return if (m != null) ArlCheck(true, true, "premium (${m.format})")
+               else ArlCheck(true, false, "auth OK, no stream rights (free account?)")
+    }
+
     /** track id de Deezer a partir de un track de Spotify: por ISRC (limpio) o búsqueda. */
     suspend fun deezerTrackId(track: FullTrack): String? = withContext(Dispatchers.IO) {
         val isrc = track.isrc

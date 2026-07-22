@@ -730,74 +730,8 @@ fun SettingsScreen(
                     ) {
                         Text(stringResource(R.string.settings_edit_matches), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Editor de texto crudo (avanzado) — se mantiene como fallback.
-                    var showMappingsDialog by remember { mutableStateOf(false) }
-                    val mappingsContent = remember {
-                        val file = File(context.filesDir, "youtube_mappings.json")
-                        if (file.exists()) file.readText() else null
-                    }
-                    Button(
-                        onClick = { showMappingsDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "View Mappings (${mappingsContent?.lines()?.size ?: 0} entries)",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    if (showMappingsDialog) {
-                        var editableContent by remember { mutableStateOf(mappingsContent ?: "") }
-                        AlertDialog(
-                            onDismissRequest = { showMappingsDialog = false },
-                            title = { Text("YouTube Mappings", color = Color.White) },
-                            text = {
-                                Column {
-                                    if (mappingsContent == null) {
-                                        Text("No mappings found.", color = Color.Gray)
-                                    } else {
-                                        rememberScrollState()
-                                        OutlinedTextField(
-                                            value = editableContent,
-                                            onValueChange = { editableContent = it },
-                                            modifier = Modifier.fillMaxWidth().height(300.dp),
-                                            colors = TextFieldDefaults.colors(
-                                                focusedTextColor = Color.White,
-                                                unfocusedTextColor = Color.White,
-                                                focusedContainerColor = Color(0xFF121212),
-                                                unfocusedContainerColor = Color(0xFF121212)
-                                            ),
-                                            textStyle = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(onClick = {
-                                        // FIX: recargar el mapa en Rust (initCacheDir) tras escribir; si no,
-                                        // borrar/editar y Guardar no tenía efecto (el mapa vivo seguía igual).
-                                        try {
-                                            val ok = com.varuna.rustify.bridge.MatchStore.replaceFromJson(context, editableContent)
-                                            Toast.makeText(context, if (ok) "Mappings saved" else "Invalid JSON", Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
-                                        }
-                                        showMappingsDialog = false
-                                    }) {
-                                        Text("Save", color = Color(0xFF1DB954))
-                                    }
-                                    TextButton(onClick = { showMappingsDialog = false }) {
-                                        Text("Close", color = Color.Gray)
-                                    }
-                                }
-                            },
-                            containerColor = Color(0xFF1E1E1E)
-                        )
-                    }
+                    // E105 — Eliminado el botón legacy "View Mappings" y su diálogo de texto crudo
+                    // (JSON ininteligible): el editor de matches ya cubre ver/buscar/filtrar/editar/borrar.
                 }
             }
 
@@ -931,6 +865,45 @@ fun SettingsScreen(
                                 DriveSyncPrefs.setAutoSync(context, checked)
                             },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
+                        )
+                    }
+
+                    // E105 — "Qué se sincroniza": muestra el recuento por categoría de lo que se subiría
+                    // ahora + permite forzar la sincronización desde ahí.
+                    Spacer(modifier = Modifier.height(8.dp))
+                    var showSyncDetails by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = { showSyncDetails = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(stringResource(R.string.settings_drive_details), color = Color.White, fontSize = 12.sp) }
+
+                    if (showSyncDetails) {
+                        var cats by remember { mutableStateOf<List<com.varuna.rustify.sync.RustifyBackup.Category>>(emptyList()) }
+                        LaunchedEffect(Unit) { cats = withContext(Dispatchers.IO) { com.varuna.rustify.sync.RustifyBackup.summarize(context) } }
+                        AlertDialog(
+                            onDismissRequest = { showSyncDetails = false },
+                            containerColor = Color(0xFF1E1E1E),
+                            title = { Text(stringResource(R.string.settings_drive_details), color = Color.White) },
+                            text = {
+                                Column {
+                                    Text(stringResource(R.string.settings_drive_details_desc), color = Color.Gray, fontSize = 12.sp)
+                                    Spacer(Modifier.height(8.dp))
+                                    cats.forEach { c ->
+                                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(c.label, color = Color.White, fontSize = 13.sp)
+                                            Text(c.count.toString(), color = Color(0xFF1DB954), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = { showSyncDetails = false; if (!driveSyncing) driveAuthorizeThen { token -> runDriveSync(token) } },
+                                    enabled = !driveSyncing
+                                ) { Text(stringResource(R.string.settings_drive_sync_now), color = Color(0xFF1DB954)) }
+                            },
+                            dismissButton = { TextButton(onClick = { showSyncDetails = false }) { Text(stringResource(R.string.settings_close), color = Color.Gray) } }
                         )
                     }
                 }
@@ -2391,6 +2364,9 @@ private fun InvidiousBackendSection(context: Context) {
     var instances by remember { mutableStateOf<List<com.varuna.rustify.audio.InvidiousInstances.Instance>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var pings by remember { mutableStateOf(mapOf<String, Boolean?>()) }
+    // Probador de reproducción end-to-end de la pista actual por Invidious (igual que el de Deezer).
+    var invTpBusy by remember { mutableStateOf(false) }
+    var invTpStatus by remember { mutableStateOf("") }
 
     fun refresh(force: Boolean) {
         loading = true
@@ -2435,8 +2411,8 @@ private fun InvidiousBackendSection(context: Context) {
                             Text(inst.baseUrl.removePrefix("https://"), color = Color.White, fontSize = 12.sp, maxLines = 1)
                             Text(healthText + anonText, color = Color.Gray, fontSize = 10.sp)
                         }
-                        Text(when (pings[inst.baseUrl]) { true -> "✅"; false -> "❌"; else -> "" }, fontSize = 12.sp)
-                        TextButton(onClick = { scope.launch { val ok = com.varuna.rustify.audio.InvidiousInstances.ping(context, inst); pings = pings + (inst.baseUrl to ok) } }) {
+                        Text(when { pings.containsKey(inst.baseUrl) && pings[inst.baseUrl] == null -> "⏳"; pings[inst.baseUrl] == true -> "✅"; pings[inst.baseUrl] == false -> "❌"; else -> "" }, fontSize = 12.sp)
+                        TextButton(onClick = { scope.launch { pings = pings + (inst.baseUrl to null); val ok = com.varuna.rustify.audio.InvidiousInstances.probe(context, inst); pings = pings + (inst.baseUrl to ok) } }) {
                             Text(stringResource(R.string.inv_test), color = green, fontSize = 11.sp)
                         }
                     }
@@ -2465,6 +2441,26 @@ private fun InvidiousBackendSection(context: Context) {
                 Text(stringResource(R.string.inv_tor_route), color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Switch(checked = torOn, onCheckedChange = { torOn = it; Inv.setTorEnabled(context, it) })
             }
+
+            // Probar reproducción de la PISTA ACTUAL por Invidious (resuelve como el backend real).
+            Spacer(Modifier.height(12.dp))
+            val invNoTrack = stringResource(R.string.dz_tp_no_track)
+            val invOkFmt = stringResource(R.string.dz_tp_ok_fmt)
+            val invFailFmt = stringResource(R.string.dz_tp_fail_fmt)
+            TextButton(onClick = {
+                invTpBusy = true; invTpStatus = ""
+                scope.launch(Dispatchers.IO) {
+                    val track = com.varuna.rustify.player.AudioPlayerService.instance?.state?.value?.currentTrack
+                    if (track == null) { withContext(Dispatchers.Main) { invTpStatus = invNoTrack; invTpBusy = false }; return@launch }
+                    val r = com.varuna.rustify.audio.InvidiousAudioSource(context).resolveStreamUrl(track, null)
+                    withContext(Dispatchers.Main) {
+                        invTpStatus = r.fold(onSuccess = { invOkFmt.format("stream ✓") }, onFailure = { invFailFmt.format(it.message ?: "error") })
+                        invTpBusy = false
+                    }
+                }
+            }, enabled = !invTpBusy) { Text(stringResource(R.string.dz_test_playback), color = green) }
+            if (invTpBusy) { Spacer(Modifier.height(6.dp)); CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = green) }
+            if (invTpStatus.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(invTpStatus, color = Color.White, fontSize = 12.sp) }
         }
     }
 }
@@ -2483,7 +2479,8 @@ private fun DeezerBackendSection(context: Context) {
     var busy by remember { mutableStateOf(false) }
     // Tester de la fuente de ARLs: lista los ARLs de la web, prueba cada uno (✅/❌) y deja elegir cuál usar.
     var entries by remember { mutableStateOf<List<com.varuna.rustify.audio.DeezerArl.ArlEntry>>(emptyList()) }
-    var entryStatus by remember { mutableStateOf(mapOf<String, Boolean?>()) } // arl -> null(probando)/true/false
+    // arl -> ArlCheck (probado) o null (probando). Sin la clave = sin probar.
+    var entryStatus by remember { mutableStateOf(mapOf<String, com.varuna.rustify.audio.DeezerClient.ArlCheck?>()) }
     var fetchedAt by remember { mutableStateOf(0L) }
     var workingArl by remember { mutableStateOf(Dz.workingArl(context)) }
     // Probador de reproducción end-to-end (auth + match + get_url) sin tocar el orden de backends.
@@ -2537,18 +2534,26 @@ private fun DeezerBackendSection(context: Context) {
                 }, enabled = !busy) { Text(stringResource(R.string.dz_test_arl), color = green) }
             } else {
                 OutlinedTextField(value = source, onValueChange = { source = it; Dz.setSourceUrl(context, it) }, label = { Text(stringResource(R.string.dz_source_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
-                TextButton(onClick = {
-                    busy = true; status = ""; entryStatus = emptyMap()
-                    scope.launch(Dispatchers.IO) {
-                        val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
-                        withContext(Dispatchers.Main) {
-                            entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
-                            // Muestra el motivo real del fallo (HTTP 403 / timeout / 0 ARLs…) en vez de
-                            // un genérico "no hay ARLs" que no dice nada.
-                            status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
+                Spacer(Modifier.height(8.dp))
+                // Botón real (relleno) para que se vea como botón — antes era un TextButton discreto que el
+                // usuario no reconocía como pulsable, así que "no salía ningún ARL" (no se disparaba nada).
+                Button(
+                    onClick = {
+                        busy = true; status = ""; entryStatus = emptyMap()
+                        scope.launch(Dispatchers.IO) {
+                            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
+                            withContext(Dispatchers.Main) {
+                                entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
+                                // Muestra el motivo real del fallo (HTTP 403 / timeout / 0 ARLs…) en vez de
+                                // un genérico "no hay ARLs" que no dice nada.
+                                status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
+                            }
                         }
-                    }
-                }, enabled = !busy) { Text(stringResource(R.string.dz_fetch_arls), color = green) }
+                    },
+                    enabled = !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = green, contentColor = Color.Black),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.dz_fetch_arls), fontWeight = FontWeight.SemiBold) }
                 Text(stringResource(R.string.dz_source_hint), color = Color.Gray, fontSize = 11.sp)
 
                 if (entries.isNotEmpty()) {
@@ -2558,18 +2563,30 @@ private fun DeezerBackendSection(context: Context) {
                         val rel = android.text.format.DateUtils.getRelativeTimeSpanString(fetchedAt).toString()
                         Text(stringResource(R.string.dz_fetched_fmt, rel), color = Color.Gray, fontSize = 10.sp)
                     }
+                    // Leyenda: ✅ reproduce (premium) · ⚠️ autentica pero no reproduce (cuenta gratis) · ❌ inválido.
+                    Text("✅ premium · ⚠️ free (no stream) · ❌ inválido", color = Color(0xFF888888), fontSize = 10.sp)
                     entries.take(30).forEach { e ->
+                        val tested = entryStatus.containsKey(e.arl)
+                        val chk = entryStatus[e.arl]
                         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text((e.country.ifBlank { "—" }) + "  " + mask(e.arl), color = Color.White, fontSize = 11.sp, maxLines = 1)
                                 if (e.updated.isNotBlank()) Text(stringResource(R.string.dz_updated_fmt, e.updated), color = Color.Gray, fontSize = 9.sp)
+                                if (chk != null) Text(chk.detail, color = if (chk.canStream) green else Color(0xFFFFB74D), fontSize = 9.sp, maxLines = 1)
                             }
-                            Text(when (entryStatus[e.arl]) { true -> "✅"; false -> "❌"; else -> "" }, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                            Text(
+                                when { tested && chk == null -> "⏳"; chk == null -> ""; chk.canStream -> "✅"; chk.auth -> "⚠️"; else -> "❌" },
+                                fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)
+                            )
                             TextButton(onClick = {
                                 entryStatus = entryStatus + (e.arl to null)
                                 scope.launch(Dispatchers.IO) {
-                                    val ok = com.varuna.rustify.audio.DeezerClient().testArl(e.arl)
-                                    withContext(Dispatchers.Main) { entryStatus = entryStatus + (e.arl to ok) }
+                                    // checkArl: auth + get_url en una pista canario → distingue premium/free/inválido.
+                                    val res = com.varuna.rustify.audio.DeezerClient().checkArl(e.arl)
+                                    withContext(Dispatchers.Main) {
+                                        entryStatus = entryStatus + (e.arl to res)
+                                        if (res.canStream) { Dz.setWorkingArl(context, e.arl); workingArl = e.arl }
+                                    }
                                 }
                             }) { Text(stringResource(R.string.dz_test), color = green, fontSize = 11.sp) }
                             if (workingArl == e.arl) {
@@ -2607,9 +2624,13 @@ private fun DeezerBackendSection(context: Context) {
                         return@launch
                     }
                     val result = runCatching {
-                        val a = com.varuna.rustify.audio.DeezerArl.ensureArl(context) ?: error("no working ARL")
-                        val media = com.varuna.rustify.audio.DeezerClient().resolve(track, a, Dz.formatChain(context))
-                            ?: error("track not on Deezer / get_url failed")
+                        val a = com.varuna.rustify.audio.DeezerArl.ensureArl(context) ?: error("no working ARL (testea un ARL primero)")
+                        val client = com.varuna.rustify.audio.DeezerClient()
+                        // Paso a paso para decir QUÉ falla: auth vs no-encontrada vs sin derechos de stream.
+                        val session = client.auth(a) ?: error("ARL auth failed (inválido/caducado)")
+                        val id = client.deezerTrackId(track) ?: error("track not found on Deezer (ISRC/búsqueda)")
+                        val media = client.media(session, id, Dz.formatChain(context))
+                            ?: error("get_url vacío (ARL sin premium/HiFi o región) — prueba un ARL con ✅")
                         media.format
                     }
                     withContext(Dispatchers.Main) {

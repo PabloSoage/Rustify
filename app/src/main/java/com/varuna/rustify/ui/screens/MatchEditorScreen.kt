@@ -27,9 +27,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,8 +86,34 @@ fun MatchEditorScreen(
     val names = remember { mutableStateMapOf<String, FullTrack?>() }
     var editTrack by remember { mutableStateOf<FullTrack?>(null) }  // abre el diálogo de alternativas
     var showAdd by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(0) }  // 0 = todos, 1 = elegidos (usuario), 2 = automáticos
 
     fun refresh() { mappings = MatchStore.readAll(context).toList() }
+
+    // Qué matches son "elegidos" (usuario) para poder filtrar. Se recalcula solo al cambiar la lista.
+    val userSet = remember(mappings) {
+        mappings.mapNotNull { (tid, _) -> tid.takeIf { UserAlternatives.isUserSet(context, it) } }.toSet()
+    }
+    // Precarga en segundo plano los nombres de TODOS los matches para que la búsqueda por título cubra
+    // toda la lista (no solo lo visible). Best-effort; el mapa se rellena progresivamente.
+    LaunchedEffect(mappings) {
+        for ((tid, _) in mappings) {
+            if (!names.containsKey(tid)) names[tid] = runCatching { spotifyRepo.getTrack(tid) }.getOrNull()
+        }
+    }
+
+    // Lista filtrada: por elegidos/automáticos y por texto (título / artista / id).
+    val filtered = mappings.filter { (tid, ytId) ->
+        val passFilter = when (filter) { 1 -> tid in userSet; 2 -> tid !in userSet; else -> true }
+        if (!passFilter) return@filter false
+        if (query.isBlank()) return@filter true
+        val q = query.trim().lowercase()
+        val ft = names[tid]
+        (ft?.name?.lowercase()?.contains(q) == true) ||
+            (ft?.artists?.any { it.name.lowercase().contains(q) } == true) ||
+            tid.lowercase().contains(q) || ytId.lowercase().contains(q)
+    }
 
     Scaffold(
         topBar = {
@@ -115,11 +144,38 @@ fun MatchEditorScreen(
                     Text("Añadir match manualmente", fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("${mappings.size} matches", color = Color.Gray, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Buscar título / artista") },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF1E1E1E), unfocusedContainerColor = Color(0xFF1E1E1E),
+                        focusedLabelColor = green, focusedIndicatorColor = green
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Todos", 1 to "Elegidos", 2 to "Automáticos").forEach { (f, label) ->
+                        FilterChip(
+                            selected = filter == f,
+                            onClick = { filter = f },
+                            label = { Text(label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color(0xFF2A2A2A), selectedContainerColor = green,
+                                labelColor = Color.White, selectedLabelColor = Color.Black
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("${filtered.size} / ${mappings.size} matches", color = Color.Gray, fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
             }
 
-            items(mappings, key = { it.first }) { (tid, ytId) ->
+            items(filtered, key = { it.first }) { (tid, ytId) ->
                 LaunchedEffect(tid) {
                     if (!names.containsKey(tid)) {
                         names[tid] = runCatching { spotifyRepo.getTrack(tid) }.getOrNull()
@@ -168,10 +224,11 @@ fun MatchEditorScreen(
                 }
             }
 
-            if (mappings.isEmpty()) {
+            if (filtered.isEmpty()) {
                 item {
                     Text(
-                        "No hay matches guardados. Usa “Añadir” o el botón de alternativas de una canción.",
+                        if (mappings.isEmpty()) "No hay matches guardados. Usa “Añadir” o el botón de alternativas de una canción."
+                        else "Ningún match coincide con el filtro/búsqueda.",
                         color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(vertical = 24.dp)
                     )
                 }

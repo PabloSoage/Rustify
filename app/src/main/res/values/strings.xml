@@ -502,6 +502,9 @@
     <string name="settings_drive_link">Link account</string>
     <string name="settings_drive_unlink">Unlink account</string>
     <string name="settings_drive_sync_now">Sync now</string>
+    <string name="settings_drive_details">What gets synced</string>
+    <string name="settings_drive_details_desc">These items are backed up to Drive on each sync (union + last-write-wins).</string>
+    <string name="settings_close">Close</string>
     <string name="settings_drive_auto">Auto-sync</string>
     <string name="settings_drive_auto_desc">Sync automatically when the app opens.</string>
     <string name="settings_drive_never_synced">Never synced</string>
