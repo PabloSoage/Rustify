@@ -24,19 +24,43 @@ object DeezerArl {
         "canad" to "CA", "franc" to "FR"
     )
     private val ARL_RE = Regex("[0-9a-fA-F]{100,256}")
+    // UA de navegador real: algunos WAFs de estas webs (Cloudflare/Blogger) sirven una página recortada
+    // o bloquean clientes con UA "okhttp"/genérico. Con esto se comporta como Chrome de móvil.
+    private const val BROWSER_UA =
+        "Mozilla/5.0 (Linux; Android 12; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+    /** Resultado con diagnóstico: si [entries] viene vacío, [error] dice POR QUÉ (HTTP 403, timeout, 0 ARLs…). */
+    data class FetchResult(val entries: List<ArlEntry>, val error: String? = null)
     // E62 — Fecha "actualizado" junto a un ARL (dd/mm/yyyy, yyyy-mm-dd, etc.). Best-effort: las webs
     // varían, así que se muestra cruda tal cual; si no hay ninguna cerca, el ARL sale sin fecha.
     private val DATE_RE = Regex("\\b(\\d{4}[/.\\-]\\d{1,2}[/.\\-]\\d{1,2}|\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{2,4})\\b")
 
-    /** Descarga la web y extrae la lista de ARLs (país + token). */
-    suspend fun fetch(context: Context, sourceUrl: String): List<ArlEntry> = withContext(Dispatchers.IO) {
-        if (sourceUrl.isBlank()) return@withContext emptyList()
-        val html = runCatching {
-            val req = Request.Builder().url(sourceUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 12) Rustify").build()
-            AudioHttp.client.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() else null }
-        }.getOrNull() ?: return@withContext emptyList()
-        parse(html)
+    /** Descarga la web y extrae la lista de ARLs (país + token). Vacío = fallo silencioso (compat). */
+    suspend fun fetch(context: Context, sourceUrl: String): List<ArlEntry> = fetchDetailed(context, sourceUrl).entries
+
+    /**
+     * Igual que [fetch] pero devuelve el motivo del fallo. La UI lo muestra tal cual, para que "no sale
+     * ningún ARL" deje de ser un misterio (HTTP 403 / timeout / DNS / 0 ARLs en la página, etc.).
+     */
+    suspend fun fetchDetailed(context: Context, sourceUrl: String): FetchResult = withContext(Dispatchers.IO) {
+        if (sourceUrl.isBlank()) return@withContext FetchResult(emptyList(), "empty url")
+        val url = sourceUrl.trim().let { if (it.startsWith("http", true)) it else "https://$it" }
+        try {
+            val req = Request.Builder().url(url)
+                .header("User-Agent", BROWSER_UA)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9,es;q=0.8")
+                .build()
+            AudioHttp.client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext FetchResult(emptyList(), "HTTP ${resp.code}")
+                val html = resp.body?.string()
+                if (html.isNullOrBlank()) return@withContext FetchResult(emptyList(), "empty body")
+                val entries = parse(html)
+                FetchResult(entries, if (entries.isEmpty()) "0 ARLs (${html.length} chars fetched)" else null)
+            }
+        } catch (e: Exception) {
+            FetchResult(emptyList(), e.message ?: e.javaClass.simpleName)
+        }
     }
 
     /** Parseo puro (testeable). Quita ads y saca ARLs hex + su país. */
@@ -46,6 +70,15 @@ object DeezerArl {
             .replace(Regex("(?is)<style.*?</style>"), " ")
             .replace(Regex("(?is)<iframe.*?</iframe>"), " ")
             .replace(Regex("(?is)<noscript.*?</noscript>"), " ")
+        // Pase primario con las etiquetas intactas (los ARLs suelen ir contiguos en un nodo de texto).
+        val primary = extract(cleaned)
+        if (primary.isNotEmpty()) return primary
+        // Fallback: quita TODAS las etiquetas (poniendo un espacio, para no fusionar dos ARLs contiguos
+        // en un único hex >256 que dejaría de casar) por si vienen dentro de atributos o wrappers raros.
+        return extract(cleaned.replace(Regex("<[^>]+>"), " "))
+    }
+
+    private fun extract(cleaned: String): List<ArlEntry> {
         val lower = cleaned.lowercase()
         val dates = DATE_RE.findAll(cleaned).map { it.range.first to it.value }.toList()
         val out = ArrayList<ArlEntry>()

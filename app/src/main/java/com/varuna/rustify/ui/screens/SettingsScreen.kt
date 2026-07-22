@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -121,6 +122,8 @@ import java.io.File
 fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
     onBack: () -> Unit,
+    category: String? = null,
+    onCategoryChange: (String?) -> Unit = {},
     onNavigateLogViewer: () -> Unit = {},
     onLocaleChanged: ((String) -> Unit)? = null,
     onNavigateMetrics: () -> Unit = {},
@@ -131,18 +134,19 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    // E104 — Ajustes por categorías (sub-pantallas): null = menú de categorías; si no, la categoría abierta.
-    var settingsCategory by remember { mutableStateOf<String?>(null) }
-    androidx.activity.compose.BackHandler(enabled = settingsCategory != null) { settingsCategory = null }
+    // E104/E105 — Ajustes por categorías (sub-pantallas): null = menú de categorías; si no, la categoría
+    // abierta. El estado vive en MainActivity (hoisted) para sobrevivir a abrir/volver de sub-pantallas.
+    val settingsCategory = category
+    androidx.activity.compose.BackHandler(enabled = settingsCategory != null) { onCategoryChange(null) }
 
     var isUpdatingYtDlp by remember { mutableStateOf(false) }
     var ytDlpVersion by remember { mutableStateOf(YoutubeDL.getInstance().version(context) ?: "Unknown") }
     var isNightly by remember { mutableStateOf(prefs.getString("ytdlp_channel", "NIGHTLY") == "NIGHTLY") }
-    
-    var downloadUriString by remember { mutableStateOf(prefs.getString("download_directory", null)) }
-    
-    // F1.B / F1.A — diagnóstico y wrapper.
-    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_capture_enabled", false)) }
+
+    // E105 — carpeta de descargas, música local y captura de logs se movieron a sus categorías
+    // (Descargas / Audio y backends / Avanzado), con estado propio en cada sección extraída.
+
+    // F1.A — wrapper.
     // null pref (never set) → preselect default. Explicit "" (user cleared it) → blank/fallback.
     var wrapperHost by remember {
         mutableStateOf(prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST)
@@ -166,27 +170,6 @@ fun SettingsScreen(
     var djApiModel by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) }
     var djApiKey by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_KEY, "") ?: "") }
 
-    var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
-    var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
-    var enableYtmMusic by remember { mutableStateOf(prefs.getBoolean("enable_ytm_music", true)) }
-    var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
-
-    val addLocalMusicDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            val newSet = localMusicDirs.toMutableSet().apply { add(uri.toString()) }
-            localMusicDirs = newSet
-            prefs.edit { putStringSet("local_music_directories", newSet) }
-        }
-    }
-
-    val downloadDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            downloadUriString = uri.toString()
-            prefs.edit { putString("download_directory", uri.toString()) }
-        }
-    }
 
     val exportSuccessMsg = stringResource(R.string.settings_export_success)
     val exportNoDataMsg = stringResource(R.string.settings_no_mappings_export)
@@ -438,7 +421,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { if (settingsCategory != null) settingsCategory = null else onBack() }) {
+                    IconButton(onClick = { if (settingsCategory != null) onCategoryChange(null) else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
                     }
                 },
@@ -455,13 +438,15 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
           when (settingsCategory) {
-            null -> SettingsCategoryMenu { settingsCategory = it }
+            null -> SettingsCategoryMenu { onCategoryChange(it) }
             "audio" -> {
                 Spacer(modifier = Modifier.height(8.dp))
+                // Orden pedido: primero letras, luego música local, luego los backends de audio.
+                LyricsProvidersSection(context)
+                LocalMusicSection(context)
                 AudioBackendsSection(context)
                 InvidiousBackendSection(context)
                 DeezerBackendSection(context)
-                LyricsProvidersSection(context)
             }
             "downloads" -> DownloadsCategory(context, onNavigateCustomDownload)
             "integrations" -> {
@@ -471,6 +456,7 @@ fun SettingsScreen(
             }
             "advanced" -> {
                 Spacer(modifier = Modifier.height(8.dp))
+                LoggingSection(context, onNavigateLogViewer)
                 SpotifyHashInspectorSection()
                 AdvancedLinks(onNavigateMetrics, onNavigateMatchEditor, onNavigateLogViewer)
             }
@@ -629,208 +615,21 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // E105 — La carpeta de descargas y los ajustes de música local se movieron a las
+                    // categorías "Descargas" y "Audio y backends". Aquí queda solo el backup de datos
+                    // locales (playlists/favoritos) y la limpieza de caché.
                     Text(
-                        stringResource(R.string.settings_download_dir), 
-                        color = Color.White, 
-                        fontSize = 16.sp, 
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        if (downloadUriString != null) Uri.parse(downloadUriString).lastPathSegment ?: downloadUriString!! 
-                        else stringResource(R.string.settings_no_dir_configured),
-                        color = Color.Gray,
-                        fontSize = 14.sp
+                        stringResource(R.string.settings_local_data),
+                        color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = { downloadDirLauncher.launch(null) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-                    ) {
-                        Text(stringResource(R.string.settings_select_folder), color = Color.White)
-                    }
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(stringResource(R.string.settings_local_music), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.settings_enable_local_music), color = Color.White, fontSize = 14.sp)
-                            Text(stringResource(R.string.settings_enable_local_music_desc), color = Color.Gray, fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = enableLocalMusic,
-                            onCheckedChange = { checked ->
-                                enableLocalMusic = checked
-                                prefs.edit { putBoolean("enable_local_music", checked) }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF1DB954)
-                            )
-                        )
-                    }
-
-                    if (enableLocalMusic) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                Text(stringResource(R.string.settings_match_local_first), color = Color.White, fontSize = 14.sp)
-                                Text(stringResource(R.string.settings_match_local_first_desc), color = Color.Gray, fontSize = 12.sp)
-                            }
-                            Switch(
-                                checked = matchLocalFirst,
-                                onCheckedChange = { checked ->
-                                    matchLocalFirst = checked
-                                    prefs.edit { putBoolean("settings_match_local_first", checked) }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFF1DB954)
-                                )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        var coversFullRes by remember { mutableStateOf(prefs.getBoolean("settings_local_covers_full_res", true)) }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                Text(stringResource(R.string.settings_local_covers_fullres), color = Color.White, fontSize = 14.sp)
-                                Text(stringResource(R.string.settings_local_covers_fullres_desc), color = Color.Gray, fontSize = 12.sp)
-                            }
-                            Switch(
-                                checked = coversFullRes,
-                                onCheckedChange = { checked ->
-                                    coversFullRes = checked
-                                    prefs.edit { putBoolean("settings_local_covers_full_res", checked) }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFF1DB954)
-                                )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.enable_ytm_music), color = Color.White, fontSize = 14.sp)
-                                Text(stringResource(R.string.enable_ytm_music_desc), color = Color.Gray, fontSize = 12.sp)
-                            }
-                            Switch(
-                                checked = enableYtmMusic,
-                                onCheckedChange = { checked ->
-                                    enableYtmMusic = checked
-                                    prefs.edit { putBoolean("enable_ytm_music", checked) }
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // YTM Search mode (API vs Scraper)
-                        var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
-                        androidx.compose.runtime.DisposableEffect(prefs) {
-                            val scraperListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-                                if (key == "ytm_search_mode") ytmScraper = p?.getString("ytm_search_mode", "api") == "scraper"
-                            }
-                            prefs.registerOnSharedPreferenceChangeListener(scraperListener)
-                            onDispose { prefs.unregisterOnSharedPreferenceChangeListener(scraperListener) }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.settings_ytm_scraper), color = Color.White, fontSize = 14.sp)
-                                Text(
-                                    if (ytmScraper) stringResource(R.string.settings_ytm_scraper_on) else stringResource(R.string.settings_ytm_scraper_off),
-                                    color = Color.Gray, fontSize = 12.sp
-                                )
-                            }
-                            Switch(
-                                checked = ytmScraper,
-                                onCheckedChange = { checked ->
-                                    ytmScraper = checked
-                                    prefs.edit { putString("ytm_search_mode", if (checked) "scraper" else "api") }
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFE65100))
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        
-if (localMusicDirs.isEmpty()) {
-                            Text(stringResource(R.string.settings_no_folder_configured), color = Color.Gray, fontSize = 14.sp)
-                        } else {
-                            localMusicDirs.forEach { uriStr ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val name = Uri.parse(uriStr).lastPathSegment ?: uriStr
-                                    Text(name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                                    Text(
-                                        stringResource(R.string.settings_remove),
-                                        color = Color.Red,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.clickable {
-                                            val newSet = localMusicDirs.toMutableSet().apply { remove(uriStr) }
-                                            localMusicDirs = newSet
-                                            prefs.edit { putStringSet("local_music_directories", newSet) }
-                                        }.padding(8.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { addLocalMusicDirLauncher.launch(null) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
-                        ) {
-                            Text(stringResource(R.string.settings_add_folder), color = Color.White)
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            stringResource(R.string.settings_local_data),
-                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { exportLocalLauncher.launch("rustify_local_data.json") },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
-                            ) { Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp) }
-                            Button(onClick = { importLocalLauncher.launch(arrayOf("application/json", "*/*")) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
-                            ) { Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp) }
-                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { exportLocalLauncher.launch("rustify_local_data.json") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.settings_export), color = Color.White, fontSize = 12.sp) }
+                        Button(onClick = { importLocalLauncher.launch(arrayOf("application/json", "*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.settings_import), color = Color.White, fontSize = 12.sp) }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -1391,56 +1190,7 @@ if (localMusicDirs.isEmpty()) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // F1.B — Diagnóstico / Logs
-            Text(
-                text = stringResource(R.string.settings_diagnostics),
-                color = Color(0xFF1DB954),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                            Text(stringResource(R.string.settings_capture_logs), color = Color.White, fontSize = 14.sp)
-                            Text(stringResource(R.string.settings_capture_logs_desc), color = Color.Gray, fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = loggingEnabled,
-                            onCheckedChange = { checked ->
-                                loggingEnabled = checked
-                                prefs.edit { putBoolean("logging_capture_enabled", checked) }
-                                // Vía elegida: logcat del propio proceso (start/stop del stream).
-                                if (checked) LogCapture.start() else LogCapture.stop()
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF1DB954)
-                            )
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { onNavigateLogViewer() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.settings_view_logs), color = Color.White)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
+            // E105 — Diagnóstico / Logs se movió a la categoría "Avanzado" (LoggingSection).
 
             // F1.A — Enlace Rustify (wrapper)
             Text(
@@ -2134,11 +1884,25 @@ if (localMusicDirs.isEmpty()) {
             val appVersion = remember {
                 runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
             }
-            val webLang = remember {
+            // E105 — Idioma del huevo de Pascua: se resuelve SIEMPRE del idioma elegido en la app
+            // (pref app_language), construyendo un Context localizado a mano. Así los textos y standle.net
+            // salen en el idioma de la app aunque el diálogo (subcomposición) no herede el locale y aunque
+            // el sistema esté en otro idioma. (Antes cogía el del sistema.)
+            val eggLang = remember {
                 val appLang = prefs.getString("app_language", "system") ?: "system"
-                val base = if (appLang == "system") java.util.Locale.getDefault().language else appLang
-                when { base.startsWith("es") -> "es"; base.startsWith("ja") -> "ja"; else -> "en" }
+                if (appLang == "system") java.util.Locale.getDefault().language else appLang
             }
+            val webLang = remember(eggLang) {
+                when { eggLang.startsWith("es") -> "es"; eggLang.startsWith("ja") -> "ja"; else -> "en" }
+            }
+            val eggCtx = remember(eggLang) {
+                val cfg = android.content.res.Configuration(context.resources.configuration)
+                cfg.setLocale(java.util.Locale.forLanguageTag(eggLang))
+                context.createConfigurationContext(cfg)
+            }
+            val eggTitle = remember(eggCtx) { eggCtx.getString(R.string.egg_found_title) }
+            val eggMsg = remember(eggCtx) { eggCtx.getString(R.string.egg_found_msg) }
+            val eggJojoMsg = remember(eggCtx) { eggCtx.getString(R.string.egg_jojo_msg) }
 
             Spacer(modifier = Modifier.height(24.dp))
             Text(
@@ -2146,42 +1910,24 @@ if (localMusicDirs.isEmpty()) {
                 color = Color(0xFF555555), fontSize = 12.sp,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .clickable { eggTaps++; if (eggTaps >= 7) { eggTaps = 0; oraCount = 0; showEgg = true } }
+                    // Sin ripple: el rectángulo/resalte por defecto quedaba "cutre" sobre el texto.
+                    .noRippleClickable { eggTaps++; if (eggTaps >= 7) { eggTaps = 0; oraCount = 0; showEgg = true } }
                     .padding(vertical = 10.dp)
             )
 
             if (showEgg) {
-                val infinite = rememberInfiniteTransition(label = "egg")
-                val angle by infinite.animateFloat(
-                    initialValue = 0f, targetValue = 360f,
-                    animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
-                    label = "rot"
-                )
-                AlertDialog(
-                    onDismissRequest = { showEgg = false },
-                    containerColor = Color(0xFF1E1E1E),
-                    title = { Text(stringResource(R.string.egg_found_title), color = Color(0xFF1DB954)) },
-                    text = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                            Text("🦀", fontSize = 56.sp, modifier = Modifier.rotate(angle).clickable {
-                                oraCount++
-                                if (oraCount >= 9) { showEgg = false; showJojo = true }
-                            })
-                            Spacer(Modifier.height(10.dp))
-                            Text(stringResource(R.string.egg_found_msg), color = Color.White, fontSize = 13.sp)
-                            if (oraCount > 0) {
-                                Spacer(Modifier.height(6.dp))
-                                Text(("ORA ".repeat(oraCount)).trim() + "!", color = Color(0xFF888888), fontSize = 12.sp)
-                            }
-                        }
-                    },
-                    confirmButton = { TextButton(onClick = { showEgg = false }) { Text("😎", color = Color(0xFF1DB954)) } }
+                JojoOraOra(
+                    title = eggTitle,
+                    msg = eggMsg,
+                    oraCount = oraCount,
+                    onOra = { oraCount++; if (oraCount >= 9) { showEgg = false; showJojo = true } },
+                    onClose = { showEgg = false }
                 )
             }
 
             if (showJojo) {
                 JojoTimeStop(
-                    message = stringResource(R.string.egg_jojo_msg),
+                    message = eggJojoMsg,
                     onContinue = { showJojo = false; showWeb = true },
                     onDismiss = { showJojo = false }
                 )
@@ -2210,6 +1956,79 @@ if (localMusicDirs.isEmpty()) {
             Spacer(modifier = Modifier.height(32.dp))
             }
           }
+        }
+    }
+}
+
+// E105 — Clickable sin la indicación (ripple/rectángulo) por defecto, que quedaba fea sobre textos/emoji.
+@Composable
+private fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    return this.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+}
+
+/**
+ * 🦀 Egg nivel 1 con calidad: el cangrejo vibra como Star Platinum y cada toque lanza un "ORA!" con
+ * impacto elástico; ゴゴゴ menacing sube de fondo. A los 9 toques encadena con [JojoTimeStop] (nivel 2).
+ * Textos ya localizados (llegan resueltos como String para respetar el idioma de la app).
+ */
+@Composable
+private fun JojoOraOra(title: String, msg: String, oraCount: Int, onOra: () -> Unit, onClose: () -> Unit) {
+    val purple = Color(0xFF8E24AA)
+    val gold = Color(0xFFFFD700)
+    val infinite = rememberInfiniteTransition(label = "ora")
+    // Vibración rapidísima (Star Platinum) del cangrejo.
+    val shake by infinite.animateFloat(
+        initialValue = -7f, targetValue = 7f,
+        animationSpec = infiniteRepeatable(tween(80, easing = LinearEasing), RepeatMode.Reverse), label = "shake"
+    )
+    val pulse by infinite.animateFloat(
+        initialValue = 0.94f, targetValue = 1.07f,
+        animationSpec = infiniteRepeatable(tween(130, easing = LinearEasing), RepeatMode.Reverse), label = "pulse"
+    )
+    // Punch elástico del "ORA!" en cada toque.
+    val punch = remember { Animatable(1f) }
+    LaunchedEffect(oraCount) {
+        if (oraCount > 0) { punch.snapTo(1.7f); punch.animateTo(1f, spring(dampingRatio = 0.34f, stiffness = 440f)) }
+    }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color(0xF20A0A0A)), contentAlignment = Alignment.Center) {
+            // ゴゴゴ menacing ascendiendo de fondo.
+            for (i in 0 until 6) {
+                val rise by infinite.animateFloat(
+                    initialValue = 0f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(2200, delayMillis = i * 170, easing = LinearEasing), RepeatMode.Restart),
+                    label = "go$i"
+                )
+                Text(
+                    "ゴ", color = purple.copy(alpha = (1f - rise).coerceIn(0f, 1f) * 0.35f),
+                    fontSize = (16 + (i % 3) * 9).sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.BottomStart).offset(x = (28 + i * 58).dp, y = -(rise * 420).dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                Text(title, color = gold, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    "🦀", fontSize = 92.sp,
+                    modifier = Modifier
+                        .graphicsLayer { rotationZ = shake; scaleX = pulse; scaleY = pulse }
+                        .noRippleClickable { onOra() }
+                )
+                Spacer(Modifier.height(18.dp))
+                if (oraCount > 0) {
+                    Text(
+                        "ORA!", color = purple, fontSize = 46.sp, fontWeight = FontWeight.Black,
+                        modifier = Modifier.graphicsLayer { scaleX = punch.value; scaleY = punch.value; rotationZ = shake * 0.6f }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(("ORA ".repeat(oraCount)).trim(), color = gold.copy(alpha = 0.8f), fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 3)
+                }
+                Spacer(Modifier.height(20.dp))
+                Text(msg, color = Color.White, fontSize = 13.sp, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(22.dp))
+                TextButton(onClick = onClose) { Text("😎", color = Color(0xFF1DB954), fontSize = 22.sp) }
+            }
         }
     }
 }
@@ -2367,6 +2186,8 @@ private fun SettingsCategoryMenu(onPick: (String) -> Unit) {
 @Composable
 private fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
     val green = Color(0xFF1DB954)
+    // Carpeta de descargas normal (además de la personalizada).
+    DownloadFolderSection(context)
     var folder by remember { mutableStateOf(com.varuna.rustify.audio.CustomDownload.folder(context)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -2403,12 +2224,153 @@ private fun AdvancedLinks(onMetrics: () -> Unit, onMatchEditor: () -> Unit, onLo
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
             stringResource(R.string.home_metrics) to onMetrics,
-            stringResource(R.string.settings_edit_matches) to onMatchEditor,
-            stringResource(R.string.settings_view_logs) to onLogs
+            stringResource(R.string.settings_edit_matches) to onMatchEditor
         ).forEach { (label, action) ->
             Button(onClick = action, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(label, color = Color.White, modifier = Modifier.weight(1f))
                 Text("›", color = Color.Gray)
+            }
+        }
+    }
+}
+
+// E105 — Fila estándar título + descripción + Switch (evita repetir el mismo boilerplate en cada ajuste).
+@Composable
+private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(title, color = Color.White, fontSize = 14.sp)
+            if (desc.isNotBlank()) Text(desc, color = Color.Gray, fontSize = 12.sp)
+        }
+        Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
+        )
+    }
+}
+
+// E105 — Música local (movida a "Audio y backends"): activar, coincidir primero con local, carátulas en
+// alta, YouTube Music, usar scraper y carpetas añadidas. Autocontenida (estado + picker propios).
+@Composable
+private fun LocalMusicSection(context: Context) {
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    val green = Color(0xFF1DB954)
+    var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
+    var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
+    var coversFullRes by remember { mutableStateOf(prefs.getBoolean("settings_local_covers_full_res", true)) }
+    var enableYtmMusic by remember { mutableStateOf(prefs.getBoolean("enable_ytm_music", true)) }
+    var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+    var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
+    val addDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val newSet = localMusicDirs.toMutableSet().apply { add(uri.toString()) }
+            localMusicDirs = newSet
+            prefs.edit { putStringSet("local_music_directories", newSet) }
+        }
+    }
+
+    Spacer(Modifier.height(24.dp))
+    Text(stringResource(R.string.settings_local_music), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            SettingSwitchRow(stringResource(R.string.settings_enable_local_music), stringResource(R.string.settings_enable_local_music_desc), enableLocalMusic) {
+                enableLocalMusic = it; prefs.edit { putBoolean("enable_local_music", it) }
+            }
+            if (enableLocalMusic) {
+                Spacer(Modifier.height(16.dp))
+                SettingSwitchRow(stringResource(R.string.settings_match_local_first), stringResource(R.string.settings_match_local_first_desc), matchLocalFirst) {
+                    matchLocalFirst = it; prefs.edit { putBoolean("settings_match_local_first", it) }
+                }
+                Spacer(Modifier.height(16.dp))
+                SettingSwitchRow(stringResource(R.string.settings_local_covers_fullres), stringResource(R.string.settings_local_covers_fullres_desc), coversFullRes) {
+                    coversFullRes = it; prefs.edit { putBoolean("settings_local_covers_full_res", it) }
+                }
+                Spacer(Modifier.height(16.dp))
+                SettingSwitchRow(stringResource(R.string.enable_ytm_music), stringResource(R.string.enable_ytm_music_desc), enableYtmMusic) {
+                    enableYtmMusic = it; prefs.edit { putBoolean("enable_ytm_music", it) }
+                }
+                Spacer(Modifier.height(16.dp))
+                SettingSwitchRow(
+                    stringResource(R.string.settings_ytm_scraper),
+                    if (ytmScraper) stringResource(R.string.settings_ytm_scraper_on) else stringResource(R.string.settings_ytm_scraper_off),
+                    ytmScraper
+                ) {
+                    ytmScraper = it; prefs.edit { putString("ytm_search_mode", if (it) "scraper" else "api") }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                if (localMusicDirs.isEmpty()) {
+                    Text(stringResource(R.string.settings_no_folder_configured), color = Color.Gray, fontSize = 14.sp)
+                } else {
+                    localMusicDirs.forEach { uriStr ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            val name = Uri.parse(uriStr).lastPathSegment ?: uriStr
+                            Text(name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text(stringResource(R.string.settings_remove), color = Color.Red, fontSize = 12.sp, modifier = Modifier.clickable {
+                                val newSet = localMusicDirs.toMutableSet().apply { remove(uriStr) }
+                                localMusicDirs = newSet
+                                prefs.edit { putStringSet("local_music_directories", newSet) }
+                            }.padding(8.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { addDirLauncher.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
+                    Text(stringResource(R.string.settings_add_folder), color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+// E105 — Carpeta de descargas "normal" (movida a la categoría Descargas, junto a la personalizada).
+@Composable
+private fun DownloadFolderSection(context: Context) {
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    val green = Color(0xFF1DB954)
+    var downloadUriString by remember { mutableStateOf(prefs.getString("download_directory", null)) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            downloadUriString = uri.toString()
+            prefs.edit { putString("download_directory", uri.toString()) }
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    Text(stringResource(R.string.settings_download_dir), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                if (downloadUriString != null) Uri.parse(downloadUriString).lastPathSegment ?: downloadUriString!!
+                else stringResource(R.string.settings_no_dir_configured),
+                color = Color.Gray, fontSize = 14.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { picker.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
+                Text(stringResource(R.string.settings_select_folder), color = Color.White)
+            }
+        }
+    }
+}
+
+// E105 — Diagnóstico (movido a Avanzado): activar captura de logs + abrir el visor.
+@Composable
+private fun LoggingSection(context: Context, onViewLogs: () -> Unit) {
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    var loggingEnabled by remember { mutableStateOf(prefs.getBoolean("logging_capture_enabled", false)) }
+    Spacer(Modifier.height(16.dp))
+    Text(stringResource(R.string.settings_diagnostics), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            SettingSwitchRow(stringResource(R.string.settings_capture_logs), stringResource(R.string.settings_capture_logs_desc), loggingEnabled) {
+                loggingEnabled = it; prefs.edit { putBoolean("logging_capture_enabled", it) }
+                if (it) LogCapture.start() else LogCapture.stop()
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onViewLogs, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)), modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_view_logs), color = Color.White)
             }
         }
     }
@@ -2537,6 +2499,18 @@ private fun DeezerBackendSection(context: Context) {
 
     fun mask(a: String) = if (a.length > 12) a.take(6) + "…" + a.takeLast(4) else a
 
+    // E105 — Autocarga: si ya hay una URL fuente guardada y estamos en modo "fuente", lista los ARLs al
+    // abrir la sección sin tener que pulsar el botón (antes parecía que "no salía ningún ARL" porque no
+    // se disparaba nada al entrar).
+    LaunchedEffect(arlMode) {
+        if (arlMode == "source" && source.isNotBlank() && entries.isEmpty() && !busy) {
+            busy = true; status = ""
+            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
+            entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
+            status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
+        }
+    }
+
     Spacer(Modifier.height(24.dp))
     Text(stringResource(R.string.backend_deezer), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2566,10 +2540,12 @@ private fun DeezerBackendSection(context: Context) {
                 TextButton(onClick = {
                     busy = true; status = ""; entryStatus = emptyMap()
                     scope.launch(Dispatchers.IO) {
-                        val list = com.varuna.rustify.audio.DeezerArl.fetch(context, source.trim())
+                        val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
                         withContext(Dispatchers.Main) {
-                            entries = list; fetchedAt = System.currentTimeMillis(); busy = false
-                            if (list.isEmpty()) status = noArlsMsg
+                            entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
+                            // Muestra el motivo real del fallo (HTTP 403 / timeout / 0 ARLs…) en vez de
+                            // un genérico "no hay ARLs" que no dice nada.
+                            status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
                         }
                     }
                 }, enabled = !busy) { Text(stringResource(R.string.dz_fetch_arls), color = green) }

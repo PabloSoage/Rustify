@@ -572,6 +572,11 @@ fun EngineTester(
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
 
+    // E105: Settings category is hoisted here so it survives pushing a sub-screen (View Logs, Metrics,
+    // Match editor…) and popping back — otherwise Settings recomposes fresh at the root menu instead of
+    // returning to the category you came from.
+    var settingsCategory by rememberSaveable { mutableStateOf<String?>(null) }
+
     // Hoisted state for LibraryScreen to survive rotation and navigation pops
     var librarySelectedTab by rememberSaveable { mutableStateOf(com.varuna.rustify.ui.screens.LibraryTab.PLAYLISTS) }
     var librarySelectedGroup by rememberSaveable { mutableStateOf("Tracks") }
@@ -1163,6 +1168,8 @@ fun EngineTester(
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
                         ytmRepository = ytmRepo,
+                        category = settingsCategory,
+                        onCategoryChange = { settingsCategory = it },
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
                         onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
@@ -1189,7 +1196,8 @@ fun EngineTester(
                 }
                 is Screen.Downloads -> {
                     com.varuna.rustify.ui.screens.DownloadsScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onOpenCustom = { navigationStack.add(Screen.CustomDownload) }
                     )
                 }
                 is Screen.CustomDownload -> {

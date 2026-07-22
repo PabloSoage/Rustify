@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FileDownload
@@ -46,6 +47,7 @@ import com.varuna.rustify.R
 @Composable
 fun DownloadsScreen(
     onBack: () -> Unit,
+    onOpenCustom: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val downloads by DownloadManager.downloads.collectAsState()
@@ -64,6 +66,10 @@ fun DownloadsScreen(
                         TextButton(onClick = { DownloadManager.clearCompleted() }) {
                             Text(stringResource(R.string.downloads_clear), color = Color(0xFF1DB954))
                         }
+                    }
+                    // Descarga personalizada por URL (pega cualquier enlace → calidades de vídeo/audio).
+                    IconButton(onClick = onOpenCustom) {
+                        Icon(Icons.Default.AddLink, contentDescription = stringResource(R.string.cd_title), tint = Color(0xFF1DB954))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))

@@ -400,25 +400,34 @@ private fun RadialHourClock(values: List<Float>, label: String, color: Color, mo
     }
 }
 
-/** Barras verticales simples (sin Canvas): una por entrada, altura proporcional al máximo. */
+/**
+ * Barras verticales simples (sin Canvas): una por entrada, altura proporcional al máximo.
+ * La barra vive en un área con weight(1f) y crece con fillMaxHeight(frac); el número (arriba) y la
+ * etiqueta (abajo) son fijos → una columna alta ya NO empuja la etiqueta fuera de la tarjeta ni se
+ * sale por debajo (bug: "monday en 68 tapa el resto y no se ve 'mon'").
+ */
 @Composable
 private fun MiniBarChart(values: List<Pair<String, Float>>, color: Color) {
     val maxV = (values.maxOfOrNull { it.second } ?: 0f).coerceAtLeast(0.0001f)
     Card(colors = CardDefaults.cardColors(containerColor = CARD), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().height(150.dp).padding(12.dp), verticalAlignment = Alignment.Bottom) {
+        Row(Modifier.fillMaxWidth().height(160.dp).padding(12.dp), verticalAlignment = Alignment.Bottom) {
             values.forEach { (lbl, v) ->
                 val frac = (v / maxV).coerceIn(0f, 1f)
-                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
-                    if (v > 0f) Text(v.toInt().toString(), color = Color.Gray, fontSize = 8.sp, maxLines = 1)
-                    Spacer(Modifier.height(2.dp))
-                    Box(
-                        Modifier
-                            .fillMaxWidth(0.55f)
-                            .height((6f + 104f * frac).dp)
-                            .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                            .background(color.copy(alpha = 0.35f + 0.65f * frac))
-                    )
+                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Número arriba (fijo). Cadena vacía cuando es 0 para mantener la línea base alineada.
+                    Text(if (v > 0f) v.toInt().toString() else "", color = Color.Gray, fontSize = 8.sp, maxLines = 1)
+                    // Zona flexible: la barra se escala respecto al alto disponible → nunca desborda.
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(0.55f)
+                                .fillMaxHeight(frac.coerceAtLeast(0.015f))
+                                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                .background(color.copy(alpha = 0.35f + 0.65f * frac))
+                        )
+                    }
                     Spacer(Modifier.height(3.dp))
+                    // Etiqueta abajo (fija) — siempre visible.
                     Text(lbl, color = Color.Gray, fontSize = 8.sp, maxLines = 1)
                 }
             }

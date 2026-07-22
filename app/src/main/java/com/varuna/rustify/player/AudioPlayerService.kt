@@ -402,6 +402,14 @@ class AudioPlayerService private constructor(private val context: Context) {
         val trackId = track.id ?: return
         userQueue.removeAll { it.id == trackId }
 
+        // E105: snapshot the intended start position NOW, synchronously, before the (possibly slow)
+        // resolution below. The periodic position-ticker keeps copying exoPlayer.currentPosition into
+        // _state.positionMs while the PREVIOUS track is still loaded; if we read _state.positionMs
+        // *after* resolution we'd seek the fresh track to that stale advanced position (the "song
+        // starts in silence at an advanced point" bug). Callers set positionMs=0 for a new play and to
+        // the saved offset for a resume, and this line runs before any suspension, so it's accurate.
+        val desiredStartMs = _state.value.positionMs
+
         // Cancel any pending auto-retry from a previous track to prevent notification/playback race conditions
         autoRetryJob?.cancel()
         autoRetryJob = null
@@ -607,8 +615,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
-                if (_state.value.positionMs > 0L) {
-                    exoPlayer.seekTo(_state.value.positionMs)
+                // E105: seek to the position captured at the TOP of playTrack (see desiredStartMs),
+                // never to the live _state.positionMs which the ticker may have advanced meanwhile.
+                if (desiredStartMs > 0L) {
+                    exoPlayer.seekTo(desiredStartMs)
                 }
                 // E101: never inherit a leftover DJ-duck volume onto a fresh track (stuck 0.22 = inaudible).
                 if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
