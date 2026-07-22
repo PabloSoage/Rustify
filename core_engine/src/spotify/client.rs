@@ -876,6 +876,14 @@ pub fn parse_gql_track(track_val: &Value) -> Option<FullTrack> {
 
     let uri = track.get("uri").or_else(|| track.get("_uri")).or(parent_uri)
         .and_then(|v| v.as_str())?;
+    // Local tracks (added to a Spotify playlist from the desktop app) have a
+    // `spotify:local:{artist}:{album}:{title}:{seconds}` URI and no real track id. Parsing them the
+    // normal way took the LAST colon segment (the duration) as the "id", so many local tracks ended up
+    // sharing an id like "180" → duplicate LazyColumn keys crashed the playlist screen. Parse them
+    // properly instead: no Spotify id, real title/artist/album/duration, keeping the URI intact.
+    if uri.starts_with("spotify:local:") {
+        return parse_local_track(uri);
+    }
     let track_id = id_from_uri(uri)?.to_string();
 
     let duration_ms = track["duration"]["totalMilliseconds"]
@@ -927,6 +935,72 @@ pub fn parse_gql_track(track_val: &Value) -> Option<FullTrack> {
         album,
         external_uri: format!("https://open.spotify.com/track/{}", track_id),
         isrc,
+        added_at: None,
+    })
+}
+
+/// Decode a field of a `spotify:local:` URI: spaces are encoded as `+`, other chars as `%XX`.
+fn local_decode(s: &str) -> String {
+    let s = s.replace('+', " ");
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Build a [`FullTrack`] from a `spotify:local:{artist}:{album}:{title}:{seconds}` URI (a local file the
+/// user added to a Spotify playlist from the desktop app). `id` is `None` (no Spotify id) so the UI never
+/// collides on it; the URI is preserved so local-music matching can still find the file by name/artist.
+fn parse_local_track(uri: &str) -> Option<FullTrack> {
+    let parts: Vec<&str> = uri.splitn(6, ':').collect();
+    let field = |i: usize| parts.get(i).map(|s| local_decode(s)).unwrap_or_default();
+    let artist = field(2);
+    let album_name = field(3);
+    let title = field(4);
+    let duration_ms = parts.get(5).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0) * 1000;
+
+    let artists = if artist.is_empty() {
+        Vec::new()
+    } else {
+        vec![SimpleArtist { id: String::new(), name: artist, external_uri: String::new(), images: None }]
+    };
+    let album = if album_name.is_empty() {
+        None
+    } else {
+        Some(SimpleAlbum {
+            id: String::new(),
+            name: album_name,
+            external_uri: String::new(),
+            release_date: None,
+            release_date_precision: None,
+            images: Vec::new(),
+            artists: Vec::new(),
+            album_type: Some("local".to_string()),
+        })
+    };
+
+    Some(FullTrack {
+        id: None,
+        name: if title.is_empty() { uri.to_string() } else { title },
+        external_uri: uri.to_string(),
+        explicit: false,
+        duration_ms,
+        isrc: String::new(),
+        artists,
+        album,
         added_at: None,
     })
 }

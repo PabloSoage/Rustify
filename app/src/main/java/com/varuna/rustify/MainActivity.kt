@@ -564,7 +564,11 @@ fun EngineTester(
 
 
     var isRunning by remember { mutableStateOf(false) }
-    var isLoggedIn by remember { mutableStateOf(false) }
+    // E107 — Login optimista: si YA hay una sesión guardada (cookie sp_dc), entramos directos a la app
+    // (con Home/biblioteca cacheados y música local accesibles) y refrescamos el token EN SEGUNDO PLANO,
+    // en vez de bloquear toda la app tras una validación de red que, si Spotify falla, te dejaba atascado
+    // en la pantalla de login (heredada de la pre-alpha) sin poder ni abrir la música local.
+    var isLoggedIn by remember { mutableStateOf(spotifyRepo.hasSavedSession()) }
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -634,21 +638,27 @@ fun EngineTester(
         navigationStack.removeAt(navigationStack.lastIndex)
     }
 
-    // Auto-restore session on first launch
+    // E107 — Refresco de sesión en segundo plano (ya estamos DENTRO si había sesión, ver isLoggedIn).
+    // No bloquea: Home muestra su propio spinner/caché y las demás pestañas (Búsqueda/Biblioteca/local)
+    // son navegables mientras tanto. Un fallo TRANSITORIO de red mantiene al usuario dentro con lo
+    // cacheado (restoreSession no borra credenciales en ese caso); solo una sesión REALMENTE muerta
+    // (credenciales borradas) manda a la pantalla de login.
     LaunchedEffect(Unit) {
         if (spotifyRepo.hasSavedSession()) {
             isRunning = true
             val result = spotifyRepo.restoreSession()
             if (result?.success == true) {
-                isLoggedIn = true
                 try {
                     browseSections = spotifyRepo.getBrowseSections(10)
                 } catch (e: Exception) {
                     errorMessage = e.message
                 }
-            } else {
+            } else if (!spotifyRepo.hasSavedSession()) {
+                // Sesión muerta (revocada/expirada de verdad → restoreSession borró las credenciales).
+                isLoggedIn = false
                 errorMessage = "Saved session expired. Please log in again."
             }
+            // Si sigue habiendo sesión guardada = fallo transitorio: nos quedamos dentro con lo cacheado.
             isRunning = false
         }
     }
@@ -670,6 +680,11 @@ fun EngineTester(
                         }
                     } else {
                         errorMessage = "Authentication failed: ${result.error}"
+                        // E107 — Un `sp_dc` obsoleto que persiste en el WebView (por cerrar la app a medio
+                        // login) puede auto-disparar este login y fallar una y otra vez. Al fallar, limpiamos
+                        // las cookies para que el siguiente intento muestre el formulario limpio (antes había
+                        // que "salir de ese menú y volver" para desatascarlo).
+                        runCatching { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
                     }
                     isRunning = false
                 }

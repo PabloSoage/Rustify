@@ -431,7 +431,7 @@ fun PlaylistScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(tracks, key = { index, track -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
+                        itemsIndexed(tracks, key = { index, track -> track.id?.takeIf { it.isNotBlank() } ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
                             // Request more data when we reach near the end of the list
                             if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
                                 LaunchedEffect(index) {
