@@ -48,6 +48,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -641,8 +643,21 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Audio: ${audioCacheSize / (1024 * 1024)} MB • Images: ${imageCacheSize / (1024 * 1024)} MB", color = Color.Gray, fontSize = 12.sp)
+
+                    // E108 — Tamaño máximo de caché configurable (audio + imágenes).
+                    Spacer(modifier = Modifier.height(12.dp))
+                    var cacheMaxMb by remember { mutableStateOf(prefs.getInt("cache_max_mb", 500)) }
+                    Text(stringResource(R.string.settings_cache_max, cacheMaxMb), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Slider(
+                        value = cacheMaxMb.toFloat(),
+                        onValueChange = { cacheMaxMb = ((it / 50).toInt() * 50).coerceIn(100, 4096) },
+                        onValueChangeFinished = { prefs.edit { putInt("cache_max_mb", cacheMaxMb) } },
+                        valueRange = 100f..4096f,
+                        colors = SliderDefaults.colors(thumbColor = Color(0xFF1DB954), activeTrackColor = Color(0xFF1DB954))
+                    )
+                    Text(stringResource(R.string.settings_cache_max_hint), color = Color.Gray, fontSize = 11.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     val cacheAudioClearedMsg = stringResource(R.string.settings_cache_audio_cleared)
                     val cacheImagesClearedMsg = stringResource(R.string.settings_cache_images_cleared)
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

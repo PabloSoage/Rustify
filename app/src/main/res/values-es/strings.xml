@@ -500,6 +500,9 @@
     <string name="settings_drive_link">Vincular cuenta</string>
     <string name="settings_drive_unlink">Desvincular cuenta</string>
     <string name="settings_drive_sync_now">Sincronizar ahora</string>
+    <string name="artist_all_songs">Ver todas las canciones</string>
+    <string name="settings_cache_max">Tamaño máx. de caché: %1$d MB</string>
+    <string name="settings_cache_max_hint">Se aplica al audio en la próxima reproducción y a las imágenes tras reiniciar la app.</string>
     <string name="settings_drive_details">Qué se sincroniza</string>
     <string name="settings_drive_details_desc">Estos elementos se respaldan en Drive en cada sincronización (unión + gana el más reciente).</string>
     <string name="settings_close">Cerrar</string>

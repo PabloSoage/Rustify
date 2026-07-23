@@ -502,6 +502,9 @@
     <string name="settings_drive_link">Link account</string>
     <string name="settings_drive_unlink">Unlink account</string>
     <string name="settings_drive_sync_now">Sync now</string>
+    <string name="artist_all_songs">View all songs</string>
+    <string name="settings_cache_max">Max cache size: %1$d MB</string>
+    <string name="settings_cache_max_hint">Applies to audio on next playback and to images after restarting the app.</string>
     <string name="settings_drive_details">What gets synced</string>
     <string name="settings_drive_details_desc">These items are backed up to Drive on each sync (union + last-write-wins).</string>
     <string name="settings_close">Close</string>

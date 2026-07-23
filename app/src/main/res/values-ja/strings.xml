@@ -300,6 +300,9 @@
     <string name="settings_drive_link">アカウントを連携</string>
     <string name="settings_drive_unlink">連携を解除</string>
     <string name="settings_drive_sync_now">今すぐ同期</string>
+    <string name="artist_all_songs">すべての曲を見る</string>
+    <string name="settings_cache_max">最大キャッシュサイズ: %1$d MB</string>
+    <string name="settings_cache_max_hint">音声は次回再生時、画像はアプリ再起動後に適用されます。</string>
     <string name="settings_drive_details">同期される内容</string>
     <string name="settings_drive_details_desc">これらの項目が同期のたびに Drive にバックアップされます（統合＋最新優先）。</string>
     <string name="settings_close">閉じる</string>

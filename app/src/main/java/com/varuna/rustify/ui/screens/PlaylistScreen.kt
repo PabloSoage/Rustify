@@ -98,7 +98,11 @@ fun PlaylistScreen(
     val isLocal = playlistId.startsWith("localpl:")
     val localPlaylist = if (isLocal) spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId } else null
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
-    var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    // E108: playlists de Spotify → lista VIVA en el repo (persiste al recrear la pantalla, p. ej. al abrir/
+    // cerrar el miniplayer, y se carga entera en segundo plano). Playlists locales → estado local.
+    var localTracksState by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    val spotifyTracks = if (!isLocal) spotifyRepo.playlistTracksLive(playlistId) else null
+    val tracks: List<FullTrack> = if (isLocal) localTracksState else spotifyTracks!!
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -108,37 +112,34 @@ fun PlaylistScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Pagination state
-    var offset by remember { mutableIntStateOf(0) }
-    var hasMore by remember { mutableStateOf(true) }
-    var isLoadingMore by remember { mutableStateOf(false) }
-
     val coroutineScope = rememberCoroutineScope()
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // Spinner: en local mandamos con isLoading; en Spotify, con el flag observable del repo (y el
+    // isLoading inicial para no parpadear "sin canciones" antes de arrancar la carga).
+    val loadingNow = if (isLocal) isLoading else (isLoading || spotifyRepo.isPlaylistLoading(playlistId))
 
     LaunchedEffect(Unit) { runCatching { meId = spotifyRepo.getMe().id } }
 
     LaunchedEffect(playlistId) {
-        isLoading = true
         errorMessage = null
-        try {
-            if (playlistId.startsWith("localpl:")) {
+        if (isLocal) {
+            isLoading = true
+            try {
                 // E30: playlist puramente local — resolve ids "local:" contra localTracks.
-                // Always resolve fresh: the cache is invalidated on add/remove, but a stale
-                // empty snapshot could otherwise freeze the screen at "No tracks found".
-                tracks = spotifyRepo.localPlaylistTracks(playlistId)
-                SpotifyRepository.localPlaylistTracksCache[playlistId] = tracks
-                hasMore = false
-            } else {
-                playlistDetails = spotifyRepo.getPlaylist(playlistId)
-                val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-                tracks = response.items
-                hasMore = response.hasMore
-                offset = tracks.size
+                localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
+                SpotifyRepository.localPlaylistTracksCache[playlistId] = localTracksState
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Failed to load details"
+            } finally {
+                isLoading = false
             }
-        } catch (e: Exception) {
-            errorMessage = e.message ?: "Failed to load details"
-        } finally {
-            isLoading = false
+        } else {
+            // Cabecera (metadatos) best-effort; la lista va por su cuenta en segundo plano.
+            runCatching { playlistDetails = spotifyRepo.getPlaylist(playlistId) }
+                .onFailure { if (spotifyTracks!!.isEmpty()) errorMessage = it.message }
+            // E108: carga TODAS las páginas en segundo plano hacia la lista viva del repo (idempotente).
+            spotifyRepo.loadFullPlaylist(playlistId)
+            isLoading = false   // a partir de aquí manda el flag observable del repo
         }
     }
 
@@ -169,9 +170,9 @@ fun PlaylistScreen(
                     )
             )
 
-            if (isLoading && tracks.isEmpty()) {
+            if (loadingNow && tracks.isEmpty()) {
                 Box(
-                    modifier = Modifier.fillMaxSize(), 
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = spotifyGreen)
@@ -199,23 +200,19 @@ fun PlaylistScreen(
                     Button(
                         onClick = {
                             coroutineScope.launch {
-                                isLoading = true
                                 errorMessage = null
-                                try {
-                                    if (playlistId.startsWith("localpl:")) {
-                                        tracks = spotifyRepo.localPlaylistTracks(playlistId)
-                                        hasMore = false
-                                    } else {
-                                        playlistDetails = spotifyRepo.getPlaylist(playlistId)
-                                        val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-                                        tracks = response.items
-                                        hasMore = response.hasMore
-                                        offset = tracks.size
+                                if (isLocal) {
+                                    isLoading = true
+                                    try {
+                                        localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
+                                    } catch (e: Exception) {
+                                        errorMessage = e.message
+                                    } finally {
+                                        isLoading = false
                                     }
-                                } catch (e: Exception) {
-                                    errorMessage = e.message
-                                } finally {
-                                    isLoading = false
+                                } else {
+                                    runCatching { playlistDetails = spotifyRepo.getPlaylist(playlistId) }
+                                    spotifyRepo.loadFullPlaylist(playlistId, force = true)
                                 }
                             }
                         },
@@ -226,6 +223,7 @@ fun PlaylistScreen(
                 }
             } else {
                 LazyColumn(
+                    state = lazyListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 80.dp, bottom = 32.dp)
                 ) {
@@ -432,27 +430,8 @@ fun PlaylistScreen(
                         }
                     } else {
                         itemsIndexed(tracks, key = { index, track -> track.id?.takeIf { it.isNotBlank() } ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
-                            // Request more data when we reach near the end of the list
-                            if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
-                                LaunchedEffect(index) {
-                                    isLoadingMore = true
-                                    try {
-                                        val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = offset)
-                                        if (response.items.isNotEmpty()) {
-                                            tracks = tracks + response.items
-                                            offset += response.items.size
-                                            hasMore = response.hasMore
-                                        } else {
-                                            hasMore = false
-                                        }
-                                    } catch (_: Exception) {
-                                        // Ignore pagination errors or show a toast
-                                    } finally {
-                                        isLoadingMore = false
-                                    }
-                                }
-                            }
-                            
+                            // E108: sin paginación por-scroll — el repo carga todas las páginas en segundo
+                            // plano (loadFullPlaylist), así que la lista ya está completa aquí.
                             val trackId = track.id ?: ""
                             // E30: los tracks locales usan favoritos locales, no los "liked" de Spotify.
                             var localFav by remember(trackId) { mutableStateOf(spotifyRepo.isLocalFavorite(trackId)) }
@@ -514,7 +493,8 @@ fun PlaylistScreen(
                             )
                         }
                         
-                        if (isLoadingMore) {
+                        // E108: footer "cargando más" mientras el repo termina de traer páginas en 2º plano.
+                        if (!isLocal && spotifyRepo.isPlaylistLoading(playlistId)) {
                             item {
                                 Box(
                                     modifier = Modifier
@@ -528,6 +508,22 @@ fun PlaylistScreen(
                         }
                     }
                 }
+            }
+
+            // E108 — Scrollbar arrastrable con tooltip (como en Liked Songs). Solo con listas largas.
+            if (tracks.size > 25) {
+                VerticalScrollbarWithTooltip(
+                    lazyListState = lazyListState,
+                    itemsCount = tracks.size + 2, // +2 por las cabeceras del LazyColumn (portada + botones)
+                    getDateForItem = { idx ->
+                        val ti = idx - 2
+                        tracks.getOrNull(ti)?.let { t -> t.artists.firstOrNull()?.name?.take(14) ?: "${ti + 1}" } ?: ""
+                    },
+                    onDragStateChanged = {},
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = 80.dp, bottom = 32.dp, end = 2.dp)
+                )
             }
 
             // Custom floating top bar
@@ -725,16 +721,10 @@ fun PlaylistScreen(
                     trackToRemove.id?.let { tid ->
                         if (playlistId.startsWith("localpl:")) {
                             spotifyRepo.removeFromLocalPlaylist(playlistId, tid)
-                            tracks = spotifyRepo.localPlaylistTracks(playlistId)
-                            hasMore = false
+                            localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
                         } else {
                             val res = spotifyRepo.removeTracksFromPlaylist(playlistId, listOf(tid))
-                            if (res.success) {
-                                val response = spotifyRepo.getPlaylistTracks(playlistId, limit = 50, offset = 0)
-                                tracks = response.items
-                                offset = tracks.size
-                                hasMore = response.hasMore
-                            }
+                            if (res.success) spotifyRepo.loadFullPlaylist(playlistId, force = true)
                         }
                     }
                 }

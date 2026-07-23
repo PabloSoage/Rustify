@@ -17,7 +17,7 @@
       ],
       "attributes": [],
       "versionCode": 1,
-      "versionName": "2.11.3b",
+      "versionName": "2.11.4b",
       "outputFile": "app-x86_64-release.apk"
     },
     {
@@ -30,7 +30,7 @@
       ],
       "attributes": [],
       "versionCode": 1,
-      "versionName": "2.11.3b",
+      "versionName": "2.11.4b",
       "outputFile": "app-arm64-v8a-release.apk"
     }
   ],

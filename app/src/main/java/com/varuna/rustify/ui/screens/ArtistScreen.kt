@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -82,17 +83,19 @@ fun ArtistScreen(
     onArtistClick: (String) -> Unit,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
+    onViewAllSongs: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
     var artistDetails by remember { mutableStateOf<FullArtist?>(null) }
-    var topTracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
-    var albums by remember { mutableStateOf<List<SimpleAlbum>>(emptyList()) }
+    // E108 — Semilla desde caché (vida de la app) para que al volver del miniplayer no recargue con spinner.
+    var topTracks by remember(artistId) { mutableStateOf(SpotifyRepository.artistTopTracksCache[artistId] ?: emptyList()) }
+    var albums by remember(artistId) { mutableStateOf(SpotifyRepository.artistAlbumsCache[artistId] ?: emptyList()) }
     var relatedArtists by remember { mutableStateOf<List<FullArtist>>(emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
 
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember(artistId) { mutableStateOf(SpotifyRepository.artistTopTracksCache[artistId] == null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -100,7 +103,7 @@ fun ArtistScreen(
 
     fun loadData() {
         coroutineScope.launch {
-            isLoading = true
+            if (topTracks.isEmpty()) isLoading = true   // con caché ya poblada, refresca sin spinner
             errorMessage = null
             try {
                 // Support local artists (navigated from LibraryLocalMusic)
@@ -135,6 +138,9 @@ fun ArtistScreen(
                     topTracks = tracksDef.await().items
                     albums = albumsDef.await().items
                     relatedArtists = relatedDef.await().items
+                    // E108 — cachea para que el re-render (miniplayer) no recargue.
+                    SpotifyRepository.artistTopTracksCache[artistId] = topTracks
+                    SpotifyRepository.artistAlbumsCache[artistId] = albums
                 }
 
             } catch (e: Exception) {
@@ -224,6 +230,20 @@ fun ArtistScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Spacer(modifier = Modifier.height(32.dp))
+                        }
+                    }
+
+                    // E108 — Ver TODAS las canciones del artista (toda su discografía, orden de release).
+                    // Solo para artistas de Spotify (los locales ya muestran todas sus pistas).
+                    if (!artistId.startsWith("local_artist:")) {
+                        item {
+                            Button(
+                                onClick = { onViewAllSongs(artistDetails?.name ?: "") },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                            ) {
+                                Text(stringResource(R.string.artist_all_songs), color = Color.White)
+                            }
                         }
                     }
 

@@ -19,7 +19,11 @@ import org.json.JSONObject
  */
 class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
 
-    data class Session(val apiToken: String, val licenseToken: String, val arl: String, val sid: String)
+    data class Session(
+        val apiToken: String, val licenseToken: String, val arl: String, val sid: String,
+        // Derechos de streaming de la cuenta (de USER.OPTIONS de getUserData). Señal fiable de plan.
+        val hq: Boolean = false, val lossless: Boolean = false
+    )
     /** [url] = stream cifrado del CDN; [sngId] = track id de Deezer (clave Blowfish); [format] servido. */
     data class Media(val url: String, val sngId: String, val format: String)
 
@@ -42,8 +46,12 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
                     ?: return@runCatching null
                 val apiToken = res.optString("checkForm")
                 if (apiToken.isBlank() || apiToken == "0") return@runCatching null // ARL inválido/caducado
-                val license = res.optJSONObject("USER")?.optJSONObject("OPTIONS")?.optString("license_token") ?: ""
-                Session(apiToken, license, arl, sid)
+                val opts = res.optJSONObject("USER")?.optJSONObject("OPTIONS")
+                val license = opts?.optString("license_token") ?: ""
+                // Cuenta gratis → web_hq/web_lossless = false (solo preview 30 s). Premium/HiFi → true.
+                val hq = opts?.optBoolean("web_hq") == true || opts?.optBoolean("mobile_hq") == true
+                val lossless = opts?.optBoolean("web_lossless") == true || opts?.optBoolean("mobile_lossless") == true
+                Session(apiToken, license, arl, sid, hq, lossless)
             }
         }.getOrNull()
     }
@@ -65,9 +73,15 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
      */
     suspend fun checkArl(arl: String): ArlCheck {
         val session = auth(arl) ?: return ArlCheck(false, false, "auth failed (invalid/expired)")
+        // Señal PRIMARIA y fiable: los derechos de la propia cuenta (no depende de la región/canario).
+        if (session.lossless || session.hq) {
+            val plan = if (session.lossless) "HiFi/FLAC" else "HQ/320"
+            return ArlCheck(true, true, "premium ($plan)")
+        }
+        // Fallback: intenta un get_url real por si las OPTIONS no reflejasen el plan.
         val m = media(session, CANARY_SNG_ID, listOf("MP3_128", "MP3_320", "FLAC"))
         return if (m != null) ArlCheck(true, true, "premium (${m.format})")
-               else ArlCheck(true, false, "auth OK, no stream rights (free account?)")
+               else ArlCheck(true, false, "auth OK, no stream rights (free?)")
     }
 
     /** track id de Deezer a partir de un track de Spotify: por ISRC (limpio) o búsqueda. */

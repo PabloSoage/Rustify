@@ -63,6 +63,11 @@ class SpotifyRepository(context: Context) {
         // Used to pass local track data to AlbumScreen/ArtistScreen without API calls
 val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
+    // E108 — Caché (vida de la app) de datos ya cargados de Álbum/Artista de Spotify, para que la
+    // pantalla NO tenga que recargar (spinner) al recrearse tras abrir/cerrar el miniplayer.
+    val albumTracksCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<FullTrack>>())
+    val artistTopTracksCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<FullTrack>>())
+    val artistAlbumsCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<SimpleAlbum>>())
     // E30: caché de tracks resueltos para una playlist local (patrón de localAlbumTracks).
     // Accedida desde el hilo main (UI: PlaylistScreen/LibraryScreen) y desde IO → wrap
     // sincronizado para evitar carreras al leer/escribir/limpiar el mapa concurrentemente.
@@ -161,6 +166,99 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val likedTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
     var isSyncingLikedTracks by mutableStateOf(false)
         private set
+
+    // E108 — Tracks de una playlist de Spotify cacheados a nivel repo (como likedTracks): sobreviven a
+    // que la pantalla se recree (p. ej. al abrir/cerrar el miniplayer) y se cargan TODAS las páginas en
+    // segundo plano. Así, al volver a la playlist no hay que re-esperar el spinner ni se "salta" a la 50
+    // porque el resto no había cargado.
+    private val spotifyPlaylistTracks = mutableStateMapOf<String, androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack>>()
+    private val spotifyPlaylistJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    // Observable (Compose) para que el spinner se apague solo al terminar de cargar.
+    private val spotifyPlaylistLoading = mutableStateMapOf<String, Boolean>()
+
+    /** Lista viva (observable) de tracks de una playlist de Spotify; se rellena en segundo plano. */
+    fun playlistTracksLive(id: String): androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack> =
+        spotifyPlaylistTracks.getOrPut(id) { androidx.compose.runtime.mutableStateListOf() }
+
+    /** ¿Se está cargando esta playlist ahora mismo? (para decidir spinner vs "sin canciones"). */
+    fun isPlaylistLoading(id: String): Boolean = spotifyPlaylistLoading[id] == true
+
+    /**
+     * Carga TODAS las páginas de una playlist de Spotify en segundo plano (100 por página) hacia
+     * [playlistTracksLive]. Idempotente: no relanza si ya hay tracks o un job activo, salvo [force].
+     */
+    fun loadFullPlaylist(id: String, force: Boolean = false) {
+        if (id.startsWith("localpl:")) return
+        if (spotifyPlaylistJobs[id]?.isActive == true) return
+        val list = playlistTracksLive(id)
+        if (list.isNotEmpty() && !force) return
+        spotifyPlaylistLoading[id] = true
+        spotifyPlaylistJobs[id] = repositoryScope.launch {
+            try {
+                if (force) list.clear()
+                var offset = list.size
+                while (true) {
+                    val resp = getPlaylistTracks(id, limit = 100, offset = offset)
+                    if (resp.items.isEmpty()) break
+                    list.addAll(resp.items)
+                    offset += resp.items.size
+                    if (!resp.hasMore) break
+                }
+            } catch (_: Exception) {
+                // deja lo que se haya cargado; el spinner se apaga igual en finally
+            } finally {
+                spotifyPlaylistLoading[id] = false
+            }
+        }
+    }
+
+    // E108 — "Todas las canciones" de un artista: toda su discografía (álbumes + singles), en orden de
+    // lanzamiento (más reciente primero), deduplicada por nombre+artista. Lista viva + carga en 2º plano.
+    private val artistAllTracks = mutableStateMapOf<String, androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack>>()
+    private val artistAllJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    private val artistAllLoading = mutableStateMapOf<String, Boolean>()
+
+    fun artistAllTracksLive(id: String): androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack> =
+        artistAllTracks.getOrPut(id) { androidx.compose.runtime.mutableStateListOf() }
+
+    fun isArtistAllLoading(id: String): Boolean = artistAllLoading[id] == true
+
+    fun loadArtistAllTracks(id: String, force: Boolean = false) {
+        if (artistAllJobs[id]?.isActive == true) return
+        val list = artistAllTracksLive(id)
+        if (list.isNotEmpty() && !force) return
+        artistAllLoading[id] = true
+        artistAllJobs[id] = repositoryScope.launch {
+            try {
+                if (force) list.clear()
+                // 1) Todos los álbumes/singles del artista (paginado).
+                val albums = ArrayList<SimpleAlbum>()
+                var offset = 0
+                while (true) {
+                    val resp = getArtistAlbums(id, limit = 50, offset = offset)
+                    if (resp.items.isEmpty()) break
+                    albums.addAll(resp.items)
+                    offset += resp.items.size
+                    if (!resp.hasMore) break
+                }
+                // 2) Orden de lanzamiento (más reciente primero).
+                val ordered = albums.sortedByDescending { it.releaseDate ?: "" }
+                // 3) Tracks de cada álbum en orden, dedupe por nombre+artista, enriqueciendo con la
+                //    portada del álbum para que se vea carátula en la lista.
+                val seen = HashSet<String>()
+                for (al in ordered) {
+                    val tr = runCatching { getAlbumTracks(al.id, limit = 50, offset = 0).items }.getOrDefault(emptyList())
+                    for (t in tr) {
+                        val key = (t.name + "|" + t.artists.joinToString { it.name }).lowercase()
+                        if (seen.add(key)) list.add(if (t.album == null) t.copy(album = al) else t)
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                artistAllLoading[id] = false
+            }
+        }
+    }
 
     val localTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
     var isScanningLocalTracks by mutableStateOf(false)

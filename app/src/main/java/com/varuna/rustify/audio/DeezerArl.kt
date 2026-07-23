@@ -31,9 +31,12 @@ object DeezerArl {
 
     /** Resultado con diagnóstico: si [entries] viene vacío, [error] dice POR QUÉ (HTTP 403, timeout, 0 ARLs…). */
     data class FetchResult(val entries: List<ArlEntry>, val error: String? = null)
-    // E62 — Fecha "actualizado" junto a un ARL (dd/mm/yyyy, yyyy-mm-dd, etc.). Best-effort: las webs
-    // varían, así que se muestra cruda tal cual; si no hay ninguna cerca, el ARL sale sin fecha.
-    private val DATE_RE = Regex("\\b(\\d{4}[/.\\-]\\d{1,2}[/.\\-]\\d{1,2}|\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{2,4})\\b")
+    // E62/E108 — Fecha "actualizado" junto a un ARL. Estricta para no colar basura tipo "9-4.029":
+    // año 20xx, mes 1-12, día 1-31, en formato yyyy(-|/|.)mm(-|/|.)dd o dd(-|/|.)mm(-|/|.)yyyy.
+    private val DATE_RE = Regex(
+        "\\b(20\\d{2}[/.-](0?[1-9]|1[0-2])[/.-](0?[1-9]|[12]\\d|3[01])" +
+        "|(0?[1-9]|[12]\\d|3[01])[/.-](0?[1-9]|1[0-2])[/.-]20\\d{2})\\b"
+    )
 
     /** Descarga la web y extrae la lista de ARLs (país + token). Vacío = fallo silencioso (compat). */
     suspend fun fetch(context: Context, sourceUrl: String): List<ArlEntry> = fetchDetailed(context, sourceUrl).entries

@@ -88,10 +88,11 @@ fun AlbumScreen(
     currentTrackId: String? = null
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
-    var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    // E108 — Semilla desde caché (vida de la app) para no recargar al volver del miniplayer.
+    var tracks by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] ?: emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] == null && !albumId.startsWith("local_album:")) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Pagination state
@@ -103,7 +104,7 @@ fun AlbumScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(albumId) {
-        isLoading = true
+        if (tracks.isEmpty()) isLoading = true   // con caché ya poblada, no muestres spinner
         errorMessage = null
         try {
             // Support local albums (navigated from LibraryLocalMusic)
@@ -132,11 +133,15 @@ fun AlbumScreen(
                 hasMore = false
                 offset = localTracks.size
             } else {
-                albumDetails = spotifyRepo.getAlbum(albumId)
-                val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
-                tracks = response.items
-                hasMore = response.hasMore
-                offset = tracks.size
+                if (albumDetails == null) albumDetails = spotifyRepo.getAlbum(albumId)
+                // E108: si ya venía de caché, no re-descargues (evita spinner y reset de scroll).
+                if (tracks.isEmpty()) {
+                    val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
+                    tracks = response.items
+                    hasMore = response.hasMore
+                    offset = tracks.size
+                    SpotifyRepository.albumTracksCache[albumId] = tracks
+                }
             }
 
         } catch (e: Exception) {

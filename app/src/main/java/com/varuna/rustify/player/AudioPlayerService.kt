@@ -92,7 +92,10 @@ class AudioPlayerService private constructor(private val context: Context) {
             return downloadCache ?: synchronized(this) {
                 downloadCache ?: run {
                     val cacheDir = java.io.File(context.cacheDir, "audio_cache")
-                    val evictor = androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(500L * 1024 * 1024) // 500MB max
+                    // E108 — tamaño máximo configurable en Ajustes (pref cache_max_mb, por defecto 500 MB).
+                    val maxMb = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+                        .getInt("cache_max_mb", 500).coerceIn(100, 8192)
+                    val evictor = androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(maxMb.toLong() * 1024 * 1024)
                     val databaseProvider = StandaloneDatabaseProvider(context)
                     SimpleCache(cacheDir, evictor, databaseProvider).also { downloadCache = it }
                 }
@@ -202,6 +205,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                     Player.STATE_READY -> {
                         _state.value = _state.value.copy(isBuffering = false, isError = false)
                         _state.value.currentTrack?.id?.let { retryCountMap.remove(it) }
+                        // E108 — Red de seguridad contra "suena en silencio": cuando el audio ya está listo,
+                        // restaura el volumen completo salvo que el DJ esté haciendo ducking activo. Evita
+                        // que un ducking/volumen 0 que se quedó pegado deje la pista sonando muda.
+                        if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
                         requestSave()
                     }
                     Player.STATE_ENDED -> {

@@ -100,6 +100,7 @@ import com.varuna.rustify.util.SpotifyLinkParser
 import com.varuna.rustify.util.bouncingMarquee
 import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.screens.AlbumScreen
+import com.varuna.rustify.ui.screens.ArtistAllSongsScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
@@ -130,6 +131,7 @@ sealed class Screen {
     data class PlaylistDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class ArtistDetail(val id: String) : Screen()
+    data class ArtistAllSongs(val id: String, val name: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
     data class RadioDetail(val trackId: String, val trackName: String) : Screen()
     // E40 — YouTube Music first-class destinations (no more embedded tab screen).
@@ -486,7 +488,9 @@ class MainActivity : ComponentActivity() {
         window.attributes.layoutInDisplayCutoutMode =
             android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         
-        // Configure Coil image loading with a persistent disk cache (512MB)
+        // Configure Coil image loading with a persistent disk cache. E108 — tamaño configurable en
+        // Ajustes (pref cache_max_mb, por defecto 500 MB); se aplica al reiniciar la app.
+        val cacheMaxMb = prefs.getInt("cache_max_mb", 500).coerceIn(100, 8192).toLong()
         val imageLoader = coil.ImageLoader.Builder(this)
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
@@ -496,7 +500,7 @@ class MainActivity : ComponentActivity() {
             .diskCache {
                 coil.disk.DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(512L * 1024 * 1024)
+                    .maxSizeBytes(cacheMaxMb * 1024 * 1024)
                     .build()
             }
             .respectCacheHeaders(false)
@@ -883,6 +887,7 @@ fun EngineTester(
             is Screen.PlaylistDetail -> "PlaylistDetail_${currentScreen.id}"
             is Screen.AlbumDetail -> "AlbumDetail_${currentScreen.id}"
             is Screen.ArtistDetail -> "ArtistDetail_${currentScreen.id}"
+            is Screen.ArtistAllSongs -> "ArtistAllSongs_${currentScreen.id}"
             is Screen.TrackDetail -> "TrackDetail_${currentScreen.id}"
             is Screen.RadioDetail -> "RadioDetail_${currentScreen.trackId}"
             is Screen.YtmSearch -> "YtmSearch"
@@ -1095,6 +1100,18 @@ fun EngineTester(
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
                         onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
+                        onShufflePlay = { audioPlayerService.shufflePlay(it) },
+                        onViewAllSongs = { name -> navigationStack.add(Screen.ArtistAllSongs(currentScreen.id, name)) },
+                        currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.ArtistAllSongs -> {
+                    ArtistAllSongsScreen(
+                        artistId = currentScreen.id,
+                        artistName = currentScreen.name,
+                        spotifyRepo = spotifyRepo,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
                         onShufflePlay = { audioPlayerService.shufflePlay(it) },
                         currentTrackId = currentTrack?.id
                     )
