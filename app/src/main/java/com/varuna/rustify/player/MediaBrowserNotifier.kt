@@ -4,23 +4,23 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 
 /**
- * Puente estático entre los repositorios de biblioteca ([SpotifyRepository] / [YtMusicRepository])
- * y la sesión de medios de Android Auto ([MediaLibraryService.MediaLibrarySession]).
+ * Static bridge between the library repositories ([SpotifyRepository] / [YtMusicRepository]) and the
+ * Android Auto media session ([MediaLibraryService.MediaLibrarySession]).
  *
- * Android Auto cachea el árbol de navegación; cuando el usuario añade/quita un favorito o edita una
- * playlist *dentro de la app*, hay que invalidar la caché del coche con
- * [MediaLibraryService.MediaLibrarySession.notifyChildrenChanged]. Los repositorios no conocen a la
- * sesión (vive en `RustifyForegroundService`), así que el servicio les da de alta su sesión aquí y los
- * repos llaman a [notifyAll] cuando su biblioteca cambia. El handle de sesión se guarda de forma
- * débil para no impedir el GC del servicio.
+ * Android Auto caches the browse tree; when the user adds/removes a favorite or edits a playlist
+ * inside the app, the car's cache must be invalidated via
+ * [MediaLibraryService.MediaLibrarySession.notifyChildrenChanged]. The repositories do not know the
+ * session (it lives in `RustifyForegroundService`), so the service registers its session here and the
+ * repos call [notifyLibraryChanged] when their library changes. The session handle is held weakly so
+ * it does not prevent GC of the service.
  */
 object MediaBrowserNotifier {
 
     @Volatile
     private var sessionRef: java.lang.ref.WeakReference<MediaLibrarySession>? = null
 
-    /** Todos los parentId del árbol de Android Auto que pueden verse afectados por un cambio de
-     *  biblioteca. Notificarlos a todos de golpe es barato (cada uno es un invalidate de caché). */
+    /** All Android Auto tree parentIds that a library change can affect. Notifying them all at once
+     *  is cheap (each one is a cache invalidation). */
     private val ALL_PARENTS = listOf(
         "root",
         "cat_liked", "cat_playlists", "cat_albums", "cat_artists",
@@ -37,11 +37,15 @@ object MediaBrowserNotifier {
         sessionRef = null
     }
 
+    // itemCount = -1 → "unknown child count, re-query the tree" (the convention we use to force a
+    // refresh in Android Auto). The lint range check does not account for it.
+    @Suppress("Range")
     fun notifyChildrenChanged(parentId: String) {
         runCatching { sessionRef?.get()?.notifyChildrenChanged(parentId, -1, null) }
     }
 
-    /** Notifica a todos los nodos del árbol (usar tras cualquier cambio de biblioteca). */
+    /** Notifies every node of the tree (use after any library change). */
+    @Suppress("Range")
     fun notifyLibraryChanged() {
         val s = sessionRef?.get() ?: return
         ALL_PARENTS.forEach { runCatching { s.notifyChildrenChanged(it, -1, null) } }

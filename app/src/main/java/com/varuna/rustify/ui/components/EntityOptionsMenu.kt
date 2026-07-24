@@ -20,9 +20,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,7 +61,7 @@ import com.varuna.rustify.util.ShareUtils
 import kotlinx.coroutines.launch
 
 /**
- * E30-ctx: generic 3-dot context menu for albums, playlists and artists.
+ * Generic 3-dot context menu for albums, playlists and artists.
  *
  * Mirrors the visual style of [TrackOptionsMenuBottomSheet] (ModalBottomSheet + menu rows +
  * nested playlist selector). Items are enabled per entity type / available data:
@@ -261,7 +261,7 @@ fun EntityOptionsMenuBottomSheet(
                     }
                 )
 
-                // F2: extra "Share as Rustify" shown only when the Settings toggle is on.
+                // Extra "Share as Rustify" shown only when the Settings toggle is on.
                 val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
                 if (prefs.getBoolean("share_as_rustify_link", false)) {
                     EntityMenuRow(

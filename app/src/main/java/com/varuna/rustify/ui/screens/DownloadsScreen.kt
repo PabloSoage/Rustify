@@ -35,20 +35,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.DownloadManager
 import com.varuna.rustify.bridge.DownloadStatus
 import com.varuna.rustify.bridge.DownloadTask
-import androidx.compose.ui.res.stringResource
-import com.varuna.rustify.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
     onBack: () -> Unit,
-    onOpenCustom: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenCustom: () -> Unit = {}
 ) {
     val downloads by DownloadManager.downloads.collectAsState()
 
@@ -67,7 +67,7 @@ fun DownloadsScreen(
                             Text(stringResource(R.string.downloads_clear), color = Color(0xFF1DB954))
                         }
                     }
-                    // Descarga personalizada por URL (pega cualquier enlace → calidades de vídeo/audio).
+                    // Custom download by URL: paste any link to choose video/audio qualities.
                     IconButton(onClick = onOpenCustom) {
                         Icon(Icons.Default.AddLink, contentDescription = stringResource(R.string.cd_title), tint = Color(0xFF1DB954))
                     }

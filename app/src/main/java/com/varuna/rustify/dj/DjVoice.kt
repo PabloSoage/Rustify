@@ -6,6 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import com.varuna.rustify.dj.DjVoice.onSpeakDone
+import com.varuna.rustify.dj.DjVoice.onSpeakStart
 import com.varuna.rustify.player.AudioPlayerService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,14 +21,14 @@ import java.net.URLEncoder
 import java.util.Locale
 
 /**
- * E90 — Voz del DJ (estilo "DJ Livi"). Modelo **híbrido**:
- *  - Por defecto: `TextToSpeech` nativo de Android (offline, gratis, sin clave), con tono alegre y
- *    con el **idioma de la voz configurable aparte** del idioma de la app ([DjSettings.voiceLanguage]).
- *  - Opcional: un endpoint TTS en la nube OpenAI-compatible (`/v1/audio/speech`) para voz más natural
- *    ([DjSettings.voiceCloudUrl]); si falla, cae al TTS nativo.
+ * DJ voice. Hybrid model:
+ *  - Default: Android's native `TextToSpeech` (offline, free, no key), with a cheerful tone and a
+ *    voice language configurable independently of the app language ([DjSettings.voiceLanguage]).
+ *  - Optional: an OpenAI-compatible cloud TTS endpoint (`/v1/audio/speech`) for a more natural voice
+ *    ([DjSettings.voiceCloudUrl]); falls back to native TTS on failure.
  *
- * Singleton con un único motor TTS reutilizable. `speak` encola con QUEUE_FLUSH (cada intervención
- * del DJ reemplaza la anterior). El [onSpeakStart]/[onSpeakDone] permite al llamador atenuar la música.
+ * Singleton with a single reusable TTS engine. `speak` enqueues with QUEUE_FLUSH (each DJ utterance
+ * replaces the previous one). [onSpeakStart]/[onSpeakDone] let the caller duck the music.
  */
 object DjVoice {
     private var tts: TextToSpeech? = null
@@ -34,7 +36,7 @@ object DjVoice {
     @Volatile private var appCtx: android.app.Application? = null
     private val pending = ArrayList<String>()
 
-    // Ducking: baja el volumen de la música mientras el DJ habla y lo restaura al terminar.
+    // Ducking: lowers the music volume while the DJ speaks and restores it when done.
     private fun duck() { appCtx?.let { runCatching { AudioPlayerService.getInstance(it).duckForVoice() } } }
     private fun unduck() { appCtx?.let { runCatching { AudioPlayerService.getInstance(it).unduckFromVoice() } } }
 
@@ -42,8 +44,8 @@ object DjVoice {
     var onSpeakDone: (() -> Unit)? = null
 
     /**
-     * Callback de un solo uso que se dispara al terminar la frase de preview (ya sea nativa o nube).
-     * Se limpia automáticamente tras invocarse; no afecta el [onSpeakDone] global.
+     * One-shot callback fired when the preview phrase finishes (native or cloud). Cleared
+     * automatically after it runs; does not affect the global [onSpeakDone].
      */
     @Volatile
     private var previewOnDone: (() -> Unit)? = null
@@ -71,33 +73,33 @@ object DjVoice {
         val langCode = DjSettings.voiceLanguage(context)
         val locale = if (langCode.isNotBlank()) Locale.forLanguageTag(langCode) else Locale.getDefault()
         runCatching { t.language = locale }
-        // Voz nativa concreta elegida en Ajustes (si sigue instalada); si no, la del idioma.
+        // Specific native voice chosen in Settings (if still installed); otherwise the language default.
         val voiceName = DjSettings.voiceNativeName(context)
         if (voiceName.isNotBlank()) {
             runCatching { t.voices?.firstOrNull { it.name == voiceName }?.let { t.voice = it } }
         }
-        t.setPitch(1.15f)        // ligeramente agudo = más "cheerful"
+        t.setPitch(1.15f)        // slightly higher pitch = more cheerful
         t.setSpeechRate(1.03f)
     }
 
-    /** Reaplica el idioma/voz/tono tras cambiarlo en Ajustes. */
+    /** Reapplies language/voice/tone after they change in Settings. */
     fun refreshConfig(context: Context) { if (ready) applyVoiceConfig(context) }
 
     /**
-     * Enumera las voces nativas instaladas para [langCode] (vacío = todos los idiomas) como pares
-     * `(id, etiqueta)`. Reutiliza el motor si ya está listo; si no, crea uno temporal solo para
-     * consultar y lo apaga. El callback llega siempre en el hilo Main.
+     * Lists the installed native voices for [langCode] (empty = all languages) as `(id, label)`
+     * pairs. Reuses the engine if it is already ready; otherwise creates a temporary one just to
+     * query and shuts it down. The callback always arrives on the Main thread.
      */
     fun queryVoices(context: Context, langCode: String, onResult: (List<Pair<String, String>>) -> Unit) {
         fun collect(engine: TextToSpeech): List<Pair<String, String>> {
             val target = if (langCode.isBlank()) null else Locale.forLanguageTag(langCode).language.lowercase()
             val voices = runCatching { engine.voices }.getOrNull().orEmpty()
                 .filter { v -> target == null || v.locale?.language?.lowercase() == target }
-                // fuera las voces que requieren descarga (no reproducirían) para no ensuciar la lista.
+                // Drop voices that require a download (they would not play) to keep the list clean.
                 .filter { v -> v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true }
                 .sortedWith(compareByDescending<android.speech.tts.Voice> { it.quality }.thenBy { it.name })
-            // Numera las voces dentro de cada locale para que sean DISTINGUIBLES: antes todas se
-            // llamaban igual ("español"); ahora "Español (España) · Voz 1 · HD", "· Voz 2", …
+            // Number the voices within each locale so they are distinguishable, e.g.
+            // "Español (España) · Voz 1 · HD", "· Voz 2", … instead of all sharing one name.
             val perLocale = HashMap<String, Int>()
             return voices.map { v ->
                 val key = v.locale?.toString() ?: ""
@@ -115,8 +117,8 @@ object DjVoice {
         }
     }
 
-    /** Etiqueta legible y distinguible para una voz nativa. Android no expone nombre ni género, así
-     *  que sintetizamos: idioma (país) + un índice estable dentro del idioma + calidad + si necesita red. */
+    /** Readable, distinguishable label for a native voice. Android exposes neither a name nor a gender,
+     *  so we synthesize one: language (country) + a stable index within the language + quality + network need. */
     private fun friendlyVoiceLabel(v: android.speech.tts.Voice, index: Int): String {
         val base = (v.locale?.getDisplayName(Locale.getDefault()) ?: v.name).replaceFirstChar { it.uppercase() }
         val q = if (v.quality >= 400) " · HD" else ""
@@ -124,7 +126,7 @@ object DjVoice {
         return "$base · Voz $index$q$net"
     }
 
-    /** Habla [text] con el motor elegido (native / pollinations / openai); cae a nativo si falla. */
+    /** Speaks [text] with the selected engine (native / pollinations / openai); falls back to native on failure. */
     fun speak(context: Context, text: String, force: Boolean = false) {
         if ((!DjSettings.voiceEnabled(context) && !force) || text.isBlank()) return
         appCtx = context.applicationContext as android.app.Application
@@ -153,10 +155,10 @@ object DjVoice {
     }
 
     /**
-     * Previsualiza la voz actualmente seleccionada con una frase de prueba, IGNORANDO si el DJ está
-     * activado o no (para que el usuario la oiga al elegir voz desde Ajustes aunque tenga el DJ off).
-     * Usa el motor/voz/idioma que haya elegido en este momento. [onDone] se invoca al terminar de
-     * hablar (o si falla); puede ser null.
+     * Previews the currently selected voice with a test phrase, regardless of whether the DJ is
+     * enabled (so the user can hear it while picking a voice in Settings even with the DJ off). Uses
+     * the engine/voice/language selected at that moment. [onDone] is invoked when speaking finishes
+     * (or if it fails); it may be null.
      */
     fun preview(context: Context, onDone: (() -> Unit)? = null) {
         val phrase = DjPhrases.previewPhrase(DjSettings.voiceLanguage(context))
@@ -178,12 +180,6 @@ object DjVoice {
         runCatching { cloudPlayer?.stop() }
         unduck()
         onSpeakDone?.invoke()
-    }
-
-    fun shutdown() {
-        runCatching { tts?.shutdown() }
-        tts = null; ready = false
-        releaseCloud()
     }
 
     // ── Cloud TTS (OpenAI-compatible /audio/speech) — best-effort ────────────────────────
@@ -221,25 +217,25 @@ object DjVoice {
     }
 
     /**
-     * Pollinations TTS — voces OpenAI **gratis y sin token**:
-     * `GET https://text.pollinations.ai/{texto}?model=openai-audio&voice={voz}` → MP3.
+     * Pollinations TTS — OpenAI voices, free and token-less:
+     * `GET https://text.pollinations.ai/{text}?model=openai-audio&voice={voice}` → MP3.
      */
     private suspend fun speakPollinations(context: Context, text: String): Boolean = withContext(Dispatchers.IO) {
         val voice = DjSettings.voiceCloudVoice(context).ifBlank { "alloy" }
         val tmp = File(context.cacheDir, "dj_voice.mp3")
-        // readTimeout acotado a 12 s: antes eran 25 s, así una voz que se colgaba tardaba ~25 s en caer
-        // al TTS nativo (era el "fable tarda un buen rato en hacer fallback"). Una frase corta de TTS se
-        // genera en pocos segundos; si a los 12 s no hay audio válido, caemos rápido a la voz nativa.
+        // readTimeout capped at 12s: a short TTS phrase is generated within a few seconds, so if no
+        // valid audio has arrived by 12s a hung voice falls back quickly to the native TTS instead of
+        // leaving the user waiting.
         if (!requestPollinationsToFile(context, text, voice, readTimeoutMs = 12000, dst = tmp)) return@withContext false
         withContext(Dispatchers.Main) { playMp3(tmp) }
         true
     }
 
     /**
-     * GET a Pollinations TTS (`/{texto}?model=openai-audio&voice=…`) → guarda el audio en [dst].
-     * `referrer` identifica la app; UA/Referer de navegador para evitar bloqueos que devolvían texto de
-     * error. Devuelve true solo si la respuesta es 2xx y el contenido parece audio (validación por bytes,
-     * no por content-type, que Pollinations no siempre pone bien).
+     * GET to Pollinations TTS (`/{text}?model=openai-audio&voice=…`) → saves the audio to [dst].
+     * `referrer` identifies the app; a browser-like UA/Referer avoids blocks that returned error text.
+     * Returns true only if the response is 2xx and the content looks like audio (validated by bytes,
+     * not by content-type, which Pollinations does not always set correctly).
      */
     private fun requestPollinationsToFile(context: Context, text: String, voice: String, readTimeoutMs: Int, dst: File): Boolean {
         val enc = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
@@ -259,9 +255,9 @@ object DjVoice {
     }
 
     /**
-     * "Ping" de salud de una voz de Pollinations: pide una palabra y mide el round-trip real. Devuelve
-     * ms si responde audio válido, o null si falla/timeout. Alimenta el indicador de salud de Ajustes
-     * (mismo esquema que [DjProviders.measureLatency]/[DjProviders.classify] del modelo).
+     * Health "ping" for a Pollinations voice: requests a single word and measures the real round-trip.
+     * Returns ms if it responds with valid audio, or null on failure/timeout. Feeds the Settings health
+     * indicator (same scheme as [DjProviders.measureLatency]/[DjProviders.classify] for the model).
      */
     suspend fun probeVoice(context: Context, voice: String): Long? = withContext(Dispatchers.IO) {
         runCatching {
@@ -272,19 +268,19 @@ object DjVoice {
         }.getOrNull()
     }
 
-    // ── Google Translate TTS — gratis y SIN token (confirmado funcionando) ────────────────
-    // `GET translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl={idioma}&q={texto}` → MP3.
-    // Voz por IDIOMA (no hay selección de voz). Límite ~200 chars por petición, así que troceamos el
-    // texto y concatenamos los MP3 (los frames MP3 son autocontenidos: concatenados suenan seguidos).
+    // ── Google Translate TTS — free and token-less ───────────────────────────────────────
+    // `GET translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl={lang}&q={text}` → MP3.
+    // Voice is per language (no voice selection). Limit of ~200 chars per request, so the text is
+    // chunked and the MP3s concatenated (MP3 frames are self-contained: they play back seamlessly).
 
-    /** Código `tl` (base de idioma) para Google Translate: el de la voz, o el del sistema. */
+    /** `tl` code (base language) for Google Translate: the voice language, or the system one. */
     private fun googleTtsLang(context: Context): String {
         val lang = DjSettings.voiceLanguage(context)
-        val base = if (lang.isNotBlank()) lang else Locale.getDefault().language
+        val base = lang.ifBlank { Locale.getDefault().language }
         return base.substringBefore('-').lowercase().ifBlank { "en" }
     }
 
-    /** Trocea [text] en piezas de ≤[maxLen] chars por límites de palabra (partiendo palabras enormes). */
+    /** Splits [text] into pieces of ≤[maxLen] chars at word boundaries (breaking oversized words). */
     private fun chunkForTts(text: String, maxLen: Int): List<String> {
         val t = text.trim()
         if (t.isBlank()) return emptyList()
@@ -330,7 +326,7 @@ object DjVoice {
         true
     }
 
-    /** Ping de salud de Google Translate TTS para el idioma actual (mismo esquema ● que el resto). */
+    /** Health ping for Google Translate TTS in the current language (same scheme as the rest). */
     suspend fun probeGoogleTranslate(context: Context): Long? = withContext(Dispatchers.IO) {
         runCatching {
             val start = System.nanoTime()
@@ -345,11 +341,11 @@ object DjVoice {
         }.getOrNull()
     }
 
-    // ── Microsoft Edge (Read Aloud) TTS — voces NEURALES, gratis y SIN token ──────────────────────
-    // Protocolo WebSocket validado end-to-end contra speech.platform.bing.com. Requiere un token
-    // Sec-MS-GEC = SHA-256(ticks_100ns_redondeados_a_5min + TRUSTED_CLIENT_TOKEN), la Origin de la
-    // extensión de Edge Read Aloud y una versión de Chromium reciente (constantes tomadas del proyecto
-    // edge-tts). El audio llega en frames binarios [len_cabecera(2B BE)][cabecera][mp3].
+    // ── Microsoft Edge (Read Aloud) TTS — neural voices, free and token-less ───────────────────────
+    // WebSocket protocol validated end-to-end against speech.platform.bing.com. Requires a
+    // Sec-MS-GEC = SHA-256(ticks_100ns_rounded_to_5min + TRUSTED_CLIENT_TOKEN) token, the Edge Read
+    // Aloud extension Origin and a recent Chromium version (constants taken from the edge-tts project).
+    // Audio arrives in binary frames [header_len(2B BE)][header][mp3].
     private const val EDGE_TRUSTED = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
     private const val EDGE_VERSION = "1-143.0.3650.75"
     private const val EDGE_ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
@@ -362,12 +358,12 @@ object DjVoice {
             .build()
     }
 
-    /** Token Sec-MS-GEC. Mirror del algoritmo de edge-tts (float64 idéntico: mismo hash aceptado). */
+    /** Sec-MS-GEC token. Mirrors the edge-tts algorithm (identical float64: same accepted hash). */
     private fun edgeSecToken(): String {
         var ticks = System.currentTimeMillis() / 1000.0
-        ticks += 11644473600.0            // WIN_EPOCH (segundos entre 1601 y 1970)
-        ticks -= ticks % 300.0            // redondeo a 5 min
-        ticks *= 1e9 / 100.0              // a intervalos de 100 ns
+        ticks += 11644473600.0            // WIN_EPOCH (seconds between 1601 and 1970)
+        ticks -= ticks % 300.0            // round to 5 min
+        ticks *= 1e9 / 100.0              // to 100 ns intervals
         val str = String.format(Locale.US, "%.0f", ticks) + EDGE_TRUSTED
         return java.security.MessageDigest.getInstance("SHA-256")
             .digest(str.toByteArray(Charsets.US_ASCII)).joinToString("") { "%02X".format(it) }
@@ -404,7 +400,7 @@ object DjVoice {
                 if (ok && audio.size() > 512) {
                     val f = File(context.cacheDir, "dj_voice.mp3")
                     runCatching { f.writeBytes(audio.toByteArray()) }
-                    android.os.Handler(android.os.Looper.getMainLooper()).post { runCatching { playMp3(f) } }
+                    Handler(Looper.getMainLooper()).post { runCatching { playMp3(f) } }
                     cont.resumeWith(Result.success(true))
                 } else cont.resumeWith(Result.success(false))
             }
@@ -436,7 +432,7 @@ object DjVoice {
             cont.invokeOnCancellation { runCatching { wsRef?.cancel() } }
         }
 
-    /** Ping de salud de Edge TTS: abre el WebSocket (token aceptado = 101). ms o null. Voz-independiente. */
+    /** Health ping for Edge TTS: opens the WebSocket (token accepted = 101). ms or null. Voice-independent. */
     suspend fun probeEdge(): Long? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         val start = System.nanoTime()
         val done = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -455,22 +451,22 @@ object DjVoice {
         cont.invokeOnCancellation { runCatching { ws.cancel() } }
     }
 
-    /** Heurística "esto es audio y no un error de texto/JSON/HTML". */
+    /** Heuristic for "this is audio and not a text/JSON/HTML error response". */
     private fun looksLikeAudio(f: File): Boolean = runCatching {
         val b = ByteArray(4)
         f.inputStream().use { it.read(b) }
         val s = String(b, Charsets.ISO_8859_1)
         when {
-            s.startsWith("ID3") -> true                                        // MP3 con tag
+            s.startsWith("ID3") -> true                                        // MP3 with tag
             b[0] == 0xFF.toByte() && (b[1].toInt() and 0xE0) == 0xE0 -> true    // MP3 frame sync
             s.startsWith("OggS") -> true                                       // OGG
             s.startsWith("RIFF") -> true                                       // WAV
-            s.startsWith("{") || s.startsWith("<") || s.startsWith("Error", true) -> false // texto de error
-            else -> true                                                       // binario desconocido: intenta
+            s.startsWith("{") || s.startsWith("<") || s.startsWith("Error", true) -> false // error text
+            else -> true                                                       // unknown binary: attempt playback
         }
     }.getOrDefault(false)
 
-    /** Reproduce un MP3 (voz nube) con ducking; reemplaza al reproductor anterior. */
+    /** Plays an MP3 (cloud voice) with ducking; replaces the previous player. */
     private fun playMp3(file: File) {
         releaseCloud()
         duck(); onSpeakStart?.invoke()

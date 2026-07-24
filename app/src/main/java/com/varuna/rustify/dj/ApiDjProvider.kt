@@ -8,18 +8,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * E90 — Provider de IA externa. Llama a un endpoint **OpenAI-compatible**
- * (`/v1/chat/completions` o `/openai`) usando `java.net.HttpURLConnection` (sin deps nuevas).
+ * External AI provider. Calls an OpenAI-compatible endpoint (`/v1/chat/completions` or `/openai`)
+ * using `java.net.HttpURLConnection` (no new dependencies).
  *
- * Por defecto apunta a Pollinations AI (keyless, gratuito, best-effort). [apiKey] es OPCIONAL:
- * si está en blanco no se envía cabecera Authorization (endpoint público). NO se embebe ninguna
- * key privada de terceros.
+ * Defaults to Pollinations AI (keyless, free, best-effort). [apiKey] is optional: when blank, no
+ * Authorization header is sent (public endpoint). No third-party private key is embedded.
  *
- * Diseño robusto (ver docs/90-ai-dj-assistant.md §3.4):
- *  - system prompt (rol de DJ) + contexto del usuario + petición NL.
- *  - Se pide al modelo responder JSON `{intro, seeds:[...], queries:[...]}` — NO URIs finales.
- *  - Se parsea esa respuesta a [DjPlan] con [DjSeed]s; el [DjEngine] las resuelve a tracks reales.
- *  - Ante cualquier fallo (red, JSON inválido, rate limit) degrada al [fallback] heurístico.
+ * Design:
+ *  - system prompt (DJ role) + user context + NL request.
+ *  - The model is asked to respond with JSON `{intro, seeds:[...], queries:[...]}` — not final URIs.
+ *  - That response is parsed into a [DjPlan] with [DjSeed]s; the [DjEngine] resolves them to real tracks.
+ *  - On any failure (network, invalid JSON, rate limit) it degrades to the [fallback] heuristic.
  */
 class ApiDjProvider(
     private val baseUrl: String,
@@ -35,7 +34,7 @@ class ApiDjProvider(
             val content = extractAssistantContent(raw)
             parsePlan(content) ?: fallback.plan(context, request)
         }.getOrElse {
-            // Degradación elegante: si la API falla, usa el heurístico offline.
+            // Graceful degradation: if the API fails, use the offline heuristic.
             fallback.plan(context, request)
         }
     }
@@ -94,8 +93,9 @@ class ApiDjProvider(
     }
 
     /**
-     * Acepta base URLs con o sin ruta. Si ya trae `/openai` o `/chat/completions` se respeta;
-     * si termina en `/v1` se le añade `/chat/completions`; en otro caso se asume OpenAI estándar.
+     * Accepts base URLs with or without a path. If it already contains `/openai` or
+     * `/chat/completions` it is kept as-is; if it ends in `/v1`, `/chat/completions` is appended;
+     * otherwise the standard OpenAI layout is assumed.
      */
     private fun resolveEndpoint(base: String): String {
         val b = base.trim().trimEnd('/')
@@ -107,7 +107,7 @@ class ApiDjProvider(
         }
     }
 
-    /** Extrae `choices[0].message.content` de la respuesta OpenAI-compatible. */
+    /** Extracts `choices[0].message.content` from the OpenAI-compatible response. */
     private fun extractAssistantContent(raw: String): String {
         val obj = JSONObject(raw)
         val choices = obj.optJSONArray("choices") ?: return ""
@@ -117,9 +117,9 @@ class ApiDjProvider(
     }
 
     /**
-     * Parsea el JSON pedido al modelo `{intro, seeds, queries}`. Tolerante: el LLM a veces envuelve
-     * el JSON en texto/markdown, así que se extrae el primer objeto `{...}`. Devuelve null si no
-     * hay nada aprovechable (→ el llamador cae al fallback).
+     * Parses the JSON requested from the model `{intro, seeds, queries}`. Tolerant: the LLM sometimes
+     * wraps the JSON in text/markdown, so the first `{...}` object is extracted. Returns null when
+     * there is nothing usable (→ the caller falls back).
      */
     private fun parsePlan(content: String): DjPlan? {
         val json = extractJsonObject(content) ?: return null

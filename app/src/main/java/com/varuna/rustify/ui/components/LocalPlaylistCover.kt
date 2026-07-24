@@ -1,6 +1,5 @@
 package com.varuna.rustify.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,11 +24,10 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.FullTrack
 
 /**
- * Mosaico 2x2 (hasta 4 carátulas) para playlists locales, deduplicado por álbum
- * para evitar tiles idénticos. Extraído para poder reutilizarse fuera de LibraryScreen
- * (E30: pantalla de detalle de playlist local).
+ * 2x2 mosaic (up to 4 covers) for local playlists, deduplicated by album to avoid
+ * identical tiles.
  *
- * Reutilizable/`internal` a propósito para que LibraryScreen pueda migrar aquí luego.
+ * Marked `internal` so it can be reused across screens.
  */
 @Composable
 internal fun LocalPlaylistCover(

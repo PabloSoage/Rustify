@@ -5,15 +5,15 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
 
 /**
- * E90 — Motor del DJ. Orquesta el flujo completo (ver docs/90-ai-dj-assistant.md §3):
- *  1. Construye el [DjContext] (métricas + estado del player) vía [DjContextBuilder].
- *  2. Elige el [DjProvider] según [DjSettings.mode] y le pide un [DjPlan].
- *  3. Resuelve las semillas del plan a **tracks reales** vía [SpotifyRepository]
- *     (search de artistas/tracks/queries + radio de la mejor semilla), deduplica y
- *     reparte por artista para transiciones suaves.
+ * DJ engine. Orchestrates the full flow:
+ *  1. Builds the [DjContext] (metrics + player state) via [DjContextBuilder].
+ *  2. Picks the [DjProvider] according to [DjSettings.mode] and asks it for a [DjPlan].
+ *  3. Resolves the plan's seeds to real tracks via [SpotifyRepository] (search for
+ *     artists/tracks/queries + radio of the best seed), deduplicates, and spreads by artist for
+ *     smooth transitions.
  *
- * NO toca AudioPlayerService: devuelve el resultado y el llamador (DjScreen) encola con los
- * métodos públicos `loadPlaylist` / `enqueueAll`.
+ * Does not touch AudioPlayerService: it returns the result and the caller (DjScreen) enqueues with
+ * the public `loadPlaylist` / `enqueueAll` methods.
  */
 class DjEngine(
     private val context: Context,
@@ -22,7 +22,7 @@ class DjEngine(
     data class Result(val intro: String, val tracks: List<FullTrack>)
 
     /**
-     * Genera una sesión de DJ. [request] vacío ⇒ automix desde la semilla (now playing / top).
+     * Generates a DJ session. An empty [request] ⇒ automix from the seed (now playing / top).
      */
     suspend fun run(
         request: String,
@@ -34,7 +34,7 @@ class DjEngine(
         val provider = providerFor()
         val plan = provider.plan(djContext, request)
 
-        // Si el provider ya devolvió tracks resueltas, respétalas; si no, resuelve las semillas.
+        // If the provider already returned resolved tracks, keep them; otherwise resolve the seeds.
         val resolved = if (plan.tracks.isNotEmpty()) {
             plan.tracks
         } else {
@@ -60,11 +60,11 @@ class DjEngine(
     }
 
     /**
-     * Resuelve semillas blandas a tracks. Estrategia:
-     *  - Cada semilla se convierte en tracks buscando (search) o resolviendo un artista → top tracks.
-     *  - La "mejor" semilla (la primera track resuelta) alimenta [SpotifyRepository.getTrackRadio],
-     *    que es la señal principal de similitud (Spotify calcula la afinidad).
-     *  - Si el pool queda corto, se expande con related artists de la semilla.
+     * Resolves soft seeds to tracks. Strategy:
+     *  - Each seed becomes tracks by searching or by resolving an artist → top tracks.
+     *  - The best seed (the first resolved track) feeds [SpotifyRepository.getTrackRadio], which is
+     *    the primary similarity signal (Spotify computes the affinity).
+     *  - If the pool is short, it is expanded with the seed's related artists.
      */
     private suspend fun resolveSeeds(
         seeds: List<DjSeed>,
@@ -106,12 +106,12 @@ class DjEngine(
         // Fall back to the now-playing track only if the request produced no usable seed.
         if (radioSeedTrackId == null) radioSeedTrackId = nowPlaying?.id
 
-        // Señal principal: radio de la mejor semilla (≈50 tracks afines).
+        // Primary signal: radio of the best seed (≈50 similar tracks).
         radioSeedTrackId?.let { id ->
             runCatching { add(repo.getTrackRadio(id)) }
         }
 
-        // Refuerzo si hay pocos: related artists de la primera semilla de artista.
+        // Reinforcement when there are few: related artists of the first artist seed.
         if (pool.size < targetCount) {
             val artistSeed = seeds.firstOrNull { it.type == DjSeed.Type.ARTIST }?.value
                 ?: nowPlaying?.artists?.firstOrNull()?.name
@@ -133,8 +133,8 @@ class DjEngine(
     }
 
     /**
-     * Evita dos canciones seguidas del mismo artista (transición suave). Reparte round-robin por
-     * artista principal; determinista dada la misma entrada (sin aleatoriedad).
+     * Avoids two consecutive songs from the same artist (smooth transition). Distributes round-robin
+     * by primary artist; deterministic given the same input (no randomness).
      */
     private fun spreadByArtist(tracks: List<FullTrack>): List<FullTrack> {
         if (tracks.size <= 2) return tracks
@@ -156,7 +156,7 @@ class DjEngine(
                 lastKey = key
                 progressed = true
             }
-            // Salvaguarda: si todo lo restante es del mismo artista, vacíalo para no bucle infinito.
+            // Safeguard: if everything remaining is from the same artist, drain it to avoid an infinite loop.
             if (!progressed) {
                 byArtist.values.forEach { d -> while (d.isNotEmpty()) result.add(d.removeFirst()) }
             }

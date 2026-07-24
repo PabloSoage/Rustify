@@ -14,8 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,7 +44,7 @@ import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.components.TrackRowItem
 
 /**
- * E95: "Song radio" — related tracks for a seed track, via SpotifyRepository.getTrackRadio.
+ * "Song radio" — related tracks for a seed track, via SpotifyRepository.getTrackRadio.
  * Reached from the track 3-dot menu ("Go to radio"). Play all / add all to queue / open a track.
  */
 @Composable
@@ -61,10 +61,10 @@ fun RadioScreen(
 
     LaunchedEffect(trackId) {
         isLoading = true
-        try {
-            tracks = spotifyRepo.getTrackRadio(trackId)
+        tracks = try {
+            spotifyRepo.getTrackRadio(trackId)
         } catch (_: Exception) {
-            tracks = emptyList()
+            emptyList()
         } finally {
             isLoading = false
         }

@@ -64,8 +64,9 @@ object DownloadManager {
         updateActiveCount()
 
         scope.launch {
-            // E60: spotifyRepo is no longer used inside processDownload (resolution+download now live
-            // in AudioSourceRegistry.downloadChain). Kept on enqueueDownload's public signature for callers.
+            // spotifyRepo is no longer used inside processDownload (resolution and download now live
+            // in AudioSourceRegistry.downloadChain). It is kept on enqueueDownload's public signature
+            // for callers.
             processDownload(context.applicationContext, trackId, trackName, trackArtist, downloadUriStr)
         }
     }
@@ -98,8 +99,8 @@ object DownloadManager {
         updateStatus(trackId, DownloadStatus.RESOLVING)
 
         try {
-            // E60: la resolución + descarga vive ahora en la cadena de backends
-            // (AudioSourceRegistry.downloadChain). yt-dlp es el provider por defecto.
+            // Resolution and download now live in the backend chain
+            // (AudioSourceRegistry.downloadChain). yt-dlp is the default provider.
             try {
                 initDeferred.await()
             } catch (_: Exception) {}
@@ -111,8 +112,8 @@ object DownloadManager {
 
             updateStatus(trackId, DownloadStatus.DOWNLOADING)
 
-            // Reconstruye un FullTrack para el contrato del provider a partir de los
-            // primitivos que maneja DownloadManager (artist como string separado por comas).
+            // Rebuild a FullTrack for the provider contract from the primitives DownloadManager
+            // handles (artist as a comma-separated string).
             val track = FullTrack(
                 id = trackId, name = trackName, externalUri = "", explicit = false,
                 durationMs = 0, isrc = "",
@@ -134,7 +135,7 @@ object DownloadManager {
                 val f = res.getOrNull()!!.second
                 if (!f.exists()) throw Exception("Temporary file not found after download")
 
-                // Copia el temporal a un árbol SAF (sin cambios respecto al flujo previo).
+                // Copy the temporary file into a SAF tree.
                 val treeUri = downloadUriStr.toUri()
                 val docFile = DocumentFile.fromTreeUri(context, treeUri)
                 val newFile = docFile?.createFile("audio/mpeg", "$safeName.mp3")
@@ -161,9 +162,9 @@ object DownloadManager {
             } else {
                 val err = res.exceptionOrNull()
                 err?.printStackTrace()
-                // Distinción de mensajes (paridad con el flujo previo):
-                //  - "resolver returned empty YouTube id" → URL no encontrada
-                //  - resto de fallos de cadena → error genérico de descarga
+                // Message distinction:
+                //  - "resolver returned empty YouTube id" -> URL not found
+                //  - any other chain failure -> generic download error
                 val isResolveFail = err is com.varuna.rustify.audio.AudioSourceChainException &&
                     err.errors.any { it.message?.contains("resolver returned empty") == true }
                 val msg = when {

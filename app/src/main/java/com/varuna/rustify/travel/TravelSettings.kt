@@ -1,38 +1,41 @@
 package com.varuna.rustify.travel
 
 import android.content.Context
+import androidx.core.content.edit
+import com.varuna.rustify.travel.TravelSettings.mapTilerKey
+import com.varuna.rustify.travel.TravelSettings.styleUri
 
 /**
- * Persistencia de la configuración del módulo Travel (E99) en `rustify_settings`,
- * en paridad con el resto de los ajustes de la app (sin deps nuevas).
+ * Persistence for the Travel module settings in `rustify_settings`, on par with the rest of the
+ * app's settings (no new dependencies).
  *
- * Keyless por defecto: si [mapTilerKey] está vacío, el mapa usa el estilo CARTO
- * Voyager embebido en `assets/style_keyless.json` (OSM + CARTO, sin API key).
- * Si se configura una key de MapTiler, se usa el estilo vectorial `streets` de
- * MapTiler Cloud (más pulido, pero requiere cuenta gratuita en maptiler.com).
+ * Keyless by default: if [mapTilerKey] is empty, the map uses the CARTO Voyager style bundled in
+ * `assets/style_keyless.json` (OSM + CARTO, no API key). If a MapTiler key is configured, the
+ * MapTiler Cloud vector `streets` style is used (more polished, but requires a free maptiler.com
+ * account).
  */
 object TravelSettings {
     const val PREFS = "rustify_settings"
 
     const val KEY_MAPTILER_KEY = "travel_maptiler_key"
     const val KEY_MAP_STYLE = "travel_map_style"   // 0=Voyager 1=Dark 2=Satellite 3=Topo
-    const val KEY_GEOCODING_API_KEY = "travel_geocoding_api_key"  // Google Geocoding API key (opcional)
+    const val KEY_GEOCODING_API_KEY = "travel_geocoding_api_key"  // Google Geocoding API key (optional)
 
-    /** Estilos keyless embebidos en `assets/`. Coincide con [styleUri] por índice. */
+    /** Keyless styles bundled in `assets/`. Matches [styleUri] by index. */
     val ASSET_STYLES = listOf(
-        "asset://style_keyless.json",  // 0 — CARTO Voyager (claro, calles)
-        "asset://style_dark.json",     // 1 — CARTO Dark (nocturno)
-        "asset://style_satellite.json",// 2 — Esri World Imagery (satélite)
-        "asset://style_topo.json"      // 3 — OpenTopoMap (senderismo/contornos)
+        "asset://style_keyless.json",  // 0 — CARTO Voyager (light, streets)
+        "asset://style_dark.json",     // 1 — CARTO Dark (night)
+        "asset://style_satellite.json",// 2 — Esri World Imagery (satellite)
+        "asset://style_topo.json"      // 3 — OpenTopoMap (hiking/contours)
     )
 
-    /** Nombres legibles (en EN) para el selector de UI; cada uno debería tener i18n aparte. */
+    /** Readable names (in English) for the UI selector; each should have its own i18n. */
     val STYLE_LABELS = listOf("Voyager", "Dark", "Satellite", "Topo")
 
-    /** Índice "oscuro" para teñir los overlays en consecuencia (título etc.). */
+    /** "Dark" index used to tint the overlays accordingly (title, etc.). */
     const val STYLE_DARK_INDEX = 1
 
-    /** Estilo vectorial de MapTiler Cloud (streets). Reemplazar {key} en runtime. */
+    /** MapTiler Cloud vector style (streets). Replace {key} at runtime. */
     const val MAPTILER_STYLE_URL = "https://api.maptiler.com/maps/streets-v2/style.json?key="
 
     fun mapTilerKey(context: Context): String =
@@ -45,27 +48,24 @@ object TravelSettings {
 
     fun setMapStyleIndex(context: Context, index: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_MAP_STYLE, index.coerceIn(0, ASSET_STYLES.lastIndex)).apply()
+            .edit { putInt(KEY_MAP_STYLE, index.coerceIn(0, ASSET_STYLES.lastIndex)) }
     }
 
     /**
-     * API key opcional de Google Cloud Console (Geocoding API + Places API).
-     * Si está presente, las búsquedas y reverse geocoding usan Google (mejor recall, soporta
-     * direcciones y POIs que OSM no encuentra). Si está vacío, se usan los servicios keyless
-     * (Photon + Nominatim). El usuario crea su cuenta Google Cloud, habilita Geocoding API
-     * (free tier: $200/mes ≈ 11k peticiones) y pega la key aquí — patrón del Spotify client_id.
+     * Optional Google Cloud Console API key (Geocoding API + Places API).
+     * If present, search and reverse geocoding use Google (better recall, resolving addresses and
+     * POIs that OSM cannot find). If empty, the keyless services (Photon + Nominatim) are used.
+     * The user creates a Google Cloud account, enables the Geocoding API (free tier: $200/month
+     * ≈ 11k requests) and pastes the key here — the same pattern as the Spotify client_id.
      */
     fun geocodingApiKey(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_GEOCODING_API_KEY, "") ?: ""
 
-    /** `true` si el estilo activo es oscuro (para pintar el texto/título en blanco). */
-    fun isDarkStyle(context: Context): Boolean = mapStyleIndex(context) == STYLE_DARK_INDEX
-
     /**
-     * Devuelve la URI del estilo MapLibre que debe aplicarse al mapa:
-     * - Si hay key de MapTiler → estilo vectorial MapTiler Cloud ( Streets-v2 ).
-     * - Si no → estilo embebido en assets según el índice guardado.
+     * Returns the MapLibre style URI to apply to the map:
+     * - If a MapTiler key is set → MapTiler Cloud vector style (Streets-v2).
+     * - Otherwise → the bundled asset style for the saved index.
      */
     fun styleUri(context: Context): String {
         val key = mapTilerKey(context).trim()

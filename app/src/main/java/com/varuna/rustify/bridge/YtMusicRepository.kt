@@ -2,36 +2,41 @@ package com.varuna.rustify.bridge
 
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
-import kotlinx.coroutines.*
-import com.varuna.rustify.bridge.maximiseThumbnail
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** E105 — Una fila del home de YTM: título de la categoría, la query que la generó y sus pistas. */
+/** A YTM home row: the category title, the query that generated it, and its tracks. */
 data class YtmHomeRow(val title: String, val query: String, val tracks: List<YtmTrack>)
 
 /**
- * E40 — Repositorio de YouTube Music. Persiste favoritos, playlists, álbumes y
- * artistas YTM guardados localmente en `filesDir/ytm_library.json`. La resolución
- * de datos vivos (búsqueda, navegación) se hace vía JNI → [NativeEngine].
+ * YouTube Music repository. Persists saved YTM favorites, playlists, albums and artists locally in
+ * `filesDir/ytm_library.json`. Live data resolution (search, browsing) is performed via JNI through
+ * [NativeEngine].
  */
 class YtMusicRepository(private val appContext: Context) {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val libFile get() = File(appContext.filesDir, "ytm_library.json")
 
-    // El estado de la biblioteca es COMPARTIDO entre todas las instancias (la app crea varias y el
-    // servicio de Android Auto crea la suya). Si cada una tuviera su propia lista, un favorito
-    // añadido en la app no se vería en el coche (cada instancia cargaría su snapshot del JSON y nunca
-    // se enteraría). Compartiendo las listas, cualquier instancia vé los cambios al instante.
+    // The library state is SHARED across all instances (the app creates several and the Android Auto
+    // service creates its own). If each had its own list, a favorite added in the app would not show
+    // up in the car (each instance would load its own JSON snapshot and never notice). By sharing the
+    // lists, any instance sees changes instantly.
     val favorites  = State.favorites
     val playlists  = State.playlists
     val savedAlbums  = State.savedAlbums
     val savedArtists = State.savedArtists
-    // E105 — Home feed cacheado (secciones dinámicas por mood/género vía search, con TTL en disco).
+    // Cached home feed (dynamic mood/genre sections via search, with an on-disk TTL).
     val homeRows = State.homeRows
-    val homeFetchedAt: Long get() = State.homeFetchedAt
 
     init {
         synchronized(State) {
@@ -111,13 +116,6 @@ class YtMusicRepository(private val appContext: Context) {
         com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
-    fun removeFromPlaylist(localId: String, videoId: String) {
-        val i = playlists.indexOfFirst { it.localId == localId }.takeIf { it >= 0 } ?: return
-        playlists[i] = playlists[i].copy(items = playlists[i].items.filter { it.videoId != videoId }, updatedAt = System.currentTimeMillis())
-        scope.launch { saveLibrary() }
-        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
-    }
-
     fun deletePlaylist(localId: String) { playlists.removeAll { it.localId == localId }; scope.launch { saveLibrary() }; com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged() }
 
     fun isAlbumSaved(browseId: String) = savedAlbums.any { it.browseId == browseId }
@@ -188,17 +186,11 @@ class YtMusicRepository(private val appContext: Context) {
         }.getOrNull()
     }
 
-    suspend fun getRadio(videoId: String): List<YtmTrack> = withContext(Dispatchers.IO) {
-        runCatching {
-            YtmTrack.listFromJsonArray(JSONArray(NativeEngine.getYtmRadioNative(videoId)))
-        }.getOrDefault(emptyList())
-    }
-
-    // ── E105 — Home feed cacheado (arregla el "carga cada vez / secciones estáticas") ──────────────
+    // ── Cached home feed ───────────────────────────────────────────────────────────────────────────
     private val homeFile get() = File(appContext.filesDir, "ytm_home_cache.json")
     private val homeTtlMs = 8 * 60 * 60 * 1000L // 8h
 
-    /** Categorías del home (título mostrado, query de búsqueda). Mezcla moods y géneros populares. */
+    /** Home categories (displayed title, search query). Mixes popular moods and genres. */
     private val homeCategories = listOf(
         "Top hits" to "top hits", "New music" to "new music this week", "Chill" to "chill lofi relax",
         "Workout" to "energetic workout gym", "Focus" to "focus instrumental study",
@@ -209,8 +201,8 @@ class YtMusicRepository(private val appContext: Context) {
     )
 
     /**
-     * Asegura que [homeRows] esté poblado: usa la caché en disco si es fresca (< 8h), y solo si no hay
-     * o [force] es true reconstruye el feed lanzando las búsquedas EN PARALELO (rápido) y lo guarda.
+     * Ensures [homeRows] is populated: uses the on-disk cache if it is fresh (< 8h), and only when it
+     * is empty or [force] is true rebuilds the feed by running the searches in PARALLEL and saves it.
      */
     suspend fun ensureHome(force: Boolean = false) = withContext(Dispatchers.IO) {
         if (State.homeLoading) return@withContext
@@ -268,10 +260,7 @@ class YtMusicRepository(private val appContext: Context) {
         }
     }
 
-    /** Local playlist lookup for the detail screen. */
-    fun localPlaylist(localId: String): YtmLocalPlaylist? = playlists.firstOrNull { it.localId == localId }
-
-    /** Serialize the whole local library to JSON (for export, E50). */
+    /** Serialize the whole local library to JSON (for export). */
     fun exportJson(): String = JSONObject().apply {
         put("version", 1)
         put("favorites",   YtmTrack.toJsonArray(favorites.toList()))

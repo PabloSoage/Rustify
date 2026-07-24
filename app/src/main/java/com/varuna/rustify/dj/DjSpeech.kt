@@ -9,11 +9,11 @@ import android.speech.SpeechRecognizer
 import java.util.Locale
 
 /**
- * E90 — Reconocimiento de voz para controlar el DJ ("pon algo más movido", "cambia de mood"…).
- * Envuelve [SpeechRecognizer] nativo (offline si el dispositivo lo soporta, gratis, sin claves).
+ * Voice recognition to control the DJ ("play something more upbeat", "change the mood"…).
+ * Wraps the native [SpeechRecognizer] (offline where the device supports it, free, no keys).
  *
- * ⚠️ Requiere el permiso `RECORD_AUDIO` (declarado en el Manifest + concedido en runtime por el
- * llamador). Debe crearse y usarse en el **hilo principal**.
+ * Requires the `RECORD_AUDIO` permission (declared in the Manifest and granted at runtime by the
+ * caller). Must be created and used on the main thread.
  */
 class DjSpeech(context: Context) {
 
@@ -25,7 +25,7 @@ class DjSpeech(context: Context) {
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(appContext)
 
     /**
-     * Empieza a escuchar una frase. [languageTag] p.ej. "es-ES"/"en-US"; en blanco ⇒ idioma del sistema.
+     * Starts listening for a phrase. [languageTag] e.g. "es-ES"/"en-US"; blank ⇒ system language.
      */
     fun start(
         languageTag: String,

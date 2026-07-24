@@ -63,13 +63,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,33 +93,33 @@ import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
-import com.varuna.rustify.util.SpotifyLink
-import com.varuna.rustify.util.SpotifyLinkParser
-import com.varuna.rustify.util.bouncingMarquee
-import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistAllSongsScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
+import com.varuna.rustify.ui.screens.DjScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
+import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.screens.MetricsScreen
 import com.varuna.rustify.ui.screens.NewReleasesScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
 import com.varuna.rustify.ui.screens.SettingsScreen
-import com.varuna.rustify.ui.screens.DjScreen
-import com.varuna.rustify.ui.screens.TravelScreen
 import com.varuna.rustify.ui.screens.TrackScreen
-import com.varuna.rustify.ui.screens.YtMusicSearchScreen
+import com.varuna.rustify.ui.screens.TravelScreen
 import com.varuna.rustify.ui.screens.YtMusicAlbumScreen
 import com.varuna.rustify.ui.screens.YtMusicArtistScreen
-import com.varuna.rustify.ui.screens.YtMusicPlaylistScreen
 import com.varuna.rustify.ui.screens.YtMusicLocalPlaylistScreen
-import com.varuna.rustify.bridge.YtMusicRepository
+import com.varuna.rustify.ui.screens.YtMusicPlaylistScreen
+import com.varuna.rustify.ui.screens.YtMusicSearchScreen
 import com.varuna.rustify.ui.theme.RustifyTheme
+import com.varuna.rustify.util.SpotifyLink
+import com.varuna.rustify.util.SpotifyLinkParser
+import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.launch
 
 
@@ -134,7 +134,7 @@ sealed class Screen {
     data class ArtistAllSongs(val id: String, val name: String) : Screen()
     data class TrackDetail(val id: String) : Screen()
     data class RadioDetail(val trackId: String, val trackName: String) : Screen()
-    // E40 — YouTube Music first-class destinations (no more embedded tab screen).
+    // YouTube Music first-class destinations (no more embedded tab screen).
     object YtmSearch : Screen()
     data class YtmAlbumDetail(val browseId: String, val title: String) : Screen()
     data class YtmArtistDetail(val channelId: String, val name: String) : Screen()
@@ -142,25 +142,25 @@ sealed class Screen {
     data class YtmLocalPlaylistDetail(val localId: String) : Screen()
     object Settings : Screen()
     object Downloads : Screen()
-    // E103 — Descargas personalizadas (pega una URL, elige calidad de vídeo/audio, carpeta aparte).
+    // Custom downloads (paste a URL, choose video/audio quality, separate folder).
     object CustomDownload : Screen()
     object LogViewer : Screen()
     object Metrics : Screen()
-    // Editor de matches YouTube (lista con nombres, editar/preview/borrar, añadir manual).
+    // YouTube match editor (list with names; edit/preview/delete, add manually).
     object MatchEditor : Screen()
-    // E90 — DJ IA (automix / peticiones en lenguaje natural).
+    // AI DJ (automix / natural-language requests).
     object Dj : Screen()
     object Travel : Screen()
     /**
-     * E99+ — Travel con destino inicial pre-cargado (cuando se abre desde un link compartido
-     * de Google Maps o un link geo:). [lat]/[lon] se revierten a etiqueta via Nominatim/Google.
+     * Travel with a preloaded initial destination (when opened from a shared Google Maps link or a
+     * geo: link). [lat]/[lon] are reverse-geocoded to a label via Nominatim/Google.
      */
     data class TravelWithDestination(val lat: Double, val lon: Double, val label: String? = null) : Screen()
 }
 
 /**
  * Route a deep-link token ("track:ID" / "album:ID" / "playlist:ID" / "artist:ID" /
- * "NOW_PLAYING", or a legacy bare track id) onto the navigation stack (E20).
+ * "NOW_PLAYING", or a legacy bare track id) onto the navigation stack.
  */
 private fun navigateDeepLink(
     deepLink: String,
@@ -187,7 +187,7 @@ private fun navigateDeepLink(
         "album" -> navigationStack.add(Screen.AlbumDetail(parts[1], "", emptyList()))
         "playlist" -> navigationStack.add(Screen.PlaylistDetail(parts[1], "", emptyList()))
 "artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
-        // E99+ — Google Maps / geo: link compartido.
+        // Shared Google Maps / geo: link.
         "travel" -> {
             val inner = parts[1].split(",", limit = 3)
             if (inner.size >= 2) {
@@ -197,7 +197,7 @@ private fun navigateDeepLink(
                 navigationStack.add(Screen.TravelWithDestination(lat, lon, label))
             }
         }
-        // Short link / place de Google Maps: resolvemos el redirect en IO (no en el hilo principal).
+        // Google Maps short link / place: resolve the redirect on IO (not on the main thread).
         "travelresolve" -> {
             val url = parts[1]
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
@@ -207,7 +207,7 @@ private fun navigateDeepLink(
                 }
             }
         }
-        // E40 - YouTube Music deep links.
+        // YouTube Music deep links.
         "ytmtrack" -> {
             // Build a minimal ytm: FullTrack and hand it to the existing player pipeline.
             val yt = FullTrack(
@@ -227,9 +227,9 @@ private fun navigateDeepLink(
 }
 
 /**
- * Extrae un token "travel:lat,lng,label" desde enlaces de Google Maps o coordenadas geo:.
- * Soporta: geo:lat,lng?q=label, maps.google.com/place/...@lat,lng, maps.app.goo.gl (short links).
- * Devuelve null si no se reconoce un enlace de mapa.
+ * Extracts a "travel:lat,lng,label" token from Google Maps links or geo: coordinates.
+ * Supports: geo:lat,lng?q=label, maps.google.com/place/...@lat,lng, maps.app.goo.gl (short links).
+ * Returns null if a map link is not recognized.
  */
 private fun extractTravelToken(text: String): String? {
     val t = text.trim()
@@ -251,14 +251,14 @@ private fun extractTravelToken(text: String): String? {
         }
     }
 
-    // Coordenadas directas en la URL, sin red: @lat,lng (centro), !3d<lat>!4d<lon> (lugar/destino),
+    // Direct coordinates in the URL, no network: @lat,lng (center), !3d<lat>!4d<lon> (place/destination),
     // destination=/q=/ll= lat,lon, etc.
     mapsCoords(t)?.let { return "travel:${it.first},${it.second}," }
 
-    // Cualquier enlace de mapa (corto o largo, DIRECCIONES o LUGAR): resolvemos el redirect y, si no hay
-    // coordenadas, geocodificamos el nombre del lugar — por RED, en una corrutina IO (aquí estamos en el
-    // hilo principal → NetworkOnMainThread). Antes solo se difería goo.gl/google.com/maps y solo se sacaba
-    // @lat,lng, así que los links de /dir/… o de lugar sin @ abrían el mapa vacío (ni ubicación ni ruta).
+    // Any map link (short or long, DIRECTIONS or PLACE): resolve the redirect and, if there are no
+    // coordinates, geocode the place name — over the NETWORK, on an IO coroutine (this runs on the
+    // main thread → NetworkOnMainThread). Deferring resolution covers /dir/… and place links without
+    // an @ that would otherwise open an empty map (no location, no route).
     if (t.contains("maps.app.goo.gl", ignoreCase = true) ||
         t.contains("goo.gl/maps", ignoreCase = true) ||
         t.contains("google.com/maps", ignoreCase = true) ||
@@ -270,23 +270,23 @@ private fun extractTravelToken(text: String): String? {
     return null
 }
 
-/** Extrae coordenadas de un texto/URL de Google Maps probando varios formatos (sin red). */
+/** Extracts coordinates from a Google Maps text/URL trying several formats (no network). */
 private fun mapsCoords(text: String): Pair<Double, Double>? {
-    // Coords del lugar/destino embebidas en el parámetro data: !3d<lat>!4d<lon>.
+    // Place/destination coords embedded in the data parameter: !3d<lat>!4d<lon>.
     Regex("""!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)""").find(text)?.let {
         return it.groupValues[1].toDouble() to it.groupValues[2].toDouble()
     }
-    // destino / consulta como lat,lon (coma literal o %2C).
+    // destination / query as lat,lon (literal comma or %2C).
     Regex("""[?&](?:destination|daddr|q|ll|sll|center)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)""", RegexOption.IGNORE_CASE)
         .find(text)?.let { return it.groupValues[1].toDouble() to it.groupValues[2].toDouble() }
-    // Centro del mapa @lat,lng (último recurso).
+    // Map center @lat,lng (last resort).
     Regex("""@(-?\d+\.\d+),(-?\d+\.\d+)""").find(text)?.let {
         return it.groupValues[1].toDouble() to it.groupValues[2].toDouble()
     }
     return null
 }
 
-/** Extrae un NOMBRE de lugar/destino de una URL de Maps para geocodificar si no hay coordenadas. */
+/** Extracts a place/destination NAME from a Maps URL to geocode when there are no coordinates. */
 private fun mapsPlaceName(text: String): String? {
     Regex("""/place/([^/@?]+)""").find(text)?.groupValues?.getOrNull(1)?.let { raw ->
         val name = runCatching { java.net.URLDecoder.decode(raw.replace('+', ' '), "UTF-8") }.getOrDefault(raw).trim()
@@ -300,9 +300,12 @@ private fun mapsPlaceName(text: String): String? {
 }
 
 /**
- * Resuelve un enlace corto/place de Google Maps siguiendo redirects y buscando `@lat,lng` en la
- * cadena de URLs y en el cuerpo final. Bloqueante — llamar en Dispatchers.IO.
+ * Resolves a Google Maps short link/place by following redirects and searching for `@lat,lng` in the
+ * URL chain and the final body. Blocking — call on Dispatchers.IO.
  */
+// Always invoked within Dispatchers.IO (see the "travelresolve" branch); the thread analysis does not
+// detect this interprocedurally, so the blocking call here is safe.
+@Suppress("BlockingMethodInNonBlockingContext")
 private suspend fun resolveMapsRedirect(startUrl: String): com.varuna.rustify.travel.TravelRouting.Geo? {
     fun geo(p: Pair<Double, Double>, srcUrl: String) =
         com.varuna.rustify.travel.TravelRouting.Geo(p.first, p.second, mapsPlaceName(srcUrl) ?: "")
@@ -334,7 +337,7 @@ private suspend fun resolveMapsRedirect(startUrl: String): com.varuna.rustify.tr
             }
         }
     } catch (_: Exception) { return null }
-    // Sin coordenadas en la URL resuelta: geocodifica el nombre del lugar/destino como último recurso.
+    // No coordinates in the resolved URL: geocode the place/destination name as a last resort.
     val name = mapsPlaceName(finalUrl) ?: return null
     return runCatching { com.varuna.rustify.travel.TravelRouting.geocode(name) }.getOrNull()
 }
@@ -343,7 +346,7 @@ class MainActivity : ComponentActivity() {
     private var initialDeepLink: String? = null
 
     /**
-     * Extract a Spotify link from a shared URL — unified parser (E20).
+     * Extract a Spotify link from a shared URL — unified parser.
      * Returns a tagged string like "track:ID", "album:ID", "playlist:ID", "artist:ID",
      * or null if no Spotify link is found.
      */
@@ -359,7 +362,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Extract a Spotify OR YouTube Music link from arbitrary text (share / wrapper payload).
-     * Spotify is tried first, then YTM (E40). Returns a tagged token or null.
+     * Spotify is tried first, then YTM. Returns a tagged token or null.
      */
     private fun extractAnyLink(text: String): String? =
         extractSpotifyLink(text) ?: com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(text)
@@ -383,7 +386,7 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _: Boolean ->
-        // Si se deniega, la notificación del reproductor no se verá en Android 13+
+        // If denied, the player notification will not be shown on Android 13+.
     }
 
     private val intentFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
@@ -391,23 +394,23 @@ class MainActivity : ComponentActivity() {
     private fun extractDeepLink(intent: android.content.Intent?): String? {
         if (intent?.action == android.content.Intent.ACTION_VIEW) {
             val uri = intent.data
-            // E99+: Google Maps / geo: link → travel token.
+            // Google Maps / geo: link → travel token.
             if (uri?.scheme == "geo") {
                 return extractTravelToken(uri.toString())
             }
-            // F1.A: wrapper Rustify autoverificable (host propio del usuario, §4.A.2).
-            // El host se guarda en prefs para GENERAR el link; los hosts VERIFICADOS van fijados
-            // en el manifest a build-time. Aquí desenvolvemos tanto el host de prefs como los
-            // baked-in definidos en AppLinksHosts.verifiedHosts.
+            // Self-verifiable Rustify wrapper (the user's own host).
+            // The host is stored in prefs to GENERATE the link; the VERIFIED hosts are pinned in the
+            // manifest at build time. Here we unwrap both the prefs host and the baked-in ones
+            // defined in AppLinksHosts.verifiedHosts.
             val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
             val wrapperHost = prefs.getString("rustify_wrapper_host", null)
             val knownHosts = listOfNotNull(wrapperHost) + com.varuna.rustify.util.AppLinksHosts.verifiedHosts
             if (uri?.scheme == "https" && uri.host in knownHosts
                 && uri.pathSegments.firstOrNull() == "r"
             ) {
-                val payload = uri.getQueryParameter("s")                 // formato A: ?s=open.spotify.com/track/ID
-                    ?: uri.pathSegments.drop(1).joinToString("/")        // formato B: /r/track/ID
-                return extractAnyLink(payload)                           // Spotify o YTM (E40)
+                val payload = uri.getQueryParameter("s")                 // format A: ?s=open.spotify.com/track/ID
+                    ?: uri.pathSegments.drop(1).joinToString("/")        // format B: /r/track/ID
+                return extractAnyLink(payload)                           // Spotify or YTM
             }
             if (uri?.host == "open.spotify.com") {
                 // pathSegments ignores the intl-xx prefix automatically: look for the entity type.
@@ -419,7 +422,7 @@ class MainActivity : ComponentActivity() {
             } else if (uri?.scheme == "rustify" &&
                 uri.host in setOf(
                     "track", "album", "playlist", "artist",
-                    "ytmtrack", "ytmalbum", "ytmartist", "ytmplaylist"   // E40 YTM fallback scheme
+                    "ytmtrack", "ytmalbum", "ytmartist", "ytmplaylist"   // YTM fallback scheme
                 )
             ) {
                 val pathSegments = uri.pathSegments
@@ -427,20 +430,20 @@ class MainActivity : ComponentActivity() {
                     return "${uri.host}:${pathSegments[0]}"
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com" || uri?.host == "youtu.be") {
-                // E40: single source of truth — delegate to YtMusicLinkParser.
+                // Single source of truth — delegate to YtMusicLinkParser.
                 com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(uri.toString())?.let { return it }
             }
         } else if (intent?.action == android.content.Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
                 val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
                 if (sharedText != null) {
-                    // E99+: si es un enlace de Google Maps / geo, tiene prioridad.
+                    // A Google Maps / geo link takes priority.
                     val travel = extractTravelToken(sharedText)
                     if (travel != null) {
                         android.util.Log.d("MainActivity", "Extracted travel token: $travel")
                         return travel
                     }
-                    val link = extractAnyLink(sharedText)   // Spotify o YTM (E40)
+                    val link = extractAnyLink(sharedText)   // Spotify or YTM
                     if (link != null) {
                         android.util.Log.d("MainActivity", "Extracted link from shared text: $link")
                         return link
@@ -480,16 +483,15 @@ class MainActivity : ComponentActivity() {
             com.varuna.rustify.util.LogCapture.start(clearFirst = false)
         }
         
-        // E60: bootstrap de los backends de audio centralizado en AudioSourceRegistry
-        // (movido desde el inline yt-dlp init/update que había aquí). yt-dlp sigue siendo
-        // el provider por defecto; nuevos backends (Invidious/Deemix) se inicializarán aquí también.
+        // Audio backends bootstrap centralized in AudioSourceRegistry. yt-dlp remains the default
+        // provider; new backends (Invidious/Deemix) are initialized here as well.
         com.varuna.rustify.audio.AudioSourceRegistry.initialize(application)
 
         window.attributes.layoutInDisplayCutoutMode =
             android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         
-        // Configure Coil image loading with a persistent disk cache. E108 — tamaño configurable en
-        // Ajustes (pref cache_max_mb, por defecto 500 MB); se aplica al reiniciar la app.
+        // Configure Coil image loading with a persistent disk cache. Size is configurable in Settings
+        // (pref cache_max_mb, default 500 MB); it takes effect on app restart.
         val cacheMaxMb = prefs.getInt("cache_max_mb", 500).coerceIn(100, 8192).toLong()
         val imageLoader = coil.ImageLoader.Builder(this)
             .memoryCache {
@@ -551,15 +553,15 @@ fun EngineTester(
 ) {
     val context = LocalContext.current
     val spotifyRepo = remember { SpotifyRepository(context) }
-    // E40 — single shared YTM repository so favorites/playlists stay consistent across
-    // the library tab and all first-class YTM screens.
+    // Single shared YTM repository so favorites/playlists stay consistent across the library tab
+    // and all first-class YTM screens.
     val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
-    // E12 D5: don't tear down the player on every Activity dispose (rotation/recomposition
-    // previously killed playback mid-song). Persist state synchronously; the foreground
-    // service + onTaskRemoved handle actual teardown when the user leaves for real.
+    // Don't tear down the player on every Activity dispose (rotation/recomposition would kill
+    // playback mid-song). Persist state synchronously; the foreground service + onTaskRemoved
+    // handle actual teardown when the user leaves for real.
     DisposableEffect(audioPlayerService) {
         onDispose {
             audioPlayerService.saveNow()
@@ -568,23 +570,23 @@ fun EngineTester(
 
 
     var isRunning by remember { mutableStateOf(false) }
-    // E107 — Login optimista: si YA hay una sesión guardada (cookie sp_dc), entramos directos a la app
-    // (con Home/biblioteca cacheados y música local accesibles) y refrescamos el token EN SEGUNDO PLANO,
-    // en vez de bloquear toda la app tras una validación de red que, si Spotify falla, te dejaba atascado
-    // en la pantalla de login (heredada de la pre-alpha) sin poder ni abrir la música local.
+    // Optimistic login: if a saved session already exists (sp_dc cookie), enter the app directly
+    // (with cached Home/library and local music accessible) and refresh the token IN THE BACKGROUND,
+    // instead of blocking the whole app behind a network validation that, if Spotify fails, would
+    // leave the user stuck on the login screen unable to even open local music.
     var isLoggedIn by remember { mutableStateOf(spotifyRepo.hasSavedSession()) }
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // E109 — Actualizador in-app: la comprobación de arranque deja aquí la release nueva (si la hay)
-    // y renderizamos el diálogo de changelog+descarga como overlay (visible tanto en la app como en
-    // la pantalla de standby). La comprobación manual desde Ajustes reutiliza el mismo diálogo.
+    // In-app updater: the startup check leaves the new release here (if any) and the
+    // changelog+download dialog is rendered as an overlay (visible both in the app and on the
+    // standby screen). The manual check from Settings reuses the same dialog.
     var pendingUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
 
-    // E105: Settings category is hoisted here so it survives pushing a sub-screen (View Logs, Metrics,
+    // Settings category is hoisted here so it survives pushing a sub-screen (View Logs, Metrics,
     // Match editor…) and popping back — otherwise Settings recomposes fresh at the root menu instead of
     // returning to the category you came from.
     var settingsCategory by rememberSaveable { mutableStateOf<String?>(null) }
@@ -605,8 +607,9 @@ fun EngineTester(
         }
     }
 
-    // E109 — Comprobación de actualizaciones al arrancar (si el toggle está activo, por defecto sí).
-    // Silenciosa: si falla la red o ya estás al día, no molesta; solo abre el diálogo si hay versión nueva.
+    // Check for updates on startup (if the toggle is enabled, which it is by default).
+    // Silent: if the network fails or you're already up to date, it stays out of the way; it only
+    // opens the dialog when a new version exists.
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean("check_updates_on_start", true)) {
@@ -615,10 +618,10 @@ fun EngineTester(
         }
     }
 
-    // E50 — Auto-sync silencioso al abrir la app: solo si la cuenta está vinculada,
-    // el toggle "auto-sync" está activo y hay un token disponible SIN pedir consentimiento
-    // (refresh en segundo plano). Si requiere UI de consentimiento, se pospone a que el
-    // usuario pulse "Sincronizar ahora" en Ajustes. Nunca lanza diálogo aquí.
+    // Silent auto-sync on app open: only if the account is linked, the "auto-sync" toggle is on,
+    // and a token is available WITHOUT prompting for consent (background refresh). If it needs a
+    // consent UI, it is deferred until the user taps "Sync now" in Settings. Never shows a dialog
+    // here.
     LaunchedEffect(Unit) {
         val appCtx = context.applicationContext
         if (com.varuna.rustify.sync.DriveSyncPrefs.isLinked(appCtx) &&
@@ -634,18 +637,18 @@ fun EngineTester(
                 Unit
             }
             if (com.varuna.rustify.sync.DriveSyncPrefs.authMethod(appCtx) == "browser") {
-                // B — refresco silencioso con AppAuth; si hace falta consentimiento se pospone a Ajustes.
+                // Browser — silent refresh with AppAuth; if consent is needed it is deferred to Settings.
                 com.varuna.rustify.sync.AppAuthDriveAuth(appCtx).getFreshToken(
                     onToken = syncWith,
-                    onNone = { /* requiere UI; el usuario sincroniza desde Ajustes */ },
-                    onError = { /* silencioso en auto-sync */ }
+                    onNone = { /* requires UI; the user syncs from Settings */ },
+                    onError = { /* silent during auto-sync */ }
                 )
             } else {
-                // A — Play Services (token silencioso si hay consentimiento cacheado).
+                // Play Services — silent token if consent is cached.
                 drive.authorize(
                     onToken = syncWith,
-                    onNeedConsent = { /* posponer: requiere UI; el usuario sincroniza desde Ajustes */ },
-                    onError = { /* silencioso en auto-sync */ }
+                    onNeedConsent = { /* defer: requires UI; the user syncs from Settings */ },
+                    onError = { /* silent during auto-sync */ }
                 )
             }
         }
@@ -656,11 +659,11 @@ fun EngineTester(
         navigationStack.removeAt(navigationStack.lastIndex)
     }
 
-    // E107 — Refresco de sesión en segundo plano (ya estamos DENTRO si había sesión, ver isLoggedIn).
-    // No bloquea: Home muestra su propio spinner/caché y las demás pestañas (Búsqueda/Biblioteca/local)
-    // son navegables mientras tanto. Un fallo TRANSITORIO de red mantiene al usuario dentro con lo
-    // cacheado (restoreSession no borra credenciales en ese caso); solo una sesión REALMENTE muerta
-    // (credenciales borradas) manda a la pantalla de login.
+    // Background session refresh (we're already INSIDE if a session existed, see isLoggedIn).
+    // Non-blocking: Home shows its own spinner/cache and the other tabs (Search/Library/local) remain
+    // navigable meanwhile. A TRANSIENT network failure keeps the user inside with cached data
+    // (restoreSession does not clear credentials in that case); only a REALLY dead session
+    // (credentials cleared) sends the user to the login screen.
     LaunchedEffect(Unit) {
         if (spotifyRepo.hasSavedSession()) {
             isRunning = true
@@ -672,11 +675,11 @@ fun EngineTester(
                     errorMessage = e.message
                 }
             } else if (!spotifyRepo.hasSavedSession()) {
-                // Sesión muerta (revocada/expirada de verdad → restoreSession borró las credenciales).
+                // Dead session (really revoked/expired → restoreSession cleared the credentials).
                 isLoggedIn = false
                 errorMessage = "Saved session expired. Please log in again."
             }
-            // Si sigue habiendo sesión guardada = fallo transitorio: nos quedamos dentro con lo cacheado.
+            // If a saved session still exists = transient failure: stay inside with cached data.
             isRunning = false
         }
     }
@@ -698,11 +701,10 @@ fun EngineTester(
                         }
                     } else {
                         errorMessage = "Authentication failed: ${result.error}"
-                        // E107 — Un `sp_dc` obsoleto que persiste en el WebView (por cerrar la app a medio
-                        // login) puede auto-disparar este login y fallar una y otra vez. Al fallar, limpiamos
-                        // las cookies para que el siguiente intento muestre el formulario limpio (antes había
-                        // que "salir de ese menú y volver" para desatascarlo).
-                        runCatching { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
+                        // A stale `sp_dc` that persists in the WebView (from closing the app mid-login)
+                        // can auto-trigger this login and fail repeatedly. On failure, clear the cookies
+                        // so the next attempt shows a clean form.
+                        runCatching { CookieManager.getInstance().removeAllCookies(null) }
                     }
                     isRunning = false
                 }
@@ -712,7 +714,7 @@ fun EngineTester(
         return
     }
 
-    // E109 — Overlay del actualizador: se muestra sobre cualquier pantalla (app o standby).
+    // Updater overlay: shown over any screen (app or standby).
     pendingUpdate?.let { info ->
         com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
     }
@@ -751,12 +753,12 @@ fun EngineTester(
 
     val playerStateHolder = audioPlayerService.state.collectAsState()
     val playerState by playerStateHolder
-    // IMPORTANTE: currentTrack debe ser una lectura VIVA (derivedStateOf), no un snapshot plano.
-    // El contenido de pantalla se envuelve en `remember(currentScreen){ movableContentOf { … } }`
-    // (más abajo), que captura las variables una sola vez por pantalla. Un `val currentTrack =
-    // playerState.currentTrack` se congelaba ahí hasta cambiar de pantalla → el miniplayer y el
-    // resaltado verde de "sonando ahora" se quedaban en la canción anterior. Con derivedStateOf,
-    // leer `currentTrack` dentro del movableContent recompone al cambiar de pista.
+    // IMPORTANT: currentTrack must be a LIVE read (derivedStateOf), not a flat snapshot. The screen
+    // content is wrapped in `remember(currentScreen){ movableContentOf { … } }` (below), which
+    // captures variables once per screen. A `val currentTrack = playerState.currentTrack` would
+    // freeze there until the screen changes → the miniplayer and the green "now playing" highlight
+    // would stay on the previous song. With derivedStateOf, reading `currentTrack` inside the
+    // movableContent recomposes when the track changes.
     val currentTrack by remember { derivedStateOf { playerStateHolder.value.currentTrack } }
 
     LaunchedEffect(currentTrack?.id) {
@@ -788,7 +790,7 @@ fun EngineTester(
 
     Scaffold(
         bottomBar = {
-            if (isTravelScreen) return@Scaffold // Travel pinta su propio miniplayer sobre el mapa.
+            if (isTravelScreen) return@Scaffold // Travel draws its own miniplayer over the map.
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
                     val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack!!.id }
@@ -984,8 +986,8 @@ fun EngineTester(
                         SearchScreen(
                             spotifyRepo = spotifyRepo,
                             onTrackClick = { track -> audioPlayerService.loadPlaylist(listOf(track), 0) },
-                            // E20: pasting a track link opens its detail (doesn't fabricate an
-                            // empty stub and try to reproduce it).
+                            // Pasting a track link opens its detail (doesn't fabricate an
+                            // empty stub and try to play it).
                             onOpenTrack = { id -> navigationStack.add(Screen.TrackDetail(id)) },
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {

@@ -54,19 +54,19 @@ import androidx.compose.ui.unit.sp
 import com.varuna.rustify.R
 import com.varuna.rustify.util.LogCapture
 
-/** Color por nivel de log. */
+/** Color for each log level. */
 private fun levelColor(level: Char): Color = when (level) {
     'E', 'F' -> Color(0xFFFF5252)
     'W' -> Color(0xFFFFB74D)
     'I' -> Color(0xFF81C784)
     'D' -> Color(0xFF64B5F6)
-    else -> Color.LightGray // V y desconocidos
+    else -> Color.LightGray // Verbose and unknown levels
 }
 
 /**
- * F1.B — Visor de logs in-app (§3.B.2 / §4.B.2 del doc 40).
- * Observa [LogCapture.flow], monoespaciado, color por nivel, filtro por tag/nivel, autoscroll,
- * y acciones: Compartir, Exportar (SAF), Limpiar, Volcar ahora.
+ * In-app log viewer.
+ * Observes [LogCapture.flow]: monospaced, colored by level, with tag/level filters, autoscroll,
+ * and actions to share, export (SAF), clear, and dump now.
  */
 @Composable
 fun LogViewerScreen(
@@ -78,13 +78,13 @@ fun LogViewerScreen(
     val error by LogCapture.error.collectAsState()
 
     var tagFilter by remember { mutableStateOf("") }
-    var levelFilter by remember { mutableStateOf<Char?>(null) } // null = todos
+    var levelFilter by remember { mutableStateOf<Char?>(null) } // null = all levels
     var autoScroll by remember { mutableStateOf(true) }
     var showLevelHelp by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
-    // Vista filtrada por tag (contains, case-insensitive) y por nivel.
+    // Filter by tag (case-insensitive contains) and by level.
     val filtered = remember(logs, tagFilter, levelFilter) {
         logs.filter { e ->
             (tagFilter.isBlank() || e.tag.contains(tagFilter, ignoreCase = true)) &&
@@ -92,7 +92,7 @@ fun LogViewerScreen(
         }
     }
 
-    // Exportar a .txt vía SAF (mismo patrón que SettingsScreen CreateDocument).
+    // Export to .txt via SAF.
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
@@ -108,7 +108,7 @@ fun LogViewerScreen(
         }
     }
 
-    // Autoscroll al final cuando llegan entradas nuevas.
+    // Autoscroll to the end when new entries arrive.
     LaunchedEffect(filtered.size, autoScroll) {
         if (autoScroll && filtered.isNotEmpty()) {
             listState.scrollToItem(filtered.lastIndex)
@@ -125,7 +125,7 @@ fun LogViewerScreen(
                     }
                 },
                 actions = {
-                    // Autoscroll toggle
+                    // Autoscroll toggle.
                     IconButton(onClick = { autoScroll = !autoScroll }) {
                         Icon(
                             Icons.Default.VerticalAlignBottom,
@@ -133,7 +133,7 @@ fun LogViewerScreen(
                             tint = if (autoScroll) Color(0xFF1DB954) else Color.Gray
                         )
                     }
-                    // Volcar ahora (snapshot -d): reemplaza el buffer con el dump puntual.
+                    // Dump now: shares a one-off logcat snapshot.
                     IconButton(onClick = {
                         val dump = LogCapture.dumpNow()
                         val send = Intent(Intent.ACTION_SEND).apply {
@@ -146,7 +146,7 @@ fun LogViewerScreen(
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.log_dump_now), tint = Color.White)
                     }
-                    // Compartir buffer actual
+                    // Share the current buffer.
                     IconButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
@@ -158,11 +158,11 @@ fun LogViewerScreen(
                     }) {
                         Icon(Icons.Default.Share, contentDescription = stringResource(R.string.log_share), tint = Color.White)
                     }
-                    // Exportar a fichero .txt
+                    // Export to a .txt file.
                     IconButton(onClick = { exportLauncher.launch("rustify_log.txt") }) {
                         Icon(Icons.Default.Download, contentDescription = stringResource(R.string.log_export), tint = Color.White)
                     }
-                    // Limpiar buffer
+                    // Clear the buffer.
                     IconButton(onClick = { LogCapture.clear() }) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.log_clear), tint = Color.White)
                     }
@@ -182,7 +182,7 @@ fun LogViewerScreen(
     ) { padding ->
         Column(modifier = modifier.fillMaxSize().padding(padding)) {
 
-            // Aviso si logcat no arrancó en esta ROM.
+            // Warn if logcat capture failed to start on this ROM.
             if (error != null) {
                 Text(
                     stringResource(R.string.log_capture_error, error ?: ""),
@@ -192,7 +192,7 @@ fun LogViewerScreen(
                 )
             }
 
-            // Filtro por tag.
+            // Tag filter.
             OutlinedTextField(
                 value = tagFilter,
                 onValueChange = { tagFilter = it },
@@ -207,12 +207,12 @@ fun LogViewerScreen(
                 )
             )
 
-            // Filtro por nivel (chips).
+            // Level filter (chips).
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val levels = listOf<Char?>(null, 'V', 'D', 'I', 'W', 'E')
+                val levels = listOf(null, 'V', 'D', 'I', 'W', 'E')
                 levels.forEach { lvl ->
                     val label = lvl?.toString() ?: stringResource(R.string.log_level_all)
                     FilterChip(
@@ -241,7 +241,7 @@ fun LogViewerScreen(
                 }
             }
 
-            // Lista de entradas (monoespaciada, color por nivel).
+            // Entry list (monospaced, colored by level).
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)

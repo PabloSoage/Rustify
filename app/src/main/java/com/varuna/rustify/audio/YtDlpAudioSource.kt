@@ -16,12 +16,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * E60 — Provider por defecto: envuelve el yt-dlp que ya estaba hardcodeado en
- * `AudioPlayerService.playTrack` / `preBufferNextTrack` y `DownloadManager.processDownload`,
- * sin cambiar el comportamiento observable (mismo string de música, mismas opciones -g/-x).
+ * Default provider: wraps yt-dlp for streaming and downloading YouTube audio.
  *
- * El bootstrap (init + auto-update por canal) se mueve aquí desde `MainActivity` para que la
- * app no conozca el proveedor concreto: el [AudioSourceRegistry] llama a [initialize].
+ * The bootstrap (init + auto-update per channel) lives here so the app does not need to know
+ * about the concrete provider: [AudioSourceRegistry] calls [initialize].
  */
 class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
 
@@ -35,19 +33,19 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
     )
 
     override fun initialize() {
-        // Init sincrónico en el hilo del caller (MainActivity.onCreate hoy): debe completarse
-        // antes de cualquier execute() para evitar la carrera que ya existía si se movía a corrutina.
+        // Synchronous init on the caller's thread: it must complete before any execute() to avoid a
+        // race that would occur if it were moved to a coroutine.
         try {
             YoutubeDL.getInstance().init(appContext)
             com.yausername.ffmpeg.FFmpeg.getInstance().init(appContext)
             Log.d(TAG, "YoutubeDL and FFmpeg initialized successfully.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize YoutubeDL", e)
-            // Aunque el init falle, desbloqueamos las descargas que esperan en initDeferred.
+            // Even if init fails, unblock downloads waiting on initDeferred.
             DownloadManager.initDeferred.complete(Unit)
             return
         }
-        // Auto-update en background (no bloquea el arranque). Mismo patrón que MainActivity pre-E60.
+        // Auto-update in the background (does not block startup).
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val prefs = appContext.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -59,7 +57,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to update YoutubeDL", e)
             }
-            // Avisa a las descargas pendientes de que yt-dlp ya está listo (o lo intentó).
+            // Notify pending downloads that yt-dlp is ready (or at least attempted).
             DownloadManager.initDeferred.complete(Unit)
         }
     }
@@ -68,15 +66,15 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         withContext(Dispatchers.IO) {
             runCatching {
                 val trackId = track.id ?: error("track has no id")
-                // Resolver Spotify id → YouTube id (hint se devuelve tal cual si viene lleno,
-                // paridad con server.rs::resolve_youtube_id_direct rama youtube_id_opt).
+                // Resolve Spotify id -> YouTube id (a non-empty hint is returned as-is,
+                // parity with server.rs::resolve_youtube_id_direct youtube_id_opt branch).
                 val ytId = NativeEngine.resolveYouTubeIdNative(trackId, hint ?: "")
                 require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
                 val url = extractStreamUrlWithRetry(ytId)
                     ?: error("yt-dlp returned no url")
                 StreamInfo(
                     uri = url,
-                    // Las URLs de googlevideo caducan ~6h; dato orientativo para invalidaciones.
+                    // googlevideo URLs expire in ~6h; advisory value for invalidations.
                     expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L
                 )
             }
@@ -89,13 +87,13 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             val trackId = track.id ?: error("track has no id")
-            // Haz resolvable al track en el resolver Rust (antes `processDownload` lo hacía inline).
+            // Make the track resolvable in the Rust resolver.
             registerMetadata(track)
             val ytId = NativeEngine.resolveYouTubeIdNative(trackId, "")
             require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
 
             if (dst.exists()) dst.delete()
-            val downloadId = trackId // para cancelación de YoutubeDL
+            val downloadId = trackId // for YoutubeDL cancellation
 
             try {
                 val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$ytId").apply {
@@ -131,7 +129,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
     }
 
     // ───────────────────────────────────────────────────────────────────
-    // Internos: extraídos literalmente de AudioPlayerService/DownloadManager pre-E60
+    // Internals
     // ───────────────────────────────────────────────────────────────────
 
     private fun registerMetadata(track: FullTrack) {

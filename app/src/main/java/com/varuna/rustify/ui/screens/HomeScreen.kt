@@ -29,8 +29,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,9 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
@@ -61,9 +61,9 @@ fun HomeScreen(
     onDownloadsClick: () -> Unit,
     onNewReleasesClick: () -> Unit,
     onMetricsClick: () -> Unit,
+    modifier: Modifier = Modifier,
     onDjClick: () -> Unit = {},
-    onTravelClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onTravelClick: () -> Unit = {}
 ) {
     val darkBackground = Color(0xFF121212)
     val gradientColor = Color(0xFF2E2E2E)
@@ -138,8 +138,8 @@ fun HomeScreen(
                             )
                         )
 
-                        // Pre-compute menu labels outside the DropdownMenu (which uses a Popup
-                        // that may not inherit the overridden LocalContext for i18n).
+                        // Resolve menu labels outside the DropdownMenu, whose Popup may not
+                        // inherit the overridden LocalContext used for localization.
                         val djLabel = stringResource(R.string.home_dj)
                         val travelLabel = stringResource(R.string.home_travel)
                         val newReleasesLabel = stringResource(R.string.home_new_releases)
@@ -147,8 +147,8 @@ fun HomeScreen(
                         val downloadsLabel = stringResource(R.string.home_downloads)
                         val settingsLabel = stringResource(R.string.home_settings)
 
-                        // Hamburger → a small context menu hangs from the icon (icons + labels
-                        // aligned natively by DropdownMenuItem's leadingIcon slot).
+                        // Hamburger icon opens a small context menu, with icons and labels
+                        // aligned via DropdownMenuItem's leadingIcon slot.
                         Box {
                             IconButton(onClick = { menuOpen = true }) {
                                 if (activeDownloads > 0) {

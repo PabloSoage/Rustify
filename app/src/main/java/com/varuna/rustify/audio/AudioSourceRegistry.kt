@@ -5,13 +5,12 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * E60 — Registro único de backends de audio. Construye los providers disponibles
- * (hoy sólo [YtDlpAudioSource]; E61 Invidious y E62 Deemix se añadirán aquí),
- * los inicializa al arrancar la app y construye las cadenas de stream/descarga
- * leyendo el orden guardado por el usuario en [AudioBackendSettings].
+ * Central registry of audio backends. Builds the available providers, initializes them
+ * at app startup, and builds the stream/download chains by reading the order the user
+ * saved in [AudioBackendSettings].
  *
- * El reproductor y el DownloadManager consumen `[AudioSourceRegistry.stream/download]Chain`
- * en vez de conocer yt-dlp directamente.
+ * The player and the DownloadManager consume `[AudioSourceRegistry.stream/download]Chain`
+ * instead of knowing about any specific backend.
  */
 object AudioSourceRegistry {
 
@@ -21,18 +20,18 @@ object AudioSourceRegistry {
     @Volatile private var knownIds: List<String> = emptyList()
     @Volatile private var initialized = false
 
-    /** Compartido entre cadenas stream/download: "qué provider sirvió este track la última vez". */
+    /** Shared between stream/download chains: "which provider served this track last time". */
     private val lastGood = ConcurrentHashMap<String, String>()
 
-    /** Construye e inicializa todos los providers. Idempotente; seguro llamar varias veces. */
+    /** Builds and initializes all providers. Idempotent; safe to call multiple times. */
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         if (initialized) return
         synchronized(this) {
             if (initialized) return
-            // Orden del catálogo = orden de declaración. Nuevos providers se añaden aquí.
-            // E61 Invidious y E62 Deezer arrancan DESACTIVADOS para builds ya existentes (forward-compat
-            // de AudioBackendSettings); el usuario los activa en Ajustes.
+            // Catalog order = declaration order. New providers are added here. Invidious and Deezer
+            // start disabled for existing builds (via AudioBackendSettings forward-compat); the user
+            // enables them in Settings.
             val built = listOf<AudioSourceProvider>(
                 YtDlpAudioSource(appContext),
                 InvidiousAudioSource(appContext),
@@ -48,18 +47,18 @@ object AudioSourceRegistry {
         }
     }
 
-    /** Cadena de streaming con el orden/toggles guardados por el usuario (stream). */
+    /** Streaming chain using the order/toggles the user saved (stream). */
     fun streamChain(context: Context): AudioSourceChain =
         buildChain(context, AudioBackendSettings.KEY_STREAM)
 
-    /** Cadena de descarga con el orden/toggles guardados por el usuario (download). */
+    /** Download chain using the order/toggles the user saved (download). */
     fun downloadChain(context: Context): AudioSourceChain =
         buildChain(context, AudioBackendSettings.KEY_DOWNLOAD)
 
     /**
-     * Construye una cadena respetando el ORDEN elegido por el usuario (no el de declaración):
-     * mapea los ids habilitados a sus providers en el mismo orden en que aparecen en prefs, así
-     * el drag&drop de Ajustes realmente cambia la prioridad de fallback cuando haya >1 provider.
+     * Builds a chain honoring the order the user chose (not the declaration order): maps the
+     * enabled ids to their providers in the same order they appear in prefs, so the Settings
+     * drag&drop actually changes the fallback priority when there is more than one provider.
      */
     private fun buildChain(context: Context, key: String): AudioSourceChain {
         ensureReady()
@@ -73,18 +72,18 @@ object AudioSourceRegistry {
         )
     }
 
-    /** Invalida la caché "provider que funcionó" para un track (llamar tras 403/410 / retry forzado). */
+    /** Invalidates the "provider that worked" cache for a track (call after 403/410 / forced retry). */
     fun invalidateLastGood(trackId: String) { lastGood.remove(trackId) }
 
-    /** Lista de catálogo (id + capabilities) para la UI de Ajustes, en orden de declaración. */
+    /** Catalog list (id + capabilities) for the Settings UI, in declaration order. */
     fun catalog(): List<AudioSourceCapabilities> = providers.map { it.capabilities }
 
-    /** IDs conocidos en orden de declaración (para forward-compat al guardar). */
+    /** Known ids in declaration order (for forward-compat when saving). */
     fun knownIds(): List<String> = knownIds
 
     private fun ensureReady() {
         if (!initialized) {
-            // No debería pasar: MainActivity lo inicializa en onCreate. Salvaguarda.
+            // Should not happen: MainActivity initializes it in onCreate. Safeguard.
             Log.w(TAG, "Registry accessed before initialize() — providers empty")
         }
     }

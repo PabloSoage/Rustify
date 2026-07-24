@@ -4,15 +4,18 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import com.varuna.rustify.R
+import com.varuna.rustify.util.ShareUtils.shareRustifyLink
+import com.varuna.rustify.util.ShareUtils.shareSpotifyLink
 
 /**
  * Robust sharing of Spotify entity links.
  *
- * B4 fix: the previous inline share code (TrackOptionsMenu) only caught [android.content.ActivityNotFoundException].
- * When launched from a non-Activity context (e.g. the window of a Compose [androidx.compose.material3.ModalBottomSheet])
- * `startActivity` can throw [android.util.AndroidRuntimeException] ("...requires the FLAG_ACTIVITY_NEW_TASK flag"),
- * which escaped the narrow catch and crashed the app. This helper adds `FLAG_ACTIVITY_NEW_TASK` and catches any
- * exception so a share can never take the app down. Reused by track / album / playlist / artist share actions.
+ * When launched from a non-Activity context (e.g. the window of a Compose
+ * [androidx.compose.material3.ModalBottomSheet]) `startActivity` can throw
+ * [android.util.AndroidRuntimeException] ("...requires the FLAG_ACTIVITY_NEW_TASK flag"), and a
+ * narrow catch on [android.content.ActivityNotFoundException] alone would let it crash the app.
+ * This helper adds `FLAG_ACTIVITY_NEW_TASK` and catches any exception so a share can never take the
+ * app down. Reused by track / album / playlist / artist share actions.
  *
  * Two entry points:
  *  - [shareSpotifyLink] always shares the canonical `https://open.spotify.com/<type>/<id>` URL.
@@ -50,7 +53,7 @@ object ShareUtils {
     }
 
     /**
-     * Shares a YouTube Music entity link (E40). Mirror of [shareSpotifyLink] + [shareRustifyLink]:
+     * Shares a YouTube Music entity link. Mirror of [shareSpotifyLink] + [shareRustifyLink]:
      * if the "share as Rustify link" toggle is on it wraps [ytmUrl] via [RustifyWrapperLink.wrap]
      * (verified host or `rustify://ytm*` fallback); otherwise shares the canonical YTM URL as-is.
      *

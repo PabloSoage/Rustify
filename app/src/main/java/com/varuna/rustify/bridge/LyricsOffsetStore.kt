@@ -1,18 +1,20 @@
 package com.varuna.rustify.bridge
 
 import android.content.Context
+import com.varuna.rustify.bridge.LyricsOffsetStore.set
+import com.varuna.rustify.bridge.LyricsOffsetStore.version
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import java.io.File
 
 /**
- * Ajuste manual de sincronía de la letra por pista (en ms). **Positivo = adelanta la letra**
- * (aparece antes); negativo la retrasa. Se persiste en `filesDir/lyric_offsets.json`, siguiendo la
- * misma convención que `youtube_mappings.json`.
+ * Manual per-track lyric synchronization offset (in ms). Positive advances the lyrics (they appear
+ * earlier); negative delays them. Persisted in `filesDir/lyric_offsets.json`, following the same
+ * convention as `youtube_mappings.json`.
  *
- * [version] es un contador reactivo: se incrementa en cada [set] para que las vistas de letra en
- * Compose vuelvan a leer su offset sin acoplarse al almacén.
+ * [version] is a reactive counter: it is incremented on every [set] so that Compose lyric views
+ * re-read their offset without being coupled to the store.
  */
 object LyricsOffsetStore {
     private const val FILE = "lyric_offsets.json"
@@ -37,7 +39,7 @@ object LyricsOffsetStore {
         }
     }
 
-    /** Offset en ms para [trackId] (0 si no hay ajuste). */
+    /** Offset in ms for [trackId] (0 if no adjustment). */
     fun get(context: Context, trackId: String): Long {
         if (trackId.isBlank()) return 0L
         ensure(context)

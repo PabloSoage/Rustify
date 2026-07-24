@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import androidx.core.net.toUri
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -15,33 +16,32 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import com.varuna.rustify.R
-import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.bridge.SpotifyRepository
-import com.varuna.rustify.bridge.YtMusicRepository
+import androidx.media3.session.SessionError
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.varuna.rustify.R
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.YtMusicRepository
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * E96 — Now a [MediaLibraryService] (a superset of the former MediaSessionService) so Android Auto
- * can browse a content tree and play through the same session. Existing phone playback is preserved:
- * the session still wraps the shared ExoPlayer via a ForwardingPlayer; the library callback only adds
- * the browsable tree (Liked / Local playlists / YTM favorites) and a browse→play bridge that routes a
+ * A [MediaLibraryService] (a superset of the former MediaSessionService) so Android Auto can browse a
+ * content tree and play through the same session. Existing phone playback is preserved: the session
+ * still wraps the shared ExoPlayer via a ForwardingPlayer; the library callback only adds the
+ * browsable tree (Liked / Local playlists / YTM favorites) and a browse→play bridge that routes a
  * tapped item back through [AudioPlayerService.loadPlaylist] (our custom resolution pipeline).
  *
- * ⚠️ NOT compiled/tested here. The Media3 MediaLibrarySession callback API and the browse→play bridge
- * (returning empty from onAddMediaItems because we drive the shared player ourselves) need a compile
- * + an Android Auto device test.
+ * The browse→play bridge returns empty from onAddMediaItems because we drive the shared player
+ * ourselves.
  */
 @UnstableApi
 class RustifyForegroundService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
     private val ytmRepo by lazy { YtMusicRepository(applicationContext) }
-    // E96 — scope para resolver ramas del árbol de Android Auto que requieren red (playlists/álbumes).
+    // Scope for resolving Android Auto tree branches that require network (playlists/albums).
     private val autoScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     companion object {
@@ -123,8 +123,8 @@ class RustifyForegroundService : MediaLibraryService() {
             mediaSession = MediaLibrarySession.Builder(this, forwardingPlayer, LibraryCallback())
                 .setSessionActivity(pendingIntent)
                 .build()
-            // E96: expone la sesión a los repositorios para que puedan invalidar el árbol de Auto
-            // (notifyChildrenChanged) cuando el usuario cambia favoritos/_playlists desde la app.
+            // Expose the session to the repositories so they can invalidate the Auto tree
+            // (notifyChildrenChanged) when the user changes favorites/playlists from the app.
             MediaBrowserNotifier.bind(mediaSession)
         } else {
             android.util.Log.e("RustifyForegroundService", "ExoPlayer is null, cannot create MediaSession")
@@ -136,7 +136,7 @@ class RustifyForegroundService : MediaLibraryService() {
         return mediaSession
     }
 
-    // ── E96 — Android Auto browsable tree + browse→play ─────────────────────────────────
+    // ── Android Auto browsable tree + browse→play ────────────────────────────────────────
     private inner class LibraryCallback : MediaLibrarySession.Callback {
 
         override fun onGetLibraryRoot(
@@ -155,7 +155,7 @@ class RustifyForegroundService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            // Async: los nodos Spotify de playlist/álbum/artista se resuelven por red.
+            // Async: the Spotify playlist/album/artist nodes are resolved over the network.
             val future = com.google.common.util.concurrent.SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
             autoScope.launch {
                 val items = runCatching {
@@ -173,7 +173,7 @@ class RustifyForegroundService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<MediaItem>> {
             val t = resolveTrack(mediaId)
             return if (t != null) Futures.immediateFuture(LibraryResult.ofItem(trackItem(t), null))
-            else Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            else Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
         }
 
         // Browse→play bridge: a tapped item arrives with a mediaId but no URI (our audio URLs are
@@ -186,7 +186,7 @@ class RustifyForegroundService : MediaLibraryService() {
         ): ListenableFuture<MutableList<MediaItem>> {
             val svc = AudioPlayerService.getInstance(this@RustifyForegroundService)
             val first = mediaItems.firstOrNull()?.mediaId
-            // Un ítem de la sección "cola" salta a ese punto sin recargar la lista.
+            // A "queue" section item jumps to that point without reloading the list.
             if (first != null && first.startsWith("queue:")) {
                 svc.playSpecificTrackInQueue(first.removePrefix("queue:"))
                 return Futures.immediateFuture(mutableListOf())
@@ -211,12 +211,12 @@ class RustifyForegroundService : MediaLibraryService() {
             MediaMetadata.Builder()
                 .setTitle(t.name)
                 .setArtist(t.artists.joinToString(", ") { it.name })
-                .apply { if (!art.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(art)) }
+                .apply { if (!art.isNullOrBlank()) setArtworkUri(art.toUri()) }
                 .setIsBrowsable(false).setIsPlayable(true).build()
         ).build()
     }
 
-    /** Construye el MediaItem de un [AndroidAutoBrowse.Node] (carpeta con carátula o pista). */
+    /** Builds the MediaItem for an [AndroidAutoBrowse.Node] (a folder with cover art, or a track). */
     private fun nodeItem(n: AndroidAutoBrowse.Node): MediaItem {
         if (n.browsable) return browsable(n.id, n.title, n.subtitle, n.imageUrl)
         val t = n.track!!
@@ -225,23 +225,23 @@ class RustifyForegroundService : MediaLibraryService() {
             MediaMetadata.Builder()
                 .setTitle(t.name)
                 .setArtist(t.artists.joinToString(", ") { it.name })
-                .apply { if (!art.isNullOrBlank()) setArtworkUri(android.net.Uri.parse(art)) }
+                .apply { if (!art.isNullOrBlank()) setArtworkUri(art.toUri()) }
                 .setIsBrowsable(false).setIsPlayable(true).build()
         ).build()
     }
 
     /**
-     * Convierte la URI de carátula de una pista/carpeta local al esquema `content://` cuando hace
-     * falta. Las carátulas locales se guardan en `filesDir/covers/` como `file://...` (legible por
-     * la propia app), pero el renderer de Android Auto corre en OTRO proceso y no tiene permiso para
-     * leer nuestro almacenamiento privado. Exponiéndolas vía FileProvider obtiene un `content://`
-     * temporal con permiso de lectura. Las carátulas remotas (https://) se devuelven tal cual.
+     * Converts a local track/folder cover URI to the `content://` scheme when needed. Local covers are
+     * stored in `filesDir/covers/` as `file://...` (readable by the app itself), but the Android Auto
+     * renderer runs in another process and has no permission to read our private storage. Exposing
+     * them via FileProvider yields a temporary `content://` with read permission. Remote covers
+     * (https://) are returned unchanged.
      */
     private fun coverArtUri(url: String?): String? {
         if (url.isNullOrBlank()) return null
         if (!url.startsWith("file://") || !url.contains("/covers/")) return url
         return runCatching {
-            val path = android.net.Uri.parse(url).path ?: return url
+            val path = url.toUri().path ?: return url
             val file = java.io.File(path)
             if (!file.exists()) return url
             androidx.core.content.FileProvider.getUriForFile(

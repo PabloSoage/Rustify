@@ -22,7 +22,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "2.11.5b"
+        versionName = "2.11.6b"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -162,7 +162,7 @@ val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 val cargoExecutableName = if (isWindows) "cargo.exe" else "cargo"
 val cargoHome = System.getenv("CARGO_HOME") ?: (System.getProperty("user.home") + "/.cargo")
 val cargoPath = file("$cargoHome/bin/$cargoExecutableName")
-val cargoCommand = if (cargoPath.exists()) cargoPath.absolutePath else cargoExecutableName
+val cargoCommand: String = if (cargoPath.exists()) cargoPath.absolutePath else cargoExecutableName
 
 // Get the number of CPU cores for parallel compilation
 val cpuCount = Runtime.getRuntime().availableProcessors()

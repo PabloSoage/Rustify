@@ -3,48 +3,47 @@ package com.varuna.rustify.dj
 import com.varuna.rustify.bridge.FullTrack
 
 /**
- * E90 — DJ IA. Modelos compartidos entre los providers y el motor.
+ * AI DJ. Models shared between the providers and the engine.
  *
- * Diseño (ver docs/90-ai-dj-assistant.md): un [DjProvider] recibe el [DjContext] (contexto del
- * usuario: top artistas/canciones de las métricas + cola actual) y una petición en lenguaje
- * natural, y devuelve un [DjPlan] con una **frase de intro** y **semillas** (artistas/canciones/
- * queries) — NUNCA URIs finales. El [DjEngine] resuelve esas semillas a tracks reales vía
- * SpotifyRepository (search/radio) y construye la cola.
+ * A [DjProvider] receives the [DjContext] (user context: top artists/tracks from metrics + current
+ * queue) and a natural-language request, and returns a [DjPlan] with an intro phrase and seeds
+ * (artists/tracks/queries) — never final URIs. The [DjEngine] resolves those seeds to real tracks
+ * via SpotifyRepository (search/radio) and builds the queue.
  */
 
-/** Modo de proveedor de DJ, persistido en `rustify_settings` bajo la clave [DjSettings.KEY_MODE]. */
+/** DJ provider mode, persisted in `rustify_settings` under the [DjSettings.KEY_MODE] key. */
 enum class DjMode { HEURISTIC, API, LOCAL }
 
 /**
- * Una semilla que el [DjEngine] resolverá a tracks. El LLM/heurística devuelve semillas
- * "blandas" (nombres/queries), no ids ni URIs — la app las materializa contra Spotify.
+ * A seed that the [DjEngine] resolves to tracks. The LLM/heuristic returns "soft" seeds
+ * (names/queries), not ids or URIs — the app materializes them against Spotify.
  */
 data class DjSeed(
     val type: Type,
-    /** Texto de la semilla: nombre de artista, "Artista - Canción", o una query de búsqueda libre. */
+    /** Seed text: an artist name, "Artist - Song", or a free-form search query. */
     val value: String
 ) {
     enum class Type { ARTIST, TRACK, QUERY }
 }
 
 /**
- * Contexto que se le pasa al provider. Todo se deriva SOLO de lecturas públicas
- * (ListeningTracker.loadEvents + estado del player). Ver [DjContextBuilder].
+ * Context passed to the provider. Everything is derived solely from public reads
+ * (ListeningTracker.loadEvents + player state). See [DjContextBuilder].
  */
 data class DjContext(
     val topArtists: List<String>,
     val topTracks: List<String>,
-    /** "Artista — Canción" de la pista actual, o null. */
+    /** "Artist — Song" of the current track, or null. */
     val nowPlaying: String?,
-    /** Nombres de las próximas pistas en cola (para que el DJ no repita). */
+    /** Names of the upcoming queued tracks (so the DJ does not repeat them). */
     val queuePreview: List<String>,
-    /** Idioma de la app (es/en/ja/…), para que el LLM responda la intro en ese idioma. */
+    /** App language (es/en/ja/…), so the LLM writes the intro in that language. */
     val language: String
 )
 
 /**
- * Resultado del provider. [intro] es la frase hablada/mostrada del DJ; una de [tracks] (ya
- * resueltas) o [seeds] (a resolver por el engine) estará poblada según el provider.
+ * Provider result. [intro] is the DJ's spoken/displayed phrase; either [tracks] (already resolved)
+ * or [seeds] (to be resolved by the engine) is populated depending on the provider.
  */
 data class DjPlan(
     val intro: String,
@@ -53,9 +52,9 @@ data class DjPlan(
 )
 
 /**
- * Contrato de un proveedor de DJ. Puro: no toca el player ni la UI; solo produce un plan.
- * Debe degradar con gracia (no lanzar) devolviendo un plan con seeds derivadas del contexto
- * cuando falle una llamada externa.
+ * Contract for a DJ provider. Pure: it does not touch the player or the UI; it only produces a plan.
+ * It must degrade gracefully (without throwing) by returning a plan with seeds derived from the
+ * context when an external call fails.
  */
 interface DjProvider {
     suspend fun plan(context: DjContext, request: String): DjPlan

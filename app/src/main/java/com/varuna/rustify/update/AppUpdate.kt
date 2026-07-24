@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -15,7 +16,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * E109 — In-app update checker.
+ * In-app update checker.
  *
  * Queries GitHub `releases/latest` for the public Rustify repo, compares the release tag against the
  * installed [BuildConfig.versionName-equivalent], and (if newer) surfaces the release changelog plus a
@@ -200,12 +201,12 @@ object AppUpdate {
 
     /** True when the OS will let us launch a package-install intent without a detour to Settings. */
     fun canInstall(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+        context.packageManager.canRequestPackageInstalls()
 
     /** Send the user to the per-app "install unknown apps" screen. */
     fun requestInstallPermission(context: Context) {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-            .setData(Uri.parse("package:${context.packageName}"))
+            .setData("package:${context.packageName}".toUri())
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }
@@ -222,7 +223,7 @@ object AppUpdate {
 
     /** Open the release page in a browser (fallback when no direct-install APK is available). */
     fun openReleasePage(context: Context, info: UpdateInfo) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.htmlUrl))
+        val intent = Intent(Intent.ACTION_VIEW, info.htmlUrl.toUri())
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }

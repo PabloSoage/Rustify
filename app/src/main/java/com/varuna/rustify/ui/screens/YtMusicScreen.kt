@@ -19,17 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -65,24 +59,21 @@ import coil.request.ImageRequest
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.YtMusicRepository
-import com.varuna.rustify.bridge.YtmAlbumSlim
-import com.varuna.rustify.bridge.YtmArtistRef
-import com.varuna.rustify.bridge.YtmPlaylist
 import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.YtmTrack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * E40 — YouTube Music LIBRARY content (embedded inside LibraryScreen's own header).
+ * YouTube Music library content, embedded inside LibraryScreen's own header.
  *
- * This is NOT a full screen: it has no back button, no search bar and no background of
- * its own — the outer LibraryScreen provides the search bar + tabs. It shows only the
- * user's LOCAL YTM library (favorites / saved playlists / saved albums / saved artists)
- * plus an entry point that navigates to the first-class [YtMusicSearchScreen].
+ * This is not a full screen: it has no back button, no search bar and no background of
+ * its own — the outer LibraryScreen provides the search bar and tabs. It shows only the
+ * user's local YTM library (favorites, saved playlists, saved albums, saved artists)
+ * plus an entry point that navigates to the standalone [YtMusicSearchScreen].
  *
- * All navigation (search / album / artist / playlist detail) is delegated to the NavHost
- * in MainActivity via callbacks — there is no local navigation state here.
+ * All navigation (search, album, artist, playlist detail) is delegated to the NavHost
+ * in MainActivity via callbacks; there is no local navigation state here.
  */
 
 private enum class YtmLibSection { EXPLORE, FAVORITES, PLAYLISTS, ALBUMS, ARTISTS }
@@ -92,12 +83,13 @@ private val Green = Color(0xFF1DB954)
 @Composable
 fun YtMusicLibraryContent(
     repo: YtMusicRepository,
-    searchQuery: String = "",
-    onPasteLink: () -> Unit = {},
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onOpenAlbum: (browseId: String, title: String) -> Unit,
     onOpenArtist: (channelId: String, name: String) -> Unit,
     onOpenLocalPlaylist: (localId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    searchQuery: String = "",
+    onPasteLink: () -> Unit = {},
     onOpenPlaylist: (playlistId: String, title: String) -> Unit = { _, _ -> },
     onAddToQueue: (List<FullTrack>) -> Unit = {},
     onGoToQueue: () -> Unit = {},
@@ -106,8 +98,7 @@ fun YtMusicLibraryContent(
     onFilterChanged: (String) -> Unit = {},
     useScraper: Boolean = false,
     onToggleScraper: () -> Unit = {},
-    currentTrackId: String? = null,
-    modifier: Modifier = Modifier
+    currentTrackId: String? = null
 ) {
     var section by rememberSaveable { mutableStateOf(YtmLibSection.EXPLORE) }
 
@@ -193,8 +184,8 @@ fun YtMusicLibraryContent(
 }
 
 /**
- * E40 — Home/browse por defecto de la pestaña Explore de YTM: filas por mood/categoría (usando el
- * search de YTM que ya existe), para que no esté vacía cuando no tienes nada guardado ni query.
+ * Default browse home for the YTM Explore tab: rows by mood/category (built on the existing
+ * YTM search), so it is not empty when there is nothing saved and no query.
  */
 @Composable
 private fun YtmBrowseHome(
@@ -202,9 +193,9 @@ private fun YtmBrowseHome(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String?
 ) {
-    // E105 — Home cacheado: las filas viven en repo.homeRows (persistidas en disco con TTL de 8h), así
-    // que ya NO se recarga cada vez que entras. La primera vez (o al pulsar ↻) se reconstruyen en
-    // paralelo. Muchas más categorías (moods + géneros) que las 5 estáticas de antes.
+    // Cached home: the rows live in repo.homeRows (persisted to disk with an 8h TTL), so they are
+    // not reloaded on every visit. On the first visit (or when pressing ↻) they are rebuilt in
+    // parallel across many mood and genre categories.
     val rows = repo.homeRows
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }

@@ -1,12 +1,12 @@
 package com.varuna.rustify.dj
 
 /**
- * E90 — Provider heurístico (offline, sin LLM). Interpreta peticiones simples por reglas (bilingüe
- * es/en) y las mapea a semillas + una frase de intro. NO hace red: solo produce un [DjPlan] con
- * [DjSeed]s que el [DjEngine] resuelve luego (radio/related/search).
+ * Heuristic provider (offline, no LLM). Interprets simple requests with rules (bilingual es/en) and
+ * maps them to seeds + an intro phrase. Does no network: it only produces a [DjPlan] with [DjSeed]s
+ * that the [DjEngine] resolves later (radio/related/search).
  *
- * La intro se genera en el idioma de la app/sistema ([DjContext.language]); el matching de palabras
- * clave es bilingüe. (El DJ autónomo hablado usa [DjPhrases], que respeta el idioma de la voz.)
+ * The intro is generated in the app/system language ([DjContext.language]); keyword matching is
+ * bilingual. (The spoken autonomous DJ uses [DjPhrases], which honours the voice language.)
  */
 class HeuristicDjProvider : DjProvider {
 
@@ -24,14 +24,14 @@ class HeuristicDjProvider : DjProvider {
             introParts += l("Poniendo más de $target", "Playing more $target")
         }
 
-        // 2) Vibe aproximada por palabras clave (mood-por-texto).
+        // 2) Approximate vibe from keywords (mood-by-text).
         val vibe = detectVibe(req, es)
         if (vibe != null) {
             seeds += DjSeed(DjSeed.Type.QUERY, vibe.query)
             introParts += vibe.intro
         }
 
-        // 3) Descubrimiento vs conocido.
+        // 3) Discovery vs familiar.
         val discovery = req.containsAny("descubr", "discover", "nuevo", "new music", "sorpr", "surprise")
         val familiar = req.containsAny("conocid", "familiar", "favorit", "lo de siempre", "my favor")
 
@@ -44,7 +44,7 @@ class HeuristicDjProvider : DjProvider {
             introParts += l("Volviendo a lo que ya te gusta", "Back to what you already love")
         }
 
-        // 4) Semilla base: now playing, o top del usuario si no hay nada sonando.
+        // 4) Base seed: now playing, or the user's top tracks if nothing is playing.
         if (seeds.isEmpty()) {
             context.nowPlaying?.let {
                 seeds += DjSeed(DjSeed.Type.TRACK, it)
@@ -82,8 +82,8 @@ class HeuristicDjProvider : DjProvider {
     }
 
     /**
-     * Extrae el objetivo de una petición del tipo "más de X" / "more X" / "like X".
-     * Devuelve el texto tras la preposición, o null si no aplica.
+     * Extracts the target of a request like "más de X" / "more X" / "like X".
+     * Returns the text after the marker, or null if it does not apply.
      */
     private fun extractMoreOf(req: String): String? {
         val markers = listOf("más de ", "mas de ", "more of ", "more ", "like ", "similar a ", "parecido a ")

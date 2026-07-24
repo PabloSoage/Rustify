@@ -3,7 +3,7 @@ package com.varuna.rustify.travel
 import com.varuna.rustify.bridge.FullTrack
 
 /**
- * E99 — builds a playlist that fills a target duration (the trip ETA + a small buffer for traffic).
+ * Builds a playlist that fills a target duration (the trip ETA plus a small buffer for traffic).
  * Keyless / offline: just sums [FullTrack.durationMs] from a pool. If the pool is shorter than the
  * target it loops (long trips), otherwise it stops once the target is covered.
  */
@@ -28,7 +28,7 @@ object TravelPlaylist {
     /** Total duration of a track list, in ms. */
     fun totalMs(tracks: List<FullTrack>): Long = tracks.sumOf { it.durationMs.toLong() }
 
-    /** Formato humano de duración: "1 h 23 min", "23 min 4 s" o "0 s" si 0. */
+    /** Human-readable duration: "1 h 23 min", "23 min 4 s", or "0 s" when zero. */
     fun formatDuration(ms: Long): String {
         val totalSec = ms / 1000
         val h = totalSec / 3600
@@ -44,12 +44,12 @@ object TravelPlaylist {
     }
 
     /**
-     * Rellena la diferencia entre [manualTracks] (suministradas a mano) y [targetMs] usando
-     * [pool]. Útil para el modo manual: el usuario selecciona algunas canciones obligatorias
-     * y la app completa el resto con favoritas aleatorias hasta cubrir el trayecto.
+     * Fills the gap between [manualTracks] (supplied by hand) and [targetMs] using [pool].
+     * Useful for manual mode: the user selects a few required tracks and the app fills the rest
+     * with random favorites until the trip is covered.
      *
-     * Devuelve la lista combinada (manual al frente, relleno detrás, sin duplicar las `id` de
-     * las canciones manuales si éstas están en el pool).
+     * Returns the combined list (manual tracks first, filler after), without duplicating the `id`s
+     * of the manual tracks if they also appear in the pool.
      */
     fun fillRemaining(targetMs: Long, manualTracks: List<FullTrack>, pool: List<FullTrack>): List<FullTrack> {
         val base = manualTracks.filter { it.durationMs > 0 && it.id != null }

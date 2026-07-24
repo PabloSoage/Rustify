@@ -4,16 +4,16 @@ import android.content.Context
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
- * E61 — Provider Invidious. Dado el **videoId de YouTube** (que ya resuelve el core con ISRC/nombre),
- * pide a una instancia sana `/api/v1/videos/{id}` y elige el mejor formato **audio-only**. Sin yt-dlp.
- * Cross-platform de facto (solo HTTP+JSON), aunque de momento vive en Android.
+ * Invidious provider. Given the YouTube videoId (already resolved by the core via ISRC/name), it asks
+ * a healthy instance `/api/v1/videos/{id}` and picks the best audio-only format. No yt-dlp.
+ * Effectively cross-platform (HTTP+JSON only), though it currently lives on Android.
  */
 class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvider {
 
@@ -62,7 +62,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         }
     }
 
-    /** GET /api/v1/videos/{id} → mejor `adaptiveFormats` de audio (o `formatStreams` como fallback). */
+    /** GET /api/v1/videos/{id} -> best audio `adaptiveFormats` (or `formatStreams` as fallback). */
     private fun fetchAudioUrl(inst: InvidiousInstances.Instance, videoId: String, local: Boolean): String? = runCatching {
         val url = "${inst.baseUrl}/api/v1/videos/$videoId?fields=adaptiveFormats,formatStreams&local=$local"
         val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
@@ -84,7 +84,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
             }
         }
         if (bestUrl != null) return bestUrl
-        // Fallback: primer formatStream muxed (tiene audio).
+        // Fallback: first muxed formatStream (it has audio).
         obj.optJSONArray("formatStreams")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
     }.getOrNull()
 

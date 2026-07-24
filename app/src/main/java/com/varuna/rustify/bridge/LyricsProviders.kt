@@ -1,6 +1,7 @@
 package com.varuna.rustify.bridge
 
 import android.content.Context
+import androidx.core.content.edit
 import com.varuna.rustify.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -186,6 +187,6 @@ object LyricsSettings {
 
     fun save(context: Context, entries: List<ProviderEntry>) {
         val raw = entries.joinToString(",") { "${it.id}:${if (it.enabled) 1 else 0}" }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, raw).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY, raw) }
     }
 }

@@ -1,9 +1,9 @@
 package com.varuna.rustify.dj
 
 /**
- * E90 — Frases que el DJ **habla** (voz). Deben ir en el idioma de la VOZ (configurable aparte del
- * idioma de la app), por eso no salen de los recursos Android (que siguen el locale de la app) sino
- * de esta tabla. Idiomas soportados: es / en (fallback en). Fácil de ampliar.
+ * Phrases the DJ speaks (voice). They must be in the voice language (configurable separately from the
+ * app language), which is why they come from this table rather than from Android resources (which
+ * follow the app locale). Supported languages: es / en (fallback en). Easy to extend.
  */
 object DjPhrases {
 
@@ -29,7 +29,7 @@ object DjPhrases {
         return if (MOOD_NAME.containsKey(code)) code else "en"
     }
 
-    /** Frase completa de anuncio del DJ para [moodId]; [first] = arranque de sesión vs transición. */
+    /** Full DJ announcement phrase for [moodId]; [first] = session start vs transition. */
     fun announce(voiceLang: String, moodId: String, first: Boolean): String {
         val l = lang(voiceLang)
         val mood = MOOD_NAME[l]?.get(moodId) ?: moodId
@@ -40,7 +40,7 @@ object DjPhrases {
         }
     }
 
-    /** Frase corta de prueba para previsualizar una voz (en el idioma de la voz). */
+    /** Short test phrase for previewing a voice (in the voice language). */
     fun previewPhrase(voiceLang: String): String {
         val l = lang(voiceLang)
         return when (l) {

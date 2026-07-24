@@ -21,35 +21,35 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * E50 — Cliente de sincronización con Google Drive (carpeta AppData privada).
+ * Google Drive sync client (private AppData folder).
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  AUTENTICACIÓN — pasos que DEBE hacer el usuario en Google Cloud Console
+ *  AUTHENTICATION — steps the user MUST perform in the Google Cloud Console
  * ─────────────────────────────────────────────────────────────────────────────
- *  Sin esta configuración la sync NO funcionará en runtime (dará DEVELOPER_ERROR
- *  o "access denied"). El código está completo; solo falta el proyecto Cloud.
+ *  Without this configuration, sync will NOT work at runtime (it yields DEVELOPER_ERROR
+ *  or "access denied"). The code is complete; only the Cloud project is missing.
  *
- *  1. Crear un proyecto en https://console.cloud.google.com/.
- *  2. APIs & Services → Enable APIs → habilitar **Google Drive API**.
- *  3. OAuth consent screen: tipo *External*; añadir SOLO el scope
- *     `https://www.googleapis.com/auth/drive.appdata` (+ openid/email básicos).
- *     `drive.appdata` NO es sensible → evita verificación manual. Pasar a
- *     *In production* para que el token no caduque a los 7 días (modo Testing).
+ *  1. Create a project at https://console.cloud.google.com/.
+ *  2. APIs & Services → Enable APIs → enable the **Google Drive API**.
+ *  3. OAuth consent screen: type *External*; add ONLY the scope
+ *     `https://www.googleapis.com/auth/drive.appdata` (+ basic openid/email).
+ *     `drive.appdata` is NOT sensitive → avoids manual verification. Move to
+ *     *In production* so the token does not expire after 7 days (Testing mode).
  *  4. Credentials → Create OAuth client ID **Android**: package
- *     `com.varuna.rustify` + SHA-1 de CADA keystore (debug, release y, si usas
- *     Play App Signing, la clave de firma de Play). SHA-1 errónea = error 10.
- *  5. Credentials → Create OAuth client ID **Web**: copia su Client ID en
- *     `res/values/strings.xml` → `default_web_client_id`. Este Web client id es
- *     el que la librería usa como `serverClientId`/audiencia del token.
+ *     `com.varuna.rustify` + SHA-1 of EACH keystore (debug, release, and, if you use
+ *     Play App Signing, the Play signing key). A wrong SHA-1 = error 10.
+ *  5. Credentials → Create OAuth client ID **Web**: copy its Client ID into
+ *     `res/values/strings.xml` → `default_web_client_id`. This Web client id is the
+ *     one the library uses as the `serverClientId`/token audience.
  *
- *  AUTH ELEGIDA: `play-services-auth` `AuthorizationClient`
- *  ([Identity.getAuthorizationClient]) — pide directamente un **access token**
- *  con el scope `drive.appdata` vía un flujo `IntentSender` (Credential Manager
- *  moderno; `GoogleSignIn` clásico está deprecado). El token vive en memoria de
- *  Play Services; la app NO lo persiste.
+ *  CHOSEN AUTH: `play-services-auth` `AuthorizationClient`
+ *  ([Identity.getAuthorizationClient]) — requests an **access token** directly with the
+ *  `drive.appdata` scope via an `IntentSender` flow (modern Credential Manager; the
+ *  classic `GoogleSignIn` is deprecated). The token lives in Play Services memory;
+ *  the app does NOT persist it.
  *
- *  TRANSPORTE: REST Drive v3 sobre `spaces=appDataFolder` usando OkHttp (ya viene
- *  transitivamente con Coil), sin arrastrar `google-api-client`.
+ *  TRANSPORT: REST Drive v3 over `spaces=appDataFolder` using OkHttp (already pulled in
+ *  transitively by Coil), without dragging in `google-api-client`.
  */
 class GoogleDriveSync(private val appContext: Context) {
 
@@ -71,14 +71,13 @@ class GoogleDriveSync(private val appContext: Context) {
     // ---------------------------------------------------------------------
 
     /**
-     * Lanza (o reanuda) la autorización para obtener un access token con scope
-     * `drive.appdata`.
+     * Starts (or resumes) authorization to obtain an access token with the `drive.appdata` scope.
      *
-     * @param onToken invocado con el access token si ya hay consentimiento.
-     * @param onNeedConsent invocado con un [IntentSender] que la Activity debe
-     *   lanzar con un `ActivityResultLauncher<IntentSenderRequest>`; el resultado
-     *   se procesa luego con [handleAuthorizationResult].
-     * @param onError invocado si falla.
+     * @param onToken invoked with the access token if consent already exists.
+     * @param onNeedConsent invoked with an [IntentSender] that the Activity must launch with an
+     *   `ActivityResultLauncher<IntentSenderRequest>`; the result is then processed with
+     *   [handleAuthorizationResult].
+     * @param onError invoked on failure.
      */
     fun authorize(
         onToken: (String) -> Unit,
@@ -107,7 +106,7 @@ class GoogleDriveSync(private val appContext: Context) {
             .addOnFailureListener { onError(it) }
     }
 
-    /** Procesa el `data` Intent devuelto por el flujo de consentimiento. */
+    /** Processes the `data` Intent returned by the consent flow. */
     fun handleAuthorizationResult(
         data: Intent?,
         onToken: (String) -> Unit,
@@ -122,18 +121,18 @@ class GoogleDriveSync(private val appContext: Context) {
     }
 
     /**
-     * "Desvincular cuenta": AuthorizationClient no expone un revoke directo estable,
-     * así que la app simplemente olvida el estado local de vinculación (ver
-     * [DriveSyncPrefs]). El usuario puede revocar el permiso desde su cuenta Google
-     * ("Apps con acceso a tu cuenta"). Este método existe para simetría de la API.
+     * "Unlink account": AuthorizationClient does not expose a stable direct revoke, so the app
+     * simply forgets the local link state (see [DriveSyncPrefs]). The user can revoke the permission
+     * from their Google account ("Apps with access to your account"). This method exists for API
+     * symmetry.
      */
-    fun unlink() { /* no-op: el estado de vinculación se limpia en DriveSyncPrefs */ }
+    fun unlink() { /* no-op: the link state is cleared in DriveSyncPrefs */ }
 
     // ---------------------------------------------------------------------
     // REST Drive v3 — appDataFolder
     // ---------------------------------------------------------------------
 
-    /** Busca el fichero de backup en appDataFolder. Devuelve su fileId o null. */
+    /** Finds the backup file in appDataFolder. Returns its fileId or null. */
     @Throws(IOException::class)
     fun findBackupFileId(accessToken: String): String? {
         val url = DRIVE_FILES.toUrlBuilder()
@@ -150,7 +149,7 @@ class GoogleDriveSync(private val appContext: Context) {
         }
     }
 
-    /** Descarga y parsea el contenedor. Devuelve null si no existe en Drive. */
+    /** Downloads and parses the container. Returns null if it does not exist in Drive. */
     @Throws(IOException::class)
     fun download(accessToken: String, fileId: String? = findBackupFileId(accessToken)): JSONObject? {
         val id = fileId ?: return null
@@ -163,8 +162,8 @@ class GoogleDriveSync(private val appContext: Context) {
     }
 
     /**
-     * Sube el contenedor: crea el fichero (multipart, con `parents:[appDataFolder]`)
-     * si no existe, o lo actualiza (PATCH media) si ya existe. Devuelve el fileId.
+     * Uploads the container: creates the file (multipart, with `parents:[appDataFolder]`) if it
+     * does not exist, or updates it (PATCH media) if it already does. Returns the fileId.
      */
     @Throws(IOException::class)
     fun upload(accessToken: String, container: JSONObject, existingFileId: String? = findBackupFileId(accessToken)): String {
@@ -199,7 +198,7 @@ class GoogleDriveSync(private val appContext: Context) {
     }
 
     // ---------------------------------------------------------------------
-    // Helpers OkHttp
+    // OkHttp helpers
     // ---------------------------------------------------------------------
 
     private fun Request.Builder.bearer(token: String): Request.Builder =

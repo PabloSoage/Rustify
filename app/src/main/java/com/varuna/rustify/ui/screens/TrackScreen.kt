@@ -1,17 +1,11 @@
-@file:Suppress("SpellCheckingInspection")
-
 package com.varuna.rustify.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import com.varuna.rustify.R
-import com.varuna.rustify.util.bouncingMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,9 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -48,8 +42,8 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -79,12 +73,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -95,15 +90,19 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.LyricsResult
@@ -115,6 +114,7 @@ import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
+import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -167,7 +167,7 @@ fun YouTubeMappingDialog(
     
     val coroutineScope = rememberCoroutineScope()
     val playerState by audioPlayerService.state.collectAsState()
-    // Match actual de esta pista, para indicarlo y resaltar la opción vigente en la lista.
+    // Current match for this track, used to indicate and highlight the active option in the list.
     val currentAltId = remember(track.id) {
         runCatching { NativeEngine.getAlternativeTrackNative(track.id ?: "") }.getOrDefault("")
     }
@@ -258,10 +258,10 @@ fun YouTubeMappingDialog(
                                 
                                 // Preview play button
                                 IconButton(onClick = {
-                                    // Previewing an alternative also SELECTS it, so "Confirmar" becomes
-                                    // enabled. Otherwise a user who only taps preview (the natural way to
-                                    // try an alternative) leaves selectedTrackId null → Confirmar disabled
-                                    // → "the confirm button does nothing".
+                                    // Previewing an alternative also selects it, so the confirm button
+                                    // becomes enabled. Otherwise a user who only taps preview (the natural
+                                    // way to try an alternative) leaves selectedTrackId null, leaving the
+                                    // confirm button disabled and seemingly unresponsive.
                                     selectedTrackId = yt.id
                                     if (playingPreviewId == yt.id) {
                                         audioPlayerService.pause()
@@ -307,9 +307,9 @@ fun TrackScreen(
     onBackClick: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
-    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
-    modifier: Modifier = Modifier
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null
 ) {
     var trackDetails by remember { mutableStateOf<FullTrack?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -354,7 +354,7 @@ fun TrackScreen(
         }
     }
 
-    // Observe preloaded lyrics from AudioPlayerService (BUG-20 fix)
+    // Observe preloaded lyrics from AudioPlayerService.
     val preloadedLyrics by audioPlayerService.preloadedLyrics.collectAsState()
     var lyricsResult by remember(trackToShow?.id) { mutableStateOf<LyricsResult?>(null) }
     var lyricsLoading by remember(trackToShow?.id) { mutableStateOf(false) }
@@ -402,9 +402,9 @@ fun TrackScreen(
 
     val imgUrl = trackToShow?.effectiveCoverUrl()
 
-    // ── E80 — Canvas (full-screen behind cover) ──
+    // Canvas (full-screen video shown behind the cover art).
     var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
-    var mediaTab by rememberSaveable { mutableStateOf(0) } // 0=image, 1=canvas, 2=video
+    var mediaTab by rememberSaveable { mutableIntStateOf(0) } // 0=image, 1=canvas, 2=video
     var videoUrl by remember(trackId) { mutableStateOf<Pair<String, String?>?>(null) }
     val prefs = context.getSharedPreferences("RustifyPrefs", android.content.Context.MODE_PRIVATE)
     val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
@@ -748,7 +748,7 @@ fun TrackScreen(
                     showMappingDialog = false
                     track.id?.let { tid ->
                         NativeEngine.setAlternativeTrackNative(tid, ytId)
-                        // Márcalo como elección REAL del usuario (gana al match local; ver UserAlternatives).
+                        // Mark it as an explicit user choice (takes precedence over the local match; see UserAlternatives).
                         com.varuna.rustify.bridge.UserAlternatives.add(context, tid)
                         LyricsRepository.invalidateLyrics(tid)
                         // Clear cached stream URL so the new mapping takes effect immediately
@@ -894,17 +894,18 @@ fun QueueBottomSheet(
                     Text(stringResource(R.string.queue_empty), color = Color.Gray)
                 }
             } else {
-                // Reordenado por arrastre. Bug anterior: la key incluía el índice y `pointerInput(originalIndex)`
-                // se reiniciaba tras cada micro-movimiento (moveQueueItem → nueva composición), cancelando el
-                // gesto → solo se podía mover 1 posición por arrastre. Ahora se reordena una copia LOCAL con un
-                // uid estable por fila (sobrevive al reordenado y admite pistas duplicadas) y solo se confirma
-                // UN movimiento neto al soltar; la fila arrastrada se traslada visualmente para seguir al dedo.
+                // Drag-to-reorder. The reorder operates on a LOCAL copy keyed by a stable per-row uid
+                // (which survives reordering and supports duplicate tracks), and only a single net move
+                // is committed on drop; the dragged row is translated visually to follow the finger.
+                // A stable uid (rather than the index) is required because keying the pointer input on
+                // the index would restart the gesture on every micro-movement (each moveQueueItem triggers
+                // recomposition), cancelling the drag and limiting it to one position per gesture.
                 var localOrder by remember(nextUpTracks) {
                     mutableStateOf(nextUpTracks.mapIndexed { i, t -> i to t })
                 }
                 var draggingUid by remember { mutableStateOf<Int?>(null) }
-                var dragOffsetY by remember { mutableStateOf(0f) }
-                var dragStartLocalIndex by remember { mutableStateOf(-1) }
+                var dragOffsetY by remember { mutableFloatStateOf(0f) }
+                var dragStartLocalIndex by remember { mutableIntStateOf(-1) }
                 val density = LocalDensity.current
                 val rowHeightPx = with(density) { 56.dp.toPx() }
 
@@ -1067,14 +1068,14 @@ fun TrackScreenControls(
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
 
-    // Ajuste manual de sincronía por pista (el diálogo del menú lo persiste y bumpea `version`).
+    // Per-track manual sync adjustment (the menu dialog persists it and bumps `version`).
     val lyricsCtx = LocalContext.current
     val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
     val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
         com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx, track.id ?: "")
     }
 
-    // Auto-scroll to current lyric line (aplica el offset: + adelanta la letra)
+    // Auto-scroll to the current lyric line, applying the offset (a positive value advances the lyrics).
     LaunchedEffect(currentPosition, showLyrics, lyricOffsetMs) {
         if (!showLyrics) return@LaunchedEffect
         val synced = lyricsResult?.synced ?: return@LaunchedEffect
@@ -1232,14 +1233,14 @@ fun TrackScreenControls(
                 horizontalArrangement = Arrangement.SpaceEvenly, 
                 verticalAlignment = Alignment.CenterVertically
             ) {
-            // Bifurcation (YouTube mapping)
+            // Alternative source picker (YouTube mapping)
             val isLocal = track.id?.startsWith("local:") == true
             if (!isLocal) {
                 IconButton(onClick = onShowMappingDialog) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.CallSplit,
                         contentDescription = stringResource(R.string.track_menu_view_youtube),
-                        // Verde cuando la pista actual suena desde un archivo LOCAL (match local).
+                        // Green when the current track is playing from a local file (local match).
                         tint = if (isCurrentTrack && playerState.isLocalSource) Color(0xFF1DB954) else Color.White,
                         modifier = Modifier.size(28.dp)
                     )
@@ -1248,7 +1249,7 @@ fun TrackScreenControls(
                 Spacer(modifier = Modifier.size(48.dp))
             }
 
-            // DJ (Livi): only during an autonomous DJ session — tap to change mood from playback.
+            // DJ: only shown during an autonomous DJ session; tap to change the mood from playback.
             val djActive = com.varuna.rustify.dj.DjAutoController.state.collectAsState().value != null
             val djCtx = LocalContext.current
             if (djActive) {
@@ -1491,7 +1492,7 @@ fun LyricsView(
 }
 
 /**
- * Cover art with a tab selector ("Imagen" | "Canvas") on top (part of E80).
+ * Cover art with a tab selector ("Image" | "Canvas") on top.
  *
  * The Spotify Canvas is a short looping mp4 shown behind the cover art. We fetch its
  * URL lazily from the native engine (protobuf canvaz endpoint) and, when the user
@@ -1500,7 +1501,7 @@ fun LyricsView(
  * released via DisposableEffect and rendered into a SurfaceView through AndroidView,
  * so no media3-ui / PlayerView dependency is required.
  *
- * The YouTube "Vídeo" tab is intentionally left for a later iteration.
+ * The YouTube "Video" tab is intentionally left for a later iteration.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 /**
@@ -1536,7 +1537,7 @@ fun TrackCoverSimple(
  * The player is fully owned by this composable and released on dispose.
  *
  * [fitWidth] = true (default): scale to the screen width preserving aspect ratio (may leave bars
- * top/bottom, but never stretches). false: fill the whole screen (legacy behaviour, can stretch).
+ * top/bottom, but never stretches). false: fill the whole screen (can stretch).
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -1589,13 +1590,12 @@ fun CanvasVideoPlayer(url: String, fitWidth: Boolean = true) {
 }
 
 /**
- * E96-adjacent — plays the matched YouTube VIDEO (with its own audio) on the track screen's "Video"
+ * Plays the matched YouTube video (with its own audio) on the track screen's "Video"
  * tab. Reuses the Canvas pattern (2nd ExoPlayer on a SurfaceView, no media3-ui dependency). Pauses
  * the main audio while shown to avoid double audio; tap toggles play/pause.
  */
 @Composable
 fun YouTubeVideoPlayer(videoUrlPair: Pair<String, String?>, audioPlayerService: AudioPlayerService) {
-    val context = LocalContext.current
     val videoRatio = audioPlayerService.state.collectAsState().value.videoSizeRatio
 
     DisposableEffect(videoUrlPair) {

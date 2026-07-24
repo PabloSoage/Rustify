@@ -41,8 +41,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.Calendar
 import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sin
 
 private enum class MetricsRange { TODAY, WEEK, MONTH, YEAR, ALL }
@@ -52,6 +50,7 @@ private data class TopRow(
     val imageUrl: String, val plays: Int, val ms: Long
 )
 
+@Suppress("ArrayInDataClass")
 private data class Stats(
     val totalPlays: Int = 0,
     val distinctTracks: Int = 0,
@@ -362,7 +361,7 @@ private fun StatGrid(cells: List<Triple<String, String, Color>>) {
     }
 }
 
-/** Reloj radial de 24h: una barra por hora, longitud proporcional al valor; reloj 🕛 en el centro. */
+/** Radial 24h clock: one bar per hour, length proportional to the value; clock face in the center. */
 @Composable
 private fun RadialHourClock(values: List<Float>, label: String, color: Color, modifier: Modifier = Modifier) {
     val maxV = (values.maxOrNull() ?: 0f).coerceAtLeast(0.0001f)
@@ -401,10 +400,9 @@ private fun RadialHourClock(values: List<Float>, label: String, color: Color, mo
 }
 
 /**
- * Barras verticales simples (sin Canvas): una por entrada, altura proporcional al máximo.
- * La barra vive en un área con weight(1f) y crece con fillMaxHeight(frac); el número (arriba) y la
- * etiqueta (abajo) son fijos → una columna alta ya NO empuja la etiqueta fuera de la tarjeta ni se
- * sale por debajo (bug: "monday en 68 tapa el resto y no se ve 'mon'").
+ * Simple vertical bars (no Canvas): one per entry, height proportional to the maximum.
+ * The bar lives in a weight(1f) area and grows via fillMaxHeight(frac); the number (top) and the
+ * label (bottom) are fixed, so a tall column never pushes the label out of the card or off the bottom.
  */
 @Composable
 private fun MiniBarChart(values: List<Pair<String, Float>>, color: Color) {
@@ -414,9 +412,9 @@ private fun MiniBarChart(values: List<Pair<String, Float>>, color: Color) {
             values.forEach { (lbl, v) ->
                 val frac = (v / maxV).coerceIn(0f, 1f)
                 Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // Número arriba (fijo). Cadena vacía cuando es 0 para mantener la línea base alineada.
+                    // Number on top (fixed). Empty string when 0 to keep the baseline aligned.
                     Text(if (v > 0f) v.toInt().toString() else "", color = Color.Gray, fontSize = 8.sp, maxLines = 1)
-                    // Zona flexible: la barra se escala respecto al alto disponible → nunca desborda.
+                    // Flexible area: the bar scales to the available height, so it never overflows.
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
                         Box(
                             Modifier
@@ -427,7 +425,7 @@ private fun MiniBarChart(values: List<Pair<String, Float>>, color: Color) {
                         )
                     }
                     Spacer(Modifier.height(3.dp))
-                    // Etiqueta abajo (fija) — siempre visible.
+                    // Label at the bottom (fixed) — always visible.
                     Text(lbl, color = Color.Gray, fontSize = 8.sp, maxLines = 1)
                 }
             }
@@ -435,7 +433,7 @@ private fun MiniBarChart(values: List<Pair<String, Float>>, color: Color) {
     }
 }
 
-/** Línea de una serie temporal (histórico completo), normalizada al alto del Canvas. */
+/** Line for a time series (full history), normalized to the Canvas height. */
 @Composable
 private fun LineChartView(points: List<Float>, color: Color, label: String) {
     val maxV = (points.maxOrNull() ?: 0f).coerceAtLeast(0.0001f)

@@ -5,26 +5,26 @@ import androidx.core.content.edit
 import org.json.JSONArray
 
 /**
- * E61 — Preferencias del backend Invidious (en `rustify_settings`).
+ * Preferences for the Invidious backend (in `rustify_settings`).
  *
- * Invidious es un frontend/proxy de YouTube auto-hostable: dado un **videoId** devuelve las URLs de
- * audio por HTTP puro (`/api/v1/videos/{id}`), sin yt-dlp/Python. Es **respaldo** (redundancia cuando
- * yt-dlp falla) y, de cara a un futuro iOS, la vía de extracción sin yt-dlp.
+ * Invidious is a self-hostable YouTube frontend/proxy: given a videoId it returns audio URLs over
+ * plain HTTP (`/api/v1/videos/{id}`), without yt-dlp/Python. It serves as a fallback (redundancy when
+ * yt-dlp fails) and, for a possible future iOS, as an extraction path without yt-dlp.
  *
- * El on/off y el orden respecto a yt-dlp los gobierna [AudioBackendSettings] (id "invidious"); aquí
- * solo va la config PROPIA de Invidious: modo (auto/fija), instancia fija, instancias extra del
- * usuario, y el enrutado por Tor.
+ * On/off and ordering relative to yt-dlp are governed by [AudioBackendSettings] (id "invidious"); here
+ * we only store Invidious's own config: mode (auto/fixed), fixed instance, the user's extra instances,
+ * and Tor routing.
  */
 object InvidiousSettings {
     private const val PREFS = "rustify_settings"
     private const val K_MODE = "inv_mode"                 // "auto" | "fixed"
-    private const val K_FIXED = "inv_fixed_instance"      // base url de la instancia fija
-    private const val K_CUSTOM = "inv_custom_instances"   // JSON array de base urls extra (self-host)
-    private const val K_HIDDEN = "inv_hidden_instances"   // JSON array de base urls ocultadas
-    private const val K_TOR = "inv_tor_enabled"           // enrutar instancias .onion por SOCKS
+    private const val K_FIXED = "inv_fixed_instance"      // base url of the fixed instance
+    private const val K_CUSTOM = "inv_custom_instances"   // JSON array of extra base urls (self-host)
+    private const val K_HIDDEN = "inv_hidden_instances"   // JSON array of hidden base urls
+    private const val K_TOR = "inv_tor_enabled"           // route .onion instances over SOCKS
     private const val K_TOR_HOST = "inv_tor_host"
     private const val K_TOR_PORT = "inv_tor_port"
-    private const val K_ANON = "inv_allow_anon_networks"  // permitir .onion/.i2p/ygg en la selección
+    private const val K_ANON = "inv_allow_anon_networks"  // allow .onion/.i2p/ygg in the selection
 
     private fun p(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -38,7 +38,6 @@ object InvidiousSettings {
     fun setTorEnabled(ctx: Context, v: Boolean) = p(ctx).edit { putBoolean(K_TOR, v) }
     fun torHost(ctx: Context): String = p(ctx).getString(K_TOR_HOST, "127.0.0.1") ?: "127.0.0.1"
     fun torPort(ctx: Context): Int = p(ctx).getInt(K_TOR_PORT, 9050)
-    fun setTor(ctx: Context, host: String, port: Int) = p(ctx).edit { putString(K_TOR_HOST, host.trim()); putInt(K_TOR_PORT, port) }
 
     fun allowAnonNetworks(ctx: Context): Boolean = p(ctx).getBoolean(K_ANON, false)
     fun setAllowAnonNetworks(ctx: Context, v: Boolean) = p(ctx).edit { putBoolean(K_ANON, v) }
@@ -54,11 +53,6 @@ object InvidiousSettings {
         writeList(ctx, K_CUSTOM, customInstances(ctx).filterNot { it.equals(url, true) })
 
     fun hiddenInstances(ctx: Context): Set<String> = readList(ctx, K_HIDDEN).toSet()
-    fun toggleHidden(ctx: Context, url: String, hidden: Boolean) {
-        val cur = hiddenInstances(ctx).toMutableSet()
-        if (hidden) cur.add(url) else cur.remove(url)
-        writeList(ctx, K_HIDDEN, cur.toList())
-    }
 
     private fun readList(ctx: Context, key: String): List<String> = runCatching {
         val raw = p(ctx).getString(key, null) ?: return emptyList()

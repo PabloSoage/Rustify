@@ -7,18 +7,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:ignore="all" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- DJ v2.8: voice control (speech recognition). Requested at runtime. -->
+    <!-- Voice control (speech recognition). Requested at runtime. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- E99: travel playlist — current location to compute the route/ETA. Requested at runtime. -->
+    <!-- Travel playlist: current location to compute the route/ETA. Requested at runtime. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- E109: in-app updater — install the downloaded APK via the system package installer. -->
+    <!-- In-app updater: install the downloaded APK via the system package installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- E99+: resolver short links de Google Maps (maps.app.goo.gl) → requiere network. -->
 
-    <!-- Android 11+ (package visibility): sin esto, setPackage("com.google.android.apps.maps") y
-         resolver actividades para http/geo son invisibles → el botón "Navegar en Google Maps" no abría
-         nada. Declaramos que consultamos apps que manejan VIEW http(s)/geo y el paquete de Maps. -->
+    <!-- Android 11+ package visibility: without this, setPackage("com.google.android.apps.maps") and
+         resolving activities for http/geo are invisible, so the "Open in Google Maps" button opens
+         nothing. Declares that we query apps handling VIEW http(s)/geo and the Maps package. -->
     <queries>
         <package android:name="com.google.android.apps.maps" />
         <intent>
@@ -29,8 +28,8 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
-        <!-- E109 — Descubrir instaladores de APK (instalador del sistema, Install With Options/Shizuku,
-             SAI…) para el actualizador in-app en Android 11+ (visibilidad de paquetes). -->
+        <!-- Discover APK installers (system installer, Install With Options/Shizuku, SAI, …) for the
+             in-app updater on Android 11+ (package visibility). -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
@@ -47,7 +46,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Rustify">
-        <!-- E96 — Android Auto: declare the media browse capability. -->
+        <!-- Android Auto: declare the media browse capability. -->
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
@@ -63,7 +62,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link para URLs de Spotify (E20: todos los tipos + intl-) -->
+            <!-- Deep links for Spotify URLs (all entity types + intl-). -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -77,37 +76,44 @@
                 <data android:pathPrefix="/intl-" />
             </intent-filter>
 
-            <!-- E40: YouTube Music deep links -->
-            <intent-filter>
+            <!-- YouTube Music deep links. autoVerify="false": these are not our own domains (not
+                 verifiable App Links), just open-in-app deep links. Separate <data> attributes
+                 (scheme/host/path) keep the same semantics without the "split data tag" warning. -->
+            <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <!-- E40: scope to real YTM entities so we don't hijack every music.youtube.com URL. -->
-                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/watch" />
-                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/playlist" />
-                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/browse" />
-                <data android:scheme="https" android:host="music.youtube.com" android:pathPrefix="/channel" />
+                <!-- Scope to real YTM entities so we don't hijack every music.youtube.com URL. -->
+                <data android:scheme="https" />
+                <data android:host="music.youtube.com" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/playlist" />
+                <data android:pathPrefix="/browse" />
+                <data android:pathPrefix="/channel" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="youtu.be" />
+                <data android:scheme="https" />
+                <data android:host="youtu.be" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.youtube.com" android:pathPrefix="/watch" />
+                <data android:scheme="https" />
+                <data android:host="www.youtube.com" />
+                <data android:pathPrefix="/watch" />
             </intent-filter>
 
-            <!-- F1.A: Wrappers Rustify VERIFICABLES (App Links).
-                 Cada host DEBE alojar https://<host>/.well-known/assetlinks.json con el fingerprint
-                 SHA-256 de la firma. Sin ese JSON, autoVerify simplemente NO verifica.
-                 El host es fijo en compilación (no runtime).
-                 Hosts sincronizados con util/AppLinksHosts.kt — añadir/quitar allí y aquí. -->
+            <!-- Verifiable Rustify wrapper App Links.
+                 Each host MUST serve https://<host>/.well-known/assetlinks.json with the signature's
+                 SHA-256 fingerprint. Without that JSON, autoVerify simply does not verify.
+                 The host is fixed at build time (not runtime).
+                 Hosts are kept in sync with util/AppLinksHosts.kt — add/remove in both places. -->
 
-            <!-- rustify-music.github.io (organización del proyecto) -->
+            <!-- rustify-music.github.io (project organization) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -115,7 +121,7 @@
                 <data android:scheme="https" android:host="rustify-music.github.io" android:pathPrefix="/r" />
             </intent-filter>
 
-            <!-- pablosoage.github.io (dominio personal del maintainer) -->
+            <!-- pablosoage.github.io (maintainer's personal domain) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -123,7 +129,7 @@
                 <data android:scheme="https" android:host="pablosoage.github.io" android:pathPrefix="/r" />
             </intent-filter>
 
-            <!-- Placeholder de referencia (NO verifica: rustify.example.com no existe) -->
+            <!-- Reference placeholder (does NOT verify: rustify.example.com does not exist). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -131,8 +137,8 @@
                 <data android:scheme="https" android:host="rustify.example.com" android:pathPrefix="/r" />
             </intent-filter>
 
-            <!-- F1.A: Fallback SIN verificación fuerte (cualquier app puede reclamar el scheme).
-                 Registra rustify:// para que el branch de extractDeepLink sea alcanzable. -->
+            <!-- Fallback without strong verification (any app can claim the scheme).
+                 Registers rustify:// so the extractDeepLink branch is reachable. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -146,7 +152,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- E99+: intercept geo: links (Android standard) and Google Maps URLs -->
+            <!-- Intercept geo: links (Android standard) and Google Maps URLs. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -163,12 +169,12 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService"/>
                 <action android:name="androidx.media3.session.MediaSessionService"/>
-                <!-- E96 — Android Auto / legacy media browsers connect via MediaBrowserService. -->
+                <!-- Android Auto / legacy media browsers connect via MediaBrowserService. -->
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
         </service>
 
-        <!-- E50 (B) — AppAuth OAuth redirect. Uses an HTTPS App Link on our already-verified
+        <!-- AppAuth OAuth redirect. Uses an HTTPS App Link on our already-verified
              domain (same host as the /r/ share links) so the OAuth client is NOT tied to the APK
              signing certificate; one client works on any build. Requires an assetlinks.json on the
              host and https://rustify-music.github.io/oauth2redirect to exist (a blank page is fine).
@@ -195,10 +201,9 @@
             </intent-filter>
         </activity>
 
-        <!-- E96 — FileProvider que expone las carátulas locales (filesDir/covers) a otros procesos
-             (p. ej. el renderer de Android Auto, que se ejecuta en su propio proceso y no puede leer
-             nuestro almacenamiento privado vía file://). Mapea covers/ a un URI content:// temporal
-             con permiso de lectura. -->
+        <!-- FileProvider that exposes local cover art (filesDir/covers) to other processes (e.g. the
+             Android Auto renderer, which runs in its own process and can't read our private storage via
+             file://). Maps covers/ to a temporary content:// URI with read permission. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.varuna.rustify.fileprovider"

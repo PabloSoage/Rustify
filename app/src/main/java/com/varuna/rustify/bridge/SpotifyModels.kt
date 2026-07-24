@@ -419,10 +419,10 @@ data class SimplePlaylist(
 }
 
 /**
- * E30 — Playlist puramente local. Sólo guarda ids "local:..." (referencias a tracks
- * vivos en [com.varuna.rustify.bridge.SpotifyRepository.localTracks]); los FullTrack
- * completos se resuelven por lookup al abrir, para mantener el fichero pequeño y sin
- * metadata duplicada/obsoleta. id con prefijo "localpl:" para no colisionar con Spotify.
+ * A purely local playlist. Stores only "local:..." ids (references to live tracks in
+ * [com.varuna.rustify.bridge.SpotifyRepository.localTracks]); the full FullTrack objects are
+ * resolved by lookup when opened, to keep the file small and free of duplicated/stale metadata.
+ * Its id is prefixed with "localpl:" to avoid colliding with Spotify ids.
  */
 data class LocalPlaylist(
     val id: String,
@@ -645,7 +645,7 @@ fun FullTrack.effectiveCoverUrl(): String? =
 
 
 // =============================================================================
-// E40 — YOUTUBE MUSIC MODELS (serialize via JNI from RustyPipe)
+// YOUTUBE MUSIC MODELS (serialized via JNI from RustyPipe)
 // =============================================================================
 
 data class YtmArtistRef(
@@ -753,7 +753,7 @@ data class YtmPlaylist(
             o.optString("author","").ifBlank { null }, maximiseThumbnail(o.optString("thumbnail_url","")),
             YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
         )
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList<YtmPlaylist>() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
     }
 }
 

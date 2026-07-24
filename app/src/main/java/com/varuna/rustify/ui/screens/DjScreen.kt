@@ -1,5 +1,7 @@
 package com.varuna.rustify.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,8 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -47,8 +47,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import com.varuna.rustify.dj.DjAutoController
-import com.varuna.rustify.dj.DjSpeech
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,17 +58,19 @@ import androidx.compose.ui.unit.sp
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.dj.DjAutoController
 import com.varuna.rustify.dj.DjEngine
 import com.varuna.rustify.dj.DjMode
 import com.varuna.rustify.dj.DjSettings
+import com.varuna.rustify.dj.DjSpeech
 import kotlinx.coroutines.launch
 
 /**
- * E90 — Pantalla del DJ IA. Campo de texto para la petición en lenguaje natural, botón "Iniciar DJ"
- * (automix), muestra la frase de intro del DJ y encola/reproduce el resultado.
+ * AI DJ screen. A text field for the natural-language request, a "Start DJ" (automix) button;
+ * it shows the DJ's intro line and enqueues/plays the result.
  *
- * No modifica AudioPlayerService: usa las lambdas [onPlayTracks] (loadPlaylist) / [onEnqueueTracks]
- * (enqueueAll) que el llamador conecta a los métodos públicos del servicio.
+ * It does not modify AudioPlayerService: it uses the [onPlayTracks] (loadPlaylist) and
+ * [onEnqueueTracks] (enqueueAll) lambdas that the caller wires to the service's public methods.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,7 +116,7 @@ fun DjScreen(
                 resultTracks = res.tracks
                 if (res.tracks.isNotEmpty()) {
                     onPlayTracks(res.tracks)
-                    com.varuna.rustify.dj.DjVoice.speak(context, res.intro)  // habla la intro (respeta el toggle de voz)
+                    com.varuna.rustify.dj.DjVoice.speak(context, res.intro)  // speak the intro (respects the voice toggle)
                 } else {
                     errorMsg = emptyResultMsg
                 }
@@ -127,13 +127,13 @@ fun DjScreen(
         }
     }
 
-    // ── DJ autónomo (Livi) + voz ──────────────────────────────────────────────────────
+    // ── Autonomous DJ (Livi) with voice ──────────────────────────────────────────────
     val autoState by DjAutoController.state.collectAsState()
     val speech = remember { DjSpeech(context) }
     val micUnavailableMsg = stringResource(R.string.dj_mic_unavailable)
     val voiceLang = DjSettings.voiceLanguage(context)
 
-    // Favoritas del usuario (liked songs); si aún no están cacheadas, se piden a la API.
+    // The user's liked songs; if not yet cached, they are fetched from the API.
     val favoritesProvider: suspend () -> List<FullTrack> = {
         spotifyRepo.likedTracks.toList().ifEmpty {
             runCatching { spotifyRepo.getSavedTracks(limit = 50).items }.getOrDefault(emptyList())
@@ -194,7 +194,7 @@ fun DjScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(8.dp))
-            // Chip compacto del modo actual (toca para cambiarlo en Ajustes).
+            // Compact chip for the current mode (tap to change it in Settings).
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
                 shape = RoundedCornerShape(50),
@@ -210,7 +210,7 @@ fun DjScreen(
             Text(stringResource(R.string.dj_subtitle), color = Color.Gray, fontSize = 13.sp)
 
             Spacer(Modifier.height(16.dp))
-            // ── Card: pídele al DJ (petición + micro + acciones) ──────────────────────────────
+            // ── Card: ask the DJ (request + mic + actions) ────────────────────────────────────
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
                 shape = RoundedCornerShape(16.dp),
@@ -268,7 +268,7 @@ fun DjScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            // ── DJ autónomo ("Livi"): un toque, anuncia un mood (voz) y encola un bloque ──────
+            // ── Autonomous DJ ("Livi"): one tap announces a mood (voice) and enqueues a block ──
             if (autoState == null) {
                 OutlinedButton(
                     onClick = { DjAutoController.start(context, spotifyRepo, favoritesProvider) },
@@ -316,7 +316,7 @@ fun DjScreen(
                 }
             }
 
-            // ── Intro del DJ ──
+            // ── DJ intro ──
             intro?.let { line ->
                 Spacer(Modifier.height(16.dp))
                 Card(
@@ -341,7 +341,7 @@ fun DjScreen(
                 Text(msg, color = Color(0xFFE57373), fontSize = 14.sp)
             }
 
-            // ── Resultado: cola generada, con la pista sonando resaltada ──
+            // ── Result: the generated queue, with the currently playing track highlighted ──
             if (resultTracks.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 Text(

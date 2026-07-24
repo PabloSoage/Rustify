@@ -4,27 +4,27 @@ import com.varuna.rustify.bridge.FullTrack
 import java.io.File
 
 /**
- * E60 — Abstracción de backends de audio.
+ * Audio backend abstraction.
  *
- * Información sobre un stream reproducible por ExoPlayer, producida por un
- * [AudioSourceProvider]. El [uri] es lo único que ExoPlayer consume; el resto
- * es metadata orientativa (caducidad, mime) para que el motor decida saltos.
+ * Information about a stream playable by ExoPlayer, produced by an
+ * [AudioSourceProvider]. [uri] is the only thing ExoPlayer consumes; the rest is
+ * advisory metadata (expiry, mime) so the engine can decide when to re-resolve.
  */
 data class StreamInfo(
     val uri: String,                  // http(s):// | file:// | content://
-    val expiresAtMs: Long? = null,    // googlevideo ~6h; null = desconocida
-    val mimeType: String? = null,     // "audio/webm", "audio/mp4"... opcional
-    val requiresProxy: Boolean = false // p. ej. Deemix cifrado → datasource propio
+    val expiresAtMs: Long? = null,    // googlevideo ~6h; null = unknown
+    val mimeType: String? = null,     // "audio/webm", "audio/mp4"... optional
+    val requiresProxy: Boolean = false // e.g. encrypted Deezer -> custom datasource
 )
 
 /**
- * Capacidades declaradas por un provider: filtra lacadena (sólo canStream
- * participan en resolveStreamUrl; sólo canDownload en downloadTo) y alimenta
- * la UI de ajustes (nombre, requisitos, calidad).
+ * Capabilities declared by a provider: filters the chain (only canStream providers
+ * take part in resolveStreamUrl; only canDownload in downloadTo) and feeds the
+ * settings UI (name, requirements, quality).
  */
 data class AudioSourceCapabilities(
-    val id: String,                   // clave estable: "ytdlp" | "invidious" | "deemix"
-    val displayNameRes: Int,          // R.string.* para la UI
+    val id: String,                   // stable key: "ytdlp" | "invidious" | "deezer"
+    val displayNameRes: Int,          // R.string.* for the UI
     val canStream: Boolean,
     val canDownload: Boolean,
     val requiresToken: Boolean = false,
@@ -32,28 +32,27 @@ data class AudioSourceCapabilities(
 )
 
 /**
- * Contrato único que consumen reproductor ([com.varuna.rustify.player.AudioPlayerService])
- * y descargas ([com.varuna.rustify.bridge.DownloadManager]). Desacopla la obtención
- * de la URL/bytes de YouTube del anterior yt-dlp hardcodeado, permitiendo múltiples
- * providers encadenados con fallback (E61 Invidious / E62 Deemix).
+ * The single contract consumed by the player ([com.varuna.rustify.player.AudioPlayerService])
+ * and by downloads ([com.varuna.rustify.bridge.DownloadManager]). Decouples fetching the
+ * URL/bytes from any specific backend, allowing multiple chained providers with fallback.
  *
- * El [hint] de [resolveStreamUrl] es un `youtubeId` explícito (alternativa elegida
- * manualmente): cuando se pasa, el provider YouTube lo usa directo sin re-resolver
- * por metadata (paridad con `NativeEngine.resolveYouTubeIdNative(id, hint)`).
+ * The [hint] of [resolveStreamUrl] is an explicit `youtubeId` (a manually chosen
+ * alternative): when provided, the YouTube provider uses it directly without re-resolving
+ * from metadata (parity with `NativeEngine.resolveYouTubeIdNative(id, hint)`).
  */
 interface AudioSourceProvider {
     val capabilities: AudioSourceCapabilities
 
-    /** Bootstrap perezoso (yt-dlp init/update, health-check Invidious, validar token Deemix). No bloquea. */
+    /** Lazy bootstrap (yt-dlp init/update, Invidious health-check, Deezer token validation). Non-blocking. */
     fun initialize() {}
 
-    /** ¿Está listo para servir a este track ahora mismo? (token válido, instancia sana...). */
+    /** Is it ready to serve this track right now? (valid token, healthy instance...). */
     suspend fun isAvailableFor(track: FullTrack): Boolean = capabilities.canStream
 
-    /** Resuelve una URL/URI reproducible. Cancelable (coroutine) + respeta timeout externo. */
+    /** Resolves a playable URL/URI. Cancelable (coroutine) and respects an external timeout. */
     suspend fun resolveStreamUrl(track: FullTrack, hint: String? = null): Result<StreamInfo>
 
-    /** Descarga a un fichero temporal (el caller lo copia a SAF). onProgress 0..100. */
+    /** Downloads to a temporary file (the caller copies it to SAF). onProgress 0..100. */
     suspend fun downloadTo(
         track: FullTrack,
         dst: File,
@@ -62,8 +61,8 @@ interface AudioSourceProvider {
 }
 
 /**
- * Lanzada por [AudioSourceChain] cuando TODOS los providers de la cadena fallan.
- * Transporta la lista de errores por provider para diagnóstico.
+ * Thrown by [AudioSourceChain] when ALL providers in the chain fail.
+ * Carries the per-provider error list for diagnostics.
  */
 class AudioSourceChainException(val errors: List<Throwable>) : Exception(
     "All audio providers failed: " + errors.joinToString { it.message ?: it::class.simpleName.orEmpty() }

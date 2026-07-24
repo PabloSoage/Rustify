@@ -3,9 +3,7 @@ package com.varuna.rustify.ui.screens
 import android.content.Context
 import android.widget.Toast
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,12 +27,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -51,13 +48,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.YtmAlbum
 import com.varuna.rustify.bridge.YtmAlbumSlim
 import com.varuna.rustify.bridge.YtmArtist
@@ -83,7 +81,6 @@ import com.varuna.rustify.bridge.YtmArtistRef
 import com.varuna.rustify.bridge.YtmPlaylist
 import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.YtmTrack
-import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.ui.components.TrackRowItem
 import com.varuna.rustify.util.ShareUtils
 import com.varuna.rustify.util.YtMusicLinkParser
@@ -93,13 +90,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // =============================================================================
-// E40 — YouTube Music top-level screens (first-class NavHost destinations).
+// YouTube Music top-level screens (standalone NavHost destinations).
 //
-// These replace the old embedded YtMusicScreen "screen-in-a-screen". Each screen
-// owns a single system TopAppBar (real back button), reuses TrackRowItem and the
-// app theme (spotify green 0xFF1DB954), and localizes via stringResource.
-// Playback is delegated to the existing `ytm:` pipeline via onTrackClick +
-// YtmTrack.toFullTrack() — no AudioPlayerService changes.
+// Each screen owns a single system TopAppBar (with a real back button), reuses
+// TrackRowItem and the app theme (spotify green 0xFF1DB954), and localizes via
+// stringResource. Playback is delegated to the existing `ytm:` pipeline via
+// onTrackClick + YtmTrack.toFullTrack(), without AudioPlayerService changes.
 // =============================================================================
 
 private val YtmGreen = Color(0xFF1DB954)
@@ -130,7 +126,7 @@ fun YtMusicSearchScreen(
     var searching by remember { mutableStateOf(false) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
-    // E40: paste a YTM link from the clipboard and navigate (mirror of Spotify's "+" button).
+    // Paste a YTM link from the clipboard and navigate (mirror of Spotify's "+" button).
     fun pasteYtmLink() {
         val pasted = try {
             val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
@@ -200,7 +196,7 @@ fun YtMusicSearchScreen(
                             Icon(Icons.Default.Clear, "Clear", tint = Color.White)
                         }
                     } else {
-                        // Paste a YTM link from clipboard (E40).
+                        // Paste a YTM link from the clipboard.
                         IconButton(onClick = { pasteYtmLink() }) {
                             Icon(Icons.Default.Add, stringResource(R.string.ytm_paste_link), tint = Color.White)
                         }
@@ -296,7 +292,7 @@ fun YtMusicAlbumScreen(
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmAlbum?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var attempt by remember { mutableStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
@@ -355,7 +351,7 @@ fun YtMusicArtistScreen(
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmArtist?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var attempt by remember { mutableStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
     YtmDetailScaffold(name, onBack, onShare = {
@@ -425,7 +421,7 @@ fun YtMusicPlaylistScreen(
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmPlaylist?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var attempt by remember { mutableStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {

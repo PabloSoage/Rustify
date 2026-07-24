@@ -1,9 +1,9 @@
 package com.varuna.rustify.util
 
-import android.net.Uri
+import androidx.core.net.toUri
 
 /**
- * Parsed YouTube Music link — covers the entity types Rustify can open (E40).
+ * Parsed YouTube Music link — covers the entity types Rustify can open.
  * Mirror of [SpotifyLink]. Used by the "+" paste button (YTM search), the incoming
  * deep-link handler, and share.
  */
@@ -36,7 +36,7 @@ object YtMusicLinkParser {
         if (text.isNullOrBlank()) return null
         // Pull the first URL-looking token out of arbitrary shared text.
         val raw = Regex("""https?://\S+""").find(text)?.value ?: text.trim()
-        val uri = try { Uri.parse(raw) } catch (e: Exception) { return null }
+        val uri = try { raw.toUri() } catch (e: Exception) { return null }
         val host = uri.host ?: return null
 
         if (host == "youtu.be") {

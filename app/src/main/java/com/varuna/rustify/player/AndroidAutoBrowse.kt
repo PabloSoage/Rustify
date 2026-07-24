@@ -5,12 +5,13 @@ import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
+import com.varuna.rustify.player.AndroidAutoBrowse.childrenAsync
 
 /**
- * E96 — the Android Auto browse tree, in plain data (no Media3 types) so it can be shared by BOTH the
- * [RustifyForegroundService] MediaLibrarySession AND the in-app "Android Auto preview" (debug) screen.
+ * The Android Auto browse tree, in plain data (no Media3 types) so it can be shared by both the
+ * [RustifyForegroundService] MediaLibrarySession and the in-app "Android Auto preview" (debug) screen.
  *
- * v3.0: the tree now mirrors the phone library — Liked, Playlists, Albums, Artists, a Local group
+ * The tree mirrors the phone library — Liked, Playlists, Albums, Artists, a Local group
  * (favorites / playlists / tracks / albums / artists) and a YouTube Music group (favorites / playlists),
  * plus a "Now playing" queue whose items jump to that point. Every node carries an [imageUrl] so the
  * service can show cover art (not just text). Cache-backed sections resolve synchronously; the
@@ -26,20 +27,20 @@ object AndroidAutoBrowse {
         val imageUrl: String? = null
     )
 
-    /** Nodos que requieren red (se resuelven en [childrenAsync]; en modo síncrono salen vacíos). */
+    /** Nodes that require network (resolved in [childrenAsync]; empty in synchronous mode). */
     private fun isNetworkNode(parentId: String): Boolean =
         parentId.startsWith("spl:") || parentId.startsWith("salb:") || parentId.startsWith("sart:")
 
     /**
-     * Hijos de un nodo — versión **síncrona** (solo caché). La usa el preview in-app. Los nodos que
-     * requieren red devuelven vacío aquí; el servicio usa [childrenAsync].
+     * Children of a node — synchronous version (cache only). Used by the in-app preview. Nodes that
+     * require network return empty here; the service uses [childrenAsync].
      */
     fun children(context: Context, parentId: String, ytmRepo: YtMusicRepository): List<Node> {
         val repo = SpotifyRepository.instance ?: return emptyList()
         return when {
             parentId == "root" -> rootSections(context, repo, ytmRepo)
 
-            // ── Now playing / cola (saltar a un punto) ──
+            // ── Now playing / queue (jump to a point) ──
             parentId == "sec_queue" -> runCatching {
                 AudioPlayerService.getInstance(context).state.value.queue
                     .filter { it.id != null }
@@ -98,7 +99,7 @@ object AndroidAutoBrowse {
         }
     }
 
-    /** Versión **asíncrona**: resuelve además los nodos Spotify que requieren red. */
+    /** Asynchronous version: also resolves the Spotify nodes that require network. */
     suspend fun childrenAsync(context: Context, parentId: String, ytmRepo: YtMusicRepository): List<Node> {
         val repo = SpotifyRepository.instance ?: return emptyList()
         if (!isNetworkNode(parentId)) return children(context, parentId, ytmRepo)
@@ -127,7 +128,7 @@ object AndroidAutoBrowse {
         }
     }
 
-    // ── Estructura de secciones ────────────────────────────────────────────────────────────
+    // ── Section structure ──────────────────────────────────────────────────────────────────
     private fun rootSections(context: Context, repo: SpotifyRepository, ytmRepo: YtMusicRepository): List<Node> {
         val out = ArrayList<Node>()
         val hasQueue = runCatching { AudioPlayerService.getInstance(context).state.value.queue.isNotEmpty() }.getOrDefault(false)

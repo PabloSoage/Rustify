@@ -50,8 +50,8 @@ data class AudioPlayerState(
     val bufferPercent: Int = 0,
     val isVideoMode: Boolean = false,
     val videoSizeRatio: Float? = null,
-    // true cuando la pista actual se resolvió a un ARCHIVO LOCAL (match local o track "local:").
-    // Lo usa la UI para poner en verde el botón de alternativas e indicar el match actual.
+    // true when the current track resolved to a local file (local match or a "local:" track).
+    // The UI uses it to turn the alternatives button green and indicate the current match.
     val isLocalSource: Boolean = false
 )
 
@@ -63,7 +63,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val listenerTracker = ListeningTracker(context.applicationContext)
 
-    // Preloaded lyrics for the current track (BUG-20 fix)
+    // Preloaded lyrics for the current track
     private val _preloadedLyrics = MutableStateFlow<com.varuna.rustify.bridge.LyricsResult?>(null)
     val preloadedLyrics: StateFlow<com.varuna.rustify.bridge.LyricsResult?> = _preloadedLyrics.asStateFlow()
     @Volatile
@@ -92,7 +92,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             return downloadCache ?: synchronized(this) {
                 downloadCache ?: run {
                     val cacheDir = java.io.File(context.cacheDir, "audio_cache")
-                    // E108 — tamaño máximo configurable en Ajustes (pref cache_max_mb, por defecto 500 MB).
+                    // Maximum size configurable in Settings (pref cache_max_mb, default 500 MB).
                     val maxMb = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
                         .getInt("cache_max_mb", 500).coerceIn(100, 8192)
                     val evictor = androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(maxMb.toLong() * 1024 * 1024)
@@ -106,16 +106,16 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val preResolvedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val persistedUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
-    // E60: per-track absolute expiry (epoch ms) for cached stream URLs, fed by StreamInfo.expiresAtMs.
+    // Per-track absolute expiry (epoch ms) for cached stream URLs, fed by StreamInfo.expiresAtMs.
     // A googlevideo URL past this instant is dropped before it reaches ExoPlayer (avoids a guaranteed 403).
     private val urlExpiryCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    // E60: last human-readable reason the audio chain failed to resolve, shown to the user on give-up.
+    // Last human-readable reason the audio chain failed to resolve, shown to the user on give-up.
     @Volatile private var lastResolveError: String? = null
     private var preBufferingJob: kotlinx.coroutines.Job? = null
     private var playJob: kotlinx.coroutines.Job? = null
     @Volatile private var isResolving = false
     @Volatile private var isRetrying = false
-    // Generation token so a stale playJob's finally won't clobber isResolving (E10 RC-3).
+    // Generation token so a stale playJob's finally won't clobber isResolving.
     private val resolveGen = AtomicLong(0)
     private val userQueue = mutableListOf<FullTrack>()
 
@@ -160,21 +160,21 @@ class AudioPlayerService private constructor(private val context: Context) {
     private var mediaControllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
 
     // Single coalescing save queue — serializes all state writes, eliminating the
-    // race where two concurrent `saveState` launches wrote the file out of order (E13 §3.2).
+    // race where two concurrent `saveState` launches wrote the file out of order.
     private val saveRequests = Channel<Unit>(Channel.CONFLATED)
 
     init {
-        // Initialize the YouTube resolver cache + mappings (replaces removed loopback server, E11).
+        // Initialize the YouTube resolver cache + mappings.
         // NOTE: must be filesDir (persistent), NOT cacheDir: youtube_mappings.json holds the user's
         // confirmed YouTube alternatives and Settings/export read it from filesDir. Using cacheDir made
-        // the confirmed matchings invisible ("0 matchings") and wiped by the OS clearing the cache.
+        // the confirmed matchings invisible ("0 matchings") and wiped when the OS cleared the cache.
         val cachePath = context.filesDir.absolutePath
         NativeEngine.initCacheDirNative(cachePath)
 
         loadUrlCache()
         loadState()
 
-        // Single consumer: debounced, serialized state persistence (E13).
+        // Single consumer: debounced, serialized state persistence.
         mainScope.launch(Dispatchers.IO) {
             for (unused in saveRequests) {
                 delay(400) // debounce / coalesce bursts
@@ -205,9 +205,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                     Player.STATE_READY -> {
                         _state.value = _state.value.copy(isBuffering = false, isError = false)
                         _state.value.currentTrack?.id?.let { retryCountMap.remove(it) }
-                        // E108 — Red de seguridad contra "suena en silencio": cuando el audio ya está listo,
-                        // restaura el volumen completo salvo que el DJ esté haciendo ducking activo. Evita
-                        // que un ducking/volumen 0 que se quedó pegado deje la pista sonando muda.
+                        // Safety net against silent playback: once the audio is ready, restore full
+                        // volume unless the DJ is actively ducking. Prevents a stuck ducking/zero volume
+                        // from leaving the track playing muted.
                         if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
                         requestSave()
                     }
@@ -249,12 +249,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                     if (cause.responseCode == 403 || cause.responseCode == 410) {
                         isExpiredUrl = true
                         if (currentTrackId != null) {
-                            // E60: purge the ACTUAL persisted URL cache (map + json + legacy prefs + expiry),
+                            // Purge the actual persisted URL cache (map + json + legacy prefs + expiry),
                             // not just the legacy SharedPreferences key — otherwise getCachedStreamUrl would
                             // re-serve the same expired googlevideo URL on the next play.
                             removeCachedStreamUrl(currentTrackId)
-                            // E60: también invalida la caché "provider que funcionó" para que la
-                            // siguiente resolución pase por toda la cadena (no credite el caduco).
+                            // Also invalidate the "provider that worked" cache so the next resolution goes
+                            // through the whole chain (does not credit the expired one).
                             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(currentTrackId)
                         }
                         android.util.Log.d("AudioPlayerService", "Stream URL expired (HTTP ${cause.responseCode}), cleared cache for $currentTrackId")
@@ -268,14 +268,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                     if (retries < 2) {
                         retryCountMap[currentTrackId] = retries + 1
                         isRetrying = true
-                        // E10: exponential backoff + jitter for transient errors; fast re-resolve for expired URLs.
+                        // Exponential backoff + jitter for transient errors; fast re-resolve for expired URLs.
                         val delayMs = if (isExpiredUrl) 100L else (500L shl retries).coerceAtMost(8000L) + Random.nextLong(0, 500)
                         android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}/2) in ${delayMs}ms")
                         autoRetryJob?.cancel()
                         autoRetryJob = mainScope.launch {
                             delay(delayMs.milliseconds)
                             if (_state.value.isError && _state.value.currentTrack?.id == currentTrackId) {
-                                retryCurrentTrack(isAutoRetry = true)   // B1: keep onPlayerError's own counter
+                                retryCurrentTrack(isAutoRetry = true)   // keep onPlayerError's own counter
                             } else {
                                 android.util.Log.d("AudioPlayerService", "Auto-retry skipped: state changed for $currentTrackId")
                             }
@@ -309,7 +309,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     listenerTracker.onProgress(pos)
                 }
                 val now = System.currentTimeMillis()
-                // E13: only request a save when position advanced meaningfully (>3s) to reduce I/O.
+                // Only request a save when position advanced meaningfully (>3s) to reduce I/O.
                 if (now - lastSaveTime > 5000) {
                     if (!_state.value.isError && !isRetrying &&
                         kotlin.math.abs(_state.value.positionMs - lastSavedPosition) > 3000) {
@@ -322,13 +322,13 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         }
 
-        // E11: observe network availability so playback auto-recovers after a VPN tunnel
-        // comes up or Wi-Fi reconnects (no ConnectivityManager existed anywhere before).
+        // Observe network availability so playback auto-recovers after a VPN tunnel comes up or
+        // Wi-Fi reconnects.
         registerNetworkCallback()
     }
 
     // -----------------------------------------------------------------------
-    // Network resilience (E11)
+    // Network resilience
     // -----------------------------------------------------------------------
 
     @Volatile private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -375,9 +375,9 @@ class AudioPlayerService private constructor(private val context: Context) {
     // Core: resolve YouTube stream URL then hand it to ExoPlayer
     // -----------------------------------------------------------------------
 
-    // E12: explicit, deterministic foreground-service bind, not inside the cancelable playJob.
+    // Explicit, deterministic foreground-service bind, not inside the cancelable playJob.
     private fun ensureForegroundServiceBound() {
-        // BUG B: don't early-return just because we bound ONCE. If the OS killed the foreground
+        // Don't early-return just because we bound once. If the OS killed the foreground
         // service (notification vanishes, background playback dies until cache clear), the completed
         // future is still non-null but its controller is disconnected → we must re-arm, not give up.
         val existing = mediaControllerFuture
@@ -409,24 +409,24 @@ class AudioPlayerService private constructor(private val context: Context) {
         val trackId = track.id ?: return
         userQueue.removeAll { it.id == trackId }
 
-        // E105: snapshot the intended start position NOW, synchronously, before the (possibly slow)
+        // Snapshot the intended start position now, synchronously, before the (possibly slow)
         // resolution below. The periodic position-ticker keeps copying exoPlayer.currentPosition into
-        // _state.positionMs while the PREVIOUS track is still loaded; if we read _state.positionMs
-        // *after* resolution we'd seek the fresh track to that stale advanced position (the "song
-        // starts in silence at an advanced point" bug). Callers set positionMs=0 for a new play and to
-        // the saved offset for a resume, and this line runs before any suspension, so it's accurate.
+        // _state.positionMs while the previous track is still loaded; reading _state.positionMs after
+        // resolution would seek the fresh track to that stale advanced position. Callers set
+        // positionMs=0 for a new play and to the saved offset for a resume, and this line runs before
+        // any suspension, so it's accurate.
         val desiredStartMs = _state.value.positionMs
 
         // Cancel any pending auto-retry from a previous track to prevent notification/playback race conditions
         autoRetryJob?.cancel()
         autoRetryJob = null
-        // B1: only reset the retry counter on a GENUINE new play, never on an auto-retry re-entry,
+        // Only reset the retry counter on a genuine new play, never on an auto-retry re-entry,
         // otherwise scheduleExtractionRetry/onPlayerError can never reach the give-up threshold.
         if (!isAutoRetry) retryCountMap.remove(trackId)
         isRetrying = false
 
-        // E70: flush the OUTGOING listening session HERE (deterministically, at the moment of switch),
-        // not after the new track resolves. Doing it after resolution (below) meant a manual skip / a
+        // Flush the outgoing listening session here (deterministically, at the moment of switch), not
+        // after the new track resolves. Doing it after resolution meant a manual skip / a
         // slow-or-failing next track never flushed the previous session, so only tracks that reached
         // STATE_ENDED were counted. onTrackStarted no-ops if it's the same track (retry/alternative).
         listenerTracker.onTrackStarted(track)
@@ -441,12 +441,12 @@ class AudioPlayerService private constructor(private val context: Context) {
             )
         }
 
-        // Preload lyrics asynchronously so they're cached when user opens TrackScreen
-        // E40: skip lyrics for ytm: (no Spotify track id)
+        // Preload lyrics asynchronously so they're cached when user opens TrackScreen.
+        // Skip lyrics for ytm: (no Spotify track id).
         if (!trackId.startsWith("ytm:")) { preloadLyrics(track) }
 
-        // Show buffering spinner immediately (resolver can take a few seconds)
-        // E40: extract videoId from ytm: prefix (bypasses Spotify resolver)
+        // Show buffering spinner immediately (resolver can take a few seconds).
+        // Extract videoId from the ytm: prefix (bypasses the Spotify resolver).
         var effectiveYoutubeId = youtubeId
         if (trackId.startsWith("ytm:")) { effectiveYoutubeId = trackId.removePrefix("ytm:") }
 
@@ -456,12 +456,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         playJob?.cancel()
         playJob = mainScope.launch {
-            val thisJob = coroutineContext[kotlinx.coroutines.Job]
-
             try {
-                // E12: do NOT set a dummy MediaItem / pause the player here. The notification
-                // keeps the previous item until the real one is prepared, instead of freezing
-                // on a fake "loading" item in pausse. The UI spinner is driven by _state.isBuffering.
+                // Do NOT set a dummy MediaItem / pause the player here. The notification keeps the
+                // previous item until the real one is prepared, instead of freezing on a fake
+                // "loading" item while paused. The UI spinner is driven by _state.isBuffering.
                 val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
                 val metadata = androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(track.name)
@@ -481,14 +479,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
 
                     if (matchLocalFirst && localMusicDirs.isNotEmpty()) {
-                        // An explicit YouTube alternative — a just-picked hint OR a user-confirmed
-                        // persisted mapping — must WIN over the local match. Otherwise picking a
+                        // An explicit YouTube alternative — a just-picked hint or a user-confirmed
+                        // persisted mapping — must win over the local match. Otherwise picking a
                         // YouTube alternative for a locally-matched track silently does nothing (the
-                        // local file keeps playing), which is exactly the "alternatives don't work on
-                        // matched tracks" bug.
-                        // Solo una alternativa REALMENTE elegida por el usuario (hint en curso o
-                        // marcada en UserAlternatives) gana al match local. Un mapping auto-persistido
-                        // por el resolver antiguo NO cuenta → el match local vuelve a ganar.
+                        // local file keeps playing). Only an alternative genuinely chosen by the user
+                        // (an in-flight hint or one marked in UserAlternatives) wins over the local
+                        // match; an auto-persisted mapping does not count, so the local match wins again.
                         val hasUserAlternative = !effectiveYoutubeId.isNullOrBlank() ||
                             com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
                         if (!hasUserAlternative) {
@@ -502,14 +498,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                         }
                     }
 
-                    // B3: only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
+                    // Only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
                     // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
                     // so the stale cached URL must not shadow the new source.
                     if (streamUrl == null && effectiveYoutubeId.isNullOrBlank()) {
                         // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
                         val cachedUrl = getCachedStreamUrl(trackId)
                         if (!cachedUrl.isNullOrBlank()) {
-                            // E60: honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on
+                            // Honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on
                             // ExoPlayer, so drop it and force a fresh chain resolution instead.
                             val expiresAt = urlExpiryCache[trackId]
                             val expired = expiresAt != null && System.currentTimeMillis() >= expiresAt
@@ -535,11 +531,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                     if (streamUrl == null) {
                         if (effectiveYoutubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
                         if (streamUrl.isNullOrBlank()) {
-                            // E60: la resolución de red vive ahora en la cadena de backends
-                            // (AudioSourceRegistry.streamChain). yt-dlp es el provider por defecto;
-                            // el `hint` es el youtubeId explícito de una alternativa elegida.
+                            // Network resolution now lives in the backend chain
+                            // (AudioSourceRegistry.streamChain). yt-dlp is the default provider;
+                            // `hint` is the explicit youtubeId of a chosen alternative.
                             android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
-                            // E101: resolve OFF the main thread. Providers already switch to IO internally,
+                            // Resolve OFF the main thread. Providers already switch to IO internally,
                             // but isAvailableFor() (e.g. Invidious fetching its instance directory) runs
                             // outside their withContext, so a stalled directory fetch could still jank the
                             // UI thread. Wrapping the whole chain call here guarantees the main thread stays
@@ -550,13 +546,13 @@ class AudioPlayerService private constructor(private val context: Context) {
                             }
                             res.onSuccess { (providerId, info) ->
                                 streamUrl = info.uri
-                                lastResolveError = null   // E60: clear any stale failure reason on success
-                                // E60: remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
+                                lastResolveError = null   // clear any stale failure reason on success
+                                // Remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
                                 info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
                                 android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
                             }
                             res.onFailure { e ->
-                                // E60: surface the real per-provider reason so the banner isn't just "not playable".
+                                // Surface the real per-provider reason so the banner isn't just "not playable".
                                 val detail = (e as? com.varuna.rustify.audio.AudioSourceChainException)
                                     ?.errors?.mapNotNull { it.message }?.joinToString("; ")
                                     ?.takeIf { it.isNotBlank() } ?: e.message
@@ -571,7 +567,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 }
 
                 if (streamUrl.isNullOrBlank()) {
-                    // E10: auto-retry the extraction failure instead of leaving the user stuck.
+                    // Auto-retry the extraction failure instead of leaving the user stuck.
                     scheduleExtractionRetry(track, effectiveYoutubeId)
                     return@launch
                 }
@@ -586,10 +582,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                 resolvedStreamUrls[trackId] = streamUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
                 val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
-                // E62: Deezer entrega una URI deezer://<sngId>?u=<b64> que descifra al vuelo un DataSource
-                // propio. No es cacheable (URL del CDN caduca + lleva clave por-track) ni pasa por el cache HTTP.
+                // Deezer serves a deezer://<sngId>?u=<b64> URI decrypted on the fly by a custom
+                // DataSource. It is not cacheable (the CDN URL expires and carries a per-track key) and
+                // does not go through the HTTP cache.
                 val isDeezerStream = streamUrl.startsWith("deezer://")
-                // Expone a la UI si la pista actual suena desde un archivo local (para el botón verde).
+                // Expose to the UI whether the current track plays from a local file (for the green button).
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
@@ -615,23 +612,23 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                 }
 
-                // E101: bind the foreground service HERE — one frame before playback — so the OS's
+                // Bind the foreground service HERE — one frame before playback — so the OS's
                 // startForeground() 5s window opens only when we're about to play. Binding it eagerly
                 // (before a slow resolution) caused a foreground-service ANR with Invidious/Deezer.
                 ensureForegroundServiceBound()
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
-                // E105: seek to the position captured at the TOP of playTrack (see desiredStartMs),
-                // never to the live _state.positionMs which the ticker may have advanced meanwhile.
+                // Seek to the position captured at the top of playTrack (see desiredStartMs), never to
+                // the live _state.positionMs which the ticker may have advanced meanwhile.
                 if (desiredStartMs > 0L) {
                     exoPlayer.seekTo(desiredStartMs)
                 }
-                // E101: never inherit a leftover DJ-duck volume onto a fresh track (stuck 0.22 = inaudible).
+                // Never inherit a leftover DJ-duck volume onto a fresh track (a stuck 0.22 is inaudible).
                 if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
-                // E101: if a call is active/ringing, DON'T start audio — this is the "song plays over the
-                // hands-free call when a track change coincides with an incoming call" bug. Stay paused;
-                // the player is prepared and seeked, so the user (or the media button) resumes instantly.
+                // If a call is active/ringing, DON'T start audio — otherwise the song would play over a
+                // hands-free call when a track change coincides with an incoming call. Stay paused; the
+                // player is prepared and seeked, so the user (or the media button) resumes instantly.
                 if (isInCall()) {
                     exoPlayer.playWhenReady = false
                     _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
@@ -639,13 +636,13 @@ class AudioPlayerService private constructor(private val context: Context) {
                 } else {
                     exoPlayer.play()
                 }
-                // (E70: onTrackStarted moved to the top of playTrack so the previous session flushes
-                //  deterministically on every switch, incl. manual skip / failing next track.)
+                // onTrackStarted runs at the top of playTrack so the previous session flushes
+                // deterministically on every switch, including a manual skip / a failing next track.
 
                 // Pre-buffer the next track in the queue
                 preBufferNextTrack()
             } finally {
-                // E10: generation token — only the latest playTrack clears isResolving.
+                // Generation token — only the latest playTrack clears isResolving.
                 if (resolveGen.get() == myGen) {
                     isResolving = false
                 }
@@ -653,16 +650,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    // E60: the yt-dlp extraction with retries now lives in YtDlpAudioSource (resolved via
+    // The yt-dlp extraction with retries lives in YtDlpAudioSource (resolved via
     // AudioSourceRegistry.streamChain). See audio/YtDlpAudioSource.kt::extractStreamUrlWithRetry.
 
-    // E10: retry the failure to extract a stream URL (previously a dead-end error banner).
+    // Retry the failure to extract a stream URL.
     private fun scheduleExtractionRetry(track: FullTrack, youtubeId: String?) {
         val id = track.id ?: return
         val n = retryCountMap[id] ?: 0
         if (n >= 2) {
             retryCountMap.remove(id)
-            // E60: include the concrete chain failure (e.g. "resolver returned empty YouTube id",
+            // Include the concrete chain failure (e.g. "resolver returned empty YouTube id",
             // yt-dlp error) instead of a bare "no source" banner.
             val reason = lastResolveError?.takeIf { it.isNotBlank() }
             _state.value = _state.value.copy(
@@ -687,8 +684,8 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (_state.value.currentTrack?.id == id) {
                 resolvedStreamUrls.remove(id)
                 preResolvedUrls.remove(id)
-                removeCachedStreamUrl(id)                       // B3: don't let a stale URL shadow re-resolution
-                retryCurrentTrack(youtubeId, isAutoRetry = true) // B1: keep the retry counter
+                removeCachedStreamUrl(id)                       // don't let a stale URL shadow re-resolution
+                retryCurrentTrack(youtubeId, isAutoRetry = true) // keep the retry counter
             }
             isRetrying = false
         }
@@ -715,8 +712,8 @@ class AudioPlayerService private constructor(private val context: Context) {
                     nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
                 )
 
-                // E60: pre-buffer a través de la misma cadena de backends que playTrack
-                // (single source of truth: un solo resolveStreamUrl, sin duplicar el patrón yt-dlp).
+                // Pre-buffer through the same backend chain as playTrack
+                // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
                 val res = withContext(Dispatchers.IO) {
                     com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
                         .resolveStreamUrl(nextTrack, hint = null)
@@ -724,7 +721,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 res.onSuccess { (_, info) ->
                     preResolvedUrls[nextTrackId] = info.uri
                     resolvedStreamUrls[nextTrackId] = info.uri
-                    info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // E60: track pre-buffered URL expiry too
+                    info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
                     android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
                 }
                 res.onFailure { e ->
@@ -778,23 +775,23 @@ class AudioPlayerService private constructor(private val context: Context) {
         val ids = queue.mapNotNull { it.id }
         val json = "[" + ids.joinToString(",") { "\"$it\"" } + "]"
         NativeEngine.updateQueueNative(json)
-        // E96: refresca el nodo "Cola" del árbol de Android Auto (su contenido es la cola de
-        // reproducción; si no avisamos, el coche sigue mostrando la cola vieja en caché).
+        // Refresh the "Queue" node of the Android Auto tree (its content is the playback queue; without
+        // notifying, the car keeps showing the old cached queue).
         MediaBrowserNotifier.notifyChildrenChanged("sec_queue")
     }
 
     fun loadAndPlay(track: FullTrack) {
-        // E101: the foreground service is bound inside playTrack() right before playback starts, NOT
-        // here — binding it eagerly started the OS's 5s startForeground() clock while a slow backend
-        // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR ("Rustify no
-        // responde" with the UI still alive). yt-dlp masked it by resolving from cache in <5s.
+        // The foreground service is bound inside playTrack() right before playback starts, NOT here —
+        // binding it eagerly started the OS's 5s startForeground() clock while a slow backend
+        // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR (with the UI
+        // still alive). yt-dlp masked it by resolving from cache in <5s.
         val queue = listOf(track) + userQueue
         _state.value = _state.value.copy(
             currentTrack = track,
             isPlaying = false,
             queue = queue,
-            // F4/§3.2: include userQueue so cycling shuffle/repeat (which restores originalQueue)
-            // doesn't silently drop the manually-queued tracks.
+            // Include userQueue so cycling shuffle/repeat (which restores originalQueue) doesn't
+            // silently drop the manually-queued tracks.
             originalQueue = queue,
             positionMs = 0L,
             durationMs = track.durationMs.toLong()
@@ -807,7 +804,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
         if (tracks.isEmpty()) return
-        // E101: foreground bind happens in playTrack() right before playback (see loadAndPlay note).
+        // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
 
@@ -840,7 +837,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /**
-     * F4: start playback of [tracks] in shuffle mode from a RANDOM first track (not index 0).
+     * Start playback of [tracks] in shuffle mode from a random first track (not index 0).
      * Forces isShuffle ON before delegating to loadPlaylist (which honours _state.isShuffle).
      */
     fun shufflePlay(tracks: List<FullTrack>) {
@@ -928,16 +925,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    // DJ voice ducking (E90): lower/restore playback volume while the DJ speaks. The TTS callbacks
-    // arrive off the main thread, so post to the player's main looper before touching ExoPlayer.
+    // DJ voice ducking: lower/restore playback volume while the DJ speaks. The TTS callbacks arrive
+    // off the main thread, so post to the player's main looper before touching ExoPlayer.
     private val djDuckHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    // E101: track duck state so a fresh track never inherits a stuck 0.22 duck (which made a track
-    // "play but be inaudible" if unduck never fired, e.g. TTS error on a bad connection).
+    // Track duck state so a fresh track never inherits a stuck 0.22 duck (which made a track play but
+    // be inaudible if unduck never fired, e.g. a TTS error on a bad connection).
     @Volatile private var isDucking = false
     fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
     fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
 
-    // E101: AudioManager.mode reflects an active/ringing call WITHOUT needing READ_PHONE_STATE. Used to
+    // AudioManager.mode reflects an active/ringing call WITHOUT needing READ_PHONE_STATE. Used to
     // avoid blasting audio over a hands-free call when a track finishes resolving mid-call.
     private val audioManager by lazy { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
     private fun isInCall(): Boolean = runCatching {
@@ -979,7 +976,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         _state.value = st.copy(positionMs = exoPlayer.currentPosition)
         val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
         if (idx == -1 && st.queue.isNotEmpty()) {
-            // F4/§3.3: the current track isn't in the queue (e.g. a restored/truncated originalQueue).
+            // The current track isn't in the queue (e.g. a restored/truncated originalQueue).
             // Don't get stuck — advance to the first queued track instead of doing nothing.
             val next = st.queue.first()
             _state.value = _state.value.copy(
@@ -1055,26 +1052,23 @@ class AudioPlayerService private constructor(private val context: Context) {
         // Cancel any pending auto-retry to prevent it from firing later on a different track
         autoRetryJob?.cancel()
         autoRetryJob = null
-        // B1: preserve the retry counter across auto-retries; only reset on a user-initiated retry.
+        // Preserve the retry counter across auto-retries; only reset on a user-initiated retry.
         if (!isAutoRetry) track.id?.let { retryCountMap.remove(it) }
 
-        // Force full re-resolution: clear ALL cached URLs for this track (incl. the persisted one — B3).
+        // Force full re-resolution: clear ALL cached URLs for this track (incl. the persisted one).
         track.id?.let {
             resolvedStreamUrls.remove(it)
             preResolvedUrls.remove(it)
             removeCachedStreamUrl(it)
-            // E60: re-resolution forzada → no confíes en el provider cacheado como "bueno".
+            // Forced re-resolution → don't trust the cached provider as "good".
             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it)
         }
 
-        // BUG (offline retry restart): whenever we re-resolve the SAME track — an explicit
-        // alternative pick, an auto-retry after an extraction/network failure, an expired-URL
-        // refresh, or a network-reconnect retry — we must resume from where the user was, not
-        // restart from 0. Previously only explicit alternative selections preserved the position,
-        // so a background auto-retry (e.g. after coming back online) would yank a mid-song track
-        // back to the beginning. playTrack() seeks to _state.positionMs when > 0, so we compute
-        // the best-known position here. Only a switch to a DIFFERENT track (fallbackTrackId that
-        // isn't the current track) legitimately starts from 0.
+        // Whenever we re-resolve the SAME track — an explicit alternative pick, an auto-retry after an
+        // extraction/network failure, an expired-URL refresh, or a network-reconnect retry — we must
+        // resume from where the user was, not restart from 0. playTrack() seeks to _state.positionMs
+        // when > 0, so we compute the best-known position here. Only a switch to a DIFFERENT track
+        // (a fallbackTrackId that isn't the current track) legitimately starts from 0.
         val retryingSameTrack = fallbackTrackId == null || fallbackTrackId == st.currentTrack?.id
         val livePos = exoPlayer.currentPosition.coerceAtLeast(0L)
         val preservedPosition = if (retryingSameTrack) maxOf(livePos, st.positionMs).coerceAtLeast(0L) else 0L
@@ -1102,7 +1096,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             playTrack(track, youtubeId)
             requestSave()
         } else {
-            // Should not happen normally, but fallback just in case
+            // Should not normally happen; no-op fallback just in case.
         }
     }
 
@@ -1158,12 +1152,12 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /**
-     * Reemplaza todo lo que hay DESPUÉS de la pista actual por [tracks] (sin tocar la pista que
-     * suena ahora). Pensado para el DJ autónomo al cambiar de mood: descarta el bloque anterior que
-     * aún no se ha reproducido y pone el bloque nuevo a continuación de la pista actual, en lugar de
-     * apilarlo sobre el anterior (que era lo que hacía `enqueueAll` y dejaba canciones viejas).
-     * Vacía `userQueue` porque, en modo DJ, esos items eran precisamente los segmentos encolados
-     * automáticamente (no cola manual del usuario).
+     * Replaces everything after the current track with [tracks] (without touching the track playing
+     * now). Intended for the autonomous DJ when it changes mood: it discards the previous block that
+     * has not yet played and places the new block right after the current track, instead of stacking
+     * it on top of the previous one (which `enqueueAll` did, leaving old songs behind). Clears
+     * `userQueue` because, in DJ mode, those items were exactly the automatically enqueued segments
+     * (not a manual user queue).
      */
     fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>) {
         if (tracks.isEmpty()) return
@@ -1181,7 +1175,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun release() {
-        // E13: persist the latest state synchronously before tearing down.
+        // Persist the latest state synchronously before tearing down.
         saveNow()
         listenerTracker.flush()
         unregisterNetworkCallback()
@@ -1197,19 +1191,19 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     // -------------------------------------------------------------------
-    // Stream URL cache persistence (BUG-01: avoid re-resolving ephemeral URLs)
+    // Stream URL cache persistence (avoid re-resolving ephemeral URLs)
     // -------------------------------------------------------------------
 
     private fun getCachedStreamUrl(trackId: String): String? {
         return persistedUrlCache[trackId]
     }
 
-    // B3: invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
+    // Invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
     // stale URL. Covers both the in-memory map (backed by stream_url_cache.json) and the legacy
     // SharedPreferences "cached_url_$id" entry.
     fun removeCachedStreamUrl(trackId: String) {
         persistedUrlCache.remove(trackId)
-        urlExpiryCache.remove(trackId)   // E60: drop the tracked expiry alongside the URL
+        urlExpiryCache.remove(trackId)   // drop the tracked expiry alongside the URL
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
             .edit().remove("cached_url_$trackId").apply()
         mainScope.launch(Dispatchers.IO) { saveUrlCache() }
@@ -1222,7 +1216,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             val keysToRemove = persistedUrlCache.keys().toList().take(50)
             for (key in keysToRemove) {
                 persistedUrlCache.remove(key)
-                urlExpiryCache.remove(key)   // E60: keep expiry map in lockstep with the URL cache
+                urlExpiryCache.remove(key)   // keep expiry map in lockstep with the URL cache
             }
         }
         // Save async to disk
@@ -1276,7 +1270,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     // -------------------------------------------------------------------
-    // Playback state persistence (E13: atomic, debounced, complete)
+    // Playback state persistence (atomic, debounced, complete)
     // -------------------------------------------------------------------
 
     /** Enqueue a debounced state save. Cheap to call from any playback event. */
@@ -1318,12 +1312,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 put("positionMs", st.positionMs)
                 put("durationMs", st.durationMs)
                 put("isShuffle", st.isShuffle)
-                put("isRepeat", st.isRepeat)           // E13: previously missing
+                put("isRepeat", st.isRepeat)
                 put("wasPlaying", st.isPlaying)
                 put("schemaVersion", 2)
                 put("lastSavedTimestamp", System.currentTimeMillis())
             }
-            // Atomic write: tmp + rename — never a half-written file (E13 §3.3).
+            // Atomic write: tmp + rename — never a half-written file.
             tmp.writeText(json.toString())
             if (!tmp.renameTo(dst)) {
                 dst.writeText(json.toString())
@@ -1368,7 +1362,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val positionMs = json.optLong("positionMs", 0L)
                 val durationMs = json.optLong("durationMs", 0L)
                 val isShuffle = json.optBoolean("isShuffle", false)
-                val isRepeat = json.optBoolean("isRepeat", false)   // E13: restore repeat mode
+                val isRepeat = json.optBoolean("isRepeat", false)   // restore repeat mode
 
                 _state.value = _state.value.copy(
                     currentTrack = track,

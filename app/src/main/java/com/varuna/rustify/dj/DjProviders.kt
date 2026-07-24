@@ -1,6 +1,7 @@
 package com.varuna.rustify.dj
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -9,15 +10,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * E90 — Catálogo de proveedores de IA para el modo API del DJ.
+ * Catalog of AI providers for the DJ's API mode.
  *
- * Todos los built-in son **gratuitos y sin clave privada** (endpoints OpenAI-compatible públicos).
- * El usuario puede: elegir uno, ocultar los que no quiera, y añadir proveedores personalizados
- * (base URL + modelo + key opcional). La selección se materializa en las prefs que ya lee
- * [DjSettings] (`dj_api_base_url` / `dj_api_model` / `dj_api_key`), así que [DjEngine] no cambia.
+ * All built-ins are free and require no private key (public OpenAI-compatible endpoints). The user
+ * can pick one, hide the ones they do not want, and add custom providers (base URL + model +
+ * optional key). The selection is written to the prefs that [DjSettings] already reads
+ * (`dj_api_base_url` / `dj_api_model` / `dj_api_key`), so [DjEngine] does not change.
  *
- * ⚠️ Los ids de modelo de Pollinations son best-effort (su catálogo puede cambiar); si uno deja de
- * responder, el indicador de latencia lo marcará y el usuario puede ocultarlo / usar otro.
+ * Pollinations model ids are best-effort (its catalog may change); if one stops responding, the
+ * latency indicator flags it and the user can hide it or use another.
  */
 data class DjApiProvider(
     val id: String,
@@ -30,12 +31,12 @@ data class DjApiProvider(
 
 object DjProviders {
     const val KEY_SELECTED = "dj_provider_id"
-    const val KEY_CUSTOM = "dj_custom_providers"   // JSON array de proveedores del usuario
-    const val KEY_HIDDEN = "dj_hidden_providers"   // ids built-in ocultados, separados por coma
+    const val KEY_CUSTOM = "dj_custom_providers"   // JSON array of the user's providers
+    const val KEY_HIDDEN = "dj_hidden_providers"   // hidden built-in ids, comma-separated
 
     /**
-     * Built-in keyless. Ordenados de **más rápido** a **más capaz** (Pollinations expone varios
-     * modelos por el mismo endpoint OpenAI-compatible; todos gratis y sin key).
+     * Keyless built-ins. Ordered from fastest to most capable (Pollinations exposes several models
+     * through the same OpenAI-compatible endpoint; all free and keyless).
      */
     val BUILT_IN: List<DjApiProvider> = listOf(
         DjApiProvider("poll-openai-fast", "OpenAI Fast (Pollinations)", "https://text.pollinations.ai/openai", "openai-fast"),
@@ -70,7 +71,7 @@ object DjProviders {
         }.getOrDefault(emptyList())
     }
 
-    /** Lista visible = built-in no ocultados + personalizados. */
+    /** Visible list = non-hidden built-ins + custom ones. */
     fun visibleProviders(context: Context): List<DjApiProvider> {
         val hidden = hiddenIds(context)
         return BUILT_IN.filter { it.id !in hidden } + customProviders(context)
@@ -86,7 +87,7 @@ object DjProviders {
     fun removeProvider(context: Context, provider: DjApiProvider) {
         if (provider.builtIn) {
             val hidden = hiddenIds(context) + provider.id
-            prefs(context).edit().putString(KEY_HIDDEN, hidden.joinToString(",")).apply()
+            prefs(context).edit { putString(KEY_HIDDEN, hidden.joinToString(",")) }
         } else {
             persistCustom(context, customProviders(context).filter { it.id != provider.id })
         }
@@ -100,28 +101,28 @@ object DjProviders {
                 put("model", p.model); put("apiKey", p.apiKey)
             })
         }
-        prefs(context).edit().putString(KEY_CUSTOM, arr.toString()).apply()
+        prefs(context).edit { putString(KEY_CUSTOM, arr.toString()) }
     }
 
-    /** Selecciona un proveedor → escribe base/model/key en las prefs que consume [DjEngine]. */
+    /** Selects a provider → writes base/model/key to the prefs consumed by [DjEngine]. */
     fun select(context: Context, provider: DjApiProvider) {
-        prefs(context).edit()
-            .putString(KEY_SELECTED, provider.id)
-            .putString(DjSettings.KEY_API_BASE_URL, provider.baseUrl)
-            .putString(DjSettings.KEY_API_MODEL, provider.model)
-            .putString(DjSettings.KEY_API_KEY, provider.apiKey)
-            .apply()
+        prefs(context).edit {
+            putString(KEY_SELECTED, provider.id)
+            putString(DjSettings.KEY_API_BASE_URL, provider.baseUrl)
+            putString(DjSettings.KEY_API_MODEL, provider.model)
+            putString(DjSettings.KEY_API_KEY, provider.apiKey)
+        }
     }
 
     fun selectedId(context: Context): String? = prefs(context).getString(KEY_SELECTED, null)
 
-    // ── Indicador de latencia / congestión ──────────────────────────────────────────────
+    // ── Latency / congestion indicator ───────────────────────────────────────────────────
 
     enum class Latency(val ms: Long?) {
         FAST(null), OK(null), SLOW(null), DOWN(null), UNKNOWN(null)
     }
 
-    /** Clasifica una medición en ms a un nivel de congestión. */
+    /** Classifies a measurement in ms into a congestion level. */
     fun classify(ms: Long?): Latency = when {
         ms == null -> Latency.DOWN
         ms < 900 -> Latency.FAST
@@ -130,9 +131,10 @@ object DjProviders {
     }
 
     /**
-     * Mide latencia aproximada al host del proveedor (conexión + primer byte), con timeout corto.
-     * No consume tokens: hace un GET ligero al endpoint (que puede responder 4xx/405 — nos vale,
-     * medimos el round-trip). Devuelve ms o null si no hay respuesta a tiempo.
+     * Measures approximate latency to the provider host (connection + first byte), with a short
+     * timeout. Consumes no tokens: it does a lightweight GET to the endpoint (which may respond
+     * 4xx/405 — that is fine, we measure the round-trip). Returns ms, or null if there is no timely
+     * response.
      */
     suspend fun measureLatency(baseUrl: String): Long? = withContext(Dispatchers.IO) {
         runCatching {
@@ -145,7 +147,7 @@ object DjProviders {
             }
             try {
                 conn.connect()
-                conn.responseCode // fuerza el round-trip
+                conn.responseCode // forces the round-trip
             } finally {
                 conn.disconnect()
             }

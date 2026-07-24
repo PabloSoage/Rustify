@@ -12,8 +12,8 @@ sealed class SpotifyLink {
 }
 
 /**
- * Unified parser for Spotify URLs/links. Replaces the 4 divergent regexes that lived in
- * `MainActivity.extractSpotifyIdFromUrl` and `SearchScreen` (E20).
+ * Unified parser for Spotify URLs/links. Replaces the divergent regexes that lived in
+ * `MainActivity.extractSpotifyIdFromUrl` and `SearchScreen`.
  *
  * Accepts:
  *  - https://open.spotify.com/(intl-XX/)?{track|album|playlist|artist}/ID

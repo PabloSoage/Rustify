@@ -12,6 +12,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
+import com.varuna.rustify.util.classifyError
+import com.varuna.rustify.util.retrying
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,8 +21,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.varuna.rustify.util.classifyError
-import com.varuna.rustify.util.retrying
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
@@ -55,7 +55,7 @@ class SpotifyRepository(context: Context) {
         private const val KEY_EXPIRATION = "expiration_timestamp"
 
         @Volatile
-        // internal (not private): the Android Auto MediaLibrarySession (RustifyForegroundService, E96)
+        // internal (not private): the Android Auto MediaLibrarySession (RustifyForegroundService)
         // reads the live repo to build its browsable tree.
         internal var instance: SpotifyRepository? = null
 
@@ -63,14 +63,14 @@ class SpotifyRepository(context: Context) {
         // Used to pass local track data to AlbumScreen/ArtistScreen without API calls
 val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
-    // E108 — Caché (vida de la app) de datos ya cargados de Álbum/Artista de Spotify, para que la
-    // pantalla NO tenga que recargar (spinner) al recrearse tras abrir/cerrar el miniplayer.
-    val albumTracksCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<FullTrack>>())
-    val artistTopTracksCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<FullTrack>>())
-    val artistAlbumsCache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<SimpleAlbum>>())
-    // E30: caché de tracks resueltos para una playlist local (patrón de localAlbumTracks).
-    // Accedida desde el hilo main (UI: PlaylistScreen/LibraryScreen) y desde IO → wrap
-    // sincronizado para evitar carreras al leer/escribir/limpiar el mapa concurrentemente.
+    // App-lifetime cache of already-loaded Spotify Album/Artist data, so the screen does not have to
+    // reload (spinner) when it is recreated after opening/closing the miniplayer.
+    val albumTracksCache: MutableMap<String, List<FullTrack>> = java.util.Collections.synchronizedMap(mutableMapOf())
+    val artistTopTracksCache: MutableMap<String, List<FullTrack>> = java.util.Collections.synchronizedMap(mutableMapOf())
+    val artistAlbumsCache: MutableMap<String, List<SimpleAlbum>> = java.util.Collections.synchronizedMap(mutableMapOf())
+    // Cache of resolved tracks for a local playlist (same pattern as localAlbumTracks). Accessed from
+    // the main thread (UI: PlaylistScreen/LibraryScreen) and from IO, so it is wrapped as synchronized
+    // to avoid races when reading/writing/clearing the map concurrently.
     val localPlaylistTracksCache: MutableMap<String, List<FullTrack>> =
         java.util.Collections.synchronizedMap(mutableMapOf())
 
@@ -167,25 +167,26 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     var isSyncingLikedTracks by mutableStateOf(false)
         private set
 
-    // E108 — Tracks de una playlist de Spotify cacheados a nivel repo (como likedTracks): sobreviven a
-    // que la pantalla se recree (p. ej. al abrir/cerrar el miniplayer) y se cargan TODAS las páginas en
-    // segundo plano. Así, al volver a la playlist no hay que re-esperar el spinner ni se "salta" a la 50
-    // porque el resto no había cargado.
+    // Spotify playlist tracks cached at the repository level (like likedTracks): they survive screen
+    // recreation (e.g. opening/closing the miniplayer) and ALL pages are loaded in the background. So
+    // returning to a playlist neither re-waits on the spinner nor "jumps" to track 50 because the rest
+    // had not loaded yet.
     private val spotifyPlaylistTracks = mutableStateMapOf<String, androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack>>()
     private val spotifyPlaylistJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
-    // Observable (Compose) para que el spinner se apague solo al terminar de cargar.
+    // Observable (Compose) so the spinner turns off by itself once loading finishes.
     private val spotifyPlaylistLoading = mutableStateMapOf<String, Boolean>()
 
-    /** Lista viva (observable) de tracks de una playlist de Spotify; se rellena en segundo plano. */
+    /** Live (observable) list of a Spotify playlist's tracks; filled in the background. */
     fun playlistTracksLive(id: String): androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack> =
         spotifyPlaylistTracks.getOrPut(id) { androidx.compose.runtime.mutableStateListOf() }
 
-    /** ¿Se está cargando esta playlist ahora mismo? (para decidir spinner vs "sin canciones"). */
+    /** Whether this playlist is currently loading (to choose spinner vs "no songs"). */
     fun isPlaylistLoading(id: String): Boolean = spotifyPlaylistLoading[id] == true
 
     /**
-     * Carga TODAS las páginas de una playlist de Spotify en segundo plano (100 por página) hacia
-     * [playlistTracksLive]. Idempotente: no relanza si ya hay tracks o un job activo, salvo [force].
+     * Loads ALL pages of a Spotify playlist in the background (100 per page) into
+     * [playlistTracksLive]. Idempotent: does not relaunch if tracks already exist or a job is active,
+     * unless [force] is set.
      */
     fun loadFullPlaylist(id: String, force: Boolean = false) {
         if (id.startsWith("localpl:")) return
@@ -205,15 +206,15 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                     if (!resp.hasMore) break
                 }
             } catch (_: Exception) {
-                // deja lo que se haya cargado; el spinner se apaga igual en finally
+                // Keep whatever was loaded; the spinner turns off anyway in finally.
             } finally {
                 spotifyPlaylistLoading[id] = false
             }
         }
     }
 
-    // E108 — "Todas las canciones" de un artista: toda su discografía (álbumes + singles), en orden de
-    // lanzamiento (más reciente primero), deduplicada por nombre+artista. Lista viva + carga en 2º plano.
+    // An artist's "all tracks": their whole discography (albums + singles), in release order (most
+    // recent first), deduplicated by name+artist. Live list + background loading.
     private val artistAllTracks = mutableStateMapOf<String, androidx.compose.runtime.snapshots.SnapshotStateList<FullTrack>>()
     private val artistAllJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
     private val artistAllLoading = mutableStateMapOf<String, Boolean>()
@@ -231,7 +232,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         artistAllJobs[id] = repositoryScope.launch {
             try {
                 if (force) list.clear()
-                // 1) Todos los álbumes/singles del artista (paginado).
+                // 1) All of the artist's albums/singles (paginated).
                 val albums = ArrayList<SimpleAlbum>()
                 var offset = 0
                 while (true) {
@@ -241,10 +242,10 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                     offset += resp.items.size
                     if (!resp.hasMore) break
                 }
-                // 2) Orden de lanzamiento (más reciente primero).
+                // 2) Release order (most recent first).
                 val ordered = albums.sortedByDescending { it.releaseDate ?: "" }
-                // 3) Tracks de cada álbum en orden, dedupe por nombre+artista, enriqueciendo con la
-                //    portada del álbum para que se vea carátula en la lista.
+                // 3) Tracks of each album in order, deduplicated by name+artist, enriched with the
+                //    album cover so artwork shows up in the list.
                 val seen = HashSet<String>()
                 for (al in ordered) {
                     val tr = runCatching { getAlbumTracks(al.id, limit = 50, offset = 0).items }.getOrDefault(emptyList())
@@ -264,7 +265,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     var isScanningLocalTracks by mutableStateOf(false)
         private set
 
-    // E30 — Playlists y favoritos locales (JSON en filesDir, ids "local:...").
+    // Local playlists and favorites (JSON in filesDir, "local:..." ids).
     val localPlaylists = androidx.compose.runtime.mutableStateListOf<LocalPlaylist>()
     private val localFavoriteIds = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
 
@@ -288,7 +289,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         return java.io.File(appCtx.filesDir, "spotify_liked_tracks_cache.json")
     }
 
-    // E30 — ficheros de datos locales (playlists + favoritos).
+    // Local data files (playlists + favorites).
     private fun getLocalPlaylistsFile(): java.io.File =
         java.io.File(appCtx.filesDir, "local_playlists.json")
 
@@ -318,10 +319,10 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         }
     }
 
-    /** E30 — recarga playlists + favoritos locales desde disco (tras un import). */
+    /** Reload local playlists + favorites from disk (e.g. after an import). */
     fun reloadLocalUserData() {
         repositoryScope.launch(Dispatchers.IO) {
-            // Las SnapshotStateList/Map deben mutarse en el hilo principal; sólo el I/O va a IO.
+            // SnapshotStateList/Map must be mutated on the main thread; only the I/O runs on IO.
             withContext(Dispatchers.Main) {
                 localPlaylists.clear()
                 localFavoriteIds.clear()
@@ -332,9 +333,9 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     private fun saveLocalPlaylists() {
-        // E30 fix: snapshot on the caller thread (avoids ConcurrentModification), then write off the
-        // main thread. These were called from Compose click handlers → synchronous disk I/O on the UI
-        // thread = jank/ANR (matches the "app freezes" report when mutating local playlists).
+        // Snapshot on the caller thread (avoids ConcurrentModification), then write off the main
+        // thread. These are called from Compose click handlers, where synchronous disk I/O on the UI
+        // thread would cause jank/ANR when mutating local playlists.
         val snapshot = localPlaylists.toList()
         repositoryScope.launch(Dispatchers.IO) {
             runCatching {
@@ -598,7 +599,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                     }
                 }
 
-                // Only replace cached data after successful API call (BUG-05: VPN resilience)
+                // Only replace cached data after a successful API call (VPN resilience).
                 withContext(Dispatchers.Main) {
                     stateList.clear()
                     stateList.addAll(allItems)
@@ -609,7 +610,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                 cacheFile.writeText(array.toString())
             }
         } catch (e: Exception) {
-            // API failed — keep existing cached data, don't clear the list (BUG-05)
+            // API failed — keep existing cached data, don't clear the list.
             android.util.Log.w("SpotifyRepository", "Sync failed, keeping cached data: ${e.message}")
         } finally {
             withContext(Dispatchers.Main) { setSyncingFlag(false) }
@@ -652,21 +653,21 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     fun isTrackLiked(id: String): Boolean = likedTrackIds[id] == true
 
     // -------------------------------------------------------------------
-    // E30 — API de playlists y favoritos locales (ids "local:...").
+    // Local playlists and favorites API ("local:..." ids).
     // -------------------------------------------------------------------
 
-    /** ¿Está este track local marcado como favorito? */
+    /** Whether this local track is marked as a favorite. */
     fun isLocalFavorite(id: String): Boolean = localFavoriteIds[id] == true
 
-    /** Marca/desmarca un track local como favorito. No-op si no es id "local:". */
+    /** Marks/unmarks a local track as a favorite. No-op if it is not a "local:" id. */
     fun toggleLocalFavorite(id: String) {
         if (!id.startsWith("local:")) return
-        localFavoriteIds[id] = !(localFavoriteIds[id] == true)
+        localFavoriteIds[id] = localFavoriteIds[id] != true
         saveLocalFavorites()
         com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
-    /** Tracks locales marcados como favoritos (vivos, con cover/duración). Ignora huérfanos. */
+    /** Local tracks marked as favorites (live, with cover/duration). Ignores orphans. */
     fun localFavoriteTracks(): List<FullTrack> =
         localTracks.filter { it.id != null && localFavoriteIds[it.id] == true }
 
@@ -729,7 +730,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
-    /** Resuelve ids "local:" → FullTrack vivos (con cover/duración). Ignora huérfanos. */
+    /** Resolves "local:" ids to live FullTrack objects (with cover/duration). Ignores orphans. */
     fun localPlaylistTracks(playlistId: String): List<FullTrack> {
         val byId = localTracks.associateBy { it.id }
         return localPlaylists.firstOrNull { it.id == playlistId }
@@ -751,7 +752,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
             withContext(Dispatchers.IO) {
                 loadLikedTracksFromCache()
 loadLocalTracksFromCache()
-                loadLocalUserData()   // E30: playlists + favoritos locales
+                loadLocalUserData()   // Local playlists + favorites
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_playlists_cache.json"), savedPlaylists) { SimplePlaylist.fromJson(it) }
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_saved_albums_cache.json"), savedAlbums) { FullAlbum.fromJson(it) }
                 loadLibraryItemsFromCache(java.io.File(appCtx.filesDir, "spotify_followed_artists_cache.json"), followedArtists) { FullArtist.fromJson(it) }
@@ -1072,7 +1073,7 @@ loadLocalTracksFromCache()
     fun isAuthenticated(): Boolean = NativeEngine.isSpotifyAuthenticatedNative()
 
     /**
-     * Recover a hot Spotify session in-memory (token expired mid-session, E10 RC-2).
+     * Recover a hot Spotify session in-memory (token expired mid-session).
      * Re-runs the native restore flow without wiping credentials on transient network errors.
      * Safe to call from any coroutine; returns true if the session is (now) valid.
      */
@@ -1114,7 +1115,7 @@ loadLocalTracksFromCache()
             triggerBackgroundSync()
         } else {
             // Only wipe credentials when the failure is NOT a transient network problem.
-            // A network blip while restoring must not log the user out (E10 RC-2 / E11).
+            // A network blip while restoring must not log the user out.
             val errKind = classifyError(SpotifyEngineException(result.error ?: ""))
             if (errKind != com.varuna.rustify.util.ErrorKind.TRANSIENT) {
                 prefs.edit {
@@ -1176,11 +1177,6 @@ loadLocalTracksFromCache()
         }
     }
 
-    // Removed REST-based checkSavedTracks and checkAndCacheLikedStates
-
-    /**
-     * Toggle like/unlike status for a track.
-     */
     /**
      * Toggle like/unlike status for a track by object.
      */
@@ -1299,7 +1295,7 @@ loadLocalTracksFromCache()
 
     /**
      * Get the artists the user follows.
-     * Now uses offset-based pagination (GraphQL libraryV3).
+     * Uses offset-based pagination (GraphQL libraryV3).
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getFollowedArtists(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
@@ -1478,7 +1474,7 @@ loadLocalTracksFromCache()
     }
 
     /**
-     * Add many tracks to a playlist (E30-ctx: "add whole album/playlist to a playlist").
+     * Add many tracks to a playlist (e.g. "add whole album/playlist to a playlist").
      *
      * The Rust `add_tracks_to_playlist` sends every uri in a single POST, but the Spotify REST
      * endpoint accepts at most 100 uris per call. So we chunk [trackIds] into batches of 100 and

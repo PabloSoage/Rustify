@@ -53,7 +53,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -74,6 +73,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,6 +84,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -92,7 +95,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.draw.rotate
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.varuna.rustify.MiniPlayer
 import com.varuna.rustify.R
@@ -116,14 +119,14 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 
 /**
- * E99 — "Travel playlist": full-screen interactive map (CARTO Voyager OSM basemap by default,
- * or MapTiler Cloud if the user provides a key), con autocomplete de destino (Photon + Nominatim
- * keyless), ubicación en vivo dibujada en el mapa, ruta OSRM dibujada sobre el mapa, prompt para
- * activar GPS, y dos modos de playlist:
- *  - **Auto**: rellena a partir de favoritas.
- *  - **Manual**: empieza vacía; añades canciones y una barrita muestra cuánto cubres del ETA.
- * En ambos modos puedes **previsualizar, reordenar (drag), añadir/quitar** y **guardar como
- * playlist de Spotify** (via GraphQL `createSpotifyPlaylist` + `addTracksToPlaylist`).
+ * "Travel playlist": full-screen interactive map (CARTO Voyager OSM basemap by default,
+ * or MapTiler Cloud if the user provides a key), with destination autocomplete (Photon + Nominatim,
+ * keyless), live location drawn on the map, an OSRM route drawn on the map, a prompt to enable GPS,
+ * and two playlist modes:
+ *  - **Auto**: filled from liked tracks.
+ *  - **Manual**: starts empty; you add songs and a bar shows how much of the ETA you cover.
+ * In both modes you can preview, reorder (drag), add/remove, and save as a Spotify playlist
+ * (via GraphQL `createSpotifyPlaylist` + `addTracksToPlaylist`).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,13 +160,13 @@ fun TravelScreen(
     var searching by remember { mutableStateOf(false) }
     var showSuggestions by remember { mutableStateOf(false) }
     var pickedDestination by remember { mutableStateOf<TravelRouting.Geo?>(null) }
-    // Origen explícito opcional: si es null se usa la ubicación GPS actual como origen.
+    // Optional explicit origin: if null, the current GPS location is used as the origin.
     var originOverride by remember { mutableStateOf<TravelRouting.Geo?>(null) }
-    // Lo que fija el buscador / long-press: 0 = destino, 1 = origen.
-    var pickMode by remember { mutableStateOf(0) }
+    // What the search / long-press sets: 0 = destination, 1 = origin.
+    var pickMode by remember { mutableIntStateOf(0) }
 
     var route by remember { mutableStateOf<TravelRouting.Route?>(null) }
-    var bufferMin by remember { mutableStateOf(10f) }
+    var bufferMin by remember { mutableFloatStateOf(10f) }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
 
@@ -174,8 +177,8 @@ fun TravelScreen(
     var likedCache by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
 
     var useManualDuration by remember { mutableStateOf(false) }
-    var manualDurationH by remember { mutableStateOf(1) }
-    var manualDurationM by remember { mutableStateOf(0) }
+    var manualDurationH by remember { mutableIntStateOf(1) }
+    var manualDurationM by remember { mutableIntStateOf(0) }
     var showManualCard by remember { mutableStateOf(false) }
 
     fun currentTargetMs(): Long {
@@ -186,9 +189,9 @@ fun TravelScreen(
 
     var followUser by remember { mutableStateOf(true) }
 
-    var mapStyleIndex by remember { mutableStateOf(TravelSettings.mapStyleIndex(context)) }
+    var mapStyleIndex by remember { mutableIntStateOf(TravelSettings.mapStyleIndex(context)) }
     var showStyleMenu by remember { mutableStateOf(false) }
-    var mapBearing by remember { mutableStateOf(0.0) }
+    var mapBearing by remember { mutableDoubleStateOf(0.0) }
     var styleSwitching by remember { mutableStateOf(false) }
     val isDarkMap = mapStyleIndex == TravelSettings.STYLE_DARK_INDEX
     val titleColor = if (isDarkMap) Color.White else Color.Black
@@ -196,17 +199,17 @@ fun TravelScreen(
     val onMapIconColor = if (isDarkMap) Color.White else Color.Black
     val scrimColor = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
 
-    // Cuando se cambia el estilo desde el dropdown, se lo aplicamos al mapa YA cargado
-    // (recordar: MapView se crea una sola vez en el remember del MapLibreView).
+    // When the style changes from the dropdown, apply it to the already-loaded map
+    // (MapView is created only once in the MapLibreView remember).
     LaunchedEffect(mapStyleIndex) {
         val m = mapRef[0] ?: return@LaunchedEffect
         val uri = TravelSettings.ASSET_STYLES[mapStyleIndex]
         styleSwitching = true
         m.setStyle(Style.Builder().fromUri(uri)) { style ->
             registerLayers(style)
-            // Re-aplicar estado: registerLayers recrea las GeoJsonSource con geojson vacío,
-            // así que volcamos la posición/destino/ruta actuales para que no "desaparezcan"
-            // hasta el próximo callback del GPS (~2 s).
+            // Reapply state: registerLayers recreates the GeoJsonSources with empty geojson, so we
+            // push the current position/destination/route back in so they don't disappear until the
+            // next GPS callback (~2 s).
             current?.let { loc ->
                 userSourceRef[0]?.setGeoJson(pointFeatureJson(loc.latitude, loc.longitude))
             }
@@ -228,7 +231,7 @@ fun TravelScreen(
                     }
                 }
             }
-            // Liberamos el guard: a partir de aquí los gestos del usuario sí desmarcan follow.
+            // Release the guard: from here on, user gestures do unset follow.
             styleSwitching = false
         }
     }
@@ -238,8 +241,8 @@ fun TravelScreen(
     val noTracksMsg = stringResource(R.string.travel_no_tracks)
 
     val activity = context as? android.app.Activity
-    // "Denegado para siempre": el usuario marcó "no volver a preguntar" o revocó el permiso desde
-    // Ajustes de Android. En ese caso el diálogo del sistema ya no aparece; hay que mandarlo a Ajustes.
+    // "Permanently denied": the user chose "don't ask again" or revoked the permission from Android
+    // settings. In that case the system dialog no longer appears, so send them to app settings.
     var permPermanentlyDenied by remember { mutableStateOf(false) }
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPerm = granted
@@ -248,16 +251,16 @@ fun TravelScreen(
             permPermanentlyDenied = false
             if (locationEnabled) current = lastKnownLocation(context)
         } else {
-            // Si no se puede volver a pedir (rationale=false tras denegar) → denegado para siempre.
+            // If it can't be requested again (rationale=false after denial), it's permanently denied.
             permPermanentlyDenied = activity?.let {
                 !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.ACCESS_FINE_LOCATION)
             } ?: false
         }
     }
 
-    // Re-chequea el permiso al volver a primer plano: si el usuario lo REVOCÓ desde Ajustes de Android,
-    // hasPerm vuelve a false y el botón "Conceder ubicación" reaparece (antes se quedaba oculto para
-    // siempre porque hasPerm solo se leía una vez al entrar).
+    // Re-check the permission when returning to the foreground: if the user revoked it from Android
+    // settings, hasPerm goes back to false and the "Grant location" button reappears. hasPerm would
+    // otherwise be read only once on entry.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -271,7 +274,7 @@ fun TravelScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    // Pide el permiso; si está denegado para siempre, abre los Ajustes de la app en su lugar.
+    // Request the permission; if permanently denied, open the app settings instead.
     fun requestLocationPermission() {
         if (permPermanentlyDenied) {
             runCatching {
@@ -304,17 +307,17 @@ fun TravelScreen(
     }
 
     LaunchedEffect(Unit) { locationEnabled = TravelRouting.isLocationEnabled(context) }
-    // Precarga las favoritas al entrar para que "Empezar viaje" en modo Auto funcione sin tener que
-    // abrir antes la hoja de Preview (que era lo único que las cargaba).
+    // Preload liked tracks on entry so "Start trip" in Auto mode works without first opening the
+    // Preview sheet (the only thing that used to load them).
     LaunchedEffect(Unit) { ensureCache() }
-    // Pre-cargar destino si vino desde un link compartido (geo: o Google Maps).
+    // Preload the destination if it came from a shared link (geo: or Google Maps).
     LaunchedEffect(initialDestination) {
         val dest = initialDestination ?: return@LaunchedEffect
         pickedDestination = dest
         query = dest.label
         ensureCache()
-        // Al cargar el mapa (mapRef se setea en onMapReady), computaremos la ruta desde
-        // la ubicación actual. Pero si aún no hay ubicación, al menos marcamos el destino.
+        // Once the map is ready (mapRef is set in onMapReady) the route is computed from the current
+        // location. If there is no location yet, at least mark the destination.
         destSourceRef[0]?.setGeoJson(pointFeatureJson(dest.lat, dest.lon))
     }
     LaunchedEffect(hasPerm, locationEnabled) {
@@ -380,7 +383,7 @@ fun TravelScreen(
         routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
     }
 
-    // Origen efectivo: el punto fijado a mano si existe; si no, la ubicación GPS actual.
+    // Effective origin: the manually fixed point if any, otherwise the current GPS location.
     fun originLatLon(): Pair<Double, Double>? {
         originOverride?.let { return it.lat to it.lon }
         current?.let { return it.latitude to it.longitude }
@@ -435,15 +438,16 @@ fun TravelScreen(
         }
     }
 
-    // Si el destino llegó de un link compartido ANTES de tener ubicación GPS, el marcador ya se dibuja
-    // (onMapReady), pero la ruta no se computaba hasta reabrir la pantalla. En cuanto haya ubicación,
-    // la calculamos automáticamente — así un link de Maps muestra ubicación Y ruta, no un mapa vacío.
+    // If the destination arrived from a shared link before a GPS location was available, the marker
+    // is already drawn (onMapReady), but the route is not computed until the screen is reopened. As
+    // soon as a location is available, compute it automatically so a Maps link shows both the
+    // location and the route, not an empty map.
     LaunchedEffect(current, pickedDestination) {
         val d = pickedDestination
         if (d != null && current != null && route == null && !loading) computeRoute(d)
     }
 
-    // Fija (o limpia con null) el origen explícito, dibuja su marcador azul y recomputa la ruta.
+    // Set (or clear with null) the explicit origin, draw its blue marker, and recompute the route.
     fun setOrigin(g: TravelRouting.Geo?) {
         originOverride = g
         originSourceRef[0]?.setGeoJson(if (g == null) EMPTY_POINT_GEO_JSON else pointFeatureJson(g.lat, g.lon))
@@ -454,7 +458,7 @@ fun TravelScreen(
         if (map.isNotEmpty()) onPlayTracks(map) else status = noTracksMsg
     }
 
-    // Pantalla completa: Box raíz, mapa llena todo, los overlays se pintan encima.
+    // Full screen: root Box, map fills everything, overlays painted on top.
     Box(Modifier.fillMaxSize()) {
 
         MapLibreView(
@@ -463,23 +467,23 @@ fun TravelScreen(
             onMapReady = { map, style ->
                 mapRef[0] = map
                 registerLayers(style)
-                // Brújula nativa de MapLibre desactivada: usamos una propia (Compose) siempre
-                // visible y clickable para resetear el norte.
+                // MapLibre's native compass is disabled: we use our own (Compose) one, always visible
+                // and clickable to reset north.
                 map.uiSettings.isCompassEnabled = false
-                // bearing → rota nuestra brújula.
+                // Bearing rotates our compass.
                 map.addOnCameraMoveListener { mapBearing = map.cameraPosition.bearing }
-                // Cuando el usuario arrastra el mapa manualmente, desmarca followUser.
+                // When the user drags the map manually, unset followUser.
                 // REASON_GESTURE = 1 (MapLibre/Mapbox OnCameraMoveStartedListener).
                 map.addOnCameraMoveStartedListener { reason ->
                     if (reason == 1 && !styleSwitching) followUser = false
                 }
-                // Long-press en el mapa → marcar destino y calcular ruta hasta ese punto.
+                // Long-press on the map: mark the destination and compute the route to that point.
                 map.addOnMapLongClickListener { point ->
                     val lat = point.latitude
                     val lon = point.longitude
                     val coordLabel = "%.5f, %.5f".format(lat, lon)
                     if (pickMode == 1) {
-                        // Long-press en modo Origen → fija el origen en ese punto.
+                        // Long-press in Origin mode: fix the origin at that point.
                         val g = TravelRouting.Geo(lat, lon, coordLabel)
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
                         ensureCache()
@@ -500,7 +504,7 @@ fun TravelScreen(
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
                         ensureCache()
                         computeRoute(pickedDestination!!)
-                        // Reverse geocode en segundo plano para reemplazar "lat, lon" por la etiqueta.
+                        // Reverse geocode in the background to replace "lat, lon" with the label.
                         scope.launch {
                             val label = TravelRouting.reverseGeocode(lat, lon, context)
                             pickedDestination = pickedDestination?.copy(label = label)
@@ -539,7 +543,7 @@ fun TravelScreen(
                 } else {
                     map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(40.0, -3.7), 5.0))
                 }
-                // Si vino un destino inicial desde un link compartido, centrarlo y computar ruta.
+                // If an initial destination came from a shared link, center it and compute the route.
                 initialDestination?.let { d ->
                     map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.lat, d.lon), 11.0))
                     if (current != null) computeRoute(d)
@@ -547,7 +551,7 @@ fun TravelScreen(
             }
         )
 
-        // ── TopAppBar transparente sobre el mapa (status bar padding manual) ───────────────
+        // Transparent TopAppBar over the map (manual status bar padding).
         TopAppBar(
             title = {
                 Text(
@@ -557,7 +561,7 @@ fun TravelScreen(
                 )
             },
             actions = {
-                // Modo manual (tiempo sin destino) — abre el card.
+                // Manual mode (time without a destination) — opens the card.
                 IconButton(onClick = {
                     showManualCard = !showManualCard
                     if (showManualCard) useManualDuration = true
@@ -568,12 +572,12 @@ fun TravelScreen(
                         tint = if (showManualCard) green else onMapIconColor
                     )
                 }
-                // Follow-me (mi ubicación).
+                // Follow-me (my location).
                 IconButton(onClick = {
                     followUser = true
                     current?.let { loc ->
-                        // Zoom-in al centrar: si el zoom actual es muy lejano (vista de mundo/país),
-                        // acercamos a 14. Si ya está más cerca, respetamos el zoom del usuario.
+                        // Zoom in when centering: if the current zoom is far out (world/country view),
+                        // zoom to 14. If already closer, respect the user's zoom.
                         val z = (mapRef[0]?.cameraPosition?.zoom ?: 14.0).coerceAtLeast(14.0)
                         mapRef[0]?.animateCamera(
                             CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), z)
@@ -586,7 +590,7 @@ fun TravelScreen(
                         tint = if (followUser) green else onMapIconColor
                     )
                 }
-                // Brújula propia (siempre visible, rota con el bearing, click = norte arriba).
+                // Custom compass (always visible, rotates with the bearing, click = north up).
                 IconButton(onClick = {
                     val pos = mapRef[0]?.cameraPosition ?: return@IconButton
                     mapRef[0]?.animateCamera(
@@ -603,7 +607,7 @@ fun TravelScreen(
                         modifier = Modifier.rotate(mapBearing.toFloat())
                     )
                 }
-                // Selector de estilo de mapa (capas). Lanza un dropdown con los 4 estilos.
+                // Map style selector (layers). Opens a dropdown with the available styles.
                 Box {
                     IconButton(onClick = { showStyleMenu = true }) {
                         Icon(Icons.Filled.Layers, contentDescription = null, tint = onMapIconColor)
@@ -632,9 +636,9 @@ fun TravelScreen(
             modifier = Modifier.statusBarsPadding()
         )
 
-        // ── Overlay búsqueda (debajo de la top bar, sobre el mapa) ─────────────────────────
+        // Search overlay (below the top bar, over the map).
         Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 56.dp).padding(horizontal = 10.dp)) {
-            // Selector de qué fija el buscador/long-press: Destino (rojo) u Origen (azul).
+            // Selects what the search/long-press sets: Destination (red) or Origin (blue).
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = pickMode == 0, onClick = { pickMode = 0 },
@@ -646,7 +650,7 @@ fun TravelScreen(
                 ) { Text(stringResource(R.string.travel_pick_origin), color = if (pickMode == 1) Color.Black else onMapTextColor) }
             }
             Spacer(Modifier.height(4.dp))
-            // Chip del origen fijado (si lo hay), con botón para volver a la ubicación actual.
+            // Chip for the fixed origin (if any), with a button to return to the current location.
             originOverride?.let { o ->
                 Surface(color = scrimColor, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -696,8 +700,8 @@ fun TravelScreen(
             if (showSuggestions && suggestions.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Surface(color = scrimColor, shape = RoundedCornerShape(10.dp)) {
-                    // Tope de altura: con muchas sugerencias la lista crecía sin límite y tapaba el mapa y
-                    // la card inferior ("se juntaban los menús"). Ahora es una lista acotada y desplazable.
+                    // Height cap: with many suggestions the list grew unbounded and covered the map and
+                    // the bottom card. It is now a bounded, scrollable list.
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
                         items(suggestions) { s ->
                             Text(
@@ -733,7 +737,7 @@ fun TravelScreen(
             }
         }
 
-// ── Atribución minimal (sobre el mapa, en lugar del logo/(i) de MapLibre que crashea) ─
+// Minimal attribution (over the map, instead of MapLibre's logo/(i) which crashes).
         Text(
             "© OpenStreetMap, CARTO · Esri · OpenTopoMap",
             color = onMapTextColor.copy(alpha = 0.65f),
@@ -741,9 +745,9 @@ fun TravelScreen(
             modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 6.dp, bottom = 4.dp)
         )
 
-        // ── Card inferior: destino/tiempo + buffer + modo + acciones ─────────────────────────
-        // Mostramos la card siempre que haya un destino elegido (aunque la ruta OSRM falle o no haya
-        // GPS), para que el botón "Navegar en Google Maps" y el modo manual sigan disponibles.
+        // Bottom card: destination/time + buffer + mode + actions.
+        // Shown whenever a destination is chosen (even if the OSRM route fails or there is no GPS),
+        // so the "Navigate in Google Maps" button and manual mode stay available.
         if (route != null || showManualCard || pickedDestination != null) {
             val cardScrim = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
             val cardText = if (isDarkMap) Color.White else Color.Black
@@ -758,7 +762,7 @@ fun TravelScreen(
                     .fillMaxWidth()
             ) {
                 Column(Modifier.padding(14.dp)) {
-                    // Toggle Ruta / Manual (tiempo)
+                    // Toggle Route / Manual (time).
                     if (route != null) {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             SegmentedButton(
@@ -774,7 +778,7 @@ fun TravelScreen(
                     }
 
                     if (useManualDuration || route == null) {
-                        // Selector de horas / minutos
+                        // Hours / minutes selector.
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.travel_duration), color = cardText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         }
@@ -821,7 +825,7 @@ fun TravelScreen(
                             }
                         }
                     } else {
-                        // Ruta calculada (modo normal)
+                        // Computed route (normal mode).
                         route?.let { r ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -913,8 +917,8 @@ fun TravelScreen(
                         }
                     }
 
-                    // Navegar en Google Maps: abre la ruta (respetando el origen fijado) para conducir
-                    // mientras Rustify reproduce la playlist. Sin API key ni SDK — vía intent al mapa.
+                    // Navigate in Google Maps: opens the route (respecting the fixed origin) to drive
+                    // while Rustify plays the playlist. No API key or SDK — via an intent to the map app.
                     pickedDestination?.let { dest ->
                         Spacer(Modifier.height(10.dp))
                         Button(
@@ -922,17 +926,17 @@ fun TravelScreen(
                                 val sb = StringBuilder("https://www.google.com/maps/dir/?api=1")
                                 originOverride?.let { sb.append("&origin=${it.lat},${it.lon}") }
                                 sb.append("&destination=${dest.lat},${dest.lon}&travelmode=driving")
-                                val uri = android.net.Uri.parse(sb.toString())
-                                // 1) intenta abrir directamente la app de Google Maps; 2) si no está
-                                // (o no es visible), abre la URL con cualquier navegador/app de mapas;
-                                // 3) último recurso, un intent geo: turn-by-turn. FLAG_ACTIVITY_NEW_TASK
-                                // por si el context no es una Activity.
+                                val uri = sb.toString().toUri()
+                                // 1) try to open the Google Maps app directly; 2) if it isn't installed
+                                // (or visible), open the URL with any browser/maps app; 3) as a last
+                                // resort, a geo: turn-by-turn intent. FLAG_ACTIVITY_NEW_TASK in case the
+                                // context is not an Activity.
                                 fun launch(i: Intent): Boolean = runCatching {
                                     context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
                                 }.getOrDefault(false)
                                 val ok = launch(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")) ||
                                     launch(Intent(Intent.ACTION_VIEW, uri)) ||
-                                    launch(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=${dest.lat},${dest.lon}&mode=d")))
+                                    launch(Intent(Intent.ACTION_VIEW, "google.navigation:q=${dest.lat},${dest.lon}&mode=d".toUri()))
                                 if (!ok) android.widget.Toast.makeText(context, "Google Maps no disponible", android.widget.Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE)),
@@ -945,16 +949,15 @@ fun TravelScreen(
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    val finalMs = tMs
                     Button(
                         onClick = {
                             scope.launch {
-                                val list = if (manualMode) TravelPlaylist.fillRemaining(finalMs, manualTracks.toList(), likedCache)
-                                           else TravelPlaylist.build(finalMs, likedCache)
+                                val list = if (manualMode) TravelPlaylist.fillRemaining(tMs, manualTracks.toList(), likedCache)
+                                           else TravelPlaylist.build(tMs, likedCache)
                                 startTrip(list)
                             }
                         },
-                        enabled = !loading && (!manualMode || manualTracks.isNotEmpty()) && finalMs > 0,
+                        enabled = !loading && (!manualMode || manualTracks.isNotEmpty()) && tMs > 0,
                         colors = ButtonDefaults.buttonColors(containerColor = green, disabledContainerColor = Color(0xFF2C2C2E)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -967,7 +970,7 @@ fun TravelScreen(
             }
         }
 
-        // ── Prompt de ubicación desactivada ──────────────────────────────────────────────────
+        // Prompt shown when location is disabled.
         if (!locationEnabled) {
             val promptScrim = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
             val promptText = if (isDarkMap) Color.White else Color.Black
@@ -995,7 +998,7 @@ fun TravelScreen(
             }
         }
 
-        // ── MiniPlayer sobre el mapa ─────────────────────────────────────────────────────────
+        // MiniPlayer over the map.
         if (currentTrack != null) {
             Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
                 MiniPlayer(
@@ -1014,7 +1017,7 @@ fun TravelScreen(
             }
         }
 
-        // ── Estado (errores) ─────────────────────────────────────────────────────────────────
+        // Status (errors).
         status?.let {
             Surface(
                 color = Color(0xCCB00020),
@@ -1026,7 +1029,7 @@ fun TravelScreen(
         }
     }
 
-    // ── Hoja de selección manual (favoritas) ──────────────────────────────────────────────────
+    // Manual selection sheet (liked tracks).
     if (showPicker) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         LaunchedEffect(Unit) {
@@ -1050,10 +1053,10 @@ fun TravelScreen(
         }
     }
 
-    // ── Hoja de preview/edit/save ────────────────────────────────────────────────────────────
+    // Preview / edit / save sheet.
     if (showPreview) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        // Genera la playlist Auto on demand; la manual son las seleccionadas + relleno.
+        // Generate the Auto playlist on demand; the manual one is the selected tracks plus filler.
         val previewTracks = remember(manualMode, manualTracks.size, route, bufferMin, likedCache.size, useManualDuration, manualDurationH, manualDurationM) {
             val tMs = if (useManualDuration || route == null) (manualDurationH * 3600L + manualDurationM * 60L) * 1000L
                        else ((route!!.durationSec + bufferMin.toLong() * 60L) * 1000L)
@@ -1062,7 +1065,7 @@ fun TravelScreen(
             else TravelPlaylist.build(tMs, likedCache)
         }
         val reorderable = remember { mutableStateListOf<FullTrack>().apply { addAll(previewTracks) } }
-        // Re-sync cuando cambian las dependencias del preview.
+        // Re-sync when the preview dependencies change.
         LaunchedEffect(previewTracks) { reorderable.clear(); reorderable.addAll(previewTracks) }
 
         ModalBottomSheet(onDismissRequest = { showPreview = false }, sheetState = sheetState, containerColor = Color(0xFF1C1C1E)) {
@@ -1087,7 +1090,7 @@ fun TravelScreen(
     }
 }
 
-// ── Hoja manual: muestra tiempo cubierto arriba y lista para tap añadir/quitar ─────────────
+// Manual sheet: shows covered time at the top and a list to tap to add/remove.
 @Composable
 private fun ManualPickerContent(
     likedCache: List<FullTrack>,
@@ -1157,7 +1160,7 @@ private fun PreviewSheetContent(
     val density = LocalDensity.current
     val rowHeightPx = with(density) { 56.dp.toPx() }
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     var saveName by remember { mutableStateOf("Travel ${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())}") }
     var saving by remember { mutableStateOf(false) }
     var saveResult by remember { mutableStateOf<Boolean?>(null) }
@@ -1274,7 +1277,7 @@ private fun PreviewSheetContent(
     }
 }
 
-// ── Map state refs (compartido entre composables del módulo) ───────────────────────────────
+// Map state refs (shared across the module's composables).
 private val mapRef = arrayOfNulls<MapLibreMap>(1)
 private val userSourceRef = arrayOfNulls<GeoJsonSource>(1)
 private val destSourceRef = arrayOfNulls<GeoJsonSource>(1)
@@ -1318,7 +1321,7 @@ private fun registerLayers(style: Style) {
                     )
             )
         }
-        // Origen explícito (azul) — solo visible cuando el usuario fija un origen distinto del GPS.
+        // Explicit origin (blue) — only visible when the user fixes an origin different from GPS.
         if (style.getSource("origin-source") == null) {
             val os = GeoJsonSource("origin-source", EMPTY_POINT_GEO_JSON)
             style.addSource(os)
@@ -1384,8 +1387,8 @@ private fun MapLibreView(
 
     AndroidView(modifier = modifier, factory = {
         mapView.getMapAsync { map ->
-            // Oculta logo + (i) de MapLibre: el (i) crashea al abrir el sheet de atribución
-            // sobre estilos asset:// sin URLs válidas. La atribución va como Text overlay.
+            // Hide MapLibre's logo + (i): the (i) crashes when opening the attribution sheet over
+            // asset:// styles without valid URLs. Attribution is shown as a Text overlay instead.
             map.uiSettings.isLogoEnabled = false
             map.uiSettings.isAttributionEnabled = false
             map.uiSettings.isCompassEnabled = true

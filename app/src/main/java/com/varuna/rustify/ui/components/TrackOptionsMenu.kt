@@ -1,7 +1,6 @@
 
 package com.varuna.rustify.ui.components
 
-import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,8 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -35,19 +34,20 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,6 +71,7 @@ import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +90,7 @@ fun TrackOptionsMenuBottomSheet(
     val context = LocalContext.current
     var showPlaylistSelector by remember { mutableStateOf(false) }
     var showLyricsOffsetDialog by remember { mutableStateOf(false) }
-    // E30 — selector de playlist local + diálogo de creación.
+    // Local playlist selector + creation dialog.
     var showLocalPlaylistSelector by remember { mutableStateOf(false) }
     var showCreateLocalPlaylistDialog by remember { mutableStateOf(false) }
     var newLocalPlaylistName by remember { mutableStateOf("") }
@@ -105,10 +106,10 @@ fun TrackOptionsMenuBottomSheet(
         // Handle if needed
     }
 
-    // Ajuste de sincronía de la letra (±) persistido por pista en LyricsOffsetStore.
+    // Per-track lyrics sync offset (±), persisted in LyricsOffsetStore.
     if (showLyricsOffsetDialog) {
         val tid = track.id ?: ""
-        var offsetMs by remember(tid) { mutableStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(context, tid)) }
+        var offsetMs by remember(tid) { mutableLongStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(context, tid)) }
         fun apply(newMs: Long) {
             offsetMs = newMs.coerceIn(-10_000L, 10_000L)
             com.varuna.rustify.bridge.LyricsOffsetStore.set(context, tid, offsetMs)
@@ -129,7 +130,7 @@ fun TrackOptionsMenuBottomSheet(
                         TextButton(onClick = { apply(offsetMs - 500) }) { Text("-0.5s", color = Color.White) }
                         TextButton(onClick = { apply(offsetMs - 100) }) { Text("-0.1s", color = Color.White) }
                         Text(
-                            String.format("%+.1f s", offsetMs / 1000f),
+                            String.format(Locale.US, "%+.1f s", offsetMs / 1000f),
                             color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 16.sp,
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
@@ -151,7 +152,7 @@ fun TrackOptionsMenuBottomSheet(
         )
     }
 
-    // E30 — selector de playlist local (tracks "local:") + diálogo de creación.
+    // Local playlist selector (for "local:" tracks) + creation dialog.
     val localPlaylistAddedMsg = stringResource(R.string.local_playlist_added)
     val localPlaylistAlreadyMsg = stringResource(R.string.local_playlist_already_added)
     if (showLocalPlaylistSelector) {
@@ -402,7 +403,7 @@ fun TrackOptionsMenuBottomSheet(
                 val isLocalTrack = track.id?.startsWith("local:") == true
                 val isYtmTrack = track.id?.startsWith("ytm:") == true
 
-                // E30 — favorito local (sólo para tracks "local:").
+                // Local favorite (only for "local:" tracks).
                 if (isLocalTrack) {
                     val tid = track.id ?: ""
                     var isFav by remember { mutableStateOf(spotifyRepo.isLocalFavorite(tid)) }
@@ -455,7 +456,7 @@ fun TrackOptionsMenuBottomSheet(
                     onClick = onGoToQueue
                 )
 
-                // Ajuste manual de sincronía de la letra (para canciones ligeramente desfasadas).
+                // Manual lyrics sync adjustment (for slightly out-of-sync songs).
                 MenuOptionItem(
                     icon = Icons.Default.Schedule,
                     label = stringResource(R.string.track_menu_lyrics_offset),
@@ -530,13 +531,13 @@ fun TrackOptionsMenuBottomSheet(
                                 onDismiss()
                                 return@MenuOptionItem
                             }
-                            // B4: robust share (adds FLAG_ACTIVITY_NEW_TASK + catches any exception).
+                            // Robust share: adds FLAG_ACTIVITY_NEW_TASK and catches any exception.
                             com.varuna.rustify.util.ShareUtils.shareSpotifyLink(context, "track", id)
                             onDismiss()
                         }
                     )
 
-                    // F2: extra "Share as Rustify" button shown only when the toggle is on.
+                    // Extra "Share as Rustify" button shown only when the toggle is on.
                     val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
                     if (prefs.getBoolean("share_as_rustify_link", false)) {
                         MenuOptionItem(

@@ -2,17 +2,20 @@ package com.varuna.rustify.metrics
 
 import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
- * E70 — Rastreador de sesión de escucha con umbral 30s / 50% duración.
- * Persiste eventos crudos como JSON en `filesDir/metrics.json` (sin Room,
- * paridad con E30: la app no añade dependencias de BD).
+ * Tracks listening sessions with a 30s / 50%-of-duration threshold.
+ * Persists raw events as JSON in `filesDir/metrics.json` (no Room; the app
+ * avoids adding a database dependency).
  *
- * Hook en [AudioPlayerService]: onTrackStarted, onProgress, onEnded, onError, flush.
+ * Hooked from [AudioPlayerService]: onTrackStarted, onProgress, onEnded, onError, flush.
  */
 class ListeningTracker(private val appContext: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -33,14 +36,11 @@ class ListeningTracker(private val appContext: Context) {
     }
 
     /**
-     * Acumula tiempo REALMENTE escuchado. Bug anterior: solo sumaba `posDelta in 1..2000`, así que un
-     * tick del bucle de 500 ms que llegaba tarde (hilo ocupado) daba delta >2 s y se DESCARTABA — a lo
-     * largo de una sesión larga esos ticks perdidos sumaban horas mal contadas (90 min mostrados vs
-     * 2 h 30 reales). Ahora se cuenta `min(posDelta, wallDelta)`:
-     *  - reproducción normal: posDelta≈wallDelta≈500 ms → suma el tiempo real, incl. ticks tardíos;
-     *  - seek adelante: posDelta enorme pero wallDelta pequeño → suma solo lo escuchado (sin inflar);
-     *  - seek atrás / stall (buffering): posDelta ≤ 0 → no suma;
-     *  - hueco enorme (>10 s, app suspendida sin sonar): se ignora para no contar tiempo no reproducido.
+     * Accumulates time actually listened by counting `min(posDelta, wallDelta)`:
+     *  - normal playback: posDelta≈wallDelta≈500 ms → counts real time, including late ticks;
+     *  - forward seek: large posDelta but small wallDelta → counts only what was played (no inflation);
+     *  - backward seek / stall (buffering): posDelta ≤ 0 → not counted;
+     *  - large gap (>10 s, app suspended without audio): ignored so non-played time isn't counted.
      */
     fun onProgress(posMs: Long) {
         val s = cur ?: return
@@ -77,8 +77,8 @@ class ListeningTracker(private val appContext: Context) {
             put("artistNames", aNms)
             put("albumId", s.track.album?.id ?: "")
             put("albumName", s.track.album?.name ?: "")
-            // E102 — carátula del álbum, para mostrar covers en la pantalla de métricas (los eventos
-            // antiguos no la tienen → la UI cae a un placeholder). No rompe el formato (campo extra).
+            // Album artwork, used to show covers on the metrics screen (older events lack it, so the
+            // UI falls back to a placeholder). Adding this extra field doesn't break the format.
             put("imageUrl", s.track.album?.images?.firstOrNull()?.url ?: "")
             put("durationMs", s.track.durationMs)
             put("startedAt", s.startedAt)
@@ -95,7 +95,7 @@ class ListeningTracker(private val appContext: Context) {
             val file = File(appContext.filesDir, "metrics.json")
             val arr = if (file.exists()) JSONArray(file.readText()) else JSONArray()
             arr.put(json)
-            // Rotación: mantener las últimas ~5000 entradas
+            // Rotation: keep the most recent ~5000 entries
             val trimmed = if (arr.length() > 5000) {
                 val fresh = JSONArray()
                 for (i in arr.length() - 5000 until arr.length()) fresh.put(arr.getJSONObject(i.toInt()))
@@ -118,9 +118,9 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         /**
-         * E70 — Exporta las métricas a formato Streaming History de Spotify (compatible con
-         * stats.fm) para que el usuario pueda importarlas manualmente en stats.fm u otra app.
-         * Devuelve los bytes del JSON (UTF-8).
+         * Exports the metrics to Spotify's Streaming History format (compatible with stats.fm)
+         * so the user can manually import them into stats.fm or another app.
+         * Returns the JSON bytes (UTF-8).
          */
         fun exportSpotifyHistoryBytes(context: Context): ByteArray {
             val events = loadEvents(context)
@@ -153,12 +153,12 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         /**
-         * E70 — Importa un historial de escucha. Acepta tres formatos:
-         *  1. JSONArray de eventos Rustify (el mismo formato de metrics.json).
-         *  2. Streaming History de Spotify (array de objetos con `ts`/`ms_played`/`master_metadata_*`).
-         *  3. Contenedor Rustify `{ "events": [...] }`.
+         * Imports a listening history. Accepts three formats:
+         *  1. JSONArray of Rustify events (same format as metrics.json).
+         *  2. Spotify Streaming History (array of objects with `ts`/`ms_played`/`master_metadata_*`).
+         *  3. Rustify container `{ "events": [...] }`.
          *
-         * Devuelve el número de eventos añadidos. Updates metrics.json on disk.
+         * Returns the number of events added. Updates metrics.json on disk.
          */
         fun importHistory(context: Context, inputStream: java.io.InputStream): Int {
             val text = inputStream.bufferedReader().use { it.readText() }
@@ -173,9 +173,9 @@ class ListeningTracker(private val appContext: Context) {
             if (arr == null) throw IllegalArgumentException("Unrecognized JSON format")
             val file = File(context.filesDir, "metrics.json")
             val existing = if (file.exists()) JSONArray(file.readText()) else JSONArray()
-            // Dedupe: clave por (trackId|trackName, startedAt, listenedMs). Reimportar el mismo
-            // export no debe doblar eventos. Se siembra con lo ya persistido y con los recién
-            // añadidos en esta misma pasada (por si el propio fichero contiene duplicados).
+            // Dedupe by (trackId|trackName, startedAt, listenedMs). Re-importing the same export
+            // must not duplicate events. Seeded with what's already persisted and with entries added
+            // in this same pass (in case the file itself contains duplicates).
             val seen = HashSet<String>()
             for (i in 0 until existing.length()) {
                 existing.optJSONObject(i)?.let { seen.add(dedupeKey(it)) }
@@ -184,7 +184,7 @@ class ListeningTracker(private val appContext: Context) {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val event = normalizeToRustifyEvent(o) ?: continue
-                // Dedupe: saltar si ya existe (mismo track + startedAt + listenedMs).
+                // Skip if it already exists (same track + startedAt + listenedMs).
                 if (!seen.add(dedupeKey(event))) continue
                 existing.put(event)
                 added++
@@ -201,18 +201,19 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         /**
-         * Normaliza un objeto JSON de historial a un evento Rustify. Acepta tres orígenes:
-         *  1. Evento Rustify (ya tiene `trackName`) → se acepta tal cual.
-         *  2. Spotify **Extended** Streaming History (nuevo GDPR):
+         * Normalizes a history JSON object into a Rustify event. Accepts three sources:
+         *  1. Rustify event (already has `trackName`) → accepted as-is.
+         *  2. Spotify **Extended** Streaming History (newer GDPR export):
          *     `ts` (ISO-8601), `ms_played`, `master_metadata_track_name`,
          *     `master_metadata_album_album_name`, `master_metadata_artist_name`, `spotify_track_uri`.
-         *  3. Spotify **antiguo** `StreamingHistory*.json`:
-         *     `endTime` ("yyyy-MM-dd HH:mm", zona local del export), `msPlayed`, `trackName`,
-         *     `artistName` (sin álbum ni uri).
+         *  3. Spotify **legacy** `StreamingHistory*.json`:
+         *     `endTime` ("yyyy-MM-dd HH:mm", export's local time zone), `msPlayed`, `trackName`,
+         *     `artistName` (no album or uri).
          */
         /**
-         * Clave de dedupe de un evento Rustify ya normalizado. Usa `trackId` si existe (imports
-         * nuevos con URI o eventos de la app), y cae a `trackName` para el formato antiguo sin URI.
+         * Dedupe key for an already-normalized Rustify event. Uses `trackId` when present (new
+         * imports with a URI or app events), and falls back to `trackName` for the legacy format
+         * without a URI.
          */
         private fun dedupeKey(e: JSONObject): String {
             val id = e.optString("trackId", "")
@@ -221,14 +222,14 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         private fun normalizeToRustifyEvent(o: JSONObject): JSONObject? {
-            // Formato Rustify: `trackName` + un campo propio (evita colisión con el antiguo Spotify,
-            // que también usa `trackName` pero sin `startedAt`/`counted`/`source`).
+            // Rustify format: `trackName` plus one of its own fields (avoids collision with the
+            // legacy Spotify format, which also uses `trackName` but lacks `startedAt`/`counted`/`source`).
             val nameR = o.optString("trackName", "")
             if (nameR.isNotBlank() && (o.has("startedAt") || o.has("counted") || o.has("source"))) {
-                return o // ya es Rustify
+                return o // already Rustify
             }
 
-            // --- Detección del formato Spotify ---
+            // --- Spotify format detection ---
             val isOld = o.has("endTime") || o.has("msPlayed")
 
             val trackName: String
@@ -239,16 +240,16 @@ class ListeningTracker(private val appContext: Context) {
             val trackId: String
 
             if (isOld) {
-                // Formato antiguo: StreamingHistory*.json
+                // Legacy format: StreamingHistory*.json
                 trackName = o.optString("trackName", "")
                 if (trackName.isBlank()) return null
                 artistName = o.optString("artistName", "")
-                albumName = "" // el formato antiguo no incluye álbum
+                albumName = "" // the legacy format has no album
                 ms = o.optLong("msPlayed", 0)
                 startedAt = parseOldEndTime(o.optString("endTime", ""))
-                trackId = "" // el formato antiguo no incluye URI/ID
+                trackId = "" // the legacy format has no URI/ID
             } else {
-                // Formato nuevo: Extended Streaming History
+                // Newer format: Extended Streaming History
                 trackName = o.optString("master_metadata_track_name", "")
                 if (trackName.isBlank()) return null
                 artistName = o.optString("master_metadata_artist_name", "")
@@ -279,8 +280,8 @@ class ListeningTracker(private val appContext: Context) {
         }
 
         /**
-         * Parsea el `endTime` del formato antiguo de Spotify ("yyyy-MM-dd HH:mm"), que viene en la
-         * zona horaria local del usuario en el momento del export. Devuelve epoch millis, o 0 si falla.
+         * Parses the `endTime` from Spotify's legacy format ("yyyy-MM-dd HH:mm"), given in the
+         * user's local time zone at export time. Returns epoch millis, or 0 on failure.
          */
         private fun parseOldEndTime(endTime: String): Long {
             if (endTime.isBlank()) return 0L

@@ -2,7 +2,6 @@ package com.varuna.rustify.travel
 
 import android.content.Context
 import android.location.LocationManager
-import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -12,14 +11,13 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * E99 — geocoding (Nominatim) + routing (OSRM). Ambos son servicios públicos OpenStreetMap
- * sin API key. Best-effort: el uso intensivo está limitado por los servidores demo públicos;
- * para producción deberías self-hostear OSRM / Nominatim. Todas las llamadas devuelven null
- * (o listas vacías) ante cualquier fallo.
+ * Geocoding (Nominatim) + routing (OSRM). Both are public OpenStreetMap services with no API key.
+ * Best-effort: heavy usage is throttled by the public demo servers; for production, self-host OSRM
+ * and Nominatim. Every call returns null (or an empty list) on any failure.
  */
 object TravelRouting {
     data class Geo(val lat: Double, val lon: Double, val label: String)
-    /** [geometryGeoJson] es la geometría de la ruta OSRM como LineString GeoJSON (para dibujar). */
+    /** [geometryGeoJson] is the OSRM route geometry as a GeoJSON LineString (for drawing). */
     data class Route(val durationSec: Long, val distanceM: Double, val geometryGeoJson: String?)
 
     private fun httpGet(url: String): String? = try {
@@ -32,9 +30,9 @@ object TravelRouting {
     } catch (e: Exception) { null }
 
     /**
-     * Geocoding via Google **Geocoding API** (requiere API key del usuario).
-     * Devuelve hasta [limit] resultados con lat/lon + dirección formateada. Ordenados por relevancia.
-     * Documentación: https://developers.google.com/maps/documentation/geocoding/overview
+     * Geocoding via the Google **Geocoding API** (requires the user's API key).
+     * Returns up to [limit] results with lat/lon and a formatted address, ordered by relevance.
+     * Documentation: https://developers.google.com/maps/documentation/geocoding/overview
      */
     private suspend fun googleGeocode(query: String, apiKey: String, limit: Int = 8): List<Geo> = withContext(Dispatchers.IO) {
         runCatching {
@@ -46,7 +44,7 @@ object TravelRouting {
                 return@runCatching emptyList()
             }
             val arr = obj.optJSONArray("results") ?: return@runCatching emptyList()
-            (0 until arr.length()).map { i ->
+            (0 until arr.length()).mapNotNull { i ->
                 val r = arr.getJSONObject(i)
                 val loc = r.optJSONObject("geometry")?.optJSONObject("location")
                 if (loc == null) null else {
@@ -55,28 +53,28 @@ object TravelRouting {
                     val label = r.optString("formatted_address", query)
                     Geo(lat, lon, label)
                 }
-            }.filterNotNull().take(limit)
+            }.take(limit)
         }.getOrDefault(emptyList())
     }
 
     /**
-     * Autocomplete via Google **Places API (New)** o fallback al Geocoding API.
-     * Usa el endpoint `place/autocomplete/json` (Places API) si el usuario tiene key.
-     * Si Places no está habilitado pero Geocoding sí, lo utiliza como best-effort.
+     * Autocomplete via the Google **Places API (New)** or a fallback to the Geocoding API.
+     * Uses the `place/autocomplete/json` endpoint (Places API) if the user has a key.
+     * If Places is not enabled but Geocoding is, it is used as a best-effort fallback.
      */
     private suspend fun googlePlacesAutoComplete(query: String, apiKey: String, limit: Int = 8): List<Geo> = withContext(Dispatchers.IO) {
         runCatching {
-            // Places Autocomplete (legacy) devuelve place_id sin lat/lng; para obtener las
-            // coordenadas haría falta otra llamada por cada resultado. Para simplificar y
-            // ahorrar cuota, usamos Geocoding API directamente (que sí resuelve la query y
-            // devuelve formatted_address + lat/lng de una).
+            // Places Autocomplete (legacy) returns a place_id without lat/lng; fetching the
+            // coordinates would require another call per result. To keep it simple and save
+            // quota, use the Geocoding API directly, which resolves the query and returns
+            // formatted_address plus lat/lng in a single call.
             googleGeocode(query, apiKey, limit)
         }.getOrDefault(emptyList())
     }
 
     /**
-     * Reverse geocoding (lat,lon → etiqueta legible). Usa Google si hay API key, sinon Nominatim.
-     * Útil para etiquetar un punto marcado a mano (long-press en el mapa).
+     * Reverse geocoding (lat,lon → readable label). Uses Google if an API key is set, otherwise
+     * Nominatim. Useful for labeling a manually placed point (long-press on the map).
      */
     suspend fun reverseGeocode(lat: Double, lon: Double, context: Context? = null): String = withContext(Dispatchers.IO) {
         val key = context?.let { TravelSettings.geocodingApiKey(it).trim() } ?: ""
@@ -99,8 +97,8 @@ object TravelRouting {
     }
 
     /**
-     * Geocodificación de un único resultado (compat hacia atrás). Usa Nominatim `/search`.
-     * Devuelve el primer candidato o null.
+     * Single-result geocoding (backward compatible). Uses Nominatim `/search`.
+     * Returns the first candidate or null.
      */
     suspend fun geocode(query: String): Geo? = withContext(Dispatchers.IO) {
         runCatching {
@@ -114,14 +112,14 @@ object TravelRouting {
     }
 
     /**
-     * Sugerencias de geocoding para autocomplete del buscador. Combina **Photon** (Komoot, OSM)
-     * con **Nominatim** y un fallback **Nominatim structured** (street + city) para direcciones
-     * rurales muy concretas (ej. "Castro 24, Cercedo-Cotobade"), deduplicando por lat+lon.
+     * Geocoding suggestions for the search autocomplete. Combines **Photon** (Komoot, OSM) with
+     * **Nominatim** and a **Nominatim structured** fallback (street + city) for very specific rural
+     * addresses (e.g. "Castro 24, Cercedo-Cotobade"), deduplicating by lat+lon.
      *
-     * Si se pasa [biasLat]/[biasLon] (ubicación actual del usuario), Photon los usa para ordenar
-     * resultados cercanos primero (recall en Galicia mejora muchísimo). Sin API key en ninguno.
+     * If [biasLat]/[biasLon] (the user's current location) is passed, Photon uses it to order nearby
+     * results first (greatly improving local recall). None of these require an API key.
      *
-     * Photon format: features[i].geometry.coordinates=[lon,lat] y properties.name, city, street, ...
+     * Photon format: features[i].geometry.coordinates=[lon,lat] and properties.name, city, street, ...
      * Nominatim format: [{lat,lon,display_name,...}].
      */
     suspend fun geocodeSuggestions(
@@ -134,7 +132,7 @@ object TravelRouting {
         if (query.isBlank()) return@withContext emptyList()
         val q = query.trim()
 
-        // Google primero si hay API key (mucho mejor recall para direcciones rurales).
+        // Google first if an API key is available (much better recall for rural addresses).
         val googleKey = context?.let { TravelSettings.geocodingApiKey(it).trim() } ?: ""
         if (googleKey.isNotEmpty()) {
             val g = googlePlacesAutoComplete(q, googleKey, limit)
@@ -154,24 +152,24 @@ object TravelRouting {
             parsePhoton(httpGet(sb.toString()))
         }.getOrDefault(emptyList())
 
-        // Nominatim free-form, sesgado (no restringido) a la zona del usuario con viewbox+bounded=0.
+        // Nominatim free-form, biased (not restricted) toward the user's area via viewbox+bounded=0.
         val nominatim = runCatching {
             parseNominatim(httpGet(
                 "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&limit=$limit$vb&q=" +
                     URLEncoder.encode(q, "UTF-8")), q)
         }.getOrDefault(emptyList())
 
-        // Fallbacks para direcciones rurales concretas (lo que Google encuentra y el free-form no).
-        // Solo se disparan si los resultados principales son escasos, para no penalizar la latencia.
+        // Fallbacks for specific rural addresses (what Google finds and the free-form query does not).
+        // Only triggered when the primary results are sparse, to avoid penalizing latency.
         val extra = ArrayList<Geo>()
         if (photon.size + nominatim.size < 4) {
-            // (a) restringido al país del dispositivo — mejora el recall local (ej. Galicia).
+            // (a) restricted to the device country — improves local recall.
             if (cc.isNotEmpty()) extra += runCatching {
                 parseNominatim(httpGet(
                     "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&countrycodes=$cc&limit=$limit&q=" +
                         URLEncoder.encode(q, "UTF-8")), q)
             }.getOrDefault(emptyList())
-            // (b) structured street+city (+ postalcode si aparece un código de 5 cifras).
+            // (b) structured street+city (+ postalcode if a 5-digit code appears).
             if (q.contains(",")) extra += runCatching {
                 val parts = q.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                 val street = parts.first()
@@ -184,7 +182,7 @@ object TravelRouting {
                 if (postal.isNotEmpty()) sb.append("&postalcode=").append(postal)
                 parseNominatim(httpGet(sb.toString()), q)
             }.getOrDefault(emptyList())
-            // (c) sin número de portal: OSM a menudo no lo tiene; al menos ubica la calle/lugar.
+            // (c) without a house number: OSM often lacks it; at least locate the street/place.
             stripTrailingNumber(q)?.let { stripped ->
                 extra += runCatching {
                     val sb = StringBuilder("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=$lang&limit=$limit$vb")
@@ -195,14 +193,14 @@ object TravelRouting {
             }
         }
 
-        // Dedupe por (lat,lon) redondeado a 5 decimales (~1 m) para no mostrar duplicados por número de casa.
+        // Dedupe by (lat,lon) rounded to 5 decimals (~1 m) to avoid duplicates from house numbers.
         val seen = HashSet<Long>()
         val combined = ArrayList<Geo>()
         (photon + nominatim + extra).forEach { g ->
             val key = (Math.round(g.lat * 1e5) * 1000000L) + Math.round(g.lon * 1e5)
             if (seen.add(key)) combined.add(g)
         }
-        // Reordena por distancia al usuario si tenemos bias — los más cercanos arriba.
+        // Reorder by distance to the user when a bias is available — nearest first.
         if (biasLat != null && biasLon != null) {
             combined.sortBy {
                 val dx = it.lat - biasLat
@@ -213,7 +211,7 @@ object TravelRouting {
         combined
     }
 
-    // ── Helpers de geocoding ─────────────────────────────────────────────────────────────
+    // ── Geocoding helpers ────────────────────────────────────────────────────────────────
     private fun deviceCountry(context: Context): String = runCatching {
         context.resources.configuration.locales[0].country?.takeIf { it.isNotBlank() }?.lowercase() ?: ""
     }.getOrDefault("")
@@ -222,14 +220,14 @@ object TravelRouting {
         context.resources.configuration.locales[0].language?.takeIf { it.isNotBlank() } ?: "en"
     }.getOrDefault("en")
 
-    /** viewbox = lonMin,latMin,lonMax,latMax con bounded=0 ⇒ **sesga** hacia la zona sin excluir. */
+    /** viewbox = lonMin,latMin,lonMax,latMax with bounded=0 ⇒ **biases** toward the area without excluding. */
     private fun viewboxParam(lat: Double?, lon: Double?): String {
         if (lat == null || lon == null || lat == 0.0 || lon == 0.0) return ""
         val d = 1.5
         return "&viewbox=${lon - d},${lat - d},${lon + d},${lat + d}&bounded=0"
     }
 
-    /** Quita un número de portal final ("Rúa X 5" → "Rúa X") para al menos ubicar la vía. */
+    /** Strips a trailing house number ("Rúa X 5" → "Rúa X") to at least locate the street. */
     private fun stripTrailingNumber(q: String): String? {
         val t = q.trim()
         val m = Regex("^(.*?)[,\\s]+\\d{1,4}\\s*$").find(t) ?: return null
@@ -289,8 +287,8 @@ object TravelRouting {
     }
 
     /**
-     * Comprueba si los servicios de ubicación del sistema (GPS / network provider) están activados.
-     * Keyless: usa `LocationManager.isProviderEnabled` (sin Play Services Location).
+     * Checks whether the system location services (GPS / network provider) are enabled.
+     * Keyless: uses `LocationManager.isProviderEnabled` (no Play Services Location).
      */
     fun isLocationEnabled(context: Context): Boolean {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
@@ -298,14 +296,4 @@ object TravelRouting {
             lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
     }
 
-    /**
-     * Lanza la página de Ajustes del sistema para activar la ubicación (keyless, sin Play Services),
-     * ya que Android no permite activar GPS mediante un diálogo sin permisos privilegiados.
-     * El llamador envuelve este Intent en un try/catch y guía al usuario.
-     */
-    fun intentEnableLocation() = IntentData(
-        Settings.ACTION_LOCATION_SOURCE_SETTINGS
-    )
-
-    data class IntentData(val action: String)
 }

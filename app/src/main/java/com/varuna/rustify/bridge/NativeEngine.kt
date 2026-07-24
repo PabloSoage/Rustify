@@ -30,7 +30,7 @@ object NativeEngine {
 
     /**
      * Initializes the YouTube resolver cache directory and loads persisted
-     * spotify-id -> youtube-id mappings. (Replaces the removed loopback HTTP server, E11.)
+     * spotify-id -> youtube-id mappings.
      * @param cacheDir Absolute path of the application cache directory.
      */
     external fun initCacheDirNative(cacheDir: String)
@@ -140,7 +140,7 @@ object NativeEngine {
 
     /**
      * Fetches the artists the user follows.
-     * Now uses offset-based pagination via GraphQL libraryV3.
+     * Uses offset-based pagination via GraphQL libraryV3.
      * @param limit Number of artists to retrieve (maximum 50).
      * @param offset Pagination index.
      * @return A JSON string representing PaginatedResponse<FullArtist>.
@@ -394,13 +394,12 @@ object NativeEngine {
     external fun getSpotifyHashesNative(): String
 
 
-    // YOUTUBE MUSIC (E40)
+    // YOUTUBE MUSIC
     // =====================================================================
 
     external fun searchYtMusicNative(query: String): String
     external fun getYtmAlbumNative(browseId: String): String
     external fun getYtmArtistNative(channelId: String): String
     external fun getYtmPlaylistNative(playlistId: String): String
-    external fun getYtmRadioNative(videoId: String): String
 
 }

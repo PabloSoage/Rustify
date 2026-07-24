@@ -86,8 +86,8 @@ fun SearchScreen(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
-    onGoToRadio: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onGoToRadio: ((String, String) -> Unit)? = null,
     currentTrackId: String? = null
 ) {
     val darkBackground = Color(0xFF121212)
@@ -121,8 +121,7 @@ fun SearchScreen(
             // Debounce
             delay(500.milliseconds)
             try {
-                // To keep it simple, we use searchAll for ALL filter and specific ones for others.
-                // Or we can just use searchAll and filter locally for demonstration.
+                // Use a single searchAll call and filter the results locally per active filter.
                 val results = spotifyRepo.searchAll(query, limit = 20)
                 searchResults = results
 
@@ -170,7 +169,7 @@ fun SearchScreen(
                             Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
                         }
                     } else {
-                        // Paste Spotify link from clipboard (E20: navigate, don't reproduce a stub).
+                        // Paste a Spotify link from the clipboard and navigate to it rather than playing a stub.
                         IconButton(onClick = {
                             val pasted = try {
                                 val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager

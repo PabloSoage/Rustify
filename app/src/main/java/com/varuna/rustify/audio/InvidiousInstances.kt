@@ -10,11 +10,11 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
- * E61 — Descubrimiento y salud de instancias Invidious.
+ * Discovery and health of Invidious instances.
  *
- * Lista pública: `https://api.invidious.io/instances.json` (uptime de uptime.invidious.io). Cada
- * elemento es `[host, {uri, type, api, monitor{...}}]`. `type` ∈ https | onion | i2p | ygg. Cacheamos
- * la lista y hacemos un **health-check propio** (un GET corto) porque es la señal fiable.
+ * Public list: `https://api.invidious.io/instances.json` (uptime from uptime.invidious.io). Each
+ * element is `[host, {uri, type, api, monitor{...}}]`. `type` ∈ https | onion | i2p | ygg. We cache
+ * the list and run our own health-check (a short GET) because that is the reliable signal.
  */
 object InvidiousInstances {
     private const val PREFS = "rustify_settings"
@@ -23,9 +23,9 @@ object InvidiousInstances {
     private const val LIST_URL = "https://api.invidious.io/instances.json?pretty=0"
     private const val CACHE_TTL_MS = 24 * 60 * 60 * 1000L
 
-    /** [type]: "https" (clearnet) | "onion" (Tor) | "i2p" | "ygg". [health] = % uptime (0..100) o null. */
+    /** [type]: "https" (clearnet) | "onion" (Tor) | "i2p" | "ygg". [health] = uptime % (0..100) or null. */
     data class Instance(
-        val baseUrl: String,     // p. ej. "https://inv.nadeko.net"
+        val baseUrl: String,     // e.g. "https://inv.nadeko.net"
         val type: String,
         val apiUp: Boolean,
         val health: Double?,
@@ -34,10 +34,10 @@ object InvidiousInstances {
         val isAnon: Boolean get() = type == "onion" || type == "i2p" || type == "ygg"
     }
 
-    // E101 — Fallback bootstrap list of public clearnet instances, used ONLY when the directory
+    // Fallback bootstrap list of public clearnet instances, used ONLY when the directory
     // (api.invidious.io/instances.json, frequently down) can't be fetched and there's no cache. Without
-    // this, a dead directory left `selected()` empty → the Invidious backend silently never resolved
-    // ("Invidious no funciona"). These are best-effort defaults; the user can override in Settings.
+    // this, a dead directory leaves `selected()` empty and the Invidious backend silently never
+    // resolves. These are best-effort defaults; the user can override them in Settings.
     private val BOOTSTRAP: List<Instance> = listOf(
         "https://inv.nadeko.net", "https://invidious.nerdvpn.de", "https://yewtu.be",
         "https://invidious.jing.rocks", "https://iv.melmac.space", "https://invidious.privacyredirect.com"
@@ -47,7 +47,7 @@ object InvidiousInstances {
         OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     }
 
-    /** Cliente para instancias .onion/.i2p vía SOCKS (Orbot 9050). Best-effort/experimental. */
+    /** Client for .onion/.i2p instances via SOCKS (Orbot 9050). Best-effort/experimental. */
     fun torClient(ctx: Context): OkHttpClient {
         val host = InvidiousSettings.torHost(ctx); val port = InvidiousSettings.torPort(ctx)
         return OkHttpClient.Builder()
@@ -59,7 +59,7 @@ object InvidiousInstances {
     fun clientFor(ctx: Context, inst: Instance): OkHttpClient =
         if (inst.isAnon && InvidiousSettings.torEnabled(ctx)) torClient(ctx) else plainClient
 
-    /** Lista combinada (remota cacheada + custom del usuario), sin ocultadas. */
+    /** Combined list (cached remote + user custom), excluding hidden ones. */
     suspend fun list(ctx: Context, forceRefresh: Boolean = false): List<Instance> {
         val remote = cachedOrFetch(ctx, forceRefresh)
         val custom = InvidiousSettings.customInstances(ctx).map { Instance(it, guessType(it), true, null, custom = true) }
@@ -68,9 +68,9 @@ object InvidiousInstances {
     }
 
     /**
-     * Instancias a usar, en orden de preferencia:
-     *  - modo "fixed" → solo la fija (o custom) del usuario;
-     *  - modo "auto"  → clearnet con api, ordenadas por salud; + anónimas al final si están permitidas.
+     * Instances to use, in preference order:
+     *  - "fixed" mode -> only the user's fixed (or custom) instance;
+     *  - "auto" mode  -> clearnet with api, ordered by health; + anonymous ones at the end if allowed.
      */
     suspend fun selected(ctx: Context): List<Instance> {
         val all = list(ctx)
@@ -84,27 +84,19 @@ object InvidiousInstances {
         val clear = all.filter { it.type == "https" && it.apiUp }
             .sortedByDescending { it.health ?: 0.0 }
         val anon = if (allowAnon) all.filter { it.isAnon } else emptyList()
-        // custom del usuario primero (si es self-host, quiere que gane)
+        // User custom instances first (if self-hosted, the user wants them to win).
         val custom = all.filter { it.custom }
         return (custom + clear + anon).distinctBy { it.baseUrl }
     }
 
-    /** Health-check rápido: GET /api/v1/stats (o trending) con timeout corto. */
-    suspend fun ping(ctx: Context, inst: Instance): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        runCatching {
-            val req = Request.Builder().url("${inst.baseUrl}/api/v1/stats").header("User-Agent", "Rustify/1.0").build()
-            clientFor(ctx, inst).newCall(req).execute().use { it.isSuccessful }
-        }.getOrDefault(false)
-    }
-
-    // "Me at the zoo" — el primer vídeo de YouTube: público, 19 s, prácticamente nunca bloqueado/con edad.
+    // "Me at the zoo" — the first YouTube video: public, 19s, virtually never blocked or age-gated.
     private const val CANARY_VIDEO = "jNQXAC9IVRw"
 
     /**
-     * Prueba REAL de reproducción: pide `/api/v1/videos/{canario}` y comprueba que devuelve una URL de
-     * audio. Muchas instancias responden 200 en `/api/v1/stats` (ping ✅) pero fallan al resolver el
-     * vídeo (rate-limit / bloqueo de googlevideo) → parecían buenas y luego no iban como backend. Esto
-     * refleja lo que hace [InvidiousAudioSource] de verdad.
+     * Real playback test: requests `/api/v1/videos/{canary}` and checks that it returns an audio URL.
+     * Many instances answer 200 on `/api/v1/stats` (ping OK) but fail to resolve the video (rate-limit
+     * / googlevideo block) -> they looked good yet did not work as a backend. This reflects what
+     * [InvidiousAudioSource] actually does.
      */
     suspend fun probe(ctx: Context, inst: Instance): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         runCatching {
@@ -140,11 +132,11 @@ object InvidiousInstances {
                 prefs.edit { putString(K_CACHE, fetched); putLong(K_CACHE_TS, System.currentTimeMillis()) }
                 parsed
             } else {
-                // Directory reachable but empty/format changed → fall back to cache, then bootstrap.
+                // Directory reachable but empty/format changed -> fall back to cache, then bootstrap.
                 prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
             }
         } else {
-            // Directory unreachable → last-known cache, else bootstrap so Invidious still has candidates.
+            // Directory unreachable -> last-known cache, else bootstrap so Invidious still has candidates.
             prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
         }
     }
@@ -156,8 +148,8 @@ object InvidiousInstances {
             val d = pair.optJSONObject(1) ?: return@mapNotNull null
             val uri = d.optString("uri").trimEnd('/')
             if (!isValidInstanceUri(uri)) return@mapNotNull null
-            // El sufijo de la URL manda para redes anónimas (el `type` del directorio a veces viene mal,
-            // p. ej. una .ygg marcada como "https"); si no, usamos el type del directorio o "https".
+            // The URL suffix wins for anonymous networks (the directory `type` is sometimes wrong,
+            // e.g. a .ygg marked as "https"); otherwise use the directory type or "https".
             val type = when {
                 uri.contains(".onion") -> "onion"
                 uri.contains(".i2p") -> "i2p"
@@ -165,7 +157,7 @@ object InvidiousInstances {
                 else -> d.optString("type", "https").ifBlank { "https" }
             }
             val api = d.optBoolean("api", type == "https")
-            // monitor.uptime varía; probamos varios campos con tolerancia.
+            // monitor.uptime varies; try several fields leniently.
             val monitor = d.optJSONObject("monitor")
             val health = monitor?.let {
                 it.optJSONObject("30dRatio")?.optString("ratio")?.toDoubleOrNull()
@@ -184,13 +176,13 @@ object InvidiousInstances {
     }
 
     /**
-     * Descarta URIs basura del directorio (que ahora devuelve entradas rotas): exige esquema http(s) y un
-     * host con dominio real. Así se van "http://", "http://inv" y similares que salían en la lista.
+     * Discards junk URIs from the directory (which sometimes returns broken entries): requires an
+     * http(s) scheme and a host with a real domain, filtering out "http://", "http://inv" and similar.
      */
     private fun isValidInstanceUri(uri: String): Boolean {
         if (!uri.startsWith("http", ignoreCase = true)) return false
         val host = uri.substringAfter("://", "").substringBefore('/')
-        // Debe tener al menos un punto (dominio) y una longitud mínima razonable.
+        // Must have at least one dot (domain) and a reasonable minimum length.
         return host.length >= 4 && host.contains('.')
     }
 }

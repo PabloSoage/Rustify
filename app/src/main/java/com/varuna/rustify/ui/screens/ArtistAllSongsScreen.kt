@@ -33,9 +33,9 @@ import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.TrackRowItem
 
 /**
- * E108 — Todas las canciones de un artista (toda su discografía) en orden de lanzamiento
- * (más reciente primero). La lista vive en el repo ([SpotifyRepository.artistAllTracksLive]) y se carga
- * en segundo plano, así que sobrevive a abrir/cerrar el miniplayer y va apareciendo progresivamente.
+ * All of an artist's tracks (their full discography) ordered by release date, most recent first.
+ * The list is held in the repository ([SpotifyRepository.artistAllTracksLive]) and loaded in the
+ * background, so it survives opening/closing the miniplayer and fills in progressively.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,7 +111,7 @@ fun ArtistAllSongsScreen(
                 if (tracks.size > 25) {
                     VerticalScrollbarWithTooltip(
                         lazyListState = listState,
-                        itemsCount = tracks.size + 1, // +1 por la cabecera del contador
+                        itemsCount = tracks.size + 1, // +1 for the counter header
                         getDateForItem = { idx -> tracks.getOrNull(idx - 1)?.name?.take(14) ?: "" },
                         onDragStateChanged = {},
                         modifier = Modifier.align(Alignment.CenterEnd).padding(vertical = 8.dp, horizontal = 2.dp)

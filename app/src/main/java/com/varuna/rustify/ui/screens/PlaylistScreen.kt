@@ -45,7 +45,6 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,8 +63,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullPlaylist
-import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
@@ -88,18 +87,18 @@ fun PlaylistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
-    modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // E30: playlist local. El id ya viene resuelto por el enrutado (prefijo "localpl:").
+    // Local playlist: the id already carries the "localpl:" prefix resolved by routing.
     val isLocal = playlistId.startsWith("localpl:")
     val localPlaylist = if (isLocal) spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId } else null
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
-    // E108: playlists de Spotify → lista VIVA en el repo (persiste al recrear la pantalla, p. ej. al abrir/
-    // cerrar el miniplayer, y se carga entera en segundo plano). Playlists locales → estado local.
+    // Spotify playlists use the repository's live list (it survives screen recreation such as
+    // opening/closing the miniplayer and loads fully in the background). Local playlists use local state.
     var localTracksState by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     val spotifyTracks = if (!isLocal) spotifyRepo.playlistTracksLive(playlistId) else null
     val tracks: List<FullTrack> = if (isLocal) localTracksState else spotifyTracks!!
@@ -114,8 +113,8 @@ fun PlaylistScreen(
 
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Spinner: en local mandamos con isLoading; en Spotify, con el flag observable del repo (y el
-    // isLoading inicial para no parpadear "sin canciones" antes de arrancar la carga).
+    // Spinner: for local playlists it is driven by isLoading; for Spotify by the repo's observable
+    // flag (plus the initial isLoading to avoid flashing "no tracks" before loading starts).
     val loadingNow = if (isLocal) isLoading else (isLoading || spotifyRepo.isPlaylistLoading(playlistId))
 
     LaunchedEffect(Unit) { runCatching { meId = spotifyRepo.getMe().id } }
@@ -125,7 +124,7 @@ fun PlaylistScreen(
         if (isLocal) {
             isLoading = true
             try {
-                // E30: playlist puramente local — resolve ids "local:" contra localTracks.
+                // Purely local playlist: resolve "local:" ids against localTracks.
                 localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
                 SpotifyRepository.localPlaylistTracksCache[playlistId] = localTracksState
             } catch (e: Exception) {
@@ -134,12 +133,12 @@ fun PlaylistScreen(
                 isLoading = false
             }
         } else {
-            // Cabecera (metadatos) best-effort; la lista va por su cuenta en segundo plano.
+            // Header metadata is best-effort; the track list loads independently in the background.
             runCatching { playlistDetails = spotifyRepo.getPlaylist(playlistId) }
                 .onFailure { if (spotifyTracks!!.isEmpty()) errorMessage = it.message }
-            // E108: carga TODAS las páginas en segundo plano hacia la lista viva del repo (idempotente).
+            // Load all pages in the background into the repo's live list (idempotent).
             spotifyRepo.loadFullPlaylist(playlistId)
-            isLoading = false   // a partir de aquí manda el flag observable del repo
+            isLoading = false   // from here on the repo's observable flag takes over
         }
     }
 
@@ -235,7 +234,7 @@ fun PlaylistScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             if (isLocal) {
-                                // E30: mosaico 2x2 con las carátulas de las primeras 4 pistas locales.
+                                // 2x2 mosaic of the covers of the first four local tracks.
                                 LocalPlaylistCover(
                                     tracks = tracks,
                                     modifier = Modifier
@@ -304,7 +303,7 @@ fun PlaylistScreen(
                                     modifier = Modifier.bouncingMarquee()
                                 )
                                 if (isLocal) {
-                                    // E30: sin "Spotify Playlist"/owner "Spotify". Subtítulo propio.
+                                    // Use a dedicated subtitle instead of "Spotify Playlist" / owner "Spotify".
                                     Spacer(modifier = Modifier.height(8.dp))
                                     val count = tracks.size
                                     Text(
@@ -430,10 +429,10 @@ fun PlaylistScreen(
                         }
                     } else {
                         itemsIndexed(tracks, key = { index, track -> track.id?.takeIf { it.isNotBlank() } ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
-                            // E108: sin paginación por-scroll — el repo carga todas las páginas en segundo
-                            // plano (loadFullPlaylist), así que la lista ya está completa aquí.
+                            // No scroll pagination: the repo loads all pages in the background
+                            // (loadFullPlaylist), so the list is already complete here.
                             val trackId = track.id ?: ""
-                            // E30: los tracks locales usan favoritos locales, no los "liked" de Spotify.
+                            // Local tracks use local favorites, not Spotify's "liked" state.
                             var localFav by remember(trackId) { mutableStateOf(spotifyRepo.isLocalFavorite(trackId)) }
                             val isLiked = if (isLocal) localFav else spotifyRepo.isTrackLiked(trackId)
 
@@ -493,7 +492,7 @@ fun PlaylistScreen(
                             )
                         }
                         
-                        // E108: footer "cargando más" mientras el repo termina de traer páginas en 2º plano.
+                        // "Loading more" footer while the repo finishes fetching pages in the background.
                         if (!isLocal && spotifyRepo.isPlaylistLoading(playlistId)) {
                             item {
                                 Box(
@@ -510,11 +509,11 @@ fun PlaylistScreen(
                 }
             }
 
-            // E108 — Scrollbar arrastrable con tooltip (como en Liked Songs). Solo con listas largas.
+            // Draggable scrollbar with tooltip (as in Liked Songs), shown only for long lists.
             if (tracks.size > 25) {
                 VerticalScrollbarWithTooltip(
                     lazyListState = lazyListState,
-                    itemsCount = tracks.size + 2, // +2 por las cabeceras del LazyColumn (portada + botones)
+                    itemsCount = tracks.size + 2, // +2 for the LazyColumn headers (cover + buttons)
                     getDateForItem = { idx ->
                         val ti = idx - 2
                         tracks.getOrNull(ti)?.let { t -> t.artists.firstOrNull()?.name?.take(14) ?: "${ti + 1}" } ?: ""
@@ -546,8 +545,8 @@ fun PlaylistScreen(
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.local_playlist_delete), tint = Color.White)
                         }
                     }
-                    // Edit/Follow son de Spotify: solo se muestran cuando hay playlistDetails
-                    // (null para playlists locales), por lo que quedan ocultos automáticamente.
+                    // Edit/Follow are Spotify-only: they appear only when playlistDetails is present
+                    // (null for local playlists), so they are hidden automatically.
                     if (!isLocal && meId != null && playlistDetails?.owner?.id == meId) {
                         IconButton(onClick = { showEditDialog = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit playlist", tint = Color.White)

@@ -4,19 +4,20 @@ import android.content.Context
 import androidx.core.content.edit
 
 /**
- * E62 — Preferencias del backend Deezer (fuente **distinta** de YouTube: Deezer HiFi/FLAC con el
- * **ARL del propio usuario**). On/off y orden en [AudioBackendSettings] (id "deezer"). Aquí va: modo
- * de ARL (uno propio vs una web que publica ARLs), el ARL/URL, el ARL que funciona (cache) y la calidad.
+ * Preferences for the Deezer backend (a source distinct from YouTube: Deezer HiFi/FLAC using the
+ * user's own ARL). On/off and order live in [AudioBackendSettings] (id "deezer"). Here we store: the
+ * ARL mode (a single own ARL vs a site that publishes ARLs), the ARL/URL, the working ARL (cache),
+ * and the quality.
  *
- * **Nunca embebemos ARLs ni los proveemos**: el usuario mete el suyo, o elige una web pública y la app
- * solo automatiza *probar* los que esa web lista.
+ * ARLs are never embedded or provided: the user enters their own, or picks a public site and the app
+ * only automates testing the ones that site lists.
  */
 object DeezerSettings {
     private const val PREFS = "rustify_settings"
     private const val K_ARL_MODE = "dz_arl_mode"       // "single" | "source"
-    private const val K_ARL = "dz_arl"                 // ARL propio
-    private const val K_SOURCE = "dz_arl_source_url"    // URL de la web que publica ARLs
-    private const val K_WORKING = "dz_arl_working"      // último ARL que funcionó (cache)
+    private const val K_ARL = "dz_arl"                 // own ARL
+    private const val K_SOURCE = "dz_arl_source_url"    // URL of the site that publishes ARLs
+    private const val K_WORKING = "dz_arl_working"      // last ARL that worked (cache)
     private const val K_QUALITY = "dz_quality"          // "flac" | "mp3_320" | "mp3_128"
 
     private fun p(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -36,15 +37,7 @@ object DeezerSettings {
     fun quality(ctx: Context): String = p(ctx).getString(K_QUALITY, "flac") ?: "flac"
     fun setQuality(ctx: Context, v: String) = p(ctx).edit { putString(K_QUALITY, v) }
 
-    /** El ARL a usar ahora: el que funcionó (cache) si existe, si no el propio. En modo "source" el
-     *  cache lo rellena [DeezerArl] tras probar la web. */
-    fun activeArl(ctx: Context): String {
-        val cached = workingArl(ctx)
-        if (cached.isNotBlank()) return cached
-        return if (arlMode(ctx) == "single") arl(ctx) else ""
-    }
-
-    /** Formatos a pedir a get_url, en orden de preferencia (fallback dentro de la misma petición). */
+    /** Formats to request from get_url, in preference order (fallback within the same request). */
     fun formatChain(ctx: Context): List<String> = when (quality(ctx)) {
         "mp3_128" -> listOf("MP3_128")
         "mp3_320" -> listOf("MP3_320", "MP3_128")

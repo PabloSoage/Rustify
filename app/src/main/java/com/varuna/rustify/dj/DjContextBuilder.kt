@@ -6,12 +6,13 @@ import com.varuna.rustify.metrics.ListeningTracker
 import org.json.JSONObject
 
 /**
- * E90 — Construye el [DjContext] a partir de señales que YA existen, solo LEYENDO:
- *  - Top artistas / canciones de las métricas ([ListeningTracker.loadEvents]), con la misma
- *    lógica de agregación que MetricsScreen (agrupar por id, caer a nombre si no hay id).
- *  - Estado del player (pista actual + preview de la cola) que pasa el llamador.
+ * Builds the [DjContext] from signals that already exist, read-only:
+ *  - Top artists / tracks from metrics ([ListeningTracker.loadEvents]), with the same aggregation
+ *    logic as MetricsScreen (group by id, fall back to name when there is no id).
+ *  - Player state (current track + queue preview) passed in by the caller.
  *
- * No modifica nada; no depende de MetricsScreen (privado), reimplementa la agregación mínima aquí.
+ * Modifies nothing; does not depend on MetricsScreen (private), reimplementing the minimal
+ * aggregation here.
  */
 object DjContextBuilder {
 
@@ -33,7 +34,7 @@ object DjContextBuilder {
         }.getOrDefault("en")
 
         val nowStr = nowPlaying?.let { fmt(it) }
-        // Preview de la cola: hasta 10 tras la actual, para que el DJ no repita lo ya encolado.
+        // Queue preview: up to 10 tracks after the current one, so the DJ does not repeat what is already queued.
         val queuePreview = queue.take(10).map { fmt(it) }
 
         return DjContext(
@@ -50,7 +51,7 @@ object DjContextBuilder {
         return if (artist.isNotBlank()) "$artist — ${t.name}" else t.name
     }
 
-    /** Top nombres de artista por nº de reproducciones (paridad con MetricsScreen.aggregateByArtist). */
+    /** Top artist names by play count (parity with MetricsScreen.aggregateByArtist). */
     private fun aggregateArtists(events: List<JSONObject>): List<String> {
         data class Acc(var plays: Int, var name: String, var nameAt: Long)
         val map = HashMap<String, Acc>()
@@ -70,7 +71,7 @@ object DjContextBuilder {
         return map.values.sortedByDescending { it.plays }.map { it.name }
     }
 
-    /** Top canciones "Artista — Título" por reproducciones (paridad con aggregateBy trackId). */
+    /** Top "Artist — Title" tracks by play count (parity with aggregateBy trackId). */
     private fun aggregateTracks(events: List<JSONObject>): List<String> {
         data class Acc(var plays: Int, var name: String, var artist: String, var at: Long)
         val map = HashMap<String, Acc>()

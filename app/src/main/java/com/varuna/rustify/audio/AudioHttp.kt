@@ -6,7 +6,7 @@ import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-/** Utilidades HTTP compartidas por los providers E61/E62 (descarga con progreso). */
+/** Shared HTTP utilities for the audio providers (download with progress). */
 object AudioHttp {
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -15,7 +15,7 @@ object AudioHttp {
             .build()
     }
 
-    /** Descarga [url] a [dst] reportando progreso 0..100 (o indeterminado si no hay Content-Length). */
+    /** Downloads [url] to [dst] reporting progress 0..100 (indeterminate when there is no Content-Length). */
     fun download(context: Context, url: String, dst: File, onProgress: (Int) -> Unit = {}, http: OkHttpClient = client) {
         val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
         http.newCall(req).execute().use { resp ->

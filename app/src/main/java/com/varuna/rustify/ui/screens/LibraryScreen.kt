@@ -5,14 +5,12 @@ package com.varuna.rustify.ui.screens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,15 +24,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,19 +42,18 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +67,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -75,27 +76,27 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
+import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LocalPlaylist
 import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.YtmTrack
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage
-import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.ui.components.TrackRowItem
 import kotlinx.coroutines.launch
-import com.varuna.rustify.bridge.LocalPlaylist
 
 enum class LibraryTab {
     PLAYLISTS,
@@ -120,9 +121,10 @@ fun LibraryScreen(
     onAddToQueue: (FullTrack) -> Unit,
     onGoToQueue: () -> Unit,
     onArtistClick: (String) -> Unit,
-    onGoToRadio: ((String, String) -> Unit)? = null,
     onOpenSettings: () -> Unit,
-    // E40 — YTM: shared repo + navigation callbacks to first-level NavHost screens.
+    modifier: Modifier = Modifier,
+    onGoToRadio: ((String, String) -> Unit)? = null,
+    // YouTube Music: shared repo plus navigation callbacks to the top-level NavHost screens.
     ytmRepo: YtMusicRepository? = null,
     onYtmOpenSearch: () -> Unit = {},
     onYtmOpenAlbum: (String, String) -> Unit = { _, _ -> },
@@ -130,7 +132,6 @@ fun LibraryScreen(
     onYtmOpenLocalPlaylist: (String) -> Unit = {},
     onYtmOpenPlaylist: (String, String) -> Unit = { _, _ -> },
     onYtmPasteLink: () -> Unit = {},
-    modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
     val darkBackground = Color(0xFF121212)
@@ -249,7 +250,7 @@ fun LibraryScreen(
                     onGroupSelected = onGroupSelected
                 )
                 LibraryTab.YTMUSIC -> {
-                    // Fallback repo if the caller didn't hoist one (keeps preview/testing simple).
+                    // Fallback repo when the caller didn't hoist one (keeps preview/testing simple).
                     val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
                     YtMusicLibraryContent(
                         repo = repo,
@@ -268,7 +269,7 @@ fun LibraryScreen(
                         useScraper = ytmUseScraper,
                         onToggleScraper = {
                             ytmUseScraper = !ytmUseScraper
-                            prefs.edit().putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api").apply()
+                            prefs.edit { putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api") }
                         },
                         currentTrackId = currentTrackId
                     )
@@ -340,7 +341,7 @@ fun LibraryScreen(
                                                 color = if (ytmUseScraper) Color(0xFFE65100) else Color.White) },
                                             onClick = {
                                                 ytmUseScraper = !ytmUseScraper
-                                                prefs.edit().putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api").apply()
+                                                prefs.edit { putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api") }
                                                 showFilterMenu = false
                                             },
                                             leadingIcon = {
@@ -1002,10 +1003,10 @@ fun LibraryLocalMusic(
                 }
             }
 
-            // E30 — Playlists locales (crear/listar/navegar al detalle).
+            // Local playlists: create, list, and navigate to the detail view.
             "Playlists" -> {
                 val playlistsLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                // Sin remember: lee el SnapshotStateList en composición → recompone al añadir/borrar.
+                // No remember: reading the SnapshotStateList during composition recomposes on add/remove.
                 val playlists = spotifyRepo.localPlaylists.filter {
                     searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
                 }
@@ -1113,10 +1114,10 @@ fun LibraryLocalMusic(
                 }
             }
 
-            // E30 — Favoritos locales (tracks "local:" marcados como favoritos).
+            // Local favorites: "local:" tracks marked as favorites.
             "Favorites" -> {
                 val favsLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                // Sin remember: localFavoriteTracks() lee localTracks + localFavoriteIds (observables).
+                // No remember: localFavoriteTracks() reads the observable localTracks and localFavoriteIds.
                 val favs = spotifyRepo.localFavoriteTracks().filter {
                     searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
                 }
@@ -1209,11 +1210,11 @@ fun <T> LibraryContentList(
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     
     Column(modifier = Modifier.fillMaxSize()) {
-        // Pull-to-refresh: fuerza una recarga real (onRetry → sync… de red) para las secciones
-        // cacheadas. Antes, si una sección se quedaba con caché vieja/vacía por un error de red, no
-        // había forma de reintentar salvo borrar la caché de imágenes y reabrir la app. El indicador
-        // se controla con isLoading (el flag de sync del repo). La lista vacía sigue siendo un
-        // LazyColumn desplazable, así que se puede tirar para recargar incluso sin resultados.
+        // Pull-to-refresh forces a real reload (onRetry runs the network sync) for cached sections,
+        // so a section left with stale or empty cache after a network error can be retried without
+        // clearing the image cache and reopening the app. The indicator is driven by isLoading (the
+        // repo's sync flag). The empty state is still a scrollable LazyColumn, so it can be pulled to
+        // refresh even with no results.
         PullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = onRetry,
@@ -1418,8 +1419,7 @@ fun VerticalScrollbarWithTooltip(
 }
 
 /**
- * E30 — Row de playlist local con grid 2x2 de covers (deduplicados por álbum)
- * + botón de eliminar. Reemplaza a SearchResultRow que pasaba imageUrl=null (sin carátula).
+ * Local playlist row with a 2x2 grid of covers (deduplicated by album) and a delete button.
  */
 @Composable
 private fun LocalPlaylistRow(
@@ -1465,7 +1465,7 @@ private fun LocalPlaylistRow(
     }
 }
 
-/** Grid 2x2 (hasta 4 covers) deduplicados por álbum para evitar caratulas idénticas. */
+/** 2x2 grid (up to 4 covers) deduplicated by album to avoid identical artwork. */
 @Composable
 private fun LocalPlaylistCoverGrid(tracks: List<FullTrack>) {
     val covers = remember(tracks) {

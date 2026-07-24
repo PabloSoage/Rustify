@@ -4,24 +4,36 @@
 package com.varuna.rustify.ui.screens
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,22 +43,25 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -54,11 +69,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,44 +87,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.foundation.Canvas
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.text.style.TextAlign
-
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.edit
-import androidx.activity.result.IntentSenderRequest
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
@@ -120,6 +120,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled")  // standle.net easter egg: trusted URL, JavaScript required for the game
 @Composable
 fun SettingsScreen(
     spotifyRepository: SpotifyRepository,
@@ -136,28 +137,30 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    // E104/E105 — Ajustes por categorías (sub-pantallas): null = menú de categorías; si no, la categoría
-    // abierta. El estado vive en MainActivity (hoisted) para sobrevivir a abrir/volver de sub-pantallas.
+    // Category-based settings (sub-screens): null = category menu; otherwise the open category.
+    // The state is hoisted in MainActivity so it survives opening and returning from sub-screens.
     val settingsCategory = category
     androidx.activity.compose.BackHandler(enabled = settingsCategory != null) { onCategoryChange(null) }
 
-    // E109 — Estado del comprobador de actualizaciones (icono de refresh en la barra superior).
+    // State for the update checker (refresh icon in the top bar).
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var manualUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
+    val updateUpToDateMsg = stringResource(R.string.update_up_to_date)
+    val updateCheckFailedMsg = stringResource(R.string.update_check_failed)
 
     var isUpdatingYtDlp by remember { mutableStateOf(false) }
     var ytDlpVersion by remember { mutableStateOf(YoutubeDL.getInstance().version(context) ?: "Unknown") }
     var isNightly by remember { mutableStateOf(prefs.getString("ytdlp_channel", "NIGHTLY") == "NIGHTLY") }
 
-    // E105 — carpeta de descargas, música local y captura de logs se movieron a sus categorías
-    // (Descargas / Audio y backends / Avanzado), con estado propio en cada sección extraída.
+    // The downloads folder, local music, and log capture moved to their own categories
+    // (Downloads / Audio and backends / Advanced), each with its own state in the extracted section.
 
-    // F1.A — wrapper.
+    // Link wrapper host.
     // null pref (never set) → preselect default. Explicit "" (user cleared it) → blank/fallback.
     var wrapperHost by remember {
         mutableStateOf(prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST)
     }
-    // "Personalizado…" mode: user typing a free host not in verifiedHosts.
+    // "Custom…" mode: user typing a free host not in verifiedHosts.
     var wrapperHostCustom by remember {
         mutableStateOf(wrapperHost.isNotBlank() && wrapperHost !in AppLinksHosts.verifiedHosts)
     }
@@ -170,7 +173,7 @@ fun SettingsScreen(
     }
     var shareAsRustify by remember { mutableStateOf(prefs.getBoolean("share_as_rustify_link", false)) }
 
-    // E90 — DJ IA: modo (heurístico / API / local) + config del endpoint OpenAI-compatible.
+    // DJ AI: mode (heuristic / API / local) plus configuration for the OpenAI-compatible endpoint.
     var djMode by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_MODE, "heuristic") ?: "heuristic") }
     var djApiBaseUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_BASE_URL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) }
     var djApiModel by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) }
@@ -262,7 +265,7 @@ fun SettingsScreen(
         }
     }
 
-    // E30 - export/import de datos locales (contenedor versionado).
+    // Export/import of local user data (versioned container).
     val localExportSuccessMsg = stringResource(R.string.settings_export_success)
     val localExportEmptyMsg = stringResource(R.string.settings_export_local_empty)
     val localExportErrorMsg = stringResource(R.string.settings_export_error)
@@ -304,15 +307,15 @@ fun SettingsScreen(
         }
     }
 
-    // ── E50 — Google Drive sync ───────────────────────────────────────────────
+    // Google Drive sync.
     val drive = remember { GoogleDriveSync(context.applicationContext) }
-    // B — backend AppAuth (navegador/PKCE), coexiste con A (Play Services).
+    // AppAuth backend (browser/PKCE), coexisting with the Play Services backend.
     val appAuth = remember { com.varuna.rustify.sync.AppAuthDriveAuth(context.applicationContext) }
     var driveAuthMethod by remember { mutableStateOf(DriveSyncPrefs.authMethod(context)) }
     val syncManager = remember {
         DriveSyncManager(context.applicationContext, drive, spotifyRepository, ytmRepository)
     }
-    // Web client id: si está vacío, la app no está configurada (ver GoogleDriveSync.kt).
+    // Web client id: if blank, the app is not configured (see GoogleDriveSync.kt).
     val webClientId = stringResource(R.string.default_web_client_id)
     var driveLinked by remember { mutableStateOf(DriveSyncPrefs.isLinked(context)) }
     var driveAutoSync by remember { mutableStateOf(DriveSyncPrefs.isAutoSync(context)) }
@@ -325,7 +328,7 @@ fun SettingsScreen(
     val driveSyncErrTmpl = stringResource(R.string.settings_drive_sync_error)
     val driveNotConfiguredMsg = stringResource(R.string.settings_drive_not_configured)
 
-    // Ejecuta una sync completa con un access token ya obtenido.
+    // Runs a full sync with an already obtained access token.
     fun runDriveSync(token: String) {
         driveSyncing = true
         coroutineScope.launch(Dispatchers.IO) {
@@ -348,7 +351,7 @@ fun SettingsScreen(
         }
     }
 
-    // Launcher para el flujo de consentimiento OAuth (IntentSender de AuthorizationClient).
+    // Launcher for the OAuth consent flow (IntentSender from AuthorizationClient).
     val driveConsentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { activityResult ->
@@ -365,8 +368,8 @@ fun SettingsScreen(
         )
     }
 
-    // B — launcher del Custom Tab de AppAuth (Intent, no IntentSender). Al volver, intercambia el
-    // code por tokens y sincroniza.
+    // Launcher for the AppAuth Custom Tab (Intent, not IntentSender). On return, it exchanges the
+    // authorization code for tokens and syncs.
     val driveBrowserLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
@@ -383,10 +386,10 @@ fun SettingsScreen(
         )
     }
 
-    // Pide token (y lanza consentimiento si hace falta), luego ejecuta [onToken].
+    // Requests a token (launching consent if needed), then runs [onToken].
     fun driveAuthorizeThen(onToken: (String) -> Unit) {
         if (driveAuthMethod == "browser") {
-            // B — AppAuth: token fresco en silencio; si no hay autorización, abre el navegador.
+            // AppAuth: fetch a fresh token silently; if there is no authorization, open the browser.
             if (!appAuth.isConfigured()) {
                 driveStatus = driveNotConfiguredMsg
                 Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show()
@@ -404,7 +407,7 @@ fun SettingsScreen(
             )
             return
         }
-        // A — Play Services AuthorizationClient.
+        // Play Services AuthorizationClient.
         if (webClientId.isBlank()) {
             driveStatus = driveNotConfiguredMsg
             Toast.makeText(context, driveNotConfiguredMsg, Toast.LENGTH_LONG).show()
@@ -422,7 +425,7 @@ fun SettingsScreen(
         )
     }
 
-    // E109 — Diálogo de actualización lanzado desde la comprobación manual (icono de refresh).
+    // Update dialog launched from the manual check (refresh icon).
     manualUpdate?.let { info ->
         com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { manualUpdate = null })
     }
@@ -437,7 +440,7 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    // E109 — Comprobar actualizaciones (solo en el menú raíz de Ajustes).
+                    // Check for updates (only in the root settings menu).
                     if (settingsCategory == null) {
                         if (isCheckingUpdate) {
                             CircularProgressIndicator(
@@ -453,9 +456,9 @@ fun SettingsScreen(
                                     isCheckingUpdate = false
                                     res.onSuccess { info ->
                                         if (info != null) manualUpdate = info
-                                        else android.widget.Toast.makeText(context, context.getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
+                                        else Toast.makeText(context, updateUpToDateMsg, Toast.LENGTH_SHORT).show()
                                     }.onFailure {
-                                        android.widget.Toast.makeText(context, context.getString(R.string.update_check_failed), android.widget.Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, updateCheckFailedMsg, Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }) {
@@ -480,7 +483,7 @@ fun SettingsScreen(
             null -> SettingsCategoryMenu { onCategoryChange(it) }
             "audio" -> {
                 Spacer(modifier = Modifier.height(8.dp))
-                // Orden pedido: primero letras, luego música local, luego los backends de audio.
+                // Order: lyrics first, then local music, then the audio backends.
                 LyricsProvidersSection(context)
                 LocalMusicSection(context)
                 AudioBackendsSection(context)
@@ -655,9 +658,9 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // E105 — La carpeta de descargas y los ajustes de música local se movieron a las
-                    // categorías "Descargas" y "Audio y backends". Aquí queda solo el backup de datos
-                    // locales (playlists/favoritos) y la limpieza de caché.
+                    // The downloads folder and local music settings moved to the "Downloads" and
+                    // "Audio and backends" categories. Only the local data backup (playlists/favorites)
+                    // and the cache cleanup remain here.
                     Text(
                         stringResource(R.string.settings_local_data),
                         color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold
@@ -682,9 +685,9 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Audio: ${audioCacheSize / (1024 * 1024)} MB • Images: ${imageCacheSize / (1024 * 1024)} MB", color = Color.Gray, fontSize = 12.sp)
 
-                    // E108 — Tamaño máximo de caché configurable (audio + imágenes).
+                    // Configurable maximum cache size (audio + images).
                     Spacer(modifier = Modifier.height(12.dp))
-                    var cacheMaxMb by remember { mutableStateOf(prefs.getInt("cache_max_mb", 500)) }
+                    var cacheMaxMb by remember { mutableIntStateOf(prefs.getInt("cache_max_mb", 500)) }
                     Text(stringResource(R.string.settings_cache_max, cacheMaxMb), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Slider(
                         value = cacheMaxMb.toFloat(),
@@ -775,7 +778,7 @@ fun SettingsScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    // Editor estructurado: lista con nombres, editar/preview/borrar, añadir manual.
+                    // Structured editor: named list with edit/preview/delete and manual add.
                     Button(
                         onClick = onNavigateMatchEditor,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black),
@@ -783,14 +786,14 @@ fun SettingsScreen(
                     ) {
                         Text(stringResource(R.string.settings_edit_matches), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    // E105 — Eliminado el botón legacy "View Mappings" y su diálogo de texto crudo
-                    // (JSON ininteligible): el editor de matches ya cubre ver/buscar/filtrar/editar/borrar.
+                    // The legacy "View Mappings" button and its raw-text dialog (unreadable JSON) were
+                    // removed: the match editor already covers view/search/filter/edit/delete.
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── E50 — Google Drive sync ───────────────────────────────────────
+            // Google Drive sync.
             Text(
                 text = stringResource(R.string.settings_drive_title),
                 color = Color(0xFF1DB954),
@@ -827,7 +830,7 @@ fun SettingsScreen(
                         Text(driveStatus, color = Color.Gray, fontSize = 12.sp)
                     }
 
-                    // Método de auth: A (Play Services, tu build oficial) o B (navegador, cualquier build).
+                    // Auth method: Play Services (official build) or browser (any build).
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(stringResource(R.string.settings_drive_method), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -921,8 +924,8 @@ fun SettingsScreen(
                         )
                     }
 
-                    // E105 — "Qué se sincroniza": muestra el recuento por categoría de lo que se subiría
-                    // ahora + permite forzar la sincronización desde ahí.
+                    // "What gets synced": shows the per-category count of what would be uploaded now,
+                    // and lets the user force a sync from there.
                     Spacer(modifier = Modifier.height(8.dp))
                     var showSyncDetails by remember { mutableStateOf(false) }
                     Button(
@@ -964,7 +967,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Storage breakdown section (BUG-12+17)
+            // Storage breakdown section.
             Text(
                 text = stringResource(R.string.settings_storage),
                 color = Color(0xFF1DB954),
@@ -1070,7 +1073,7 @@ fun SettingsScreen(
                     StorageRow("Total", totalBytes, Color.White)
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    // Storage donut chart (BUG-25)
+                    // Storage donut chart.
                     val chartColors = listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF00BCD4), Color(0xFF8BC34A), Color(0xFF1DB954), Color(0xFFFF9800), Color(0xFF2196F3))
                     val chartValues = listOf(ytdlpBinaryBytes.toFloat(), ffmpegBinaryBytes.toFloat(), ffprobeBinaryBytes.toFloat(), localMusicCacheBytes.toFloat(), spotifyCacheBytes.toFloat(), userDataBytes.toFloat(), audioCacheBytes.toFloat(), imageCacheBytes.toFloat())
                     val totalForChart = chartValues.sum()
@@ -1216,9 +1219,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // E105 — Diagnóstico / Logs se movió a la categoría "Avanzado" (LoggingSection).
+            // Diagnostics / logs moved to the "Advanced" category (LoggingSection).
 
-            // F1.A — Enlace Rustify (wrapper)
+            // Rustify link (wrapper).
             Text(
                 text = stringResource(R.string.settings_rustify_link),
                 color = Color(0xFF1DB954),
@@ -1347,7 +1350,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // E90 — Sección DJ IA.
+            // DJ AI section.
             Text(
                 text = stringResource(R.string.settings_dj),
                 color = Color(0xFF1DB954),
@@ -1395,10 +1398,10 @@ fun SettingsScreen(
                     if (djMode == "api") {
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Proveedor de IA: lista gratuita/keyless + indicador de latencia + añadir/quitar.
+                        // AI provider: free/keyless list plus a latency indicator and add/remove controls.
                         Text(stringResource(R.string.settings_dj_provider), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(6.dp))
-                        var providersVersion by remember { mutableStateOf(0) }
+                        var providersVersion by remember { mutableIntStateOf(0) }
                         val djProviders = remember(providersVersion) { com.varuna.rustify.dj.DjProviders.visibleProviders(context) }
                         val djSelectedId = remember(providersVersion) { com.varuna.rustify.dj.DjProviders.selectedId(context) }
                         val djLatencies = remember { androidx.compose.runtime.mutableStateMapOf<String, com.varuna.rustify.dj.DjProviders.Latency>() }
@@ -1521,7 +1524,7 @@ fun SettingsScreen(
                         Text(stringResource(R.string.settings_dj_local_note), color = Color.Gray, fontSize = 12.sp)
                     }
 
-                    // ── Voz del DJ (híbrido: TTS nativo + endpoint nube opcional) ──
+                    // DJ voice (hybrid: native TTS plus an optional cloud endpoint).
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(stringResource(R.string.settings_dj_voice), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     val djVoiceFieldColors = TextFieldDefaults.colors(
@@ -1597,7 +1600,7 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    // ── Motor de voz (nativo Android / Pollinations keyless / OpenAI propio) ──
+                    // Voice engine (native Android / keyless Pollinations / own OpenAI endpoint).
                     Spacer(modifier = Modifier.height(8.dp))
                     var ttsEngineExpanded by remember { mutableStateOf(false) }
                     val ttsEngineOptions = listOf(
@@ -1634,7 +1637,7 @@ fun SettingsScreen(
                     }
 
                     when (djTtsEngine) {
-                        // Voz nativa concreta filtrada por el idioma de voz elegido.
+                        // Specific native voice, filtered by the chosen voice language.
                         "native" -> {
                             var nativeVoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
                             LaunchedEffect(djVoiceLang) {
@@ -1674,7 +1677,7 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        // Microsoft Edge: voces NEURALES gratis y sin token. Selector de voz + salud.
+                        // Microsoft Edge: free neural voices with no token. Voice selector plus health check.
                         "edge" -> {
                             var edgeExpanded by remember { mutableStateOf(false) }
                             val edgeHealth = remember { mutableStateOf<com.varuna.rustify.dj.DjProviders.Latency?>(null) }
@@ -1712,7 +1715,7 @@ fun SettingsScreen(
                             }
                             Text(stringResource(R.string.settings_dj_tts_edge_note), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                         }
-                        // Google Translate: voz por IDIOMA (sin selección de voz), gratis y sin token.
+                        // Google Translate: voice per language (no voice selection), free and tokenless.
                         "gtranslate" -> {
                             val gtHealth = remember { mutableStateOf<com.varuna.rustify.dj.DjProviders.Latency?>(null) }
                             androidx.compose.runtime.LaunchedEffect(djVoiceLang) {
@@ -1725,14 +1728,14 @@ fun SettingsScreen(
                                 Text(stringResource(R.string.settings_dj_tts_gtranslate_note), color = Color.Gray, fontSize = 12.sp)
                             }
                         }
-                        // Voces OpenAI (Pollinations keyless u OpenAI propio) + campos del endpoint.
+                        // OpenAI voices (keyless Pollinations or own OpenAI) plus the endpoint fields.
                         else -> {
                             var cloudVoiceExpanded by remember { mutableStateOf(false) }
-                            // Salud de las voces de Pollinations (mismo indicador ● que el del modelo del DJ):
-                            // un ping real corto por voz. La API gratuita de audio de Pollinations fue
-                            // deprecada (openai-audio → 404), así que normalmente saldrán en ROJO; el
-                            // indicador lo hace explícito para que el usuario use la voz nativa o un endpoint
-                            // OpenAI-compatible propio en lugar de esperar a un fallback.
+                            // Health of the Pollinations voices (same ● indicator as the DJ model):
+                            // a short real ping per voice. Pollinations' free audio API was deprecated
+                            // (openai-audio → 404), so these usually show RED; the indicator makes that
+                            // explicit so the user picks the native voice or their own OpenAI-compatible
+                            // endpoint instead of waiting for a fallback.
                             val voiceHealth = remember { androidx.compose.runtime.mutableStateMapOf<String, com.varuna.rustify.dj.DjProviders.Latency>() }
                             if (djTtsEngine == "pollinations") {
                                 androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -1809,8 +1812,8 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Previsualiza la voz seleccionada con una frase de prueba (ignora el toggle
-                    // "DJ activado", así se puede oír al elegir voz desde Ajustes).
+                    // Previews the selected voice with a test phrase (ignores the "DJ enabled" toggle,
+                    // so it can be heard while choosing a voice from Settings).
                     var previewLoading by remember { mutableStateOf(false) }
                     Spacer(modifier = Modifier.height(10.dp))
                     Button(
@@ -1843,7 +1846,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // ── Fuente del DJ automático (favoritas / balance / descubrir) ──
+                    // Automatic DJ source (favorites / balanced / discover).
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(stringResource(R.string.settings_dj_auto_source), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     var djAutoSource by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_AUTO_SOURCE, "balanced") ?: "balanced") }
@@ -1899,21 +1902,21 @@ fun SettingsScreen(
                 Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
             }
 
-            // 🦀 Easter egg (nivel 1): toca la versión 7 veces → cangrejo animado. Tócalo 9 veces
-            // ("ORA ORA ORA", Star Platinum) para el egg ANIDADO (nivel 2, jojoreferencia) que abre
-            // standle.net en el idioma de la app. Autocontenido, i18n, sin permisos nuevos.
-            var eggTaps by remember { mutableStateOf(0) }
+            // Easter egg (level 1): tap the version 7 times to reveal an animated crab. Tap it 9 more
+            // times to trigger the nested egg (level 2), which opens standle.net in the app's language.
+            // Self-contained, localized, and requires no new permissions.
+            var eggTaps by remember { mutableIntStateOf(0) }
             var showEgg by remember { mutableStateOf(false) }
             var showJojo by remember { mutableStateOf(false) }
             var showWeb by remember { mutableStateOf(false) }
-            var oraCount by remember { mutableStateOf(0) }
+            var oraCount by remember { mutableIntStateOf(0) }
             val appVersion = remember {
                 runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
             }
-            // E105 — Idioma del huevo de Pascua: se resuelve SIEMPRE del idioma elegido en la app
-            // (pref app_language), construyendo un Context localizado a mano. Así los textos y standle.net
-            // salen en el idioma de la app aunque el diálogo (subcomposición) no herede el locale y aunque
-            // el sistema esté en otro idioma. (Antes cogía el del sistema.)
+            // Easter egg language: always resolved from the language chosen in the app (the app_language
+            // pref), building a localized Context by hand. This keeps the texts and standle.net in the
+            // app's language even when the dialog (a sub-composition) does not inherit the locale and even
+            // when the system is set to a different language.
             val eggLang = remember {
                 val appLang = prefs.getString("app_language", "system") ?: "system"
                 if (appLang == "system") java.util.Locale.getDefault().language else appLang
@@ -1936,7 +1939,7 @@ fun SettingsScreen(
                 color = Color(0xFF555555), fontSize = 12.sp,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    // Sin ripple: el rectángulo/resalte por defecto quedaba "cutre" sobre el texto.
+                    // No ripple: the default highlight looked poor over the text.
                     .noRippleClickable { eggTaps++; if (eggTaps >= 7) { eggTaps = 0; oraCount = 0; showEgg = true } }
                     .padding(vertical = 10.dp)
             )
@@ -1986,7 +1989,7 @@ fun SettingsScreen(
     }
 }
 
-// E105 — Clickable sin la indicación (ripple/rectángulo) por defecto, que quedaba fea sobre textos/emoji.
+// Clickable without the default indication (ripple/highlight), which looked poor over text and emoji.
 @Composable
 private fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier {
     val interaction = remember { MutableInteractionSource() }
@@ -1994,16 +1997,16 @@ private fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier {
 }
 
 /**
- * 🦀 Egg nivel 1 con calidad: el cangrejo vibra como Star Platinum y cada toque lanza un "ORA!" con
- * impacto elástico; ゴゴゴ menacing sube de fondo. A los 9 toques encadena con [JojoTimeStop] (nivel 2).
- * Textos ya localizados (llegan resueltos como String para respetar el idioma de la app).
+ * Level 1 egg: the crab vibrates and each tap fires an "ORA!" with an elastic bounce, while
+ * ゴゴゴ symbols rise in the background. After 9 taps it chains into [JojoTimeStop] (level 2).
+ * Texts arrive already localized (as resolved Strings) to respect the app's language.
  */
 @Composable
 private fun JojoOraOra(title: String, msg: String, oraCount: Int, onOra: () -> Unit, onClose: () -> Unit) {
     val purple = Color(0xFF8E24AA)
     val gold = Color(0xFFFFD700)
     val infinite = rememberInfiniteTransition(label = "ora")
-    // Vibración rapidísima (Star Platinum) del cangrejo.
+    // Very fast crab vibration.
     val shake by infinite.animateFloat(
         initialValue = -7f, targetValue = 7f,
         animationSpec = infiniteRepeatable(tween(80, easing = LinearEasing), RepeatMode.Reverse), label = "shake"
@@ -2012,14 +2015,14 @@ private fun JojoOraOra(title: String, msg: String, oraCount: Int, onOra: () -> U
         initialValue = 0.94f, targetValue = 1.07f,
         animationSpec = infiniteRepeatable(tween(130, easing = LinearEasing), RepeatMode.Reverse), label = "pulse"
     )
-    // Punch elástico del "ORA!" en cada toque.
+    // Elastic punch of the "ORA!" on each tap.
     val punch = remember { Animatable(1f) }
     LaunchedEffect(oraCount) {
         if (oraCount > 0) { punch.snapTo(1.7f); punch.animateTo(1f, spring(dampingRatio = 0.34f, stiffness = 440f)) }
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color(0xF20A0A0A)), contentAlignment = Alignment.Center) {
-            // ゴゴゴ menacing ascendiendo de fondo.
+            // ゴゴゴ symbols rising in the background.
             for (i in 0 until 6) {
                 val rise by infinite.animateFloat(
                     initialValue = 0f, targetValue = 1f,
@@ -2029,7 +2032,7 @@ private fun JojoOraOra(title: String, msg: String, oraCount: Int, onOra: () -> U
                 Text(
                     "ゴ", color = purple.copy(alpha = (1f - rise).coerceIn(0f, 1f) * 0.35f),
                     fontSize = (16 + (i % 3) * 9).sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.BottomStart).offset(x = (28 + i * 58).dp, y = -(rise * 420).dp)
+                    modifier = Modifier.align(Alignment.BottomStart).offset { IntOffset(x = (28 + i * 58).dp.roundToPx(), y = -(rise * 420).dp.roundToPx()) }
                 )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
@@ -2060,10 +2063,10 @@ private fun JojoOraOra(title: String, msg: String, oraCount: Int, onOra: () -> U
 }
 
 /**
- * 🦀→🌟 Egg anidado (nivel 2): efecto "ZA WARUDO / The World" de JoJo a pantalla completa.
- * Rayos dorados girando, doble flash de "parada del tiempo", título 「ザ・ワールド」 entrando con rebote
- * elástico, y símbolos ゴ (menacing) ascendiendo. "To Be Continued ➜" abre standle.net; やれやれだぜ cierra.
- * Todo con animaciones de Compose, sin recursos ni dependencias nuevas.
+ * Nested egg (level 2): a full-screen "time stop" effect. Rotating golden rays, a double
+ * "time stopped" flash, the 「ザ・ワールド」 title entering with an elastic bounce, and rising ゴ
+ * symbols. "To Be Continued ➜" opens standle.net; やれやれだぜ closes it.
+ * Built entirely with Compose animations, with no new resources or dependencies.
  */
 @Composable
 private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () -> Unit) {
@@ -2074,7 +2077,7 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
         animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
         label = "rays"
     )
-    // Título: aparición con rebote elástico. Flash: doble destello blanco de "tiempo detenido".
+    // Title: appears with an elastic bounce. Flash: a double white "time stopped" flash.
     val titleScale = remember { Animatable(0f) }
     val flash = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -2088,7 +2091,7 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
             val w = maxWidth
             val h = maxHeight
 
-            // Rayos dorados radiales girando (efecto "aura" JoJo).
+            // Rotating radial golden rays (aura effect).
             Canvas(Modifier.fillMaxSize()) {
                 val cx = size.width / 2f
                 val cy = size.height / 2f
@@ -2109,7 +2112,7 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
                 }
             }
 
-            // Símbolos ゴ (onomatopeya "menacing") ascendiendo y desvaneciéndose, escalonados.
+            // ゴ symbols rising and fading out, staggered.
             val goCount = 8
             for (i in 0 until goCount) {
                 val rise by infinite.animateFloat(
@@ -2124,11 +2127,11 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .offset(x = w * ((i + 0.5f) / goCount), y = -(h * 0.12f) - h * 0.72f * rise)
+                        .offset { IntOffset(x = (w * ((i + 0.5f) / goCount)).roundToPx(), y = (-(h * 0.12f) - h * 0.72f * rise).roundToPx()) }
                 )
             }
 
-            // Contenido central.
+            // Central content.
             Column(
                 Modifier.align(Alignment.Center).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -2153,7 +2156,7 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
                 TextButton(onClick = onDismiss) { Text("やれやれだぜ", color = Color.Gray) }
             }
 
-            // Overlay de destello (parada del tiempo).
+            // Flash overlay (time stopped).
             if (flash.value > 0.001f) {
                 Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = flash.value)))
             }
@@ -2162,7 +2165,7 @@ private fun JojoTimeStop(message: String, onContinue: () -> Unit, onDismiss: () 
 }
 
 // ---------------------------------------------------------------------------
-// E60 - Sección "Audio Backends" (drag&drop + toggles).
+// "Audio Backends" section (drag and drop + toggles).
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -2172,7 +2175,7 @@ private fun backendFieldColors() = TextFieldDefaults.colors(
     focusedLabelColor = Color(0xFF1DB954), focusedIndicatorColor = Color(0xFF1DB954)
 )
 
-// E90 — Color del punto de salud (mismo esquema que el indicador de latencia del modelo del DJ).
+// Health dot color (same scheme as the DJ model latency indicator).
 private fun voiceDotColor(l: com.varuna.rustify.dj.DjProviders.Latency?): Color =
     when (l ?: com.varuna.rustify.dj.DjProviders.Latency.UNKNOWN) {
         com.varuna.rustify.dj.DjProviders.Latency.FAST -> Color(0xFF1DB954)
@@ -2182,7 +2185,7 @@ private fun voiceDotColor(l: com.varuna.rustify.dj.DjProviders.Latency?): Color 
         else -> Color.Gray
     }
 
-// E104 — Menú de categorías de Ajustes (sub-pantallas). Cada fila abre su categoría.
+// Settings category menu (sub-screens). Each row opens its category.
 @Composable
 private fun SettingsCategoryMenu(onPick: (String) -> Unit) {
     val cats = listOf(
@@ -2208,11 +2211,11 @@ private fun SettingsCategoryMenu(onPick: (String) -> Unit) {
     Spacer(Modifier.height(16.dp))
 }
 
-// E104 — Categoría "Descargas": carpeta de descargas personalizadas + acceso a la pantalla de descarga.
+// "Downloads" category: custom downloads folder plus access to the download screen.
 @Composable
 private fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
     val green = Color(0xFF1DB954)
-    // Carpeta de descargas normal (además de la personalizada).
+    // Standard downloads folder (in addition to the custom one).
     DownloadFolderSection(context)
     var folder by remember { mutableStateOf(com.varuna.rustify.audio.CustomDownload.folder(context)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -2243,7 +2246,7 @@ private fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
     }
 }
 
-// E104 — Categoría "Avanzado": inspector de hashes + accesos a métricas, editor de matches y logs.
+// "Advanced" category: hash inspector plus access to metrics, the match editor, and logs.
 @Composable
 private fun AdvancedLinks(onMetrics: () -> Unit, onMatchEditor: () -> Unit, onLogs: () -> Unit) {
     Spacer(Modifier.height(16.dp))
@@ -2260,7 +2263,7 @@ private fun AdvancedLinks(onMetrics: () -> Unit, onMatchEditor: () -> Unit, onLo
     }
 }
 
-// E105 — Fila estándar título + descripción + Switch (evita repetir el mismo boilerplate en cada ajuste).
+// Standard row of title + description + Switch (avoids repeating the same boilerplate for every setting).
 @Composable
 private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -2275,7 +2278,7 @@ private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onCh
     }
 }
 
-// E109 — Actualizaciones: toggle "buscar al arrancar" + botón para comprobar ahora (GitHub releases).
+// Updates: "check on startup" toggle plus a button to check now (GitHub releases).
 @Composable
 private fun UpdatesSection(context: Context) {
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -2313,9 +2316,9 @@ private fun UpdatesSection(context: Context) {
                 checking = false
                 res.onSuccess { info ->
                     if (info != null) update = info
-                    else android.widget.Toast.makeText(context, context.getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
+                    else Toast.makeText(context, context.getString(R.string.update_up_to_date), Toast.LENGTH_SHORT).show()
                 }.onFailure {
-                    android.widget.Toast.makeText(context, context.getString(R.string.update_check_failed), android.widget.Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.update_check_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         },
@@ -2333,8 +2336,8 @@ private fun UpdatesSection(context: Context) {
     }
 }
 
-// E105 — Música local (movida a "Audio y backends"): activar, coincidir primero con local, carátulas en
-// alta, YouTube Music, usar scraper y carpetas añadidas. Autocontenida (estado + picker propios).
+// Local music (moved to "Audio and backends"): enable, match local first, high-res cover art,
+// YouTube Music, use scraper, and added folders. Self-contained (its own state and picker).
 @Composable
 private fun LocalMusicSection(context: Context) {
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -2409,7 +2412,7 @@ private fun LocalMusicSection(context: Context) {
     }
 }
 
-// E105 — Carpeta de descargas "normal" (movida a la categoría Descargas, junto a la personalizada).
+// Standard downloads folder (moved to the Downloads category, alongside the custom one).
 @Composable
 private fun DownloadFolderSection(context: Context) {
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -2439,7 +2442,7 @@ private fun DownloadFolderSection(context: Context) {
     }
 }
 
-// E105 — Diagnóstico (movido a Avanzado): activar captura de logs + abrir el visor.
+// Diagnostics (moved to Advanced): enable log capture plus open the viewer.
 @Composable
 private fun LoggingSection(context: Context, onViewLogs: () -> Unit) {
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -2460,22 +2463,22 @@ private fun LoggingSection(context: Context, onViewLogs: () -> Unit) {
     }
 }
 
-// E61 — Config de instancias Invidious (el on/off y el orden van en Audio Backends).
+// Invidious instance configuration (the on/off and ordering live in Audio Backends).
 @Composable
 private fun InvidiousBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
-    val Inv = com.varuna.rustify.audio.InvidiousSettings
-    var mode by remember { mutableStateOf(Inv.mode(context)) }
-    var fixed by remember { mutableStateOf(Inv.fixedInstance(context)) }
-    var torOn by remember { mutableStateOf(Inv.torEnabled(context)) }
-    var anonOn by remember { mutableStateOf(Inv.allowAnonNetworks(context)) }
+    val inv = com.varuna.rustify.audio.InvidiousSettings
+    var mode by remember { mutableStateOf(inv.mode(context)) }
+    var fixed by remember { mutableStateOf(inv.fixedInstance(context)) }
+    var torOn by remember { mutableStateOf(inv.torEnabled(context)) }
+    var anonOn by remember { mutableStateOf(inv.allowAnonNetworks(context)) }
     var custom by remember { mutableStateOf("") }
-    var customList by remember { mutableStateOf(Inv.customInstances(context)) }
+    var customList by remember { mutableStateOf(inv.customInstances(context)) }
     var instances by remember { mutableStateOf<List<com.varuna.rustify.audio.InvidiousInstances.Instance>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var pings by remember { mutableStateOf(mapOf<String, Boolean?>()) }
-    // Probador de reproducción end-to-end de la pista actual por Invidious (igual que el de Deezer).
+    // End-to-end playback tester for the current track via Invidious (same as the Deezer one).
     var invTpBusy by remember { mutableStateOf(false) }
     var invTpStatus by remember { mutableStateOf("") }
 
@@ -2496,14 +2499,14 @@ private fun InvidiousBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
                 listOf("auto" to stringResource(R.string.inv_mode_auto), "fixed" to stringResource(R.string.inv_mode_fixed)).forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { mode = code; Inv.setMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { mode = code; inv.setMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = mode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
             if (mode == "fixed") {
-                OutlinedTextField(value = fixed, onValueChange = { fixed = it; Inv.setFixedInstance(context, it) },
+                OutlinedTextField(value = fixed, onValueChange = { fixed = it; inv.setFixedInstance(context, it) },
                     label = { Text(stringResource(R.string.inv_fixed_url_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2532,12 +2535,12 @@ private fun InvidiousBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = custom, onValueChange = { custom = it }, label = { Text(stringResource(R.string.inv_add_custom_label)) }, singleLine = true, modifier = Modifier.weight(1f), colors = backendFieldColors())
-                TextButton(onClick = { if (custom.isNotBlank()) { Inv.addCustomInstance(context, custom); customList = Inv.customInstances(context); custom = "" } }) { Text(stringResource(R.string.inv_add), color = green) }
+                TextButton(onClick = { if (custom.isNotBlank()) { inv.addCustomInstance(context, custom); customList = inv.customInstances(context); custom = "" } }) { Text(stringResource(R.string.inv_add), color = green) }
             }
             customList.forEach { c ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(c, color = Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                    TextButton(onClick = { Inv.removeCustomInstance(context, c); customList = Inv.customInstances(context) }) { Text(stringResource(R.string.inv_remove), color = Color(0xFFCC3333), fontSize = 11.sp) }
+                    TextButton(onClick = { inv.removeCustomInstance(context, c); customList = inv.customInstances(context) }) { Text(stringResource(R.string.inv_remove), color = Color(0xFFCC3333), fontSize = 11.sp) }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -2546,14 +2549,14 @@ private fun InvidiousBackendSection(context: Context) {
                     Text(stringResource(R.string.inv_allow_anon), color = Color.White, fontSize = 13.sp)
                     Text(stringResource(R.string.inv_allow_anon_desc), color = Color.Gray, fontSize = 11.sp)
                 }
-                Switch(checked = anonOn, onCheckedChange = { anonOn = it; Inv.setAllowAnonNetworks(context, it) })
+                Switch(checked = anonOn, onCheckedChange = { anonOn = it; inv.setAllowAnonNetworks(context, it) })
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.inv_tor_route), color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(checked = torOn, onCheckedChange = { torOn = it; Inv.setTorEnabled(context, it) })
+                Switch(checked = torOn, onCheckedChange = { torOn = it; inv.setTorEnabled(context, it) })
             }
 
-            // Probar reproducción de la PISTA ACTUAL por Invidious (resuelve como el backend real).
+            // Test playback of the current track via Invidious (resolves like the real backend).
             Spacer(Modifier.height(12.dp))
             val invNoTrack = stringResource(R.string.dz_tp_no_track)
             val invOkFmt = stringResource(R.string.dz_tp_ok_fmt)
@@ -2576,25 +2579,25 @@ private fun InvidiousBackendSection(context: Context) {
     }
 }
 
-// E62 — Config del backend Deezer (ARL propio o fuente de ARLs) + probador de ARLs y de reproducción.
+// Deezer backend configuration (own ARL or ARL source) plus ARL and playback testers.
 @Composable
 private fun DeezerBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
-    val Dz = com.varuna.rustify.audio.DeezerSettings
-    var arlMode by remember { mutableStateOf(Dz.arlMode(context)) }
-    var arl by remember { mutableStateOf(Dz.arl(context)) }
-    var source by remember { mutableStateOf(Dz.sourceUrl(context)) }
-    var quality by remember { mutableStateOf(Dz.quality(context)) }
+    val dz = com.varuna.rustify.audio.DeezerSettings
+    var arlMode by remember { mutableStateOf(dz.arlMode(context)) }
+    var arl by remember { mutableStateOf(dz.arl(context)) }
+    var source by remember { mutableStateOf(dz.sourceUrl(context)) }
+    var quality by remember { mutableStateOf(dz.quality(context)) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    // Tester de la fuente de ARLs: lista los ARLs de la web, prueba cada uno (✅/❌) y deja elegir cuál usar.
+    // ARL source tester: lists the ARLs from the web, tests each one (✅/❌), and lets the user pick which to use.
     var entries by remember { mutableStateOf<List<com.varuna.rustify.audio.DeezerArl.ArlEntry>>(emptyList()) }
-    // arl -> ArlCheck (probado) o null (probando). Sin la clave = sin probar.
+    // arl -> ArlCheck (tested) or null (testing). Absent key = not yet tested.
     var entryStatus by remember { mutableStateOf(mapOf<String, com.varuna.rustify.audio.DeezerClient.ArlCheck?>()) }
-    var fetchedAt by remember { mutableStateOf(0L) }
-    var workingArl by remember { mutableStateOf(Dz.workingArl(context)) }
-    // Probador de reproducción end-to-end (auth + match + get_url) sin tocar el orden de backends.
+    var fetchedAt by remember { mutableLongStateOf(0L) }
+    var workingArl by remember { mutableStateOf(dz.workingArl(context)) }
+    // End-to-end playback tester (auth + match + get_url) without changing the backend order.
     var tpStatus by remember { mutableStateOf("") }
     var tpBusy by remember { mutableStateOf(false) }
 
@@ -2607,9 +2610,8 @@ private fun DeezerBackendSection(context: Context) {
 
     fun mask(a: String) = if (a.length > 12) a.take(6) + "…" + a.takeLast(4) else a
 
-    // E105 — Autocarga: si ya hay una URL fuente guardada y estamos en modo "fuente", lista los ARLs al
-    // abrir la sección sin tener que pulsar el botón (antes parecía que "no salía ningún ARL" porque no
-    // se disparaba nada al entrar).
+    // Auto-load: if a source URL is already saved and we are in "source" mode, list the ARLs when the
+    // section opens, without requiring a button press.
     LaunchedEffect(arlMode) {
         if (arlMode == "source" && source.isNotBlank() && entries.isEmpty() && !busy) {
             busy = true; status = ""
@@ -2627,27 +2629,26 @@ private fun DeezerBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
                 listOf("single" to stringResource(R.string.dz_mode_single), "source" to stringResource(R.string.dz_mode_source)).forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { arlMode = code; Dz.setArlMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { arlMode = code; dz.setArlMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = arlMode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
             if (arlMode == "single") {
-                OutlinedTextField(value = arl, onValueChange = { arl = it; Dz.setArl(context, it) }, label = { Text(stringResource(R.string.dz_arl_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                OutlinedTextField(value = arl, onValueChange = { arl = it; dz.setArl(context, it) }, label = { Text(stringResource(R.string.dz_arl_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
                 TextButton(onClick = {
                     busy = true; status = ""
                     scope.launch(Dispatchers.IO) {
                         val ok = com.varuna.rustify.audio.DeezerClient().testArl(arl.trim())
-                        if (ok) { Dz.setWorkingArl(context, arl.trim()) }
-                        withContext(Dispatchers.Main) { status = if (ok) validMsg else invalidMsg; busy = false; workingArl = Dz.workingArl(context) }
+                        if (ok) { dz.setWorkingArl(context, arl.trim()) }
+                        withContext(Dispatchers.Main) { status = if (ok) validMsg else invalidMsg; busy = false; workingArl = dz.workingArl(context) }
                     }
                 }, enabled = !busy) { Text(stringResource(R.string.dz_test_arl), color = green) }
             } else {
-                OutlinedTextField(value = source, onValueChange = { source = it; Dz.setSourceUrl(context, it) }, label = { Text(stringResource(R.string.dz_source_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                OutlinedTextField(value = source, onValueChange = { source = it; dz.setSourceUrl(context, it) }, label = { Text(stringResource(R.string.dz_source_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
                 Spacer(Modifier.height(8.dp))
-                // Botón real (relleno) para que se vea como botón — antes era un TextButton discreto que el
-                // usuario no reconocía como pulsable, así que "no salía ningún ARL" (no se disparaba nada).
+                // A filled button so it clearly reads as a button and users recognize it as tappable.
                 Button(
                     onClick = {
                         busy = true; status = ""; entryStatus = emptyMap()
@@ -2655,8 +2656,8 @@ private fun DeezerBackendSection(context: Context) {
                             val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
                             withContext(Dispatchers.Main) {
                                 entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
-                                // Muestra el motivo real del fallo (HTTP 403 / timeout / 0 ARLs…) en vez de
-                                // un genérico "no hay ARLs" que no dice nada.
+                                // Shows the actual failure reason (HTTP 403 / timeout / 0 ARLs, etc.)
+                                // instead of a generic, uninformative "no ARLs" message.
                                 status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
                             }
                         }
@@ -2674,7 +2675,7 @@ private fun DeezerBackendSection(context: Context) {
                         val rel = android.text.format.DateUtils.getRelativeTimeSpanString(fetchedAt).toString()
                         Text(stringResource(R.string.dz_fetched_fmt, rel), color = Color.Gray, fontSize = 10.sp)
                     }
-                    // Leyenda: ✅ reproduce (premium) · ⚠️ autentica pero no reproduce (cuenta gratis) · ❌ inválido.
+                    // Legend: ✅ plays (premium) · ⚠️ authenticates but does not play (free account) · ❌ invalid.
                     Text("✅ premium · ⚠️ free (no stream) · ❌ inválido", color = Color(0xFF888888), fontSize = 10.sp)
                     entries.take(30).forEach { e ->
                         val tested = entryStatus.containsKey(e.arl)
@@ -2692,18 +2693,18 @@ private fun DeezerBackendSection(context: Context) {
                             TextButton(onClick = {
                                 entryStatus = entryStatus + (e.arl to null)
                                 scope.launch(Dispatchers.IO) {
-                                    // checkArl: auth + get_url en una pista canario → distingue premium/free/inválido.
+                                    // checkArl: auth + get_url on a canary track to distinguish premium/free/invalid.
                                     val res = com.varuna.rustify.audio.DeezerClient().checkArl(e.arl)
                                     withContext(Dispatchers.Main) {
                                         entryStatus = entryStatus + (e.arl to res)
-                                        if (res.canStream) { Dz.setWorkingArl(context, e.arl); workingArl = e.arl }
+                                        if (res.canStream) { dz.setWorkingArl(context, e.arl); workingArl = e.arl }
                                     }
                                 }
                             }) { Text(stringResource(R.string.dz_test), color = green, fontSize = 11.sp) }
                             if (workingArl == e.arl) {
                                 Text(stringResource(R.string.dz_in_use), color = green, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
                             } else {
-                                TextButton(onClick = { Dz.setWorkingArl(context, e.arl); workingArl = e.arl }) { Text(stringResource(R.string.dz_use), color = Color.White, fontSize = 11.sp) }
+                                TextButton(onClick = { dz.setWorkingArl(context, e.arl); workingArl = e.arl }) { Text(stringResource(R.string.dz_use), color = Color.White, fontSize = 11.sp) }
                             }
                         }
                     }
@@ -2713,7 +2714,7 @@ private fun DeezerBackendSection(context: Context) {
             Text(stringResource(R.string.dz_quality), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Row(Modifier.fillMaxWidth()) {
                 listOf("flac" to "FLAC", "mp3_320" to "MP3 320", "mp3_128" to "MP3 128").forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { quality = code; Dz.setQuality(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { quality = code; dz.setQuality(context, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = quality == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 11.sp)
                     }
@@ -2722,9 +2723,9 @@ private fun DeezerBackendSection(context: Context) {
             if (busy) { Spacer(Modifier.height(6.dp)); CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = green) }
             if (status.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(status, color = Color.White, fontSize = 12.sp) }
 
-            // E62 — Probador de reproducción end-to-end: resuelve la PISTA ACTUAL por Deezer (auth +
-            // match por ISRC + get_url) sin exigir poner Deezer como único backend. Reporta el formato
-            // servido (FLAC/MP3_320…) o el motivo del fallo, para diagnosticar sin tocar el orden.
+            // End-to-end playback tester: resolves the current track via Deezer (auth + ISRC match +
+            // get_url) without requiring Deezer to be the only backend. Reports the served format
+            // (FLAC/MP3_320, etc.) or the failure reason, for diagnosis without changing the order.
             Spacer(Modifier.height(12.dp))
             TextButton(onClick = {
                 tpBusy = true; tpStatus = ""
@@ -2737,10 +2738,10 @@ private fun DeezerBackendSection(context: Context) {
                     val result = runCatching {
                         val a = com.varuna.rustify.audio.DeezerArl.ensureArl(context) ?: error("no working ARL (testea un ARL primero)")
                         val client = com.varuna.rustify.audio.DeezerClient()
-                        // Paso a paso para decir QUÉ falla: auth vs no-encontrada vs sin derechos de stream.
+                        // Step by step to report what fails: auth vs not-found vs no stream rights.
                         val session = client.auth(a) ?: error("ARL auth failed (inválido/caducado)")
                         val id = client.deezerTrackId(track) ?: error("track not found on Deezer (ISRC/búsqueda)")
-                        val media = client.media(session, id, Dz.formatChain(context))
+                        val media = client.media(session, id, dz.formatChain(context))
                             ?: error("get_url vacío (ARL sin premium/HiFi o región) — prueba un ARL con ✅")
                         media.format
                     }
@@ -2797,7 +2798,7 @@ private fun ReorderableBackendList(
     val rowHeightPx = with(density) { 56.dp.toPx() }
     var order by remember(entries) { mutableStateOf(entries) }
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
 
     Column {
         order.forEachIndexed { index, entry ->
@@ -2877,7 +2878,7 @@ private fun ReorderableLyricsList(
     val rowHeightPx = with(density) { 56.dp.toPx() }
     var order by remember(entries) { mutableStateOf(entries) }
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     Column {
         order.forEachIndexed { index, entry ->
             key(entry.id) {
@@ -2947,7 +2948,7 @@ private fun AndroidAutoPreviewSection(context: Context) {
             }
             if (enabled) {
                 Spacer(Modifier.height(12.dp))
-                // Carga async (igual que en el coche): resuelve también playlists/álbumes de Spotify.
+                // Async load (as in the car): also resolves Spotify playlists and albums.
                 var nodes by remember { mutableStateOf<List<com.varuna.rustify.player.AndroidAutoBrowse.Node>>(emptyList()) }
                 var loadingNodes by remember { mutableStateOf(false) }
                 LaunchedEffect(path) {
@@ -2971,7 +2972,7 @@ private fun AndroidAutoPreviewSection(context: Context) {
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Carátula (como se vería en el coche); fallback a icono ▸/♪.
+                        // Cover art (as it would appear in the car); falls back to a ▸/♪ icon.
                         Box(
                             modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF2A2A2A)),
                             contentAlignment = Alignment.Center

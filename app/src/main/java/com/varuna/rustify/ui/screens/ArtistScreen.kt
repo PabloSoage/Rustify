@@ -1,7 +1,7 @@
 package com.varuna.rustify.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,7 +59,6 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullArtist
 import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.bridge.SimpleAlbum
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
@@ -81,14 +80,14 @@ fun ArtistScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
     onViewAllSongs: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
     var artistDetails by remember { mutableStateOf<FullArtist?>(null) }
-    // E108 — Semilla desde caché (vida de la app) para que al volver del miniplayer no recargue con spinner.
+    // Seed from the in-memory cache so returning from the miniplayer does not show a spinner.
     var topTracks by remember(artistId) { mutableStateOf(SpotifyRepository.artistTopTracksCache[artistId] ?: emptyList()) }
     var albums by remember(artistId) { mutableStateOf(SpotifyRepository.artistAlbumsCache[artistId] ?: emptyList()) }
     var relatedArtists by remember { mutableStateOf<List<FullArtist>>(emptyList()) }
@@ -103,7 +102,7 @@ fun ArtistScreen(
 
     fun loadData() {
         coroutineScope.launch {
-            if (topTracks.isEmpty()) isLoading = true   // con caché ya poblada, refresca sin spinner
+            if (topTracks.isEmpty()) isLoading = true   // when the cache is already populated, refresh without a spinner
             errorMessage = null
             try {
                 // Support local artists (navigated from LibraryLocalMusic)
@@ -138,7 +137,7 @@ fun ArtistScreen(
                     topTracks = tracksDef.await().items
                     albums = albumsDef.await().items
                     relatedArtists = relatedDef.await().items
-                    // E108 — cachea para que el re-render (miniplayer) no recargue.
+                    // Cache the results so a re-render (e.g. from the miniplayer) does not reload.
                     SpotifyRepository.artistTopTracksCache[artistId] = topTracks
                     SpotifyRepository.artistAlbumsCache[artistId] = albums
                 }
@@ -233,8 +232,8 @@ fun ArtistScreen(
                         }
                     }
 
-                    // E108 — Ver TODAS las canciones del artista (toda su discografía, orden de release).
-                    // Solo para artistas de Spotify (los locales ya muestran todas sus pistas).
+                    // View the artist's entire discography, ordered by release date.
+                    // Only for Spotify artists; local artists already show all of their tracks.
                     if (!artistId.startsWith("local_artist:")) {
                         item {
                             Button(

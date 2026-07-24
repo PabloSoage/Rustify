@@ -25,7 +25,4 @@ object AppLinksHosts {
 
     /** Default wrapper host preselected in the UI when no preference is set yet. */
     val DEFAULT_HOST: String = verifiedHosts.first()
-
-    /** Placeholder host kept for reference; does NOT verify. */
-    const val PLACEHOLDER_HOST = "rustify.example.com"
 }

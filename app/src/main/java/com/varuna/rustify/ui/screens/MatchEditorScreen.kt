@@ -3,7 +3,6 @@ package com.varuna.rustify.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,15 +31,16 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,13 +64,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Editor de matches YouTube — sustituye al editor de texto crudo por una lista legible:
- *  - nombre de la canción + artistas + match actual (id + "usuario/auto"),
- *  - reproducir el match actual, editar (abre el buscador de alternativas), o borrar,
- *  - añadir un match manualmente (buscas la canción y luego su match).
+ * YouTube match editor — a readable list instead of a raw text editor:
+ *  - song name + artists + current match (id + "user/auto"),
+ *  - play the current match, edit (opens the alternatives search), or delete,
+ *  - add a match manually (search for the song, then its match).
  *
- * Reutiliza [YouTubeMappingDialog] (el buscador de alternativas de TrackScreen) para editar/añadir.
- * Todos los cambios pasan por [MatchStore] (que reescribe el JSON **y recarga el mapa en Rust**).
+ * Reuses [YouTubeMappingDialog] (the alternatives search from TrackScreen) to edit/add.
+ * All changes go through [MatchStore], which rewrites the JSON and reloads the map in Rust.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,26 +84,26 @@ fun MatchEditorScreen(
 
     var mappings by remember { mutableStateOf(MatchStore.readAll(context).toList()) }
     val names = remember { mutableStateMapOf<String, FullTrack?>() }
-    var editTrack by remember { mutableStateOf<FullTrack?>(null) }  // abre el diálogo de alternativas
+    var editTrack by remember { mutableStateOf<FullTrack?>(null) }  // opens the alternatives dialog
     var showAdd by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(0) }  // 0 = todos, 1 = elegidos (usuario), 2 = automáticos
+    var filter by remember { mutableIntStateOf(0) }  // 0 = all, 1 = user-chosen, 2 = automatic
 
     fun refresh() { mappings = MatchStore.readAll(context).toList() }
 
-    // Qué matches son "elegidos" (usuario) para poder filtrar. Se recalcula solo al cambiar la lista.
+    // Which matches are user-chosen, for filtering. Recomputed only when the list changes.
     val userSet = remember(mappings) {
         mappings.mapNotNull { (tid, _) -> tid.takeIf { UserAlternatives.isUserSet(context, it) } }.toSet()
     }
-    // Precarga en segundo plano los nombres de TODOS los matches para que la búsqueda por título cubra
-    // toda la lista (no solo lo visible). Best-effort; el mapa se rellena progresivamente.
+    // Preload the names of all matches in the background so title search covers the whole list,
+    // not just visible rows. Best-effort; the map fills in progressively.
     LaunchedEffect(mappings) {
         for ((tid, _) in mappings) {
             if (!names.containsKey(tid)) names[tid] = runCatching { spotifyRepo.getTrack(tid) }.getOrNull()
         }
     }
 
-    // Lista filtrada: por elegidos/automáticos y por texto (título / artista / id).
+    // Filtered list: by user-chosen/automatic and by text (title / artist / id).
     val filtered = mappings.filter { (tid, ytId) ->
         val passFilter = when (filter) { 1 -> tid in userSet; 2 -> tid !in userSet; else -> true }
         if (!passFilter) return@filter false
@@ -204,11 +204,11 @@ fun MatchEditorScreen(
                             color = if (isUser) green else Color(0xFF888888), fontSize = 11.sp, maxLines = 1
                         )
                     }
-                    // Reproducir el match actual
+                    // Play the current match.
                     IconButton(onClick = { runCatching { audioPlayerService.playPreview(tid, ytId) } }) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Reproducir", tint = green)
                     }
-                    // Editar (buscar/cambiar alternativa)
+                    // Edit (search for / change the alternative).
                     IconButton(onClick = {
                         editTrack = ft ?: FullTrack(
                             id = tid, name = tid, externalUri = "", explicit = false,
@@ -217,7 +217,7 @@ fun MatchEditorScreen(
                     }) {
                         Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
                     }
-                    // Borrar
+                    // Delete.
                     IconButton(onClick = { MatchStore.remove(context, tid); refresh() }) {
                         Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFCC3333))
                     }
@@ -236,7 +236,7 @@ fun MatchEditorScreen(
         }
     }
 
-    // Diálogo de alternativas (editar el match de una canción concreta).
+    // Alternatives dialog (edit the match for a specific song).
     editTrack?.let { t ->
         YouTubeMappingDialog(
             track = t,
@@ -250,7 +250,7 @@ fun MatchEditorScreen(
         )
     }
 
-    // Añadir manualmente: primero busca la canción, luego se abre el buscador de match.
+    // Add manually: first search for the song, then open the match search.
     if (showAdd) {
         SongPickerDialog(
             spotifyRepo = spotifyRepo,
@@ -260,7 +260,7 @@ fun MatchEditorScreen(
     }
 }
 
-/** Buscador de canciones de Spotify para el flujo "añadir match manualmente". */
+/** Spotify song search for the "add match manually" flow. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SongPickerDialog(

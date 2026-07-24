@@ -82,13 +82,13 @@ fun AlbumScreen(
     onGoToQueue: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
-    modifier: Modifier = Modifier,
     currentTrackId: String? = null
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
-    // E108 — Semilla desde caché (vida de la app) para no recargar al volver del miniplayer.
+    // Seed from the in-memory cache so returning from the miniplayer does not trigger a reload.
     var tracks by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] ?: emptyList()) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
@@ -104,7 +104,7 @@ fun AlbumScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(albumId) {
-        if (tracks.isEmpty()) isLoading = true   // con caché ya poblada, no muestres spinner
+        if (tracks.isEmpty()) isLoading = true   // when the cache is already populated, skip the spinner
         errorMessage = null
         try {
             // Support local albums (navigated from LibraryLocalMusic)
@@ -134,7 +134,7 @@ fun AlbumScreen(
                 offset = localTracks.size
             } else {
                 if (albumDetails == null) albumDetails = spotifyRepo.getAlbum(albumId)
-                // E108: si ya venía de caché, no re-descargues (evita spinner y reset de scroll).
+                // If the tracks came from the cache, skip re-downloading to avoid a spinner and scroll reset.
                 if (tracks.isEmpty()) {
                     val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
                     tracks = response.items

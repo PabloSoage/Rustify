@@ -4,12 +4,12 @@ import com.varuna.rustify.bridge.FullTrack
 import kotlin.math.sqrt
 
 /**
- * E90 — Similitud de canciones por METADATOS, on-device, sin modelo ni red ni claves.
+ * Song similarity by metadata, on-device, with no model, network, or keys.
  *
- * Cada track se convierte en un vector disperso de tokens ponderados (artistas > título > álbum) y se
- * comparan por **coseno**. Es la alternativa ligera a una base de datos vectorial tipo Qdrant: para una
- * biblioteca personal (miles de temas) el coseno por fuerza bruta es instantáneo, así que no hace falta
- * ni un ANN ni un servidor. Se usa para ordenar candidatos por parecido a una semilla/centroide.
+ * Each track becomes a sparse vector of weighted tokens (artists > title > album), compared by cosine
+ * similarity. This is the lightweight alternative to a vector database like Qdrant: for a personal
+ * library (thousands of songs) brute-force cosine is instant, so neither an ANN nor a server is
+ * needed. Used to rank candidates by resemblance to a seed/centroid.
  */
 object DjVectors {
 
@@ -21,7 +21,7 @@ object DjVectors {
     private fun tokens(s: String): List<String> =
         s.lowercase().split(Regex("[^\\p{L}\\p{Nd}]+")).filter { it.length >= 2 && it !in STOP }
 
-    /** Vector disperso token→peso de un track (los artistas pesan más que título/álbum). */
+    /** Sparse token→weight vector of a track (artists weigh more than title/album). */
     fun vectorize(track: FullTrack): Map<String, Float> {
         val v = HashMap<String, Float>()
         fun add(text: String, w: Float) { tokens(text).forEach { v[it] = (v[it] ?: 0f) + w } }
@@ -31,7 +31,7 @@ object DjVectors {
         return v
     }
 
-    /** Centroide (suma) de los vectores de una lista de tracks — el "sonido medio" del conjunto. */
+    /** Centroid (sum) of the vectors of a list of tracks — the "average sound" of the set. */
     fun centroid(tracks: List<FullTrack>): Map<String, Float> {
         val c = HashMap<String, Float>()
         tracks.forEach { t -> vectorize(t).forEach { (k, w) -> c[k] = (c[k] ?: 0f) + w } }
@@ -49,7 +49,7 @@ object DjVectors {
         return dot / (sqrt(na) * sqrt(nb))
     }
 
-    /** Ordena [candidates] por similitud coseno DESC respecto al centroide [seed]. */
+    /** Sorts [candidates] by cosine similarity (descending) to the [seed] centroid. */
     fun rankBySimilarity(candidates: List<FullTrack>, seed: Map<String, Float>): List<FullTrack> {
         if (seed.isEmpty()) return candidates
         return candidates.sortedByDescending { cosine(vectorize(it), seed) }

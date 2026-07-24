@@ -7,8 +7,7 @@ import com.varuna.rustify.bridge.YtMusicRepository
 import org.json.JSONObject
 
 /**
- * E50 — Preferencias persistentes de la sync (en `rustify_settings`, el mismo
- * SharedPreferences que usa Ajustes).
+ * Persistent sync preferences (in `rustify_settings`, the same SharedPreferences that Settings uses).
  */
 object DriveSyncPrefs {
     private const val PREFS = "rustify_settings"
@@ -17,7 +16,7 @@ object DriveSyncPrefs {
     private const val K_LAST = "drive_sync_last_ms"
     private const val K_METHOD = "drive_auth_method"   // "play" (Play Services) | "browser" (AppAuth)
 
-    /** Método de auth de Drive: "play" (A, Play Services) por defecto, o "browser" (B, AppAuth). */
+    /** Drive auth method: "play" (Play Services) by default, or "browser" (AppAuth). */
     fun authMethod(ctx: Context): String =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_METHOD, "play") ?: "play"
 
@@ -36,7 +35,7 @@ object DriveSyncPrefs {
     fun setAutoSync(ctx: Context, enabled: Boolean) =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(K_AUTO, enabled) }
 
-    /** epoch millis de la última sync correcta, o 0 si nunca. */
+    /** Epoch millis of the last successful sync, or 0 if never. */
     fun lastSyncMs(ctx: Context): Long =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(K_LAST, 0L)
 
@@ -45,15 +44,15 @@ object DriveSyncPrefs {
 }
 
 /**
- * E50 — Orquesta una sincronización completa (bidireccional) contra Drive:
- *   1. baja el contenedor remoto (si existe),
- *   2. construye el contenedor local desde disco,
- *   3. hace **merge** (unión + last-write-wins),
- *   4. aplica el resultado a disco/repos (recarga in-memory),
- *   5. sube el contenedor fusionado.
+ * Orchestrates a full (bidirectional) sync against Drive:
+ *   1. downloads the remote container (if it exists),
+ *   2. builds the local container from disk,
+ *   3. performs a **merge** (union + last-write-wins),
+ *   4. applies the result to disk/repos (reloads in-memory state),
+ *   5. uploads the merged container.
  *
- * Requiere un access token válido con scope `drive.appdata`
- * (ver [GoogleDriveSync.authorize]). Debe llamarse fuera del hilo principal.
+ * Requires a valid access token with the `drive.appdata` scope (see [GoogleDriveSync.authorize]).
+ * Must be called off the main thread.
  */
 class DriveSyncManager(
     private val appContext: Context,
@@ -62,8 +61,8 @@ class DriveSyncManager(
     private val ytmRepo: YtMusicRepository?,
 ) {
     /**
-     * Ejecuta la sync. Lanza excepción (IO/parse) si algo falla; el llamador la
-     * traduce a estado de error en la UI. Bloqueante — llamar en Dispatchers.IO.
+     * Runs the sync. Throws (IO/parse) if anything fails; the caller translates it into an error
+     * state in the UI. Blocking — call on Dispatchers.IO.
      */
     @Throws(Exception::class)
     fun syncNow(accessToken: String) {
@@ -73,10 +72,10 @@ class DriveSyncManager(
 
         val merged: JSONObject = if (remote != null) RustifyBackup.merge(local, remote) else local
 
-        // Aplicar el resultado localmente (escribe ficheros + recarga repos).
+        // Apply the result locally (writes files + reloads repos).
         RustifyBackup.apply(appContext, merged, spotifyRepo, ytmRepo)
 
-        // Subir el contenedor fusionado (create o update).
+        // Upload the merged container (create or update).
         drive.upload(accessToken, merged, fileId)
 
         DriveSyncPrefs.setLastSyncMs(appContext, System.currentTimeMillis())

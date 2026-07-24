@@ -1,5 +1,6 @@
 package com.varuna.rustify.dj
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
@@ -13,8 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * E90 — Un "mood" del DJ autónomo: una vibe con su query de búsqueda (keywords en inglés, que es lo
- * que mejor matchea en Spotify/YouTube) y sus etiquetas i18n.
+ * A mood of the autonomous DJ: a vibe with its search query (English keywords, which match best on
+ * Spotify/YouTube) and its i18n labels.
  */
 data class DjMood(
     val id: String,
@@ -35,25 +36,24 @@ object DjMoods {
 }
 
 /**
- * E90 — DJ autónomo tipo "DJ Livi". Tú solo le das al botón: el DJ **anuncia un mood** (con voz),
- * mete un bloque de ~5 canciones de ese mood (favoritas y/o sugerencias según [DjSettings.autoSource])
- * y al pedirle "siguiente" (botón o icono de DJ en la pantalla de Track) **cambia de mood**.
+ * Autonomous DJ. You just press the button: the DJ announces a mood (with voice), queues a block of
+ * ~5 songs for that mood (favorites and/or suggestions per [DjSettings.autoSource]), and on "next"
+ * (button or the DJ icon on the Track screen) it changes mood.
  *
- * Singleton: mantiene la sesión viva para que el icono del reproductor pueda avanzar sin re-crear
- * nada. Encola vía [AudioPlayerService] (métodos públicos), no lo modifica.
+ * Singleton: keeps the session alive so the player icon can advance without re-creating anything.
+ * Enqueues via [AudioPlayerService] (public methods) without modifying it.
  *
- * Robustez (v3.0):
- *  - **Feedback inmediato**: `State.preparing` se activa en cuanto pulsas, así la UI muestra un
- *    spinner y no puedes volver a pulsar (antes no había feedback → doble pulsación → doble voz y
- *    doble encolado).
- *  - **Single-flight**: nunca se solapan dos construcciones de bloque (era lo que metía "un montón"
- *    de temas cuando el observer y una pulsación competían). Se cancela la anterior y gana la última.
- *  - **Variedad real**: el mood inicial y el orden de rotación se barajan (ya no empieza siempre en
- *    "chill"), las selecciones se barajan y se evitan los temas recientes (ya no repite lo mismo).
+ * Robustness:
+ *  - Immediate feedback: `State.preparing` is set as soon as you press, so the UI shows a spinner and
+ *    you cannot press again (which would otherwise cause a double voice and double enqueue).
+ *  - Single-flight: two block builds never overlap (which used to enqueue far too many songs when the
+ *    observer and a press competed). The previous build is cancelled and the latest one wins.
+ *  - Real variety: the initial mood and rotation order are shuffled (it no longer always starts on
+ *    "chill"), selections are shuffled, and recent tracks are avoided (no more repeats).
  */
 object DjAutoController {
 
-    /** [preparing] = construyendo un bloque (mostrar spinner, no permitir otra acción). */
+    /** [preparing] = building a block (show a spinner, disallow another action). */
     data class State(
         val moodId: String,
         val moodLabel: String,
@@ -68,21 +68,23 @@ object DjAutoController {
     private var moodIndex = 0
     private var moodOrder: List<Int> = DjMoods.MOODS.indices.toList()
     private var favoritesProvider: (suspend () -> List<FullTrack>)? = null
+    // SpotifyRepository only retains the applicationContext (see appCtx), not an Activity → no real leak.
+    @SuppressLint("StaticFieldLeak")
     private var repoRef: SpotifyRepository? = null
     private var observerJob: kotlinx.coroutines.Job? = null
     private var segmentJob: kotlinx.coroutines.Job? = null
     private var advanceGuardId: String? = null
-    /** Ids servidos recientemente para no repetirlos entre bloques (ventana rodante). */
+    /** Recently served ids, to avoid repeating them across blocks (rolling window). */
     private val recentTrackIds = ArrayDeque<String>()
 
     val isActive: Boolean get() = _state.value != null
 
     fun start(context: Context, repo: SpotifyRepository, favoritesProvider: suspend () -> List<FullTrack>) {
-        // Ya activo → ignora la re-pulsación (evita reiniciar la sesión y una segunda voz).
+        // Already active → ignore the re-press (avoids restarting the session and a second voice).
         if (isActive) return
         this.repoRef = repo
         this.favoritesProvider = favoritesProvider
-        // Baraja mood inicial + orden de rotación: no empieza siempre en "chill".
+        // Shuffle the initial mood + rotation order: it does not always start on "chill".
         this.moodOrder = DjMoods.MOODS.indices.shuffled()
         this.moodIndex = 0
         this.recentTrackIds.clear()
@@ -92,9 +94,9 @@ object DjAutoController {
     }
 
     /**
-     * Auto-avance tipo Livi: cuando el último tema del bloque está a punto de terminar, encola el
-     * siguiente mood automáticamente (sin que el usuario tenga que pulsar nada). No avanza mientras
-     * se está preparando/construyendo un bloque (evita solapes).
+     * Auto-advance: when the last song of the block is about to end, the next mood is queued
+     * automatically (without the user pressing anything). It does not advance while a block is being
+     * prepared/built (avoids overlaps).
      */
     private fun startObserver(context: Context) {
         observerJob?.cancel()
@@ -117,7 +119,7 @@ object DjAutoController {
         }
     }
 
-    /** Avanza al siguiente mood (botón "cambiar mood" / icono de DJ en Track). */
+    /** Advances to the next mood ("change mood" button / DJ icon on Track). */
     fun next(context: Context) {
         if (!isActive) return
         moodIndex++
@@ -134,25 +136,25 @@ object DjAutoController {
 
     private fun runSegment(context: Context, first: Boolean) {
         val repo = repoRef ?: return
-        // Single-flight: cancela cualquier construcción en curso; solo vale la última petición.
+        // Single-flight: cancel any build in progress; only the latest request counts.
         segmentJob?.cancel()
-        // Feedback inmediato (síncrono): la UI ve `preparing` antes de que empiece el trabajo async.
+        // Immediate (synchronous) feedback: the UI sees `preparing` before the async work starts.
         _state.value = (_state.value ?: State(moodId = "", moodLabel = "", segment = 0)).copy(preparing = true)
-        // Rebaraja el orden al completar una vuelta completa, para más variedad a largo plazo.
+        // Reshuffle the order after a full lap, for more variety over time.
         if (moodIndex > 0 && moodIndex % moodOrder.size == 0) moodOrder = DjMoods.MOODS.indices.shuffled()
         val mood = DjMoods.MOODS[moodOrder[moodIndex % moodOrder.size]]
         segmentJob = scope.launch {
             val tracks = buildSegment(context, repo, mood)
             if (tracks.isEmpty()) {
-                // Sin nada que reproducir: si era el arranque, libera la sesión (el botón vuelve a
-                // "Iniciar"); si era un avance, solo quita el spinner y deja seguir el bloque actual.
+                // Nothing to play: if this was the start, release the session (the button returns to
+                // "Start"); if it was an advance, just drop the spinner and keep the current block.
                 if (first) stop() else _state.value = _state.value?.copy(preparing = false)
                 return@launch
             }
             val svc = AudioPlayerService.getInstance(context)
-            // `first` arranca la sesión desde cero. En los avances (cambio de mood o auto-advance)
-            // reemplazamos el bloque pendiente tras la pista actual en lugar de apilarlo encima del
-            // anterior: si no, las canciones del mood viejo se quedaban en la cola.
+            // `first` starts the session from scratch. On advances (mood change or auto-advance) we
+            // replace the pending block after the current track instead of stacking it on top of the
+            // previous one; otherwise the old mood's songs would linger in the queue.
             if (first) svc?.loadPlaylist(tracks, 0) else svc?.replaceAutoQueueAfterCurrent(tracks)
             recentTrackIds.addAll(tracks.mapNotNull { it.id })
             while (recentTrackIds.size > 60) recentTrackIds.removeFirst()
@@ -167,22 +169,22 @@ object DjAutoController {
         val size = 5
         val source = DjSettings.autoSource(context)
         val favs = runCatching { favoritesProvider?.invoke() ?: emptyList() }.getOrDefault(emptyList())
-        // Baraja las sugerencias para no servir siempre los primeros resultados de Spotify.
+        // Shuffle the suggestions so we do not always serve Spotify's first results.
         val suggestions = runCatching { repo.searchTracks(mood.query, limit = 20).items }
             .getOrDefault(emptyList()).shuffled()
 
-        // Sin audio-features de Spotify (API bloqueada), clasificamos las favoritas CACHEADAS por
-        // SOLAPAMIENTO DE ARTISTA con el mood: una favorita "es de este mood" si comparte artista con
-        // las sugerencias del mood (+ una búsqueda de artistas del mood). Es una aproximación robusta
-        // que sí consulta tu lista de favoritas real.
+        // Without Spotify audio features (API unavailable), we classify the cached favorites by artist
+        // overlap with the mood: a favorite "belongs to this mood" if it shares an artist with the
+        // mood's suggestions (+ a search for the mood's artists). A robust approximation that still
+        // draws on the real favorites list.
         val moodArtists = HashSet<String>()
         suggestions.forEach { t -> t.artists.forEach { a -> moodArtists.add(norm(a.name)) } }
         runCatching { repo.searchArtists(mood.query, limit = 5).items }.getOrNull()
             ?.forEach { moodArtists.add(norm(it.name)) }
         val favForMood = favs.filter { fav -> fav.artists.any { norm(it.name) in moodArtists } }
 
-        // Metadata-vector ranking (DjVectors): ordena las favoritas por similitud coseno al "sonido"
-        // del mood (centroide de sus sugerencias) y baraja la franja más relevante para variar.
+        // Metadata-vector ranking (DjVectors): orders favorites by cosine similarity to the mood's
+        // "sound" (the centroid of its suggestions) and shuffles the most relevant band for variety.
         val moodCentroid = DjVectors.centroid(suggestions)
 
         fun pick(avoidRecent: Boolean): List<FullTrack> {
@@ -194,7 +196,7 @@ object DjAutoController {
                 return DjVectors.rankBySimilarity(kept, moodCentroid).take(maxOf(n * 4, n)).shuffled().take(n)
             }
             return when (source) {
-                // Solo favoritas: las que casan con el mood (rankeadas); si hay muy pocas, cae a todas.
+                // Favorites only: those matching the mood (ranked); if too few, fall back to all.
                 "favorites" -> pickFavs(if (favForMood.size >= 2) favForMood else favs, size)
                 "discover" -> keep(suggestions).take(size)
                 else /* balanced */ -> {
@@ -205,7 +207,7 @@ object DjAutoController {
             }.filter { it.id != null }.distinctBy { it.id }.take(size)
         }
 
-        // Primero evitando repeticiones; si la biblioteca es pequeña y se vacía, reintenta sin evitar.
+        // First avoiding repeats; if the library is small and runs dry, retry without avoiding them.
         return pick(avoidRecent = true).ifEmpty { pick(avoidRecent = false) }
     }
 

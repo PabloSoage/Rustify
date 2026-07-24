@@ -1,36 +1,38 @@
 package com.varuna.rustify.util
 
 import android.content.Context
+import com.varuna.rustify.util.LogCapture.flow
+import com.varuna.rustify.util.LogCapture.start
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 /**
- * F1.B — Captura de logs in-app leyendo el logcat del PROPIO proceso (§4.B.1 del doc 40).
+ * In-app log capture that reads the logcat of the app's OWN process.
  *
- * Una app puede leer su propio logcat sin permisos especiales (filtrando por `--pid=<mi_pid>`).
- * Se arranca un proceso `logcat` de larga duración en modo stream, se lee su stdout en un hilo
- * daemon, se parsea cada línea a [Entry] y se encola en un buffer acotado expuesto por [flow].
+ * An app can read its own logcat without special permissions (by filtering with `--pid=<my_pid>`).
+ * A long-lived `logcat` process is started in stream mode, its stdout is read on a daemon thread,
+ * each line is parsed into an [Entry] and enqueued in a bounded buffer exposed by [flow].
  *
- * **Persistencia anti-crash:** cada entrada se apunta también a `filesDir/rustify_log.txt`.
- * Al arrancar, si el fichero existe (sesión anterior que crasheó), se carga en el buffer.
- * Así los logs sobreviven a un crash y están disponibles al reabrir la app.
+ * **Crash-resistant persistence:** each entry is also written to `filesDir/rustify_log.txt`.
+ * On startup, if the file exists (from a previous session that crashed), it is loaded into the
+ * buffer, so logs survive a crash and are available when the app reopens.
  */
 object LogCapture {
 
-    /** Una entrada parseada de una línea de logcat. `level` = V/D/I/W/E/F, `tag` = etiqueta. */
+    /** A parsed entry from a logcat line. `level` = V/D/I/W/E/F, `tag` = the tag. */
     data class Entry(val raw: String, val level: Char, val tag: String)
 
-    /** Tope del buffer circular en memoria. */
+    /** Cap of the in-memory circular buffer. */
     private const val CAP = 3000
-    /** Tope del fichero de persistencia (bytes). Al superarlo se rota. */
+    /** Cap of the persistence file (bytes). It rotates once exceeded. */
     private const val MAX_FILE_BYTES = 512_000L
 
     private val buf = ArrayDeque<Entry>(CAP)
     private val _flow = MutableStateFlow<List<Entry>>(emptyList())
     val flow: StateFlow<List<Entry>> = _flow
 
-    /** Último error de arranque (p.ej. logcat no disponible en la ROM), para avisar en el visor. */
+    /** Last startup error (e.g. logcat unavailable on the ROM), to surface in the viewer. */
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
@@ -38,17 +40,13 @@ object LogCapture {
     private var readerThread: Thread? = null
     private var logFile: File? = null
 
-    /** true si el stream continuo está activo. */
-    val isCapturing: Boolean
-        @Synchronized get() = proc != null
-
-    // Formato threadtime: "MM-DD HH:MM:SS.mmm  PID  TID L TAG: mensaje"
+    // threadtime format: "MM-DD HH:MM:SS.mmm  PID  TID L TAG: message"
     private val threadtimeRe =
         Regex("""^\d\d-\d\d \d\d:\d\d:\d\d\.\d+\s+\d+\s+\d+\s+([VDIWEFvdiwef])\s+(.*?)\s*:\s?(.*)$""")
 
     /**
-     * Inicializa la ruta del fichero de persistencia. Debe llamarse una vez antes de [start]
-     * (p.ej. desde [android.app.Application.onCreate]). Idempotente si ya se llamó.
+     * Initializes the persistence file path. Must be called once before [start]
+     * (e.g. from [android.app.Application.onCreate]). Idempotent if already called.
      */
     fun init(context: Context) {
         if (logFile == null) {
@@ -57,13 +55,13 @@ object LogCapture {
     }
 
     /**
-     * Arranca el stream continuo del logcat del propio proceso. No-op si ya está capturando.
-     * Si el proceso anterior murió (crash de la app) limpia la referencia para poder rearrancar.
+     * Starts the continuous stream of the process's own logcat. No-op if already capturing.
+     * If the previous process died (app crash), clears the reference so it can restart.
      *
-     * Si existe un fichero de logs de una sesión anterior, lo carga en el buffer antes de
-     * empezar a capturar, para que los logs del crash estén visibles.
+     * If a log file from a previous session exists, it is loaded into the buffer before capturing
+     * starts, so the crash logs stay visible.
      *
-     * @param clearFirst si true, ejecuta `logcat -c` y trunca el fichero para empezar limpio.
+     * @param clearFirst if true, runs `logcat -c` and truncates the file to start clean.
      */
     @Synchronized
     fun start(clearFirst: Boolean = true) {
@@ -105,18 +103,18 @@ object LogCapture {
                         }
                     }
                 } catch (_: Exception) {
-                    // El proceso fue destruido (stop) o el stream se cerró: fin del hilo.
+                    // The process was destroyed (stop) or the stream closed: end of the thread.
                 }
             }.apply { isDaemon = true; name = "LogCapture-reader"; start() }
         } catch (e: Exception) {
-            // Alguna ROM puede restringir logcat: se degrada; el visor puede usar dumpNow().
+            // Some ROMs may restrict logcat: degrade gracefully; the viewer can use dumpNow().
             proc = null
             readerThread = null
             _error.value = e.message ?: "logcat no disponible"
         }
     }
 
-    /** Mata el proceso logcat y detiene el stream. Conserva el buffer y el fichero. */
+    /** Kills the logcat process and stops the stream. Keeps the buffer and the file. */
     @Synchronized
     fun stop() {
         proc?.destroy()
@@ -124,7 +122,7 @@ object LogCapture {
         readerThread = null
     }
 
-    /** Vacía el buffer en memoria y trunca el fichero. */
+    /** Empties the in-memory buffer and truncates the file. */
     fun clear() {
         synchronized(buf) {
             buf.clear()
@@ -133,12 +131,12 @@ object LogCapture {
         logFile?.delete()
     }
 
-    /** Volcado del buffer como texto plano (una línea `raw` por entrada). */
+    /** Dumps the buffer as plain text (one `raw` line per entry). */
     fun exportText(): String = synchronized(buf) { buf.joinToString("\n") { it.raw } }
 
     /**
-     * Snapshot puntual del logcat del propio proceso sin depender del stream (opción `-d`).
-     * Útil como fallback si `start()` falla en la ROM.
+     * One-off snapshot of the process's own logcat without relying on the stream (the `-d` option).
+     * Useful as a fallback if `start()` fails on the ROM.
      */
     fun dumpNow(): String = try {
         val pid = android.os.Process.myPid()
@@ -186,8 +184,8 @@ object LogCapture {
     }
 
     /**
-     * Parsea una línea `threadtime`. Las líneas que no casan (continuaciones/stacktraces) se
-     * conservan como entradas con nivel/tag heredados de la última entrada válida.
+     * Parses a `threadtime` line. Lines that do not match (continuations/stacktraces) are kept as
+     * entries with the level/tag inherited from the last valid entry.
      */
     private var lastLevel = 'I'
     private var lastTag = ""

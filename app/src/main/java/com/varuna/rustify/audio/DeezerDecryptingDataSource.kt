@@ -13,12 +13,12 @@ import java.io.IOException
 import java.io.InputStream
 
 /**
- * E62 — DataSource de Media3 que **reproduce en streaming** un track de Deezer **descifrando al vuelo**.
+ * A Media3 DataSource that streams a Deezer track while decrypting on the fly.
  *
- * La URI es `deezer://<sngId>?u=<base64(url_cifrada)>`. Se abre el CDN cifrado (con `Range` para seeks
- * alineado a 2048), y en cada `read` se sirve el resultado en claro: 1 de cada 3 bloques de 2048B se
- * descifra con Blowfish ([DeezerCrypto]). Evita bajar el archivo entero antes de sonar (clave porque la
- * cadena de streaming tiene timeout de 15s).
+ * The URI is `deezer://<sngId>?u=<base64(encrypted_url)>`. It opens the encrypted CDN (with `Range` for
+ * seeks aligned to 2048), and each `read` serves cleartext: 1 of every 3 blocks of 2048 bytes is
+ * decrypted with Blowfish ([DeezerCrypto]). This avoids downloading the whole file before playback,
+ * which matters because the streaming chain has a 15s timeout.
  */
 @UnstableApi
 class DeezerDecryptingDataSource : BaseDataSource(true) {

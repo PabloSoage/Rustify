@@ -10,9 +10,9 @@ import okhttp3.Request
 import java.io.File
 
 /**
- * E62 — Provider Deezer (fuente HiFi/FLAC con el ARL del usuario). `resolveStreamUrl` devuelve una URI
- * `deezer://…` que reproduce [DeezerDecryptingDataSource] descifrando al vuelo (rápido, respeta el
- * timeout de 15s de la cadena). `downloadTo` baja el CDN cifrado y lo descifra a fichero.
+ * Deezer provider (HiFi/FLAC source using the user's ARL). `resolveStreamUrl` returns a `deezer://…`
+ * URI that [DeezerDecryptingDataSource] plays while decrypting on the fly (fast, respects the chain's
+ * 15s timeout). `downloadTo` fetches the encrypted CDN and decrypts it to a file.
  */
 class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
 
@@ -26,7 +26,7 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
     )
 
     override suspend fun isAvailableFor(track: FullTrack): Boolean {
-        // Barato: basta con que haya ARL configurado (propio / cacheado / fuente). No autenticamos aquí.
+        // Cheap check: it is enough to have an ARL configured (own / cached / source). No auth here.
         return DeezerSettings.workingArl(appContext).isNotBlank() ||
             DeezerSettings.arl(appContext).isNotBlank() ||
             DeezerSettings.sourceUrl(appContext).isNotBlank()

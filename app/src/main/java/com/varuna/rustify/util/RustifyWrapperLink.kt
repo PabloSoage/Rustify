@@ -3,23 +3,24 @@ package com.varuna.rustify.util
 import java.net.URLEncoder
 
 /**
- * F1.A — Generador del "wrapper" Rustify (§4.A.3 del doc 40).
+ * Generator for the Rustify "wrapper" link.
  *
- * Envuelve un link de Spotify en una URL propia del usuario para que, si su host aloja
- * `assetlinks.json`, el enlace se abra VERIFICADO en Rustify. Sin host configurado, cae al
- * custom scheme `rustify://<type>/<ID>` (track/album/playlist/artist, SIN verificación fuerte).
+ * Wraps a Spotify link in a URL owned by the user so that, if their host serves `assetlinks.json`,
+ * the link opens VERIFIED in Rustify. Without a configured host, it falls back to the custom scheme
+ * `rustify://<type>/<ID>` (track/album/playlist/artist, WITHOUT strong verification).
  */
 object RustifyWrapperLink {
 
     /**
-     * Envuelve [spotifyUrl].
-     * @param host host propio del usuario (p.ej. "pablosoage.github.io"); null/blank → fallback scheme.
-     * @return wrapper verificable `https://$host/r/?s=<enc>` si hay host; si no, `rustify://<type>/<ID>`
-     *         (track/album/playlist/artist); o el propio [spotifyUrl] si no se puede parsear.
+     * Wraps [spotifyUrl].
+     * @param host the user's own host (e.g. "pablosoage.github.io"); null/blank → fallback scheme.
+     * @return a verifiable wrapper `https://$host/r/?s=<enc>` if a host is set; otherwise
+     *         `rustify://<type>/<ID>` (track/album/playlist/artist); or [spotifyUrl] itself if it
+     *         cannot be parsed.
      */
     fun wrap(spotifyUrl: String, host: String?): String =
         if (!host.isNullOrBlank()) {
-            // Modo host verificado: envuelve CUALQUIER URL (Spotify o YTM, E40) sin parsear.
+            // Verified host mode: wraps ANY URL (Spotify or YTM) without parsing.
             "https://$host/r/?s=${URLEncoder.encode(spotifyUrl, "UTF-8")}"
         } else {
             val link = SpotifyLinkParser.parse(spotifyUrl)
@@ -38,7 +39,7 @@ object RustifyWrapperLink {
                 }
                 "rustify://$type/$id"
             } else {
-                // E40: fallback sin host para links YTM → rustify://ytmtrack/VIDEOID (etc.).
+                // Hostless fallback for YTM links → rustify://ytmtrack/VIDEOID (etc.).
                 val ytm = YtMusicLinkParser.parse(spotifyUrl)
                 when (ytm) {
                     is YtmLink.Track -> "rustify://ytmtrack/${ytm.videoId}"

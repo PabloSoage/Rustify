@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.varuna.rustify.R
+import com.varuna.rustify.sync.AppAuthDriveAuth.Companion.REDIRECT_URI
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
@@ -17,27 +19,27 @@ import net.openid.appauth.NoClientAuthentication
 import net.openid.appauth.ResponseTypeValues
 
 /**
- * E50 (B) — Autenticación de Google Drive **vía navegador** (AppAuth / RFC 8252 + PKCE), al estilo
- * del modelo web de paimon.moe: **un único OAuth client tipo "Web" que NO va atado a la firma del
- * APK**, así que funciona en cualquier build (incluidos forks) sin que el usuario registre nada.
+ * Google Drive authentication **via the browser** (AppAuth / RFC 8252 + PKCE), following the
+ * paimon.moe web model: **a single "Web" OAuth client that is NOT tied to the APK signature**, so it
+ * works on any build (including forks) without the user registering anything.
  *
- * El REST de Drive ([GoogleDriveSync]) es agnóstico al token, por lo que este backend solo se ocupa
- * de producir *access tokens* (y refrescarlos). Coexiste con el backend A (Play Services
- * `AuthorizationClient`); el usuario elige el método en Ajustes ([DriveSyncPrefs.authMethod]).
+ * The Drive REST layer ([GoogleDriveSync]) is token-agnostic, so this backend only produces *access
+ * tokens* (and refreshes them). It coexists with the Play Services `AuthorizationClient` backend;
+ * the user chooses the method in Settings ([DriveSyncPrefs.authMethod]).
  *
- * **Config sin tocar código** (`res/values/strings.xml`, `translatable=false`):
- *  - `drive_appauth_client_id`  → Client ID del OAuth client **Web**.
- *  - `drive_appauth_client_secret` → su secret (Google lo exige para el token endpoint de un client
- *    Web; en una app instalada NO es confidencial — PKCE es la protección real).
+ * **Configuration without touching code** (`res/values/strings.xml`, `translatable=false`):
+ *  - `drive_appauth_client_id`  → Client ID of the **Web** OAuth client.
+ *  - `drive_appauth_client_secret` → its secret (Google requires it for the token endpoint of a Web
+ *    client; in an installed app it is NOT confidential — PKCE is the real protection).
  *
- * El **redirect** es un App Link https en un dominio verificado ([REDIRECT_URI]); ver el manifest
- * (`RedirectUriReceiverActivity`) y el `assetlinks.json` del host.
+ * The **redirect** is an https App Link on a verified domain ([REDIRECT_URI]); see the manifest
+ * (`RedirectUriReceiverActivity`) and the host's `assetlinks.json`.
  */
 class AppAuthDriveAuth(private val appContext: Context) {
 
     companion object {
-        val AUTH_ENDPOINT: Uri = Uri.parse("https://accounts.google.com/o/oauth2/v2/auth")
-        val TOKEN_ENDPOINT: Uri = Uri.parse("https://oauth2.googleapis.com/token")
+        val AUTH_ENDPOINT: Uri = "https://accounts.google.com/o/oauth2/v2/auth".toUri()
+        val TOKEN_ENDPOINT: Uri = "https://oauth2.googleapis.com/token".toUri()
         const val REDIRECT_URI = "https://rustify-music.github.io/oauth2redirect"
         private const val PREFS = "rustify_settings"
         private const val K_STATE = "drive_appauth_state"
@@ -46,7 +48,7 @@ class AppAuthDriveAuth(private val appContext: Context) {
     private fun clientId(): String = appContext.getString(R.string.drive_appauth_client_id).trim()
     private fun clientSecret(): String = appContext.getString(R.string.drive_appauth_client_secret).trim()
 
-    /** true si hay al menos un Client ID configurado (sin él, este método no puede funcionar). */
+    /** true if at least a Client ID is configured (without it, this method cannot work). */
     fun isConfigured(): Boolean = clientId().isNotEmpty()
 
     private fun prefs() = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -60,10 +62,7 @@ class AppAuthDriveAuth(private val appContext: Context) {
         prefs().edit { putString(K_STATE, state.jsonSerializeString()) }
     }
 
-    /** ¿Tenemos una autorización previa (refresh token) para refrescar en silencio? */
-    fun isAuthorized(): Boolean = loadState().isAuthorized
-
-    /** Olvida la autorización local (el usuario puede revocar el permiso desde su cuenta Google). */
+    /** Forgets the local authorization (the user can revoke the permission from their Google account). */
     fun signOut() { prefs().edit { remove(K_STATE) } }
 
     private fun serviceConfig() = AuthorizationServiceConfiguration(AUTH_ENDPOINT, TOKEN_ENDPOINT)
@@ -72,13 +71,13 @@ class AppAuthDriveAuth(private val appContext: Context) {
         if (clientSecret().isEmpty()) NoClientAuthentication.INSTANCE else ClientSecretPost(clientSecret())
 
     /**
-     * Intent que la Activity lanza con `StartActivityForResult` para abrir el consentimiento en un
-     * Custom Tab. Devuelve null si no está configurado.
+     * Intent the Activity launches with `StartActivityForResult` to open the consent flow in a
+     * Custom Tab. Returns null if not configured.
      */
     fun authRequestIntent(): Intent? {
         if (!isConfigured()) return null
         val request = AuthorizationRequest.Builder(
-            serviceConfig(), clientId(), ResponseTypeValues.CODE, Uri.parse(REDIRECT_URI)
+            serviceConfig(), clientId(), ResponseTypeValues.CODE, REDIRECT_URI.toUri()
         ).setScopes("openid", GoogleDriveSync.SCOPE_APPDATA).build()
         val service = AuthorizationService(appContext)
         val intent = service.getAuthorizationRequestIntent(request)
@@ -87,8 +86,8 @@ class AppAuthDriveAuth(private val appContext: Context) {
     }
 
     /**
-     * Procesa el `data` Intent que devuelve el Custom Tab: intercambia el code por tokens (guardando
-     * el refresh token) y entrega el access token.
+     * Processes the `data` Intent returned by the Custom Tab: exchanges the code for tokens (storing
+     * the refresh token) and delivers the access token.
      */
     fun handleResponse(data: Intent?, onToken: (String) -> Unit, onError: (Throwable) -> Unit) {
         val resp = data?.let { AuthorizationResponse.fromIntent(it) }
@@ -108,8 +107,8 @@ class AppAuthDriveAuth(private val appContext: Context) {
     }
 
     /**
-     * Access token fresco **en silencio** (refresca con el refresh token guardado). [onNone] si no
-     * hay autorización previa (hace falta el flujo interactivo).
+     * A fresh access token **silently** (refreshes using the stored refresh token). [onNone] if
+     * there is no prior authorization (the interactive flow is required).
      */
     fun getFreshToken(onToken: (String) -> Unit, onNone: () -> Unit, onError: (Throwable) -> Unit) {
         val state = loadState()

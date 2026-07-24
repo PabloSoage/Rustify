@@ -6,21 +6,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * E60 — Persistencia del orden y activación de los backends de audio.
+ * Persists the order and activation state of the audio backends.
  *
- * El usuario eligió **dos listas separadas** (streaming vs descarga), cada una
- * reordenable y con su propio set de toggles. Se guardan como dos JSON arrays
- * independientes en `SharedPreferences("rustify_settings")`:
+ * There are two separate lists (streaming vs download), each reorderable and with
+ * its own set of toggles. They are stored as two independent JSON arrays in
+ * `SharedPreferences("rustify_settings")`:
  *
  * ```json
  * // key: "audio_backends_stream_order"  |  "audio_backends_download_order"
  * [ { "id": "ytdlp", "enabled": true } ]
  * ```
  *
- * Compatibilidad hacia adelante: al leer, cualquier provider *conocido* que no
- * aparezca en el JSON se anexa al final **desactivado** (Fase 0 = idéntica a hoy:
- * sólo `ytdlp` activo). Los ids del JSON que ya no sean providers conocidos se
- * ignoran (no rompen la UI vieja si se borra un provider).
+ * Forward compatibility: when reading, any *known* provider missing from the JSON
+ * is appended at the end **disabled**. Ids in the JSON that are no longer known
+ * providers are ignored (removing a provider does not break existing settings).
  */
 object AudioBackendSettings {
 
@@ -28,21 +27,21 @@ object AudioBackendSettings {
     const val KEY_STREAM = "audio_backends_stream_order"
     const val KEY_DOWNLOAD = "audio_backends_download_order"
 
-    /** Una entrada de la lista de backends: id estable + flag de activación. */
+    /** An entry in the backend list: stable id + activation flag. */
     data class BackendEntry(val id: String, val enabled: Boolean)
 
     /**
-     * Lee el orden guardado para [key], anexando los [knownIds] que falten al final
-     * como `enabled=false`. Nunca lanza: si el JSON está corrupto, cae al default.
+     * Reads the stored order for [key], appending any missing [knownIds] at the end
+     * as `enabled=false`. Never throws: if the JSON is corrupt, it falls back to the default.
      */
     fun loadOrder(context: Context, key: String, knownIds: List<String>): List<BackendEntry> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(key, null)
         val parsed = mutableListOf<BackendEntry>()
-        // Default sane: si nunca hubo prefs guardadas, todos los providers conocidos
-        // arrancan ACTIVOS (ytdlp es el único backend hoy → el usuario oye audio sin
-        // tocar Ajustes). Anexar nuevos providers como desactivados sólo aplica si ya
-        // había prefs (forward-compat ante upgrades sin reventar la elección del usuario).
+        // Sane default: when no prefs were ever saved, all known providers start enabled
+        // (so the user hears audio without touching Settings). Appending new providers as
+        // disabled only applies when prefs already existed, so upgrades preserve the user's
+        // choices.
         val defaultEnabled = raw.isNullOrBlank()
         if (!defaultEnabled) {
             runCatching {
@@ -56,12 +55,12 @@ object AudioBackendSettings {
                 }
             }
         }
-        // Anexa providers conocidos ausentes: activos si es primera ejecución, desactivados si upgrade.
+        // Append missing known providers: enabled on first run, disabled on upgrade.
         val present = parsed.map { it.id }.toMutableSet()
         for (id in knownIds) {
             if (id !in present) { parsed.add(BackendEntry(id, defaultEnabled)); present.add(id) }
         }
-        // Filtra ids desconocidos (providers eliminados en versiones futuras).
+        // Drop unknown ids (providers removed in future versions).
         return parsed.filter { it.id in knownIds }
     }
 
@@ -74,7 +73,7 @@ object AudioBackendSettings {
             .edit { putString(key, arr.toString()) }
     }
 
-    /** IDs activos en orden de prioridad — lo que consume la cadena. */
+    /** Enabled ids in priority order — what the chain consumes. */
     fun enabledIds(order: List<BackendEntry>): List<String> =
         order.filter { it.enabled }.map { it.id }
 }

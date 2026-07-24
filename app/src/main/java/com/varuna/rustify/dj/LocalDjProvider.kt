@@ -1,24 +1,23 @@
 package com.varuna.rustify.dj
 
 /**
- * E90 — Provider "LLM local" (~100M on-device). STUB intencionado.
+ * "Local LLM" provider (~100M on-device). Intentional stub.
  *
- * Nota honesta (ver docs/90-ai-dj-assistant.md §4.1): un modelo de ~100M probablemente rinde mal
- * para esta tarea, y la inferencia on-device (MediaPipe LLM Inference / llama.cpp) es un integrón
- * grande con coste real de RAM/almacenamiento/batería que choca con la restricción del usuario.
- * Por eso se deja la interfaz lista pero SIN implementar del todo: no bloquea el resto de la feature.
+ * A ~100M model likely performs poorly for this task, and on-device inference (MediaPipe LLM
+ * Inference / llama.cpp) is a large integration with real RAM/storage/battery cost. The interface
+ * is therefore left ready but not fully implemented, so it does not block the rest of the feature.
  *
- * TODO(E90): integrar un runtime on-device (p. ej. MediaPipe `LlmInference` con un `.task`, o un
- * servidor LLM local externo por HTTP en 127.0.0.1 — ver §4.2 del diseño) y producir el mismo JSON
- * `{intro, seeds, queries}` que [ApiDjProvider]. Hasta entonces, degrada al heurístico offline.
+ * TODO: integrate an on-device runtime (e.g. MediaPipe `LlmInference` with a `.task`, or an external
+ * local LLM server over HTTP on 127.0.0.1) that produces the same `{intro, seeds, queries}` JSON as
+ * [ApiDjProvider]. Until then, it degrades to the offline heuristic.
  */
 class LocalDjProvider(
     private val fallback: DjProvider = HeuristicDjProvider()
 ) : DjProvider {
 
     override suspend fun plan(context: DjContext, request: String): DjPlan {
-        // Sin runtime on-device implementado todavía: se delega en el heurístico para que la UI
-        // siga funcionando aunque el usuario seleccione "Local".
+        // No on-device runtime implemented yet: delegate to the heuristic so the UI keeps working
+        // even when the user selects "Local".
         val plan = fallback.plan(context, request)
         return plan.copy(
             intro = plan.intro + " (DJ local no disponible aún: usando modo heurístico)"

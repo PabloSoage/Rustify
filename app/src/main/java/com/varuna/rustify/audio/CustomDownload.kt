@@ -1,6 +1,7 @@
 package com.varuna.rustify.audio
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.varuna.rustify.bridge.DownloadManager
@@ -11,13 +12,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * E103 — Descargas personalizadas: pega CUALQUIER URL soportada por yt-dlp (no solo YouTube), lista
- * las calidades de vídeo y de audio disponibles, y descarga la elegida a una carpeta aparte (SAF).
- * Reutiliza el yt-dlp ya inicializado por [YtDlpAudioSource] (mismo `initDeferred`).
+ * Custom downloads: paste any URL supported by yt-dlp (not only YouTube), list the available video
+ * and audio qualities, and download the chosen one to a separate SAF folder. Reuses the yt-dlp
+ * instance already initialized by [YtDlpAudioSource] (same `initDeferred`).
  */
 object CustomDownload {
 
-    /** Un formato descargable. [isAudio] = solo-audio (sin vídeo). */
+    /** A downloadable format. [isAudio] = audio-only (no video). */
     data class Fmt(
         val id: String,
         val isAudio: Boolean,
@@ -30,7 +31,7 @@ object CustomDownload {
         val sizeBytes: Long,
         val note: String
     ) {
-        /** Etiqueta legible para la UI. */
+        /** Human-readable label for the UI. */
         fun label(): String {
             val size = if (sizeBytes > 0) " · " + humanBytes(sizeBytes) else ""
             return if (isAudio) {
@@ -52,7 +53,7 @@ object CustomDownload {
         val audio: List<Fmt>
     )
 
-    /** Analiza una URL y devuelve sus formatos de vídeo y audio. */
+    /** Probes a URL and returns its video and audio formats. */
     suspend fun probe(url: String): Result<Probe> = withContext(Dispatchers.IO) {
         runCatching {
             try { DownloadManager.initDeferred.await() } catch (_: Exception) {}
@@ -89,8 +90,8 @@ object CustomDownload {
     }
 
     /**
-     * Descarga [formatId] de [url] a la carpeta SAF [folderTreeUri]. Para formatos de vídeo sin audio,
-     * yt-dlp fusiona con el mejor audio (ffmpeg). Devuelve el nombre del fichero creado.
+     * Downloads [formatId] of [url] to the SAF folder [folderTreeUri]. For video formats without audio,
+     * yt-dlp merges with the best audio (ffmpeg). Returns the name of the created file.
      */
     suspend fun download(
         context: Context,
@@ -105,14 +106,14 @@ object CustomDownload {
             try { DownloadManager.initDeferred.await() } catch (_: Exception) {}
             require(folderTreeUri.isNotBlank()) { "no download folder set" }
             val tmpDir = File(context.cacheDir, "custom_dl").apply { mkdirs() }
-            // Nombre saneado; yt-dlp fija la extensión real vía %(ext)s.
+            // Sanitized name; yt-dlp sets the real extension via %(ext)s.
             val safe = baseName.replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), "_").trim().take(120).ifBlank { "download" }
-            // Limpia restos previos con ese nombre base.
+            // Clean up previous leftovers with this base name.
             tmpDir.listFiles()?.filter { it.name.startsWith("$safe.") }?.forEach { it.delete() }
             val outTemplate = File(tmpDir, "$safe.%(ext)s").absolutePath
 
-            // Vídeo posiblemente solo-vídeo → fusiona con bestaudio; si el formato ya trae audio, el
-            // fallback "/formatId" lo cubre. Audio → se baja el formato tal cual (contenedor original).
+            // Video may be video-only -> merge with bestaudio; if the format already has audio, the
+            // "/formatId" fallback covers it. Audio -> download the format as-is (original container).
             val selector = if (isAudio) formatId else "$formatId+bestaudio/$formatId"
             val req = YoutubeDLRequest(url.trim()).apply {
                 addOption("-f", selector)
@@ -127,7 +128,7 @@ object CustomDownload {
                 ?: error("download produced no file")
             val tree = DocumentFile.fromTreeUri(context, folderTreeUri.toUri()) ?: error("invalid folder")
             val mime = mimeFor(produced.extension)
-            // Evita duplicar: si existe uno con el mismo nombre, DocumentFile crea "name (1)".
+            // Avoids duplicates: if one with the same name exists, DocumentFile creates "name (1)".
             val dst = tree.createFile(mime, produced.name) ?: error("cannot create file in folder")
             context.contentResolver.openOutputStream(dst.uri)?.use { os ->
                 produced.inputStream().use { it.copyTo(os) }
@@ -157,11 +158,11 @@ object CustomDownload {
         return if (i == 0) "${b}B" else String.format(java.util.Locale.US, "%.1f%s", v, units[i])
     }
 
-    // Preferencia de la carpeta de descargas personalizadas (SAF tree URI).
+    // Preference for the custom downloads folder (SAF tree URI).
     private const val PREFS = "rustify_settings"
     private const val K_FOLDER = "custom_dl_folder"
     fun folder(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_FOLDER, "") ?: ""
     fun setFolder(context: Context, uri: String) =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(K_FOLDER, uri).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(K_FOLDER, uri) }
 }
