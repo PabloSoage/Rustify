@@ -576,6 +576,10 @@ fun EngineTester(
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // E109 — Actualizador in-app: la comprobación de arranque deja aquí la release nueva (si la hay)
+    // y renderizamos el diálogo de changelog+descarga como overlay (visible tanto en la app como en
+    // la pantalla de standby). La comprobación manual desde Ajustes reutiliza el mismo diálogo.
+    var pendingUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
@@ -598,6 +602,16 @@ fun EngineTester(
     LaunchedEffect(intentFlow) {
         intentFlow.collect { deepLink ->
             navigateDeepLink(deepLink, navigationStack, audioPlayerService)
+        }
+    }
+
+    // E109 — Comprobación de actualizaciones al arrancar (si el toggle está activo, por defecto sí).
+    // Silenciosa: si falla la red o ya estás al día, no molesta; solo abre el diálogo si hay versión nueva.
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("check_updates_on_start", true)) {
+            runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
+                .getOrNull()?.let { pendingUpdate = it }
         }
     }
 
@@ -696,6 +710,11 @@ fun EngineTester(
             onCancel = { showWebView = false }
         )
         return
+    }
+
+    // E109 — Overlay del actualizador: se muestra sobre cualquier pantalla (app o standby).
+    pendingUpdate?.let { info ->
+        com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
     }
 
     if (!isLoggedIn) {

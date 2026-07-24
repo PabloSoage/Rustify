@@ -508,6 +508,22 @@
     <string name="settings_drive_details">What gets synced</string>
     <string name="settings_drive_details_desc">These items are backed up to Drive on each sync (union + last-write-wins).</string>
     <string name="settings_close">Close</string>
+    <!-- E109 — In-app updater -->
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">You\'re on the latest version</string>
+    <string name="update_check_failed">Update check failed</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_download">Download</string>
+    <string name="update_install">Install</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_cancel">Cancel</string>
+    <string name="update_open_github">Open on GitHub</string>
+    <string name="update_choose_installer">Choose an installer</string>
+    <string name="update_other_installer">Other installer…</string>
+    <string name="update_check_on_start">Check for updates on launch</string>
+    <string name="update_check_on_start_desc">Look for a new version on GitHub each time the app starts.</string>
     <string name="settings_drive_auto">Auto-sync</string>
     <string name="settings_drive_auto_desc">Sync automatically when the app opens.</string>
     <string name="settings_drive_never_synced">Never synced</string>

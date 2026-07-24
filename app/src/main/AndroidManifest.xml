@@ -12,6 +12,8 @@
     <!-- E99: travel playlist — current location to compute the route/ETA. Requested at runtime. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- E109: in-app updater — install the downloaded APK via the system package installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- E99+: resolver short links de Google Maps (maps.app.goo.gl) → requiere network. -->
 
     <!-- Android 11+ (package visibility): sin esto, setPackage("com.google.android.apps.maps") y
@@ -26,6 +28,12 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
+        </intent>
+        <!-- E109 — Descubrir instaladores de APK (instalador del sistema, Install With Options/Shizuku,
+             SAI…) para el actualizador in-app en Android 11+ (visibilidad de paquetes). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
     </queries>
 

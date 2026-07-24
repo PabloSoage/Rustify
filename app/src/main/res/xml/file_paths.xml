@@ -4,4 +4,7 @@
          Se guardan en filesDir/covers/, así que las exponemos como content:// para que procesos
          externos (Android Auto) puedan leerlas. -->
     <files-path name="covers" path="covers/" />
+    <!-- E109 — APK descargado por el actualizador in-app (cacheDir/updates/), expuesto al
+         instalador de paquetes del sistema vía content://. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

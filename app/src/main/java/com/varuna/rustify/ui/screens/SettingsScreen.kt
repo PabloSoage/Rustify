@@ -141,6 +141,10 @@ fun SettingsScreen(
     val settingsCategory = category
     androidx.activity.compose.BackHandler(enabled = settingsCategory != null) { onCategoryChange(null) }
 
+    // E109 — Estado del comprobador de actualizaciones (icono de refresh en la barra superior).
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var manualUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
+
     var isUpdatingYtDlp by remember { mutableStateOf(false) }
     var ytDlpVersion by remember { mutableStateOf(YoutubeDL.getInstance().version(context) ?: "Unknown") }
     var isNightly by remember { mutableStateOf(prefs.getString("ytdlp_channel", "NIGHTLY") == "NIGHTLY") }
@@ -418,6 +422,11 @@ fun SettingsScreen(
         )
     }
 
+    // E109 — Diálogo de actualización lanzado desde la comprobación manual (icono de refresh).
+    manualUpdate?.let { info ->
+        com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { manualUpdate = null })
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -425,6 +434,34 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = { if (settingsCategory != null) onCategoryChange(null) else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
+                    }
+                },
+                actions = {
+                    // E109 — Comprobar actualizaciones (solo en el menú raíz de Ajustes).
+                    if (settingsCategory == null) {
+                        if (isCheckingUpdate) {
+                            CircularProgressIndicator(
+                                color = Color(0xFF1DB954), strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp).padding(end = 4.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        } else {
+                            IconButton(onClick = {
+                                isCheckingUpdate = true
+                                coroutineScope.launch {
+                                    val res = runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
+                                    isCheckingUpdate = false
+                                    res.onSuccess { info ->
+                                        if (info != null) manualUpdate = info
+                                        else android.widget.Toast.makeText(context, context.getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
+                                    }.onFailure {
+                                        android.widget.Toast.makeText(context, context.getString(R.string.update_check_failed), android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }) {
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.update_check), tint = Color.White)
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
@@ -458,6 +495,7 @@ fun SettingsScreen(
             }
             "advanced" -> {
                 Spacer(modifier = Modifier.height(8.dp))
+                UpdatesSection(context)
                 LoggingSection(context, onNavigateLogViewer)
                 SpotifyHashInspectorSection()
                 AdvancedLinks(onNavigateMetrics, onNavigateMatchEditor, onNavigateLogViewer)
@@ -2234,6 +2272,64 @@ private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onCh
             checked = checked, onCheckedChange = onChange,
             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
         )
+    }
+}
+
+// E109 — Actualizaciones: toggle "buscar al arrancar" + botón para comprobar ahora (GitHub releases).
+@Composable
+private fun UpdatesSection(context: Context) {
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    val scope = rememberCoroutineScope()
+    var checkOnStart by remember { mutableStateOf(prefs.getBoolean("check_updates_on_start", true)) }
+    var checking by remember { mutableStateOf(false) }
+    var update by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
+
+    update?.let { info ->
+        com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { update = null })
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Text(
+        text = stringResource(R.string.update_check),
+        color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    SettingSwitchRow(
+        title = stringResource(R.string.update_check_on_start),
+        desc = stringResource(R.string.update_check_on_start_desc),
+        checked = checkOnStart,
+        onChange = {
+            checkOnStart = it
+            prefs.edit { putBoolean("check_updates_on_start", it) }
+        }
+    )
+    Spacer(Modifier.height(8.dp))
+    Button(
+        onClick = {
+            if (checking) return@Button
+            checking = true
+            scope.launch {
+                val res = runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
+                checking = false
+                res.onSuccess { info ->
+                    if (info != null) update = info
+                    else android.widget.Toast.makeText(context, context.getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    android.widget.Toast.makeText(context, context.getString(R.string.update_check_failed), android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+        enabled = !checking,
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        if (checking) {
+            CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.update_checking), color = Color.Black, fontWeight = FontWeight.Bold)
+        } else {
+            Text(stringResource(R.string.update_check), color = Color.Black, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

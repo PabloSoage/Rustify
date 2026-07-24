@@ -306,6 +306,22 @@
     <string name="settings_drive_details">同期される内容</string>
     <string name="settings_drive_details_desc">これらの項目が同期のたびに Drive にバックアップされます（統合＋最新優先）。</string>
     <string name="settings_close">閉じる</string>
+    <!-- E109 — アプリ内アップデーター -->
+    <string name="update_check">アップデートを確認</string>
+    <string name="update_checking">アップデートを確認中…</string>
+    <string name="update_up_to_date">最新バージョンです</string>
+    <string name="update_check_failed">確認に失敗しました</string>
+    <string name="update_available_title">アップデートがあります</string>
+    <string name="update_download">ダウンロード</string>
+    <string name="update_install">インストール</string>
+    <string name="update_retry">再試行</string>
+    <string name="update_downloading">ダウンロード中…</string>
+    <string name="update_cancel">キャンセル</string>
+    <string name="update_open_github">GitHubで開く</string>
+    <string name="update_choose_installer">インストーラーを選択</string>
+    <string name="update_other_installer">他のインストーラー…</string>
+    <string name="update_check_on_start">起動時にアップデートを確認</string>
+    <string name="update_check_on_start_desc">アプリ起動のたびにGitHubで新しいバージョンを確認します。</string>
     <string name="settings_drive_auto">自動同期</string>
     <string name="settings_drive_auto_desc">アプリ起動時に自動で同期します。</string>
     <string name="settings_drive_never_synced">未同期</string>
