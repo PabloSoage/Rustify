@@ -141,14 +141,17 @@ class AudioPlayerService private constructor(private val context: Context) {
     private val retryCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private var autoRetryJob: kotlinx.coroutines.Job? = null
 
+    // Hoisted so refreshAudioFocus() can re-apply the exact same attributes when resetting the focus
+    // manager (identical attributes => no audio sink reinit, no glitch).
+    private val mediaAudioAttributes = androidx.media3.common.AudioAttributes.Builder()
+        .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+        .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
         .build().apply {
-            val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
-                .setUsage(androidx.media3.common.C.USAGE_MEDIA)
-                .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
-                .build()
-            setAudioAttributes(audioAttributes, true)
+            setAudioAttributes(mediaAudioAttributes, true)
         }
 
     init {
@@ -634,6 +637,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                     _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
                     android.util.Log.d("AudioPlayerService", "In call — deferring playback of ${track.name}")
                 } else {
+                    // Start the fresh track with a clean focus multiplier so it can never inherit a stuck
+                    // duck from the previous track's focus churn (silent-but-advancing bug). Track is not
+                    // audible yet, so this is inaudible.
+                    refreshAudioFocus()
                     exoPlayer.play()
                 }
                 // onTrackStarted runs at the top of playTrack so the previous session flushes
@@ -919,6 +926,9 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (exoPlayer.playbackState == Player.STATE_IDLE) {
                 playTrack(currentTrack)
             } else {
+                // Manual resume also clears any stuck focus-duck multiplier, so pressing play reliably
+                // restores sound if a track ever went silent-but-advancing.
+                refreshAudioFocus()
                 exoPlayer.play()
             }
         }
@@ -933,6 +943,25 @@ class AudioPlayerService private constructor(private val context: Context) {
     @Volatile private var isDucking = false
     fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
     fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
+
+    // Reset media3's internal AudioFocusManager by briefly disabling and re-enabling focus handling.
+    // Disabling (handleAudioFocus=false) forces the internal focus volume multiplier back to 1.0 and
+    // abandons focus WITHOUT pausing; re-enabling immediately re-requests it. This clears the rare
+    // "stuck duck" state where a transient duck (a notification tone, Assistant, another app) lowered the
+    // internal multiplier and the matching focus-gain callback never arrived, leaving a track playing
+    // inaudibly while the position keeps advancing. The app cannot otherwise touch that multiplier
+    // (exoPlayer.volume is only the base layer: effective = base * focusMultiplier). Cheap and
+    // glitch-free: attributes are unchanged (no sink reinit), playback is not paused, and steady-state
+    // stays handleAudioFocus=true so call/duck/other-app interruption behavior is unchanged. Called only
+    // at safe points (a fresh track before it becomes audible, and on manual resume). Skipped while the
+    // DJ is ducking so it does not fight the DJ volume.
+    private fun refreshAudioFocus() {
+        if (isDucking) return
+        runCatching {
+            exoPlayer.setAudioAttributes(mediaAudioAttributes, false)
+            exoPlayer.setAudioAttributes(mediaAudioAttributes, true)
+        }
+    }
 
     // AudioManager.mode reflects an active/ringing call WITHOUT needing READ_PHONE_STATE. Used to
     // avoid blasting audio over a hands-free call when a track finishes resolving mid-call.
@@ -959,6 +988,9 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (exoPlayer.playbackState == Player.STATE_IDLE) {
                 playTrack(currentTrack)
             } else {
+                // Manual resume also clears any stuck focus-duck multiplier, so pressing play reliably
+                // restores sound if a track ever went silent-but-advancing.
+                refreshAudioFocus()
                 exoPlayer.play()
             }
         }
