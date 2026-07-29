@@ -558,7 +558,9 @@ fun TrackOptionsMenuBottomSheet(
                     }
                 }
 
-                if (!isLocalTrack && !isYtmTrack && downloadUriStr != null) {
+                // YouTube Music tracks are downloadable too: their "ytm:" id already carries the video
+                // id, so the yt-dlp chain resolves them without going through the Spotify resolver.
+                if (!isLocalTrack && downloadUriStr != null) {
                     val downloadingStr = stringResource(R.string.track_menu_getting_url)
                     
                     MenuOptionItem(

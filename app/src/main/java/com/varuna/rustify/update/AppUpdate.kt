@@ -30,6 +30,9 @@ object AppUpdate {
     const val REPO = "Rustify"
     const val RELEASES_PAGE = "https://github.com/$OWNER/$REPO/releases/latest"
     private const val LATEST_API = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
+    // Newest-first list of releases, used to build a cumulative changelog covering every version
+    // between the installed one and the latest (not just the newest release's notes).
+    private const val RELEASES_API = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
 
     /** Parsed, device-relevant view of the latest GitHub release. */
     data class UpdateInfo(
@@ -88,39 +91,75 @@ object AppUpdate {
         }
     }
 
-    /**
-     * Fetch the latest release and return [UpdateInfo] if it is newer than the installed build, or
-     * `null` when up to date. Throws on network/parse failure (callers decide how loud to be).
-     */
-    suspend fun check(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
+    /** GET [url] as JSON text, throwing on a non-2xx response. */
+    private fun getJson(url: String): String {
         val req = Request.Builder()
-            .url(LATEST_API)
+            .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "Rustify-Updater")
             .build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) error("GitHub HTTP ${resp.code}")
-            val json = JSONObject(resp.body?.string().orEmpty())
-            val tag = json.optString("tag_name")
-            if (tag.isBlank()) return@withContext null
-            if (!isNewer(tag, installedVersion(context))) return@withContext null
-
-            val assetsArr = json.optJSONArray("assets")
-            val assets = ArrayList<JSONObject>()
-            if (assetsArr != null) for (i in 0 until assetsArr.length()) assets.add(assetsArr.getJSONObject(i))
-            val apk = matchApkAsset(assets)
-
-            UpdateInfo(
-                tag = tag,
-                versionName = parseVersion(tag).joinToString(".").ifEmpty { tag },
-                title = json.optString("name").ifBlank { tag },
-                body = json.optString("body").trim(),
-                htmlUrl = json.optString("html_url").ifBlank { RELEASES_PAGE },
-                apkUrl = apk?.optString("browser_download_url")?.takeIf { it.isNotBlank() },
-                apkName = apk?.optString("name")?.takeIf { it.isNotBlank() },
-                apkSize = apk?.optLong("size") ?: 0L
-            )
+            return resp.body?.string().orEmpty()
         }
+    }
+
+    /** Releases newest-first. Unlike `releases/latest`, this also includes pre-releases. */
+    private fun fetchReleases(): List<JSONObject> {
+        val arr = org.json.JSONArray(getJson(RELEASES_API))
+        return (0 until arr.length())
+            .map { arr.getJSONObject(it) }
+            .filter { !it.optBoolean("draft", false) && it.optString("tag_name").isNotBlank() }
+    }
+
+    /**
+     * Join the notes of every release the user is missing into one changelog, newest first, so the
+     * dialog shows everything between the installed version and the latest — not just the newest
+     * release. A single missed release is rendered as-is, with no redundant header.
+     */
+    private fun buildCumulativeBody(releases: List<JSONObject>): String {
+        if (releases.size == 1) return releases[0].optString("body").trim()
+        return releases.joinToString("\n\n\n") { r ->
+            val heading = r.optString("name").ifBlank { r.optString("tag_name") }
+            val body = r.optString("body").trim()
+            if (body.isBlank()) "## $heading" else "## $heading\n\n$body"
+        }.trim()
+    }
+
+    /**
+     * Fetch the newest release and return [UpdateInfo] if it is newer than the installed build, or
+     * `null` when up to date. The changelog covers every release between the installed version and
+     * the newest one. Throws on network/parse failure (callers decide how loud to be).
+     */
+    suspend fun check(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
+        val installed = installedVersion(context)
+
+        // Prefer the full list (includes pre-releases and lets us build a cumulative changelog);
+        // fall back to releases/latest if the list endpoint fails.
+        val releases = runCatching { fetchReleases() }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: listOf(JSONObject(getJson(LATEST_API)))
+
+        val missed = releases.filter { isNewer(it.optString("tag_name"), installed) }
+        if (missed.isEmpty()) return@withContext null
+
+        val latest = missed.first()
+        val tag = latest.optString("tag_name")
+
+        val assetsArr = latest.optJSONArray("assets")
+        val assets = ArrayList<JSONObject>()
+        if (assetsArr != null) for (i in 0 until assetsArr.length()) assets.add(assetsArr.getJSONObject(i))
+        val apk = matchApkAsset(assets)
+
+        UpdateInfo(
+            tag = tag,
+            versionName = parseVersion(tag).joinToString(".").ifEmpty { tag },
+            title = latest.optString("name").ifBlank { tag },
+            body = buildCumulativeBody(missed),
+            htmlUrl = latest.optString("html_url").ifBlank { RELEASES_PAGE },
+            apkUrl = apk?.optString("browser_download_url")?.takeIf { it.isNotBlank() },
+            apkName = apk?.optString("name")?.takeIf { it.isNotBlank() },
+            apkSize = apk?.optLong("size") ?: 0L
+        )
     }
 
     /**

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
@@ -655,6 +656,25 @@ fun YtmTrackListItem(
                     text = { Text(stringResource(R.string.track_menu_go_album)) },
                     onClick = { showMenu = false; onOpenAlbum(track.albumId!!, "") },
                     leadingIcon = { Icon(Icons.Default.Album, null) }
+                )
+            }
+            val downloadUriStr = prefs.getString("download_directory", null)
+            if (downloadUriStr != null) {
+                val downloadingStr = stringResource(R.string.track_menu_getting_url)
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.track_menu_download)) },
+                    onClick = {
+                        showMenu = false
+                        com.varuna.rustify.bridge.DownloadManager.enqueueDownload(
+                            context = context,
+                            trackId = full.id ?: return@DropdownMenuItem,
+                            trackName = full.name,
+                            trackArtist = full.artists.joinToString(", ") { it.name },
+                            downloadUriStr = downloadUriStr
+                        )
+                        Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
+                    },
+                    leadingIcon = { Icon(Icons.Default.Download, null) }
                 )
             }
             DropdownMenuItem(

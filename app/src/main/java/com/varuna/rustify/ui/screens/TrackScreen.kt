@@ -410,12 +410,21 @@ fun TrackScreen(
     val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
     LaunchedEffect(mediaTab, trackId, maxQuality) {
         if (mediaTab == 2 && videoUrl == null && !trackId.startsWith("local:")) {
+            // resolveYouTubeIdNative blocks on network inside Rust, so it must not run on the main
+            // thread (the canvas effect below already does this) — on the UI thread it freezes the
+            // frame and can take the app down with it.
             val ytId = if (trackId.startsWith("ytm:")) trackId.removePrefix("ytm:")
                 else runCatching {
-                    Regex("[A-Za-z0-9_-]{11}")
-                        .find(NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
+                    kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        Regex("[A-Za-z0-9_-]{11}")
+                            .find(NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
+                    }
                 }.getOrNull()
-            if (!ytId.isNullOrBlank()) videoUrl = com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
+            if (!ytId.isNullOrBlank()) {
+                videoUrl = runCatching {
+                    com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
+                }.getOrNull()
+            }
         }
     }
     LaunchedEffect(trackId) {

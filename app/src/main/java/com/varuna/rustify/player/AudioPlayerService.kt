@@ -71,6 +71,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         private set
 
     companion object {
+        /** Past this point into a track, "previous" restarts it instead of going back a track. */
+        private const val PREVIOUS_RESTART_THRESHOLD_MS = 10_000L
+
         @Volatile
         private var downloadCache: SimpleCache? = null
 
@@ -114,6 +117,12 @@ class AudioPlayerService private constructor(private val context: Context) {
     private var preBufferingJob: kotlinx.coroutines.Job? = null
     private var playJob: kotlinx.coroutines.Job? = null
     @Volatile private var isResolving = false
+    // Id of the track whose media is actually loaded into ExoPlayer (set right after prepare()).
+    // Between a track switch and the new media being prepared, the player still holds the PREVIOUS
+    // track's timeline, so exoPlayer.currentPosition belongs to that old track. Reading it as if it
+    // were the current track's position made a failed resolution resume the NEW track at the OLD
+    // track's offset (a fresh song starting mid-way). Guard every live-position read with this.
+    @Volatile private var preparedTrackId: String? = null
     @Volatile private var isRetrying = false
     // Generation token so a stale playJob's finally won't clobber isResolving.
     private val resolveGen = AtomicLong(0)
@@ -301,7 +310,13 @@ class AudioPlayerService private constructor(private val context: Context) {
             var lastSaveTime = 0L
             var lastSavedPosition = 0L
             while (true) {
-                if (!isResolving && (exoPlayer.isPlaying || _state.value.isBuffering)) {
+                // Only trust the player's clock while it actually holds the current logical track.
+                // During a switch (and while an extraction retry is backing off, when isBuffering is
+                // true but nothing new is prepared yet) the player still reports the PREVIOUS track's
+                // position, which used to leak into _state.positionMs and into listening metrics.
+                val holdsCurrentTrack = preparedTrackId != null &&
+                    preparedTrackId == _state.value.currentTrack?.id
+                if (!isResolving && holdsCurrentTrack && (exoPlayer.isPlaying || _state.value.isBuffering)) {
                     val pos = exoPlayer.currentPosition
                     _state.value = _state.value.copy(
                         positionMs = pos,
@@ -622,6 +637,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
+                // From here on the player really holds THIS track, so its live position is meaningful.
+                preparedTrackId = trackId
                 // Seek to the position captured at the top of playTrack (see desiredStartMs), never to
                 // the live _state.positionMs which the ticker may have advanced meanwhile.
                 if (desiredStartMs > 0L) {
@@ -1005,7 +1022,11 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun skipToNext() {
         val st = _state.value
-        _state.value = st.copy(positionMs = exoPlayer.currentPosition)
+        // Flush the outgoing track's real position, but only if the player actually holds it (after a
+        // failed resolution it still reports the previous track's clock).
+        if (preparedTrackId == st.currentTrack?.id) {
+            _state.value = st.copy(positionMs = exoPlayer.currentPosition)
+        }
         val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
         if (idx == -1 && st.queue.isNotEmpty()) {
             // The current track isn't in the queue (e.g. a restored/truncated originalQueue).
@@ -1062,6 +1083,17 @@ class AudioPlayerService private constructor(private val context: Context) {
     fun skipToPrevious() {
         val st = _state.value
         val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+        // Spotify-style "previous": once past the first few seconds it restarts the current track;
+        // only within that opening window (or when nothing precedes it) does it go back a track. So a
+        // double tap always reaches the previous song, and a single tap right after one starts still
+        // goes back. Live position is only trusted when the player really holds this track.
+        val livePos = if (preparedTrackId == st.currentTrack?.id) {
+            exoPlayer.currentPosition.coerceAtLeast(0L)
+        } else 0L
+        if (st.currentTrack != null && (livePos > PREVIOUS_RESTART_THRESHOLD_MS || idx <= 0)) {
+            seekTo(0L)
+            return
+        }
         if (idx > 0) {
             val prev = st.queue[idx - 1]
             _state.value = st.copy(
@@ -1102,7 +1134,11 @@ class AudioPlayerService private constructor(private val context: Context) {
         // when > 0, so we compute the best-known position here. Only a switch to a DIFFERENT track
         // (a fallbackTrackId that isn't the current track) legitimately starts from 0.
         val retryingSameTrack = fallbackTrackId == null || fallbackTrackId == st.currentTrack?.id
-        val livePos = exoPlayer.currentPosition.coerceAtLeast(0L)
+        // Only read the player's clock if it really holds this track. When a track change is followed
+        // by a failed resolution (scheduleExtractionRetry), setMediaSource/prepare never ran, so the
+        // player still sits at the PREVIOUS track's end position — using it seeked the fresh track to
+        // that offset and it started mid-song.
+        val livePos = if (preparedTrackId == track.id) exoPlayer.currentPosition.coerceAtLeast(0L) else 0L
         val preservedPosition = if (retryingSameTrack) maxOf(livePos, st.positionMs).coerceAtLeast(0L) else 0L
 
         _state.value = st.copy(

@@ -45,8 +45,10 @@ object DownloadManager {
         trackId: String,
         trackName: String,
         trackArtist: String,
-        spotifyRepo: SpotifyRepository,
-        downloadUriStr: String
+        downloadUriStr: String,
+        // Unused by processDownload (resolution lives in AudioSourceRegistry.downloadChain); kept
+        // optional so callers without a repository handy (e.g. the YouTube Music rows) can enqueue.
+        @Suppress("UNUSED_PARAMETER") spotifyRepo: SpotifyRepository? = null
     ) {
         val currentList = _downloads.value
         if (currentList.any { it.id == trackId && it.status in listOf(DownloadStatus.QUEUED, DownloadStatus.RESOLVING, DownloadStatus.DOWNLOADING) }) {
@@ -64,9 +66,6 @@ object DownloadManager {
         updateActiveCount()
 
         scope.launch {
-            // spotifyRepo is no longer used inside processDownload (resolution and download now live
-            // in AudioSourceRegistry.downloadChain). It is kept on enqueueDownload's public signature
-            // for callers.
             processDownload(context.applicationContext, trackId, trackName, trackArtist, downloadUriStr)
         }
     }
