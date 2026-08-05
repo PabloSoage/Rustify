@@ -1,13 +1,6 @@
 package com.varuna.rustify.webplayer
 
-import android.annotation.SuppressLint
-import android.webkit.CookieManager
-import android.webkit.PermissionRequest
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -28,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,44 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.varuna.rustify.R
-import com.varuna.rustify.bridge.NativeEngine
-import java.io.ByteArrayInputStream
-
-private const val SPOTIFY_WEB = "https://open.spotify.com/"
-
-/** Empty 200 served in place of a blocked request; an error would make pages retry or break. */
-private fun blockedResponse() =
-    WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
-
-/** Maps Android's request hints onto adblock-rust's resource-type vocabulary. */
-private fun resourceTypeOf(request: WebResourceRequest): String {
-    if (request.isForMainFrame) return "document"
-    val accept = request.requestHeaders?.get("Accept").orEmpty()
-    val path = request.url.path.orEmpty().lowercase()
-    return when {
-        accept.contains("text/css") || path.endsWith(".css") -> "stylesheet"
-        accept.contains("image/") || Regex("\\.(png|jpe?g|gif|webp|svg|ico)$").containsMatchIn(path) -> "image"
-        path.endsWith(".js") || accept.contains("javascript") -> "script"
-        Regex("\\.(mp3|mp4|m4a|ogg|webm|aac)$").containsMatchIn(path) -> "media"
-        request.requestHeaders?.containsKey("X-Requested-With") == true -> "xmlhttprequest"
-        else -> "xmlhttprequest"
-    }
-}
 
 /**
- * Spotify Web Player embedded in a WebView.
+ * Screen hosting Spotify's web player.
  *
- * Playback happens inside the WebView itself — nothing is captured or re-streamed, and the app's own
- * player is paused while this screen is open so the two never fight over audio.
- *
- * Two things make this work where a plain WebView fails:
- *  - **DRM.** Spotify's web player uses Widevine via EME. A WebView only grants that after the host
- *    app answers `onPermissionRequest` with `RESOURCE_PROTECTED_MEDIA_ID`; without it playback dies
- *    with "No supported keysystem was found".
- *  - **Filtering.** WebView has no extension support, so uBlock Origin can't be installed. Requests
- *    are matched instead against uBO's own filter lists via the Rust engine (see [AdblockFilters]).
+ * The WebView itself lives in [WebPlayerController], not here: this screen only attaches and detaches
+ * it, so navigating away does not stop playback. Everything that makes the embed work — granting the
+ * Widevine permission and filtering requests with uBlock Origin's lists — is set up by the controller.
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebPlayerScreen(
     onBackClick: () -> Unit,
@@ -86,34 +48,21 @@ fun WebPlayerScreen(
     onEnter: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var progress by remember { mutableIntStateOf(0) }
     var filtersReady by remember { mutableStateOf(false) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
-    // Pause Rustify's own playback: two audio sources at once is never what the user wants.
     LaunchedEffect(Unit) { onEnter() }
 
-    // Compile the filter lists before the page loads so the very first requests are already covered.
+    // Compile the filter lists before the page loads so the first requests are already covered.
     LaunchedEffect(Unit) {
         filtersReady = runCatching { AdblockFilters.ensureLoaded(context) }.getOrDefault(false)
-        webViewRef?.let { if (it.url == null) it.loadUrl(SPOTIFY_WEB) }
+        WebPlayerController.getOrCreate(context)
+        WebPlayerController.loadHomeIfNeeded()
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            webViewRef?.let { wv ->
-                runCatching { wv.evaluateJavascript("document.querySelectorAll('video,audio').forEach(m=>m.pause());", null) }
-                wv.stopLoading()
-                wv.destroy()
-            }
-            AdblockFilters.release()
-        }
-    }
+    // Detach (never destroy) so audio survives leaving the screen.
+    DisposableEffect(Unit) { onDispose { WebPlayerController.detachFromParent() } }
 
-    BackHandler {
-        val wv = webViewRef
-        if (wv != null && wv.canGoBack()) wv.goBack() else onBackClick()
-    }
+    BackHandler { onBackClick() }
 
     Column(modifier = modifier.fillMaxSize().background(Color(0xFF121212))) {
         Row(
@@ -121,7 +70,11 @@ fun WebPlayerScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackClick) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.settings_back),
+                    tint = Color.White
+                )
             }
             Text(
                 text = stringResource(R.string.web_player_title),
@@ -129,14 +82,17 @@ fun WebPlayerScreen(
                 color = Color.White,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = { webViewRef?.reload() }) {
-                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.web_player_reload), tint = Color.White)
+            IconButton(onClick = { WebPlayerController.getOrCreate(context).reload() }) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.web_player_reload),
+                    tint = Color.White
+                )
             }
         }
 
-        if (progress in 1..99) {
+        if (!filtersReady) {
             LinearProgressIndicator(
-                progress = { progress / 100f },
                 modifier = Modifier.fillMaxWidth(),
                 color = Color(0xFF1DB954),
                 trackColor = Color(0xFF333333)
@@ -147,55 +103,10 @@ fun WebPlayerScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            mediaPlaybackRequiresUserGesture = false
-                            // The web player needs a desktop-class UA to expose full controls.
-                            userAgentString = settings.userAgentString
-                                .replace("; wv", "")
-                                .replace("Version/4.0 ", "")
-                        }
-                        CookieManager.getInstance().setAcceptCookie(true)
-                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                        webChromeClient = object : WebChromeClient() {
-                            // Grants Widevine/EME. Without this the player cannot decrypt anything.
-                            override fun onPermissionRequest(request: PermissionRequest?) {
-                                val resources = request?.resources ?: return
-                                if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in resources) {
-                                    request.grant(resources)
-                                    return
-                                }
-                                super.onPermissionRequest(request)
-                            }
-
-                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                progress = newProgress
-                            }
-                        }
-
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(
-                                view: WebView?,
-                                request: WebResourceRequest?
-                            ): WebResourceResponse? {
-                                val req = request ?: return null
-                                if (req.isForMainFrame) return null
-                                val url = req.url?.toString() ?: return null
-                                if (!url.startsWith("http")) return null
-                                val blocked = runCatching {
-                                    NativeEngine.adblockMatchesNative(url, SPOTIFY_WEB, resourceTypeOf(req))
-                                }.getOrDefault(false)
-                                return if (blocked) blockedResponse() else null
-                            }
-                        }
-
-                        webViewRef = this
-                        // Only load once the filters are compiled (the LaunchedEffect above triggers
-                        // the load when it finishes first).
-                        if (filtersReady) loadUrl(SPOTIFY_WEB)
+                    WebPlayerController.getOrCreate(ctx).also { wv ->
+                        // Re-entering the screen reuses the same instance, which may still be
+                        // attached to the previous (now discarded) host.
+                        (wv.parent as? ViewGroup)?.removeView(wv)
                     }
                 }
             )

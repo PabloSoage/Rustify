@@ -109,6 +109,20 @@ class RustifyForegroundService : MediaLibraryService() {
                 override fun seekToPrevious() = doSkipPrevious()
                 override fun seekToNextMediaItem() = doSkipNext()
                 override fun seekToPreviousMediaItem() = doSkipPrevious()
+
+                // In experimental web-player mode the audio comes from the WebView, not from this
+                // player, so notification / lockscreen / headset / Android Auto transport has to be
+                // forwarded there instead of reaching ExoPlayer.
+                private fun webMode() =
+                    AudioPlayerService.instance?.isWebPlayerMode == true
+
+                override fun play() {
+                    if (webMode()) AudioPlayerService.instance?.play() else super.play()
+                }
+
+                override fun pause() {
+                    if (webMode()) AudioPlayerService.instance?.pause() else super.pause()
+                }
             }
 
             val intent = Intent(this, com.varuna.rustify.MainActivity::class.java).apply {

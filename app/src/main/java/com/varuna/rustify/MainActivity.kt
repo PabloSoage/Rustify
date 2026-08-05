@@ -608,6 +608,15 @@ fun EngineTester(
         }
     }
 
+    // Restore the experimental web-player mode so the transport controls keep driving the page across
+    // restarts. The WebView itself is created lazily, when the screen is first opened.
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("web_player_backend", false)) {
+            audioPlayerService.setWebPlayerMode(true)
+        }
+    }
+
     // Check for updates on startup (if the toggle is enabled, which it is by default).
     // Silent: if the network fails or you're already up to date, it stays out of the way; it only
     // opens the dialog when a new version exists.

@@ -509,6 +509,8 @@
     <!-- E109 — Actualizador in-app -->
     <string name="web_player_title">Reproductor web</string>
     <string name="web_player_reload">Recargar</string>
+    <string name="web_player_backend">Usar el reproductor web (experimental)</string>
+    <string name="web_player_backend_desc">Los controles de Rustify manejan el reproductor web de Spotify en vez de su propio motor. Audio original de Spotify e inicio instantáneo, pero depende de la página y puede romperse si Spotify la cambia.</string>
     <string name="update_check">Buscar actualizaciones</string>
     <string name="update_checking">Buscando actualizaciones…</string>
     <string name="update_up_to_date">Ya tienes la última versión</string>

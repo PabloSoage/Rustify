@@ -511,6 +511,8 @@
     <!-- E109 — In-app updater -->
     <string name="web_player_title">Web Player</string>
     <string name="web_player_reload">Reload</string>
+    <string name="web_player_backend">Use the web player for playback (experimental)</string>
+    <string name="web_player_backend_desc">Rustify\'s controls drive Spotify\'s web player instead of its own engine. Original Spotify audio and instant start, but it depends on the page and can break when Spotify changes it.</string>
     <string name="update_check">Check for updates</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_up_to_date">You\'re on the latest version</string>

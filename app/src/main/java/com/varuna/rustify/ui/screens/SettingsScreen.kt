@@ -498,6 +498,7 @@ fun SettingsScreen(
             }
             "advanced" -> {
                 Spacer(modifier = Modifier.height(8.dp))
+                WebPlayerSection(context)
                 UpdatesSection(context)
                 LoggingSection(context, onNavigateLogViewer)
                 SpotifyHashInspectorSection()
@@ -2276,6 +2277,31 @@ private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onCh
             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
         )
     }
+}
+
+// Web player (experimental): route Rustify's transport controls to Spotify's web player instead of
+// ExoPlayer. Off by default — it depends on the page's markup and on the WebView staying alive.
+@Composable
+private fun WebPlayerSection(context: Context) {
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    var enabled by remember { mutableStateOf(prefs.getBoolean("web_player_backend", false)) }
+
+    Spacer(Modifier.height(16.dp))
+    Text(
+        text = stringResource(R.string.web_player_title),
+        color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    SettingSwitchRow(
+        title = stringResource(R.string.web_player_backend),
+        desc = stringResource(R.string.web_player_backend_desc),
+        checked = enabled,
+        onChange = {
+            enabled = it
+            prefs.edit { putBoolean("web_player_backend", it) }
+            com.varuna.rustify.player.AudioPlayerService.instance?.setWebPlayerMode(it)
+        }
+    )
 }
 
 // Updates: "check on startup" toggle plus a button to check now (GitHub releases).
