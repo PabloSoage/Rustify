@@ -52,6 +52,10 @@ object RustifyBackup {
     const val DRIVE_FILE_NAME = "rustify-backup.json"
 
     private const val F_MAPPINGS = "youtube_mappings.json"
+    // Which mappings the user picked by hand. Without it a restored device keeps the right
+    // alternatives but labels every one of them "auto", because the flag lives in a separate file
+    // from the mapping itself.
+    private const val F_USER_ALTS = "user_alternatives.json"
     private const val F_LOCAL_PLAYLISTS = "local_playlists.json"
     private const val F_LOCAL_FAVORITES = "local_favorites.json"
     private const val F_YTM = "ytm_library.json"
@@ -79,6 +83,9 @@ object RustifyBackup {
         // mappings: flat map { spotifyId: youtubeId }
         root.put("mappings", readObject(File(dir, F_MAPPINGS)) ?: JSONObject())
 
+        // userAlternatives: ids of the mappings the user chose explicitly.
+        root.put("userAlternatives", readArray(File(dir, F_USER_ALTS)) ?: JSONArray())
+
         // local: playlists[] + favorites[]
         root.put("local", JSONObject().apply {
             put("playlists", readArray(File(dir, F_LOCAL_PLAYLISTS)) ?: JSONArray())
@@ -104,6 +111,7 @@ object RustifyBackup {
         val ytm = c.optJSONObject("ytm") ?: JSONObject()
         return listOf(
             Category("mappings", "YouTube matches", c.optJSONObject("mappings")?.length() ?: 0),
+            Category("user_alternatives", "Coincidencias elegidas", c.optJSONArray("userAlternatives")?.length() ?: 0),
             Category("local_playlists", "Listas locales", local.optJSONArray("playlists")?.length() ?: 0),
             Category("local_favorites", "Favoritos locales", local.optJSONArray("favorites")?.length() ?: 0),
             Category("ytm_favorites", "YT Music: favoritos", ytm.optJSONArray("favorites")?.length() ?: 0),
@@ -140,6 +148,13 @@ object RustifyBackup {
         // mappings
         container.optJSONObject("mappings")?.let {
             atomicWrite(File(dir, F_MAPPINGS), it.toString())
+        }
+
+        // userAlternatives — the "chosen by me" flags that go with those mappings.
+        container.optJSONArray("userAlternatives")?.let {
+            atomicWrite(File(dir, F_USER_ALTS), it.toString())
+            // The set is cached in memory on first use, so force a re-read.
+            com.varuna.rustify.bridge.UserAlternatives.reload(ctx)
         }
 
         // local — write files and reload in-memory state
@@ -192,6 +207,12 @@ object RustifyBackup {
 
         // mappings — union; the newer container wins on conflict.
         out.put("mappings", mergeMappings(older.optJSONObject("mappings"), newer.optJSONObject("mappings")))
+
+        // userAlternatives — plain set union: an explicit choice is never lost to a sync.
+        out.put(
+            "userAlternatives",
+            unionStrings(a.optJSONArray("userAlternatives"), b.optJSONArray("userAlternatives"))
+        )
 
         // local
         val aLocal = a.optJSONObject("local") ?: JSONObject()

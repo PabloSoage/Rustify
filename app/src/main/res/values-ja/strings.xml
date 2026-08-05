@@ -307,6 +307,7 @@
     <string name="settings_drive_details_desc">これらの項目が同期のたびに Drive にバックアップされます（統合＋最新優先）。</string>
     <string name="settings_close">閉じる</string>
     <!-- E109 — アプリ内アップデーター -->
+    <string name="match_play">再生</string>
     <string name="web_player_title">ウェブプレーヤー</string>
     <string name="web_player_reload">再読み込み</string>
     <string name="web_player_backend">ウェブプレーヤーで再生（実験的）</string>

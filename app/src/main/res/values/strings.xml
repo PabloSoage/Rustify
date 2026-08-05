@@ -509,6 +509,7 @@
     <string name="settings_drive_details_desc">These items are backed up to Drive on each sync (union + last-write-wins).</string>
     <string name="settings_close">Close</string>
     <!-- E109 — In-app updater -->
+    <string name="match_play">Play</string>
     <string name="web_player_title">Web Player</string>
     <string name="web_player_reload">Reload</string>
     <string name="web_player_backend">Use the web player for playback (experimental)</string>

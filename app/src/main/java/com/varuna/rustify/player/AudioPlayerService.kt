@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -193,6 +194,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                     // Keep the existing FullTrack when the title matches, so covers/ids picked from
                     // the app's own catalogue are not replaced by the page's cruder metadata.
                     val sameTrack = current != null && current.name.equals(web.title, ignoreCase = true)
+                    // Track changed inside the page (its own next/prev): republish so the
+                    // notification follows along.
+                    if (!sameTrack && web.title.isNotBlank()) {
+                        publishWebMetadata(
+                            mediaId = "web:${web.title}",
+                            title = web.title,
+                            artist = web.artist,
+                            album = null,
+                            artworkUrl = web.artworkUrl
+                        )
+                    }
                     _state.value = _state.value.copy(
                         isPlaying = web.isPlaying,
                         isBuffering = false,
@@ -206,6 +218,44 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         }
     }
+
+    /**
+     * Pushes [track]'s metadata into ExoPlayer **without preparing it**, so the notification, the
+     * lockscreen and Android Auto show the right title/artist/artwork while the audio actually comes
+     * from the web page. The MediaSession reads its metadata from the player, not from [_state], so
+     * without this it would keep displaying whatever was played last.
+     */
+    private fun publishWebMetadata(
+        mediaId: String,
+        title: String,
+        artist: String,
+        album: String?,
+        artworkUrl: String?
+    ) {
+        runCatching {
+            val metadata = androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(artist)
+                .setAlbumTitle(album)
+                .apply {
+                    if (!artworkUrl.isNullOrBlank()) setArtworkUri(artworkUrl.toUri())
+                }
+                .build()
+            // No prepare(): the item exists only to carry metadata to the session.
+            exoPlayer.setMediaItem(
+                MediaItem.Builder().setMediaId(mediaId).setMediaMetadata(metadata).build()
+            )
+        }
+    }
+
+    /** Publishes a Rustify track's own (Spotify-sourced) metadata. */
+    private fun publishWebMetadata(track: FullTrack) = publishWebMetadata(
+        mediaId = track.id ?: "web",
+        title = track.name,
+        artist = track.artists.joinToString(", ") { it.name },
+        album = track.album?.name,
+        artworkUrl = track.album?.images?.firstOrNull()?.url
+    )
 
     /** Minimal FullTrack built from the page's media-session metadata. */
     private fun webTrackOf(
@@ -623,27 +673,29 @@ class AudioPlayerService private constructor(private val context: Context) {
                     // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
                     // so the stale cached URL must not shadow the new source.
                     if (streamUrl == null && effectiveYoutubeId.isNullOrBlank()) {
-                        // Check persisted URL cache first (avoids unnecessary yt-dlp resolution)
-                        val cachedUrl = getCachedStreamUrl(trackId)
-                        if (!cachedUrl.isNullOrBlank()) {
-                            // Honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on
-                            // ExoPlayer, so drop it and force a fresh chain resolution instead.
-                            val expiresAt = urlExpiryCache[trackId]
-                            val expired = expiresAt != null && System.currentTimeMillis() >= expiresAt
-                            // If user has a confirmed alternative mapping, the cached URL may be from an
-                            // old auto-match — skip cache and force re-resolution through the resolver
-                            // which checks get_alternative_track first.
-                            val mappedId = NativeEngine.getAlternativeTrackNative(trackId)
-                            val hasUserMapping = mappedId.isNotBlank() &&
-                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
-                            if (expired || hasUserMapping) {
-                                if (expired) android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
-                                if (hasUserMapping) android.util.Log.d("AudioPlayerService", "User mapping found for $trackId ($mappedId); skipping cached URL")
-                                removeCachedStreamUrl(trackId)
-                                preResolvedUrls.remove(trackId)
-                                resolvedStreamUrls.remove(trackId)
-                                com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
-                            } else {
+                        // A confirmed user alternative must beat EVERY cached URL — including the one
+                        // preBufferNextTrack produced for this track, possibly before the user made the
+                        // choice. Checking it only inside the persisted-cache branch (as this used to)
+                        // meant the alternative applied when the track was started by hand (which clears
+                        // the pre-buffer) but was silently ignored when the queue reached it on its own.
+                        val mappedId = NativeEngine.getAlternativeTrackNative(trackId)
+                        val hasUserMapping = mappedId.isNotBlank() &&
+                            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                        // Honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on ExoPlayer.
+                        val expiresAt = urlExpiryCache[trackId]
+                        val expired = expiresAt != null && System.currentTimeMillis() >= expiresAt
+
+                        if (hasUserMapping || expired) {
+                            if (expired) android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
+                            if (hasUserMapping) android.util.Log.d("AudioPlayerService", "User mapping found for $trackId ($mappedId); dropping every cached URL")
+                            removeCachedStreamUrl(trackId)
+                            preResolvedUrls.remove(trackId)
+                            resolvedStreamUrls.remove(trackId)
+                            com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
+                        } else {
+                            // Persisted URL cache — avoids an unnecessary yt-dlp resolution.
+                            val cachedUrl = getCachedStreamUrl(trackId)
+                            if (!cachedUrl.isNullOrBlank()) {
                                 streamUrl = cachedUrl
                                 android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
                             }
@@ -919,6 +971,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (id.startsWith("local:") || id.startsWith("ytm:")) return false
         com.varuna.rustify.webplayer.WebPlayerController
             .playSpotifyUrl("https://open.spotify.com/track/$id")
+        publishWebMetadata(track)
         _state.value = _state.value.copy(
             currentTrack = track,
             isPlaying = true,

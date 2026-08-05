@@ -36,6 +36,18 @@ object UserAlternatives {
         }
     }
 
+    /**
+     * Drops the in-memory cache and re-reads the file. Needed after a Drive restore rewrites it
+     * behind our back, otherwise every restored mapping keeps showing up as "auto".
+     */
+    fun reload(context: Context) {
+        synchronized(this) {
+            ids.clear()
+            loaded = false
+        }
+        ensure(context)
+    }
+
     fun isUserSet(context: Context, trackId: String?): Boolean {
         if (trackId.isNullOrBlank()) return false
         ensure(context)

@@ -38,7 +38,13 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.res.stringResource
+import com.varuna.rustify.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -88,6 +94,17 @@ fun MatchEditorScreen(
     var showAdd by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableIntStateOf(0) }  // 0 = all, 1 = user-chosen, 2 = automatic
+
+    // Feedback for the play button: which row is still resolving. Cleared as soon as the player
+    // reports that track (or reports an error), so the spinner can't get stuck.
+    val playerState by audioPlayerService.state.collectAsState()
+    var startingId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(playerState.currentTrack?.id, playerState.isPlaying, playerState.isError) {
+        val id = startingId ?: return@LaunchedEffect
+        if (playerState.isError || (playerState.currentTrack?.id == id && !playerState.isBuffering)) {
+            startingId = null
+        }
+    }
 
     fun refresh() { mappings = MatchStore.readAll(context).toList() }
 
@@ -204,9 +221,27 @@ fun MatchEditorScreen(
                             color = if (isUser) green else Color(0xFF888888), fontSize = 11.sp, maxLines = 1
                         )
                     }
-                    // Play the current match.
-                    IconButton(onClick = { runCatching { audioPlayerService.playPreview(tid, ytId) } }) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Reproducir", tint = green)
+                    // Play the current match. Resolving goes to the network, so show a spinner while
+                    // it does — without it the button looked like it had done nothing.
+                    val isStarting = startingId == tid
+                    val isNowPlaying = playerState.currentTrack?.id == tid && playerState.isPlaying
+                    if (isStarting) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                color = green, strokeWidth = 2.dp, modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            startingId = tid
+                            runCatching { audioPlayerService.playPreview(tid, ytId) }
+                        }) {
+                            Icon(
+                                if (isNowPlaying) Icons.Default.VolumeUp else Icons.Default.PlayArrow,
+                                contentDescription = stringResource(R.string.match_play),
+                                tint = green
+                            )
+                        }
                     }
                     // Edit (search for / change the alternative).
                     IconButton(onClick = {

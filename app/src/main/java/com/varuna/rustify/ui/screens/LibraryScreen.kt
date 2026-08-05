@@ -666,6 +666,13 @@ fun LibraryTracks(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
+        // Pull-to-refresh, like the other library sections: forces a real sync so a list left stale
+        // by a network error can be retried in place. The indicator follows the repo's sync flag.
+        PullToRefreshBox(
+            isRefreshing = isSyncing,
+            onRefresh = { coroutineScope.launch { runCatching { spotifyRepo.syncLikedTracks() } } },
+            modifier = Modifier.fillMaxSize()
+        ) {
         if (tracks.isEmpty() && isSyncing) {
             Box(modifier = Modifier.fillMaxSize()) {
                 CircularProgressIndicator(
@@ -674,12 +681,17 @@ fun LibraryTracks(
                 )
             }
         } else if (tracks.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = "No liked tracks found.",
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+            // Still a scrollable list so the empty state can be pulled to refresh.
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
+                        Text(
+                            text = "No liked tracks found.",
+                            color = Color.Gray,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
             }
         } else {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -765,6 +777,7 @@ fun LibraryTracks(
                         .padding(top = 8.dp, bottom = bottomPadding)
                 )
             }
+        }
         }
     }
 

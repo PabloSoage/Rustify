@@ -507,6 +507,7 @@
     <string name="settings_drive_details_desc">Estos elementos se respaldan en Drive en cada sincronización (unión + gana el más reciente).</string>
     <string name="settings_close">Cerrar</string>
     <!-- E109 — Actualizador in-app -->
+    <string name="match_play">Reproducir</string>
     <string name="web_player_title">Reproductor web</string>
     <string name="web_player_reload">Recargar</string>
     <string name="web_player_backend">Usar el reproductor web (experimental)</string>
