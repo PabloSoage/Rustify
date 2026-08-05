@@ -125,6 +125,8 @@ object WebPlayerController {
         runCatching { wv.destroy() }
         webView = null
         _state.value = WebState()
+        // Nothing left to filter; free the compiled rule set.
+        AdblockFilters.release()
     }
 
     fun loadHomeIfNeeded() {

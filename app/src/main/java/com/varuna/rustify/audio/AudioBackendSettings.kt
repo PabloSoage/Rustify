@@ -36,7 +36,7 @@ object AudioBackendSettings {
      * blocked by YouTube/Cloudflare (they answer /stats so they look healthy, then fail to resolve
      * audio). Leaving them on by default only produced slow, confusing fallbacks.
      */
-    private val DEFAULT_ON = setOf("ytdlp")
+    private val DEFAULT_ON = setOf(YtDlpAudioSource.ID)
 
     /**
      * Reads the stored order for [key], appending any missing [knownIds] at the end

@@ -1235,8 +1235,12 @@ fun EngineTester(
                 is Screen.WebPlayer -> {
                     com.varuna.rustify.webplayer.WebPlayerScreen(
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        // Two audio sources at once is never what the user wants.
-                        onEnter = { audioPlayerService.pause() }
+                        // Silence Rustify's own engine so two sources never overlap — but not when
+                        // web mode is on, where pause() is forwarded to the page and would stop the
+                        // very thing this screen is showing.
+                        onEnter = {
+                            if (!audioPlayerService.isWebPlayerMode) audioPlayerService.pause()
+                        }
                     )
                 }
                 is Screen.Settings -> {

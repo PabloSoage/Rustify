@@ -99,7 +99,10 @@ fun MatchEditorScreen(
     // reports that track (or reports an error), so the spinner can't get stuck.
     val playerState by audioPlayerService.state.collectAsState()
     var startingId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(playerState.currentTrack?.id, playerState.isPlaying, playerState.isError) {
+    LaunchedEffect(
+        playerState.currentTrack?.id, playerState.isPlaying,
+        playerState.isBuffering, playerState.isError
+    ) {
         val id = startingId ?: return@LaunchedEffect
         if (playerState.isError || (playerState.currentTrack?.id == id && !playerState.isBuffering)) {
             startingId = null

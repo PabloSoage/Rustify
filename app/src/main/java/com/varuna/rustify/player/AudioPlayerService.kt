@@ -1009,6 +1009,24 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
         if (tracks.isEmpty()) return
+        // Tapping a song inside a list is THE common way to start playback, so web mode has to cover
+        // it too — otherwise the mode would only ever trigger from the few loadAndPlay call sites.
+        // The queue is still built below so the app's UI keeps showing what comes next.
+        if (webPlayerMode) {
+            val selected = tracks[initialIndex.coerceIn(0, tracks.lastIndex)]
+            if (playInWebPlayer(selected)) {
+                val queue = tracks
+                currentQueueIndex = tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0)
+                _state.value = _state.value.copy(
+                    queue = queue,
+                    originalQueue = queue,
+                    durationMs = selected.durationMs.toLong()
+                )
+                notifyQueueChanged(queue)
+                requestSave()
+                return
+            }
+        }
         // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
