@@ -64,5 +64,8 @@ pub fn matches(url: &str, source_url: &str, resource_type: &str) -> bool {
         Ok(r) => r,
         Err(_) => return false,
     };
-    engine.check_network_request(&request).matched
+    // `BlockerResult` has no boolean of its own: a request is blocked when an `important` rule hit,
+    // or a blocking filter matched with no exception overriding it. `should_block()` encodes exactly
+    // that, so use it rather than reading the fields by hand.
+    engine.check_network_request(&request).should_block()
 }

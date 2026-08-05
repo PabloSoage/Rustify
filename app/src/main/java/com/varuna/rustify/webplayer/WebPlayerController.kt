@@ -49,6 +49,12 @@ object WebPlayerController {
     private val _state = MutableStateFlow(WebState())
     val state: StateFlow<WebState> = _state
 
+    /**
+     * Invoked on the main thread whenever the polled page state actually changes. The MediaSession
+     * facade uses it to refresh the notification; nothing else observes it.
+     */
+    @Volatile var onStateChanged: (() -> Unit)? = null
+
     @Volatile private var webView: WebView? = null
 
     /** True once a WebView exists, i.e. the web player can accept commands. */
@@ -183,6 +189,7 @@ object WebPlayerController {
                     val json = unquote(raw) ?: return@evaluateJavascript
                     runCatching {
                         val o = JSONObject(json)
+                        val previous = _state.value
                         _state.value = WebState(
                             available = o.optBoolean("available", false),
                             isPlaying = o.optBoolean("playing", false),
@@ -192,6 +199,14 @@ object WebPlayerController {
                             positionMs = (o.optDouble("position", 0.0) * 1000).toLong(),
                             durationMs = (o.optDouble("duration", 0.0) * 1000).toLong()
                         )
+                        // Only nudge the session when something it displays actually moved; the
+                        // position changes on every poll, so compare the rest separately.
+                        val now = _state.value
+                        val meaningful = previous.isPlaying != now.isPlaying ||
+                            previous.title != now.title ||
+                            previous.available != now.available ||
+                            kotlin.math.abs(previous.positionMs - now.positionMs) > 900
+                        if (meaningful) onStateChanged?.invoke()
                     }
                 }
             }

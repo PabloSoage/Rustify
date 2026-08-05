@@ -177,6 +177,8 @@ class AudioPlayerService private constructor(private val context: Context) {
             webPollJob = null
             com.varuna.rustify.webplayer.WebPlayerController.pause()
         }
+        // Toggling the mode changes what the session should advertise, and no poll has run yet.
+        com.varuna.rustify.webplayer.WebPlayerController.onStateChanged?.invoke()
     }
 
     private var webPollJob: kotlinx.coroutines.Job? = null
@@ -211,7 +213,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                         positionMs = web.positionMs,
                         durationMs = if (web.durationMs > 0) web.durationMs else _state.value.durationMs,
                         currentTrack = if (sameTrack || web.title.isBlank()) current
-                                       else webTrackOf(web, current)
+                                       else webTrackOf(web)
                     )
                 }
                 delay(1000.milliseconds)
@@ -257,12 +259,15 @@ class AudioPlayerService private constructor(private val context: Context) {
         artworkUrl = track.album?.images?.firstOrNull()?.url
     )
 
-    /** Minimal FullTrack built from the page's media-session metadata. */
+    /**
+     * Minimal FullTrack built from the page's media-session metadata, for when playback moved on
+     * inside the page itself. The id is derived from the title on purpose: this is only reached when
+     * the track CHANGED, so carrying the previous track's Spotify id over would mislabel the new one.
+     */
     private fun webTrackOf(
-        web: com.varuna.rustify.webplayer.WebPlayerController.WebState,
-        previous: FullTrack?
+        web: com.varuna.rustify.webplayer.WebPlayerController.WebState
     ): FullTrack = FullTrack(
-        id = previous?.id ?: "web:${web.title}",
+        id = "web:${web.title}",
         name = web.title,
         externalUri = "",
         explicit = false,
@@ -1426,6 +1431,12 @@ class AudioPlayerService private constructor(private val context: Context) {
         val track = st.queue.getOrNull(idx)
         if (track != null) {
             currentQueueIndex = idx
+            // Tapping a row in the queue (or picking one from Android Auto) has to honour web mode
+            // too, otherwise it would start a second audio source alongside the page.
+            if (webPlayerMode && playInWebPlayer(track)) {
+                requestSave()
+                return
+            }
             _state.value = st.copy(
                 currentTrack = track,
                 isPlaying = false,

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.net.toUri
 import androidx.media3.common.ForwardingPlayer
+import com.varuna.rustify.webplayer.WebPlayerController
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -40,6 +41,7 @@ import kotlinx.coroutines.launch
 class RustifyForegroundService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
+    private var webSessionPlayer: WebSessionPlayer? = null
     private val ytmRepo by lazy { YtMusicRepository(applicationContext) }
     // Scope for resolving Android Auto tree branches that require network (playlists/albums).
     private val autoScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
@@ -134,7 +136,19 @@ class RustifyForegroundService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
-            mediaSession = MediaLibrarySession.Builder(this, forwardingPlayer, LibraryCallback())
+            // In web-player mode the audio comes from a WebView while ExoPlayer stays idle, so the
+            // session would advertise "paused" regardless of what the page is doing. This facade
+            // rewrites the reported state (and routes transport commands) while web mode is on, and
+            // is a straight pass-through otherwise.
+            val sessionPlayer = WebSessionPlayer(forwardingPlayer) {
+                AudioPlayerService.instance?.isWebPlayerMode == true
+            }
+            webSessionPlayer = sessionPlayer
+            WebPlayerController.onStateChanged = {
+                runCatching { sessionPlayer.refresh() }
+            }
+
+            mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback())
                 .setSessionActivity(pendingIntent)
                 .build()
             // Expose the session to the repositories so they can invalidate the Auto tree
@@ -288,6 +302,9 @@ class RustifyForegroundService : MediaLibraryService() {
         val audioService = AudioPlayerService.instance
         audioService?.stopPlayerAndRelease()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // Drop the session-refresh hook before releasing, so a late poll can't touch a dead session.
+        WebPlayerController.onStateChanged = null
+        webSessionPlayer = null
         mediaSession?.release()
         mediaSession = null
         super.onTaskRemoved(rootIntent)
@@ -296,6 +313,9 @@ class RustifyForegroundService : MediaLibraryService() {
     override fun onDestroy() {
         AudioPlayerService.instance?.saveNow()
         MediaBrowserNotifier.unbind()
+        // Drop the session-refresh hook before releasing, so a late poll can't touch a dead session.
+        WebPlayerController.onStateChanged = null
+        webSessionPlayer = null
         mediaSession?.release()
         mediaSession = null
         autoScope.cancel()

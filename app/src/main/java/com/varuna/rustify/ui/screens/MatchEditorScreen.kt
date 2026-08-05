@@ -39,7 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -240,7 +240,8 @@ fun MatchEditorScreen(
                             runCatching { audioPlayerService.playPreview(tid, ytId) }
                         }) {
                             Icon(
-                                if (isNowPlaying) Icons.Default.VolumeUp else Icons.Default.PlayArrow,
+                                if (isNowPlaying) Icons.AutoMirrored.Filled.VolumeUp
+                                else Icons.Default.PlayArrow,
                                 contentDescription = stringResource(R.string.match_play),
                                 tint = green
                             )
