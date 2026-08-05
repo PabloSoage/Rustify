@@ -132,7 +132,7 @@ sealed class Screen {
     data class AlbumDetail(val id: String, val name: String, val images: List<SpotifyImage>) : Screen()
     data class ArtistDetail(val id: String) : Screen()
     data class ArtistAllSongs(val id: String, val name: String) : Screen()
-    data class TrackDetail(val id: String) : Screen()
+    data class TrackDetail(val id: String, val openQueue: Boolean = false) : Screen()
     data class RadioDetail(val trackId: String, val trackName: String) : Screen()
     // YouTube Music first-class destinations (no more embedded tab screen).
     object YtmSearch : Screen()
@@ -141,6 +141,7 @@ sealed class Screen {
     data class YtmPlaylistDetail(val playlistId: String, val title: String) : Screen()
     data class YtmLocalPlaylistDetail(val localId: String) : Screen()
     object Settings : Screen()
+    object WebPlayer : Screen()
     object Downloads : Screen()
     // Custom downloads (paste a URL, choose video/audio quality, separate folder).
     object CustomDownload : Screen()
@@ -917,6 +918,7 @@ fun EngineTester(
             is Screen.YtmPlaylistDetail -> "YtmPlaylistDetail_${currentScreen.playlistId}"
             is Screen.YtmLocalPlaylistDetail -> "YtmLocalPlaylistDetail_${currentScreen.localId}"
             is Screen.Settings -> "Settings"
+            is Screen.WebPlayer -> "WebPlayer"
             is Screen.MatchEditor -> "MatchEditor"
             is Screen.Downloads -> "Downloads"
             is Screen.CustomDownload -> "CustomDownload"
@@ -979,6 +981,9 @@ fun EngineTester(
                             },
                             onTravelClick = {
                                 navigationStack.add(Screen.Travel)
+                            },
+                            onWebPlayerClick = {
+                                navigationStack.add(Screen.WebPlayer)
                             }
                         )
                     }
@@ -992,7 +997,7 @@ fun EngineTester(
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {
                                 currentTrack?.id?.let { id ->
-                                    navigationStack.add(Screen.TrackDetail(id))
+                                    navigationStack.add(Screen.TrackDetail(id, openQueue = true))
                                 }
                             },
                             onAlbumClick = { id, name, images ->
@@ -1023,7 +1028,7 @@ fun EngineTester(
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {
                                 currentTrack?.id?.let { id ->
-                                    navigationStack.add(Screen.TrackDetail(id))
+                                    navigationStack.add(Screen.TrackDetail(id, openQueue = true))
                                 }
                             },
                             onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
@@ -1072,7 +1077,7 @@ fun EngineTester(
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
-                                navigationStack.add(Screen.TrackDetail(id))
+                                navigationStack.add(Screen.TrackDetail(id, openQueue = true))
                             }
                         },
                         onAlbumClick = { id, name, images ->
@@ -1095,7 +1100,7 @@ fun EngineTester(
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
-                                navigationStack.add(Screen.TrackDetail(id))
+                                navigationStack.add(Screen.TrackDetail(id, openQueue = true))
                             }
                         },
                         onAlbumClick = { id, name, images ->
@@ -1115,7 +1120,7 @@ fun EngineTester(
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
-                                navigationStack.add(Screen.TrackDetail(id))
+                                navigationStack.add(Screen.TrackDetail(id, openQueue = true))
                             }
                         },
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
@@ -1146,7 +1151,8 @@ fun EngineTester(
                         onAlbumClick = { id, name, images -> navigationStack.add(Screen.AlbumDetail(id, name, images)) },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
                         onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
-                        ytmRepo = ytmRepo
+                        ytmRepo = ytmRepo,
+                        openQueueOnOpen = currentScreen.openQueue
                     )
                 }
                 is Screen.RadioDetail -> {
@@ -1215,6 +1221,13 @@ fun EngineTester(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
                         currentTrackId = currentTrack?.id
+                    )
+                }
+                is Screen.WebPlayer -> {
+                    com.varuna.rustify.webplayer.WebPlayerScreen(
+                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        // Two audio sources at once is never what the user wants.
+                        onEnter = { audioPlayerService.pause() }
                     )
                 }
                 is Screen.Settings -> {

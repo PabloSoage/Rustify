@@ -402,4 +402,24 @@ object NativeEngine {
     external fun getYtmArtistNative(channelId: String): String
     external fun getYtmPlaylistNative(playlistId: String): String
 
+    // =====================================================================
+    // ADBLOCK — network filtering for the in-app Spotify Web Player
+    // =====================================================================
+
+    /** Compiles filter lists (uBlock Origin / EasyList syntax) into the blocking engine. */
+    external fun adblockLoadRulesNative(rules: String): Boolean
+
+    /**
+     * Should this request be blocked? Called once per WebView request, so it is kept cheap; every
+     * failure path answers false so a filtering problem can never break the page.
+     * @param resourceType adblock-rust vocabulary: "script", "image", "xmlhttprequest", "media"…
+     */
+    external fun adblockMatchesNative(url: String, sourceUrl: String, resourceType: String): Boolean
+
+    /** True once a filter list has been compiled. */
+    external fun adblockIsReadyNative(): Boolean
+
+    /** Releases the compiled engine (frees its memory when the web player closes). */
+    external fun adblockClearNative()
+
 }

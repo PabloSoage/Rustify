@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
@@ -63,7 +64,8 @@ fun HomeScreen(
     onMetricsClick: () -> Unit,
     modifier: Modifier = Modifier,
     onDjClick: () -> Unit = {},
-    onTravelClick: () -> Unit = {}
+    onTravelClick: () -> Unit = {},
+    onWebPlayerClick: () -> Unit = {}
 ) {
     val darkBackground = Color(0xFF121212)
     val gradientColor = Color(0xFF2E2E2E)
@@ -144,6 +146,7 @@ fun HomeScreen(
                         val travelLabel = stringResource(R.string.home_travel)
                         val newReleasesLabel = stringResource(R.string.home_new_releases)
                         val metricsLabel = stringResource(R.string.home_metrics)
+                        val webPlayerLabel = stringResource(R.string.web_player_title)
                         val downloadsLabel = stringResource(R.string.home_downloads)
                         val settingsLabel = stringResource(R.string.home_settings)
 
@@ -190,6 +193,11 @@ fun HomeScreen(
                                     text = { Text(metricsLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.BarChart, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onMetricsClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(webPlayerLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Public, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onWebPlayerClick() }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(downloadsLabel, color = Color.White) },

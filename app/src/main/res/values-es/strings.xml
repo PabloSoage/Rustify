@@ -507,6 +507,8 @@
     <string name="settings_drive_details_desc">Estos elementos se respaldan en Drive en cada sincronización (unión + gana el más reciente).</string>
     <string name="settings_close">Cerrar</string>
     <!-- E109 — Actualizador in-app -->
+    <string name="web_player_title">Reproductor web</string>
+    <string name="web_player_reload">Recargar</string>
     <string name="update_check">Buscar actualizaciones</string>
     <string name="update_checking">Buscando actualizaciones…</string>
     <string name="update_up_to_date">Ya tienes la última versión</string>

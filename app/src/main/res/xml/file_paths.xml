@@ -7,4 +7,6 @@
     <!-- E109 — APK descargado por el actualizador in-app (cacheDir/updates/), expuesto al
          instalador de paquetes del sistema vía content://. -->
     <cache-path name="updates" path="updates/" />
+    <!-- Carátula adjuntada al compartir un enlace de Rustify (cacheDir/share/). -->
+    <cache-path name="share" path="share/" />
 </paths>

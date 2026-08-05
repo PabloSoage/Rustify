@@ -515,7 +515,13 @@ fun TrackOptionsMenuBottomSheet(
                                 label = stringResource(R.string.track_menu_share_rustify),
                                 onClick = {
                                     val videoId = track.id?.removePrefix("ytm:") ?: ""
-                                    com.varuna.rustify.util.ShareUtils.shareRustifyLink(context, "track", "ytm:$videoId")
+                                    com.varuna.rustify.util.ShareUtils.shareRustifyUrl(
+                                        context,
+                                        url = "https://music.youtube.com/watch?v=$videoId",
+                                        title = track.name,
+                                        subtitle = track.artists.joinToString(", ") { it.name },
+                                        imageUrl = track.album?.images?.firstOrNull()?.url
+                                    )
                                     onDismiss()
                                 }
                             )
@@ -550,7 +556,12 @@ fun TrackOptionsMenuBottomSheet(
                                     onDismiss()
                                     return@MenuOptionItem
                                 }
-                                com.varuna.rustify.util.ShareUtils.shareRustifyLink(context, "track", id)
+                                com.varuna.rustify.util.ShareUtils.shareRustifyLink(
+                                    context, "track", id,
+                                    title = track.name,
+                                    subtitle = track.artists.joinToString(", ") { it.name },
+                                    imageUrl = track.album?.images?.firstOrNull()?.url
+                                )
                                 onDismiss()
                             }
                         )

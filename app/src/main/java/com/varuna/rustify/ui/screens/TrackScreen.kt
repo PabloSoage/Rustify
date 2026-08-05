@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +81,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -309,7 +311,9 @@ fun TrackScreen(
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
-    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
+    // Set by "Go to queue", which opens this screen *with* the queue sheet already showing.
+    openQueueOnOpen: Boolean = false
 ) {
     var trackDetails by remember { mutableStateOf<FullTrack?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -317,6 +321,7 @@ fun TrackScreen(
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showMappingDialog by remember { mutableStateOf(false) }
     var showQueueBottomSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (openQueueOnOpen) showQueueBottomSheet = true }
 
     val playerState by audioPlayerService.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -822,6 +827,9 @@ fun TrackScreen(
     }
 }
 
+/** Peak auto-scroll speed (px/frame) when a dragged queue row is held hard against an edge. */
+private const val MAX_QUEUE_AUTOSCROLL_PX = 26f
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueBottomSheet(
@@ -891,7 +899,9 @@ fun QueueBottomSheet(
             )
 
             val queue = playerState.queue
-            val currentIdx = queue.indexOfFirst { it.id == playerState.currentTrack?.id }
+            // Real position, not the first id match — a repeated song would otherwise make "Next Up"
+            // list tracks that already played.
+            val currentIdx = audioPlayerService.currentQueuePosition(playerState)
             val nextUpTracks = if (currentIdx != -1) queue.drop(currentIdx + 1) else queue
             val nextUpStartIndex = if (currentIdx != -1) currentIdx + 1 else 0
 
@@ -917,8 +927,64 @@ fun QueueBottomSheet(
                 var dragStartLocalIndex by remember { mutableIntStateOf(-1) }
                 val density = LocalDensity.current
                 val rowHeightPx = with(density) { 56.dp.toPx() }
+                val queueListState = rememberLazyListState()
+                // Finger position in the list's viewport coordinates. Unlike dragOffsetY (which is the
+                // row's visual translation and gets re-anchored on every swap) this tracks where the
+                // finger actually is, which is what the edge auto-scroll needs.
+                var fingerY by remember { mutableFloatStateOf(0f) }
+
+                // Moves the dragged row through localOrder once its translation exceeds a row height.
+                // Shared by the drag gesture and the auto-scroll loop so holding near an edge keeps
+                // walking the row through the list (which also keeps it on screen — if the row scrolled
+                // out of the viewport the LazyColumn would dispose it and cancel the gesture).
+                val applyReorder = {
+                    val uid = draggingUid
+                    val curIdx = if (uid != null) localOrder.indexOfFirst { it.first == uid } else -1
+                    if (curIdx != -1) {
+                        val targetDelta = (dragOffsetY / rowHeightPx).toInt()
+                        if (targetDelta != 0) {
+                            val target = (curIdx + targetDelta).coerceIn(0, localOrder.lastIndex)
+                            if (target != curIdx) {
+                                val m = localOrder.toMutableList()
+                                m.add(target, m.removeAt(curIdx))
+                                localOrder = m
+                                dragOffsetY -= (target - curIdx) * rowHeightPx
+                            }
+                        }
+                    }
+                }
+
+                // Edge auto-scroll: while dragging, holding the row near the top/bottom of the list
+                // scrolls it, faster the deeper into the edge zone the finger is.
+                LaunchedEffect(draggingUid) {
+                    if (draggingUid == null) return@LaunchedEffect
+                    while (true) {
+                        withFrameNanos { }
+                        if (draggingUid == null) break
+                        val info = queueListState.layoutInfo
+                        val viewportH = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+                        if (viewportH <= 0f) continue
+                        val zone = rowHeightPx * 1.6f
+                        val edge = when {
+                            fingerY < zone -> -(1f - (fingerY / zone)).coerceIn(0f, 1f)
+                            fingerY > viewportH - zone ->
+                                (1f - ((viewportH - fingerY) / zone)).coerceIn(0f, 1f)
+                            else -> 0f
+                        }
+                        if (edge == 0f) continue
+                        // Ease in so a light approach creeps and a hard pull races.
+                        val px = edge * edge * (if (edge < 0) -1f else 1f) * MAX_QUEUE_AUTOSCROLL_PX
+                        val consumed = queueListState.scrollBy(px)
+                        if (consumed == 0f) continue          // already at an end
+                        // The row's slot moved with the list; keep it under the finger and let that
+                        // drive the reorder.
+                        dragOffsetY += consumed
+                        applyReorder()
+                    }
+                }
 
                 LazyColumn(
+                    state = queueListState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -973,7 +1039,11 @@ fun QueueBottomSheet(
                                             .background(if (isDragging) Color(0xFF2A2A2A) else Color(0xFF1E1E1E))
                                             .clickable {
                                                 track.id?.let { id ->
-                                                    audioPlayerService.playSpecificTrackInQueue(id)
+                                                    // Pass the row's real position so tapping a repeated
+                                                    // song plays that copy, not the first occurrence.
+                                                    audioPlayerService.playSpecificTrackInQueue(
+                                                        id, queueIndex = originalIndex
+                                                    )
                                                 }
                                             }
                                             .padding(vertical = 8.dp),
@@ -991,6 +1061,12 @@ fun QueueBottomSheet(
                                                             draggingUid = uid
                                                             dragStartLocalIndex = localOrder.indexOfFirst { it.first == uid }
                                                             dragOffsetY = 0f
+                                                            // Seed the finger position from the row's
+                                                            // current place in the viewport.
+                                                            val rowTop = queueListState.layoutInfo
+                                                                .visibleItemsInfo
+                                                                .firstOrNull { it.key == uid }?.offset ?: 0
+                                                            fingerY = rowTop + rowHeightPx / 2f
                                                         },
                                                         onDragEnd = {
                                                             val from = dragStartLocalIndex
@@ -1004,19 +1080,8 @@ fun QueueBottomSheet(
                                                         onDrag = { change, dragAmount ->
                                                             change.consume()
                                                             dragOffsetY += dragAmount.y
-                                                            val curIdx = localOrder.indexOfFirst { it.first == uid }
-                                                            if (curIdx != -1) {
-                                                                val targetDelta = (dragOffsetY / rowHeightPx).toInt()
-                                                                if (targetDelta != 0) {
-                                                                    val target = (curIdx + targetDelta).coerceIn(0, localOrder.lastIndex)
-                                                                    if (target != curIdx) {
-                                                                        val m = localOrder.toMutableList()
-                                                                        m.add(target, m.removeAt(curIdx))
-                                                                        localOrder = m
-                                                                        dragOffsetY -= (target - curIdx) * rowHeightPx
-                                                                    }
-                                                                }
-                                                            }
+                                                            fingerY += dragAmount.y
+                                                            applyReorder()
                                                         }
                                                     )
                                                 }

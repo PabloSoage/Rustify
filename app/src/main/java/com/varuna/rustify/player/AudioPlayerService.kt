@@ -128,6 +128,33 @@ class AudioPlayerService private constructor(private val context: Context) {
     private val resolveGen = AtomicLong(0)
     private val userQueue = mutableListOf<FullTrack>()
 
+    /**
+     * Index of the current track inside `_state.queue`.
+     *
+     * The queue can legitimately hold the same track id more than once: a playlist that repeats a
+     * song, or a manually queued track that also appears in the list being played. Locating the
+     * current track by id alone therefore resolved to the FIRST occurrence, so advancing from a later
+     * duplicate jumped *backwards* — playback looped over the same block, never reached the queued
+     * tracks (which then piled up in [userQueue] and got re-injected into the next list), and
+     * re-resolved a stream on every bounce, which is what made track changes crawl.
+     *
+     * Kept here and validated before use, with the id lookup as fallback.
+     */
+    @Volatile private var currentQueueIndex: Int = -1
+
+    /**
+     * Position of the current track inside [st]'s queue, for UI that needs to slice the queue (e.g.
+     * "Next Up"). Derived from the passed state so Compose recomposes with it.
+     */
+    fun currentQueuePosition(st: AudioPlayerState): Int = currentIndexIn(st)
+
+    /** Position of the current track in [st]'s queue: the cached index if still valid, else by id. */
+    private fun currentIndexIn(st: AudioPlayerState): Int {
+        val cached = currentQueueIndex
+        if (cached in st.queue.indices && st.queue[cached].id == st.currentTrack?.id) return cached
+        return st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+    }
+
     // Max age for cached stream URLs (YouTube URLs last ~6h)
     private val maxUrlCacheAge = 6 * 60 * 60 * 1000L
 
@@ -425,7 +452,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         val trackId = track.id ?: return
-        userQueue.removeAll { it.id == trackId }
+        // A queued track is consumed once it actually starts playing.
+        synchronized(userQueue) { userQueue.removeAll { it.id == trackId } }
 
         // Snapshot the intended start position now, synchronously, before the (possibly slow)
         // resolution below. The periodic position-ticker keeps copying exoPlayer.currentPosition into
@@ -717,7 +745,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private fun preBufferNextTrack() {
         val st = _state.value
-        val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+        val idx = currentIndexIn(st)
         if (idx != -1 && idx < st.queue.lastIndex) {
             val nextTrack = st.queue[idx + 1]
             val nextTrackId = nextTrack.id ?: return
@@ -796,9 +824,11 @@ class AudioPlayerService private constructor(private val context: Context) {
     // -----------------------------------------------------------------------
 
     private fun notifyQueueChanged(queue: List<FullTrack>) {
-        val ids = queue.mapNotNull { it.id }
-        val json = "[" + ids.joinToString(",") { "\"$it\"" } + "]"
-        NativeEngine.updateQueueNative(json)
+        // Build the array properly: "local:" ids carry a content URI, so hand-rolling the JSON risked
+        // emitting something the Rust side can't parse if an id ever contains a quote or backslash.
+        val arr = org.json.JSONArray()
+        queue.forEach { t -> t.id?.let { arr.put(it) } }
+        NativeEngine.updateQueueNative(arr.toString())
         // Refresh the "Queue" node of the Android Auto tree (its content is the playback queue; without
         // notifying, the car keeps showing the old cached queue).
         MediaBrowserNotifier.notifyChildrenChanged("sec_queue")
@@ -809,7 +839,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         // binding it eagerly started the OS's 5s startForeground() clock while a slow backend
         // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR (with the UI
         // still alive). yt-dlp masked it by resolving from cache in <5s.
-        val queue = listOf(track) + userQueue
+        // Never re-inject the track being played as a queued duplicate of itself.
+        val queue = listOf(track) + synchronized(userQueue) { userQueue.filter { it.id != track.id } }
+        currentQueueIndex = 0
         _state.value = _state.value.copy(
             currentTrack = track,
             isPlaying = false,
@@ -840,17 +872,31 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
 
         val selectedIdx = baseQueue.indexOfFirst { it.id == selected.id }
-        val queue = if (selectedIdx != -1) {
-            baseQueue.take(selectedIdx + 1) + userQueue + baseQueue.drop(selectedIdx + 1)
-        } else {
-            listOf(selected) + userQueue + baseQueue.filter { it.id != selected.id }
+        // Only inject queued tracks that aren't already part of this list — otherwise starting a
+        // playlist that contains a queued song silently duplicated it.
+        val injected = synchronized(userQueue) {
+            userQueue.filter { uq -> baseQueue.none { it.id == uq.id } }
         }
+        val queue = if (selectedIdx != -1) {
+            baseQueue.take(selectedIdx + 1) + injected + baseQueue.drop(selectedIdx + 1)
+        } else {
+            listOf(selected) + injected + baseQueue.filter { it.id != selected.id }
+        }
+        currentQueueIndex = if (selectedIdx != -1) selectedIdx else 0
+
+        // originalQueue is what cycling shuffle/repeat restores, so the queued tracks have to be in it
+        // too (loadAndPlay already did this) — otherwise toggling playback mode silently dropped the
+        // songs the user had queued by hand.
+        val origIdx = tracks.indexOfFirst { it.id == selected.id }
+        val originalQueue = if (injected.isEmpty()) tracks
+            else if (origIdx != -1) tracks.take(origIdx + 1) + injected + tracks.drop(origIdx + 1)
+            else tracks + injected
 
         _state.value = _state.value.copy(
             currentTrack = selected,
             isPlaying = false,
             queue = queue,
-            originalQueue = tracks,
+            originalQueue = originalQueue,
             positionMs = 0L,
             durationMs = selected.durationMs.toLong()
         )
@@ -873,20 +919,29 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun cyclePlaybackMode() {
         val st = _state.value
+        // Each branch swaps the whole queue, so the cached position has to be recomputed against the
+        // new list before anything reads it (preBufferNextTrack does, immediately).
         if (!st.isShuffle && !st.isRepeat) {
             val current = st.currentTrack
-            val remaining = st.queue.filter { it.id != current?.id }.shuffled()
+            val curIdx = currentIndexIn(st)
+            // Drop the current track by POSITION, not by id: filtering by id also removed the other
+            // copies of a song a playlist legitimately repeats.
+            val remaining = if (curIdx >= 0) st.queue.filterIndexed { i, _ -> i != curIdx }.shuffled()
+                            else st.queue.filter { it.id != current?.id }.shuffled()
             val newQueue = if (current != null) listOf(current) + remaining else remaining
+            currentQueueIndex = if (current != null) 0 else -1
             _state.value = st.copy(isShuffle = true, isRepeat = false, queue = newQueue)
             preResolvedUrls.clear()
             preBufferNextTrack()
             notifyQueueChanged(newQueue)
         } else if (st.isShuffle && !st.isRepeat) {
+            currentQueueIndex = st.originalQueue.indexOfFirst { it.id == st.currentTrack?.id }
             _state.value = st.copy(isShuffle = false, isRepeat = true, queue = st.originalQueue)
             preResolvedUrls.clear()
             preBufferNextTrack()
             notifyQueueChanged(st.originalQueue)
         } else {
+            currentQueueIndex = st.originalQueue.indexOfFirst { it.id == st.currentTrack?.id }
             _state.value = st.copy(isShuffle = false, isRepeat = false, queue = st.originalQueue)
             preResolvedUrls.clear()
             preBufferNextTrack()
@@ -908,6 +963,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         val list = st.queue.toMutableList()
         val item = list.removeAt(fromIndex)
         list.add(toIndex, item)
+        // Keep the cached position pointing at the same track after the reorder.
+        val cur = currentQueueIndex
+        if (cur >= 0) {
+            currentQueueIndex = when {
+                fromIndex == cur -> toIndex
+                fromIndex < cur && toIndex >= cur -> cur - 1
+                fromIndex > cur && toIndex <= cur -> cur + 1
+                else -> cur
+            }
+        }
         _state.value = st.copy(queue = list)
         preResolvedUrls.clear()
         preBufferNextTrack()
@@ -919,16 +984,28 @@ class AudioPlayerService private constructor(private val context: Context) {
         val st = _state.value
         if (index !in st.queue.indices) return
 
+        val removed = st.queue[index]
         val list = st.queue.toMutableList()
         list.removeAt(index)
 
-        // Remove from userQueue based on relative position to avoid removing duplicates
-        val hasCurrent = if (st.currentTrack != null && st.queue.firstOrNull()?.id == st.currentTrack.id) 1 else 0
+        // Drop the matching entry from userQueue, otherwise a manually queued track that the user
+        // swiped away came back the next time a list was loaded (loadPlaylist re-injects userQueue).
+        // The queued block sits right after the current track — which is NOT index 0 except right
+        // after loadAndPlay, so the old "queue starts at 0" math missed it inside a playlist. Match by
+        // relative position first, then by id, so only one entry goes even if the track repeats.
+        val queuedBlockStart = currentIndexIn(st) + 1
         synchronized(userQueue) {
-            if (index >= hasCurrent && index < hasCurrent + userQueue.size) {
-                userQueue.removeAt(index - hasCurrent)
+            val rel = index - queuedBlockStart
+            if (rel in userQueue.indices && userQueue[rel].id == removed.id) {
+                userQueue.removeAt(rel)
+            } else {
+                val byId = userQueue.indexOfFirst { it.id == removed.id }
+                if (byId >= 0) userQueue.removeAt(byId)
             }
         }
+
+        // Removing an entry before the current track shifts it one position back.
+        if (currentQueueIndex > index) currentQueueIndex--
 
         _state.value = st.copy(queue = list)
         preResolvedUrls.clear()
@@ -1027,11 +1104,12 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (preparedTrackId == st.currentTrack?.id) {
             _state.value = st.copy(positionMs = exoPlayer.currentPosition)
         }
-        val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+        val idx = currentIndexIn(st)
         if (idx == -1 && st.queue.isNotEmpty()) {
             // The current track isn't in the queue (e.g. a restored/truncated originalQueue).
             // Don't get stuck — advance to the first queued track instead of doing nothing.
             val next = st.queue.first()
+            currentQueueIndex = 0
             _state.value = _state.value.copy(
                 currentTrack = next, isPlaying = false,
                 positionMs = 0L, durationMs = next.durationMs.toLong()
@@ -1042,6 +1120,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         if (idx != -1 && idx < st.queue.lastIndex) {
             val next = st.queue[idx + 1]
+            currentQueueIndex = idx + 1
             _state.value = _state.value.copy(
                 currentTrack = next, isPlaying = false,
                 positionMs = 0L, durationMs = next.durationMs.toLong()
@@ -1066,8 +1145,15 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                     if (newTracks.isNotEmpty()) {
                         withContext(Dispatchers.Main) {
-                            val newQueue = st.queue + newTracks
-                            _state.value = _state.value.copy(queue = newQueue, originalQueue = st.originalQueue + newTracks)
+                            // Re-read the state here: fetching the radio is a network round-trip, and
+                            // appending to the snapshot taken before it would silently discard anything
+                            // queued (or removed) while it was in flight.
+                            val live = _state.value
+                            val liveIds = live.queue.mapNotNull { it.id }.toSet()
+                            val fresh = newTracks.filter { it.id !in liveIds }
+                            if (fresh.isEmpty()) return@withContext
+                            val newQueue = live.queue + fresh
+                            _state.value = live.copy(queue = newQueue, originalQueue = live.originalQueue + fresh)
                             notifyQueueChanged(newQueue)
                             requestSave()
                             skipToNext()
@@ -1082,7 +1168,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun skipToPrevious() {
         val st = _state.value
-        val idx = st.queue.indexOfFirst { it.id == st.currentTrack?.id }
+        val idx = currentIndexIn(st)
         // Spotify-style "previous": once past the first few seconds it restarts the current track;
         // only within that opening window (or when nothing precedes it) does it go back a track. So a
         // double tap always reaches the previous song, and a single tap right after one starts still
@@ -1096,6 +1182,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         if (idx > 0) {
             val prev = st.queue[idx - 1]
+            currentQueueIndex = idx - 1
             _state.value = st.copy(
                 currentTrack = prev, isPlaying = false,
                 positionMs = 0L, durationMs = prev.durationMs.toLong()
@@ -1151,10 +1238,17 @@ class AudioPlayerService private constructor(private val context: Context) {
         playTrack(track, youtubeId, isAutoRetry = isAutoRetry)
     }
 
-    fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null) {
+    /**
+     * Play a track already in the queue. [queueIndex] disambiguates when the same id appears more
+     * than once (tapping the second copy of a repeated song must play *that* row, not the first).
+     */
+    fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null, queueIndex: Int? = null) {
         val st = _state.value
-        val track = st.queue.find { it.id == trackId }
+        val idx = queueIndex?.takeIf { it in st.queue.indices && st.queue[it].id == trackId }
+            ?: st.queue.indexOfFirst { it.id == trackId }
+        val track = st.queue.getOrNull(idx)
         if (track != null) {
+            currentQueueIndex = idx
             _state.value = st.copy(
                 currentTrack = track,
                 isPlaying = false,
@@ -1168,8 +1262,20 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    private fun insertTrackAfterUserQueue(list: List<FullTrack>, currentTrack: FullTrack?, trackToInsert: FullTrack): List<FullTrack> {
-        val currentIdx = list.indexOfFirst { it.id == currentTrack?.id }
+    /**
+     * Insert [trackToInsert] right after the current track and the run of already-queued tracks that
+     * follows it. [knownCurrentIdx] is used when the caller knows the exact position of the current
+     * track in [list] (the live queue), since an id lookup would land on the wrong copy when the
+     * queue repeats a song.
+     */
+    private fun insertTrackAfterUserQueue(
+        list: List<FullTrack>,
+        currentTrack: FullTrack?,
+        trackToInsert: FullTrack,
+        knownCurrentIdx: Int? = null
+    ): List<FullTrack> {
+        val currentIdx = knownCurrentIdx?.takeIf { it in list.indices && list[it].id == currentTrack?.id }
+            ?: list.indexOfFirst { it.id == currentTrack?.id }
         if (currentIdx == -1) return list + trackToInsert
 
         var count = 0
@@ -1192,7 +1298,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun enqueue(track: FullTrack) {
         synchronized(userQueue) { userQueue.add(track) }
-        val q = insertTrackAfterUserQueue(_state.value.queue, _state.value.currentTrack, track)
+        val curIdx = currentIndexIn(_state.value)
+        val q = insertTrackAfterUserQueue(_state.value.queue, _state.value.currentTrack, track, curIdx)
         val orig = insertTrackAfterUserQueue(_state.value.originalQueue, _state.value.currentTrack, track)
         _state.value = _state.value.copy(queue = q, originalQueue = orig)
         preBufferNextTrack()
@@ -1209,8 +1316,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                 userQueue.add(track)
             }
         }
+        val curIdx = currentIndexIn(_state.value)
         tracks.forEach { track ->
-            currentQueue = insertTrackAfterUserQueue(currentQueue, currentTrack, track)
+            currentQueue = insertTrackAfterUserQueue(currentQueue, currentTrack, track, curIdx)
             currentOrig = insertTrackAfterUserQueue(currentOrig, currentTrack, track)
         }
         _state.value = _state.value.copy(queue = currentQueue, originalQueue = currentOrig)
@@ -1231,7 +1339,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (tracks.isEmpty()) return
         val st = _state.value
         val current = st.currentTrack
-        val currentIdx = st.queue.indexOfFirst { it.id == current?.id }
+        val currentIdx = currentIndexIn(st)
         val head = if (currentIdx >= 0) st.queue.subList(0, currentIdx + 1).toList() else st.queue.toList()
         val newQueue = head + tracks
         synchronized(userQueue) { userQueue.clear() }
@@ -1426,6 +1534,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                     userQueue.clear()
                     userQueue.addAll(uqList)
                 }
+
+                // Restored state has no live index; recompute it from the saved current track.
+                currentQueueIndex = queue.indexOfFirst { it.id == track?.id }
 
                 val positionMs = json.optLong("positionMs", 0L)
                 val durationMs = json.optLong("durationMs", 0L)

@@ -31,6 +31,14 @@ object AudioBackendSettings {
     data class BackendEntry(val id: String, val enabled: Boolean)
 
     /**
+     * Providers enabled on a fresh install. Everything else ships off and is opt-in from Settings:
+     * Deezer needs an ARL before it can do anything, and public Invidious instances are routinely
+     * blocked by YouTube/Cloudflare (they answer /stats so they look healthy, then fail to resolve
+     * audio). Leaving them on by default only produced slow, confusing fallbacks.
+     */
+    private val DEFAULT_ON = setOf("ytdlp")
+
+    /**
      * Reads the stored order for [key], appending any missing [knownIds] at the end
      * as `enabled=false`. Never throws: if the JSON is corrupt, it falls back to the default.
      */
@@ -38,12 +46,13 @@ object AudioBackendSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(key, null)
         val parsed = mutableListOf<BackendEntry>()
-        // Sane default: when no prefs were ever saved, all known providers start enabled
-        // (so the user hears audio without touching Settings). Appending new providers as
-        // disabled only applies when prefs already existed, so upgrades preserve the user's
-        // choices.
-        val defaultEnabled = raw.isNullOrBlank()
-        if (!defaultEnabled) {
+        // Sane default: on a fresh install only the providers in DEFAULT_ON start enabled, so the
+        // user hears audio without touching Settings but isn't silently routed through backends that
+        // need setup (Deezer needs an ARL) or that are unreliable in practice (public Invidious
+        // instances are widely blocked by YouTube/Cloudflare). Appending new providers as disabled
+        // only applies when prefs already existed, so upgrades preserve the user's choices.
+        val isFirstRun = raw.isNullOrBlank()
+        if (!isFirstRun) {
             runCatching {
                 val arr = JSONArray(raw)
                 for (i in 0 until arr.length()) {
@@ -55,10 +64,14 @@ object AudioBackendSettings {
                 }
             }
         }
-        // Append missing known providers: enabled on first run, disabled on upgrade.
+        // Append missing known providers: on first run only the DEFAULT_ON ones start enabled;
+        // on upgrade anything new arrives disabled so it can't change existing behaviour.
         val present = parsed.map { it.id }.toMutableSet()
         for (id in knownIds) {
-            if (id !in present) { parsed.add(BackendEntry(id, defaultEnabled)); present.add(id) }
+            if (id !in present) {
+                parsed.add(BackendEntry(id, isFirstRun && id in DEFAULT_ON))
+                present.add(id)
+            }
         }
         // Drop unknown ids (providers removed in future versions).
         return parsed.filter { it.id in knownIds }

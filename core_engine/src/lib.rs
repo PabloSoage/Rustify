@@ -7,6 +7,7 @@
 //   3. Serialize result to JSON string
 //   4. Return as Java String
 
+pub mod adblock_engine;
 pub mod matcher;
 pub mod spotify;
 pub mod youtube;
@@ -204,6 +205,65 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateQueueNa
         youtube::server::update_playback_queue(track_ids);
         Ok(())
     });
+}
+
+// =============================================================================
+// ADBLOCK — network filtering for the in-app Spotify Web Player
+// =============================================================================
+
+/// JNI Bridge: compile filter lists (uBO/EasyList syntax) into the blocking engine.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockLoadRulesNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    rules: JString<'local>,
+) -> jboolean {
+    let mut ok = false;
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let rules_str = rules.mutf8_chars(env)?.to_string();
+        ok = adblock_engine::load_rules(&rules_str);
+        Ok(())
+    });
+    if ok { JNI_TRUE } else { JNI_FALSE }
+}
+
+/// JNI Bridge: should this request be blocked? Called once per WebView request, so it must be cheap
+/// and must never panic — every failure path answers "don't block".
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockMatchesNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    url: JString<'local>,
+    source_url: JString<'local>,
+    resource_type: JString<'local>,
+) -> jboolean {
+    let mut blocked = false;
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let url_s = url.mutf8_chars(env)?.to_string();
+        let src_s = source_url.mutf8_chars(env)?.to_string();
+        let type_s = resource_type.mutf8_chars(env)?.to_string();
+        blocked = adblock_engine::matches(&url_s, &src_s, &type_s);
+        Ok(())
+    });
+    if blocked { JNI_TRUE } else { JNI_FALSE }
+}
+
+/// JNI Bridge: is a compiled engine available?
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockIsReadyNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jboolean {
+    if adblock_engine::is_ready() { JNI_TRUE } else { JNI_FALSE }
+}
+
+/// JNI Bridge: release the compiled engine (web player closed).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockClearNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    adblock_engine::clear();
 }
 
 // =============================================================================

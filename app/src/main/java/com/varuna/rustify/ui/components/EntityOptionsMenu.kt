@@ -80,7 +80,10 @@ fun EntityOptionsMenuBottomSheet(
     primaryArtistId: String?,  // for "go to artist" from album/playlist; null on artist
     tracks: List<FullTrack>,   // all album/playlist tracks (or artist top tracks); may be empty
     onDismiss: () -> Unit,
-    onGoToArtist: (String) -> Unit
+    onGoToArtist: (String) -> Unit,
+    // Artwork attached when sharing as a Rustify link. Defaults to the first track's album cover,
+    // which is exact for an album and a reasonable stand-in for a playlist/artist.
+    coverUrl: String? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -268,7 +271,14 @@ fun EntityOptionsMenuBottomSheet(
                         icon = Icons.Default.Share,
                         label = stringResource(R.string.entity_menu_share_rustify),
                         onClick = {
-                            ShareUtils.shareRustifyLink(context, entityType, entityId)
+                            ShareUtils.shareRustifyLink(
+                                context, entityType, entityId,
+                                title = entityName,
+                                subtitle = tracks.firstOrNull()
+                                    ?.artists?.joinToString(", ") { it.name },
+                                imageUrl = coverUrl
+                                    ?: tracks.firstOrNull()?.album?.images?.firstOrNull()?.url
+                            )
                             onDismiss()
                         }
                     )

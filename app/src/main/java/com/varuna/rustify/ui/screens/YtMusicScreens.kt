@@ -690,7 +690,13 @@ fun YtmTrackListItem(
                     text = { Text(stringResource(R.string.track_menu_share_rustify)) },
                     onClick = {
                         showMenu = false
-                        ShareUtils.shareRustifyLink(context, "track", "ytm:${track.videoId}")
+                        ShareUtils.shareRustifyUrl(
+                            context,
+                            url = YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)),
+                            title = track.title,
+                            subtitle = track.artists.joinToString(", ") { it.name },
+                            imageUrl = track.thumbnailUrl.takeIf { it.isNotBlank() }
+                        )
                     },
                     leadingIcon = { Icon(Icons.Default.Share, null) }
                 )
