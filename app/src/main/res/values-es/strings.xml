@@ -510,8 +510,18 @@
     <string name="match_play">Reproducir</string>
     <string name="web_player_title">Reproductor web</string>
     <string name="web_player_reload">Recargar</string>
-    <string name="web_player_backend">Usar el reproductor web (experimental)</string>
-    <string name="web_player_backend_desc">Los controles de Rustify manejan el reproductor web de Spotify en vez de su propio motor. Audio original de Spotify e inicio instantáneo, pero depende de la página y puede romperse si Spotify la cambia.</string>
+    <string name="web_player_desktop_site">Versión de escritorio</string>
+    <!-- E117 — Reproductor web como motor de reproducción, con reserva y prueba -->
+    <string name="settings_playback_engine">Motor de reproducción</string>
+    <string name="web_player_backend">Preferir el reproductor web de Spotify (experimental)</string>
+    <string name="web_player_backend_desc">Las canciones las reproduce el propio reproductor web de Spotify mientras los controles de Rustify lo manejan. Lo que no pueda reproducir —archivos locales, YouTube Music o una canción que la página no arranque— pasa a los backends de arriba.</string>
+    <string name="wp_test_run">Probar el reproductor web</string>
+    <string name="wp_test_hint">Comprueba cada requisito en orden y arranca una canción de verdad. Usa la que estés escuchando o tus Me gusta.</string>
+    <string name="wp_test_step_webview">WebView y JavaScript</string>
+    <string name="wp_test_step_filters">Listas de filtros de uBlock Origin</string>
+    <string name="wp_test_step_session">Sesión de Spotify iniciada</string>
+    <string name="wp_test_step_drm">DRM Widevine</string>
+    <string name="wp_test_step_playback">La reproducción arranca</string>
     <string name="update_check">Buscar actualizaciones</string>
     <string name="update_checking">Buscando actualizaciones…</string>
     <string name="update_up_to_date">Ya tienes la última versión</string>

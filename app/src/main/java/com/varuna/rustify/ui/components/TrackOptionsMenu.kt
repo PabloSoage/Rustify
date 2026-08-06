@@ -70,6 +70,7 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.largest
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -520,7 +521,7 @@ fun TrackOptionsMenuBottomSheet(
                                         url = "https://music.youtube.com/watch?v=$videoId",
                                         title = track.name,
                                         subtitle = track.artists.joinToString(", ") { it.name },
-                                        imageUrl = track.album?.images?.firstOrNull()?.url
+                                        imageUrl = track.album?.images?.largest()?.url
                                     )
                                     onDismiss()
                                 }
@@ -560,7 +561,7 @@ fun TrackOptionsMenuBottomSheet(
                                     context, "track", id,
                                     title = track.name,
                                     subtitle = track.artists.joinToString(", ") { it.name },
-                                    imageUrl = track.album?.images?.firstOrNull()?.url
+                                    imageUrl = track.album?.images?.largest()?.url
                                 )
                                 onDismiss()
                             }

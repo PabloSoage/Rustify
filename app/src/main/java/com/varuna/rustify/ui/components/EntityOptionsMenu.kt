@@ -56,6 +56,7 @@ import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.largest
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.util.ShareUtils
 import kotlinx.coroutines.launch
@@ -277,7 +278,7 @@ fun EntityOptionsMenuBottomSheet(
                                 subtitle = tracks.firstOrNull()
                                     ?.artists?.joinToString(", ") { it.name },
                                 imageUrl = coverUrl
-                                    ?: tracks.firstOrNull()?.album?.images?.firstOrNull()?.url
+                                    ?: tracks.firstOrNull()?.album?.images?.largest()?.url
                             )
                             onDismiss()
                         }

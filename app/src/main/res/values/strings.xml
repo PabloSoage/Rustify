@@ -512,8 +512,18 @@
     <string name="match_play">Play</string>
     <string name="web_player_title">Web Player</string>
     <string name="web_player_reload">Reload</string>
-    <string name="web_player_backend">Use the web player for playback (experimental)</string>
-    <string name="web_player_backend_desc">Rustify\'s controls drive Spotify\'s web player instead of its own engine. Original Spotify audio and instant start, but it depends on the page and can break when Spotify changes it.</string>
+    <string name="web_player_desktop_site">Desktop site</string>
+    <!-- E117 — Web player as a playback engine, with fallback and a self-test -->
+    <string name="settings_playback_engine">Playback engine</string>
+    <string name="web_player_backend">Prefer Spotify\'s web player (experimental)</string>
+    <string name="web_player_backend_desc">Tracks are played by Spotify\'s own web player while Rustify\'s controls drive it. Anything it can\'t play — local files, YouTube Music, or a track the page refuses to start — falls back to the backends above.</string>
+    <string name="wp_test_run">Test the web player</string>
+    <string name="wp_test_hint">Checks every requirement in order and really starts a track. It uses whatever is playing, or your Liked Songs.</string>
+    <string name="wp_test_step_webview">WebView and JavaScript</string>
+    <string name="wp_test_step_filters">uBlock Origin filter lists</string>
+    <string name="wp_test_step_session">Signed in to Spotify</string>
+    <string name="wp_test_step_drm">Widevine DRM</string>
+    <string name="wp_test_step_playback">Playback starts</string>
     <string name="update_check">Check for updates</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_up_to_date">You\'re on the latest version</string>

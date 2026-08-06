@@ -6,6 +6,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.varuna.rustify.R
+import com.varuna.rustify.bridge.maximiseThumbnail
 import com.varuna.rustify.util.ShareUtils.shareRustifyLink
 import com.varuna.rustify.util.ShareUtils.shareSpotifyLink
 import kotlinx.coroutines.CoroutineScope
@@ -120,18 +121,50 @@ object ShareUtils {
         }
     }
 
-    /** Downloads [imageUrl] into `cacheDir/share/`, reusing a single slot. Null on any failure. */
+    /**
+     * Downloads the cover into `cacheDir/share/`, reusing a single slot. Null on any failure.
+     *
+     * The full-resolution variant is tried first and the URL as given is kept as a fallback, so a
+     * rewrite that stops being valid degrades to the original image instead of to no image at all.
+     */
     private fun downloadCover(context: Context, imageUrl: String): File? {
         val dir = File(context.cacheDir, "share").apply { mkdirs() }
         dir.listFiles()?.forEach { runCatching { it.delete() } }
         val out = File(dir, "cover.jpg")
-        val req = Request.Builder().url(imageUrl).build()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            val body = resp.body ?: return null
-            out.outputStream().use { dst -> body.byteStream().use { it.copyTo(dst) } }
+        for (candidate in listOf(highResCover(imageUrl), imageUrl).distinct()) {
+            val ok = runCatching {
+                http.newCall(Request.Builder().url(candidate).build()).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use false
+                    val body = resp.body ?: return@use false
+                    out.outputStream().use { dst -> body.byteStream().use { it.copyTo(dst) } }
+                    true
+                }
+            }.getOrDefault(false)
+            if (ok && out.length() > 0) return out
         }
-        return out.takeIf { it.length() > 0 }
+        return null
+    }
+
+    /**
+     * Rewrites a cover URL to its full-resolution variant.
+     *
+     * Recipients see this image at full size, so a thumbnail that looks fine inside a list row looks
+     * bad in a chat. Two families are handled:
+     *
+     *  - **Spotify's CDN** encodes the size of an album cover in the id prefix: `…0000b273` is the
+     *    640px one, `…00001e02` is 300px and `…00004851` is 64px. Only that family is rewritten;
+     *    artist and playlist images use different prefixes with no documented mapping.
+     *  - **Google's** thumbnail hosts (YouTube Music) take the size in the URL, which
+     *    [maximiseThumbnail] already normalises everywhere else in the app.
+     */
+    private fun highResCover(url: String): String {
+        if (url.isBlank()) return url
+        val spotifyLarge = "ab67616d0000b273"
+        val spotifySmaller = listOf("ab67616d00001e02", "ab67616d00004851")
+        spotifySmaller.forEach { small ->
+            if (url.contains(small)) return url.replace(small, spotifyLarge)
+        }
+        return maximiseThumbnail(url)
     }
 
     private fun shareImage(context: Context, file: File, text: String) {

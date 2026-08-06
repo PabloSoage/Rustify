@@ -22,7 +22,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine
-import com.varuna.rustify.bridge.SimpleArtist
+import com.varuna.rustify.bridge.largest
 import com.varuna.rustify.metrics.ListeningTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -155,12 +155,45 @@ class AudioPlayerService private constructor(private val context: Context) {
     // Rustify supplies the UI. Nothing is captured or re-streamed; the transport commands below are
     // forwarded into the page and the page's own state is mirrored back into _state so the
     // miniplayer, track screen and notification controls keep working.
+    //
+    // It is a *preferred* engine rather than a second mode: every track is offered to the page
+    // first, and anything it cannot serve falls back to the provider chain. That is why there are
+    // two flags — the preference (webPlayerMode) and what is actually playing (webServingCurrentTrack).
+    // Queue navigation stays with Rustify: opening a track URL leaves Spotify's own context holding
+    // that single song, so the page has nothing to advance to.
     // -------------------------------------------------------------------
 
     @Volatile private var webPlayerMode = false
 
-    /** True while playback is being produced by the embedded web player instead of ExoPlayer. */
+    /**
+     * True while the *preference* is on. It only says the web player gets first refusal on each
+     * track — not that it is the thing currently making sound, which is [isWebServing].
+     */
     val isWebPlayerMode: Boolean get() = webPlayerMode
+
+    /**
+     * True while the page — not ExoPlayer — is producing the audio for the track playing right now.
+     *
+     * The two flags are separate because the web player is a *preferred* engine, not an exclusive
+     * one: a local file, a YouTube Music track, or a Spotify track the page refuses to start all
+     * fall through to ExoPlayer while the preference stays on. Transport, state mirroring and the
+     * MediaSession facade have to follow whichever engine actually holds the track, otherwise
+     * pressing pause on a local file would go to the (idle) web page and leave ExoPlayer playing.
+     */
+    @Volatile private var webServingCurrentTrack = false
+
+    /** Set once the page has actually been observed playing the track it was asked to open. */
+    @Volatile private var webStartConfirmed = false
+
+    /** Last track whose end was already acted on, so the 1s poll advances the queue only once. */
+    @Volatile private var lastWebEndedTrackId: String? = null
+
+    val isWebServing: Boolean get() = webPlayerMode && webServingCurrentTrack
+
+    /** How long the page gets to start a track before it is handed to the normal engine. */
+    private val webStartTimeoutMs = 12_000L
+
+    private var webStartJob: kotlinx.coroutines.Job? = null
 
     /**
      * Enters or leaves web-player mode. Entering stops ExoPlayer so the two never overlap; leaving
@@ -171,8 +204,21 @@ class AudioPlayerService private constructor(private val context: Context) {
         webPlayerMode = enabled
         if (enabled) {
             runCatching { exoPlayer.pause() }
+            // Build the WebView and compile the filter lists now, so the first track does not spend
+            // its whole watchdog window waiting for a cold start.
+            mainScope.launch {
+                runCatching {
+                    com.varuna.rustify.webplayer.WebPlayerController.getOrCreate(context)
+                    com.varuna.rustify.webplayer.WebPlayerController.loadHomeIfNeeded()
+                }
+                runCatching { com.varuna.rustify.webplayer.AdblockFilters.ensureLoaded(context) }
+            }
             startWebStatePolling()
         } else {
+            webStartJob?.cancel()
+            webStartJob = null
+            webServingCurrentTrack = false
+            webStartConfirmed = false
             webPollJob?.cancel()
             webPollJob = null
             com.varuna.rustify.webplayer.WebPlayerController.pause()
@@ -189,32 +235,40 @@ class AudioPlayerService private constructor(private val context: Context) {
         webPollJob = mainScope.launch {
             val controller = com.varuna.rustify.webplayer.WebPlayerController
             while (webPlayerMode) {
+                // Only mirror the page while it is the engine holding the current track, and only
+                // once it has confirmed playing. Otherwise two things stomp the state: after a
+                // fallback ExoPlayer owns playback and the page's stale "paused" would overwrite it,
+                // and during a track change the outgoing page state briefly still describes the
+                // previous song.
+                if (!webServingCurrentTrack || !webStartConfirmed) {
+                    delay(1000.milliseconds)
+                    continue
+                }
                 controller.refreshState()
                 val web = controller.state.value
                 if (web.available) {
-                    val current = _state.value.currentTrack
-                    // Keep the existing FullTrack when the title matches, so covers/ids picked from
-                    // the app's own catalogue are not replaced by the page's cruder metadata.
-                    val sameTrack = current != null && current.name.equals(web.title, ignoreCase = true)
-                    // Track changed inside the page (its own next/prev): republish so the
-                    // notification follows along.
-                    if (!sameTrack && web.title.isNotBlank()) {
-                        publishWebMetadata(
-                            mediaId = "web:${web.title}",
-                            title = web.title,
-                            artist = web.artist,
-                            album = null,
-                            artworkUrl = web.artworkUrl
-                        )
-                    }
+                    // Only the clock is mirrored, never the identity of the track. Rustify decides
+                    // what plays and published its metadata when it opened the page; replacing
+                    // currentTrack with one synthesised from the page's title would hand the queue a
+                    // track whose id isn't in it — and a current track that can't be located in the
+                    // queue is exactly what made playback loop before v2.11.9.
                     _state.value = _state.value.copy(
                         isPlaying = web.isPlaying,
                         isBuffering = false,
                         positionMs = web.positionMs,
-                        durationMs = if (web.durationMs > 0) web.durationMs else _state.value.durationMs,
-                        currentTrack = if (sameTrack || web.title.isBlank()) current
-                                       else webTrackOf(web)
+                        durationMs = if (web.durationMs > 0) web.durationMs else _state.value.durationMs
                     )
+                }
+                // End of track. Opening a track URL leaves Spotify's context holding that one song,
+                // so the page just stops — nothing there advances. Rustify's queue does, which is
+                // the same role ExoPlayer's STATE_ENDED plays in normal mode. Guarded by id so the
+                // one-second poll can only fire it once per track.
+                val ended = web.available && !web.isPlaying &&
+                    web.durationMs > 0 && web.positionMs >= web.durationMs - 1_500
+                val playingId = _state.value.currentTrack?.id
+                if (ended && playingId != null && playingId != lastWebEndedTrackId) {
+                    lastWebEndedTrackId = playingId
+                    skipToNext()
                 }
                 delay(1000.milliseconds)
             }
@@ -256,26 +310,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         title = track.name,
         artist = track.artists.joinToString(", ") { it.name },
         album = track.album?.name,
-        artworkUrl = track.album?.images?.firstOrNull()?.url
-    )
-
-    /**
-     * Minimal FullTrack built from the page's media-session metadata, for when playback moved on
-     * inside the page itself. The id is derived from the title on purpose: this is only reached when
-     * the track CHANGED, so carrying the previous track's Spotify id over would mislabel the new one.
-     */
-    private fun webTrackOf(
-        web: com.varuna.rustify.webplayer.WebPlayerController.WebState
-    ): FullTrack = FullTrack(
-        id = "web:${web.title}",
-        name = web.title,
-        externalUri = "",
-        explicit = false,
-        durationMs = web.durationMs.toInt(),
-        isrc = "",
-        artists = if (web.artist.isBlank()) emptyList()
-                  else web.artist.split(",").map { SimpleArtist("", it.trim(), "", null) },
-        album = null
+        // The lockscreen and Android Auto render this large, so ask for the biggest source rather
+        // than whichever one Spotify happened to list first.
+        artworkUrl = track.album?.images?.largest()?.url
     )
 
     /** Position of the current track in [st]'s queue: the cached index if still valid, else by id. */
@@ -969,26 +1006,88 @@ class AudioPlayerService private constructor(private val context: Context) {
     /**
      * In web-player mode a track picked anywhere in Rustify is opened in the page instead of being
      * resolved to a stream — the app stays the UI, Spotify's own player produces the audio.
-     * Only Spotify tracks can be addressed this way; anything else falls through to normal playback.
+     *
+     * The web player is the *preferred* engine, not the only one, so this can decline in two ways:
+     *
+     *  - **Immediately** (returns false) when the track cannot be addressed there at all — a local
+     *    file, a YouTube Music track, or no WebView yet. The caller plays it normally.
+     *  - **Later**, when the page was asked but never actually started: not signed in, DRM refused,
+     *    Spotify changed its markup, no network. A watchdog then hands *that track* to [fallback],
+     *    leaving the preference on so the next track tries the page again.
+     *
+     * That second case is the whole reason this isn't a plain on/off switch: without it a single
+     * unplayable track leaves the user staring at a silent player.
      */
-    private fun playInWebPlayer(track: FullTrack): Boolean {
+    private fun playInWebPlayer(track: FullTrack, fallback: () -> Unit): Boolean {
         val id = track.id ?: return false
         if (id.startsWith("local:") || id.startsWith("ytm:")) return false
-        com.varuna.rustify.webplayer.WebPlayerController
-            .playSpotifyUrl("https://open.spotify.com/track/$id")
+        val controller = com.varuna.rustify.webplayer.WebPlayerController
+        // Creating a WebView is a main-thread operation; from anywhere else, decline rather than
+        // crash — the normal engine covers the track.
+        if (!controller.isReady) {
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return false
+            runCatching { controller.getOrCreate(context) }
+            if (!controller.isReady) return false
+        }
+
+        webStartJob?.cancel()
+        webServingCurrentTrack = true
+        webStartConfirmed = false
+        lastWebEndedTrackId = null
+        controller.playSpotifyUrl("https://open.spotify.com/track/$id")
         publishWebMetadata(track)
+        // Buffering, not playing: the page needs a moment, and the 1s poll flips this to playing as
+        // soon as it really is. Claiming isPlaying here made the UI lie for the first second.
         _state.value = _state.value.copy(
             currentTrack = track,
-            isPlaying = true,
-            isBuffering = false,
+            isPlaying = false,
+            isBuffering = true,
             positionMs = 0L,
             durationMs = track.durationMs.toLong()
         )
+
+        webStartJob = mainScope.launch {
+            if (controller.awaitPlaybackStart(webStartTimeoutMs)) {
+                webStartConfirmed = true
+                controller.onStateChanged?.invoke()
+                return@launch
+            }
+            // The page never produced audio for this track — give it to the normal engine.
+            android.util.Log.w("AudioPlayerService", "Web player did not start $id; falling back")
+            webServingCurrentTrack = false
+            runCatching { controller.pause() }
+            controller.onStateChanged?.invoke()
+            fallback()
+        }
         return true
     }
 
+    /**
+     * Plays [track] with Rustify's own engine, setting the state the way the non-web paths do. Used
+     * as the fallback when the web player declines a track after having been asked.
+     */
+    private fun playWithLocalEngine(track: FullTrack) {
+        _state.value = _state.value.copy(
+            currentTrack = track,
+            isPlaying = false,
+            isBuffering = true,
+            positionMs = 0L,
+            durationMs = track.durationMs.toLong()
+        )
+        playTrack(track)
+        requestSave()
+    }
+
+    /**
+     * Starts [track] on whichever engine should serve it, for the queue-navigation paths that have
+     * already set the state. Web mode gets first refusal; everything else goes to ExoPlayer.
+     */
+    private fun startTrack(track: FullTrack) {
+        if (webPlayerMode && playInWebPlayer(track) { playWithLocalEngine(track) }) return
+        playTrack(track)
+    }
+
     fun loadAndPlay(track: FullTrack) {
-        if (webPlayerMode && playInWebPlayer(track)) return
         // The foreground service is bound inside playTrack() right before playback starts, NOT here —
         // binding it eagerly started the OS's 5s startForeground() clock while a slow backend
         // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR (with the UI
@@ -1007,31 +1106,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             durationMs = track.durationMs.toLong()
         )
         preResolvedUrls.clear()
-        playTrack(track)
+        // The queue above is built either way, so "Next Up" is correct in web mode too.
+        startTrack(track)
         notifyQueueChanged(queue)
         requestSave()
     }
 
     fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
         if (tracks.isEmpty()) return
-        // Tapping a song inside a list is THE common way to start playback, so web mode has to cover
-        // it too — otherwise the mode would only ever trigger from the few loadAndPlay call sites.
-        // The queue is still built below so the app's UI keeps showing what comes next.
-        if (webPlayerMode) {
-            val selected = tracks[initialIndex.coerceIn(0, tracks.lastIndex)]
-            if (playInWebPlayer(selected)) {
-                val queue = tracks
-                currentQueueIndex = tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0)
-                _state.value = _state.value.copy(
-                    queue = queue,
-                    originalQueue = queue,
-                    durationMs = selected.durationMs.toLong()
-                )
-                notifyQueueChanged(queue)
-                requestSave()
-                return
-            }
-        }
         // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
@@ -1073,7 +1155,11 @@ class AudioPlayerService private constructor(private val context: Context) {
             durationMs = selected.durationMs.toLong()
         )
         preResolvedUrls.clear()
-        playTrack(selected)
+        // Tapping a song inside a list is THE common way to start playback, so web mode has to cover
+        // it too. The engine is chosen here, after the queue is built, so web mode gets the same
+        // queue as normal playback — including the manually queued tracks injected above, which an
+        // earlier shortcut through this method used to drop.
+        startTrack(selected)
         notifyQueueChanged(queue)
         requestSave()
     }
@@ -1187,7 +1273,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun play() {
-        if (webPlayerMode) { com.varuna.rustify.webplayer.WebPlayerController.play(); return }
+        if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.play(); return }
         val currentTrack = _state.value.currentTrack
         if (currentTrack != null) {
             if (exoPlayer.playbackState == Player.STATE_IDLE) {
@@ -1243,13 +1329,13 @@ class AudioPlayerService private constructor(private val context: Context) {
     }.getOrDefault(false)
 
     fun pause() {
-        if (webPlayerMode) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
+        if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
         exoPlayer.pause()
         requestSave()
     }
 
     fun togglePlayPause() {
-        if (webPlayerMode) { com.varuna.rustify.webplayer.WebPlayerController.togglePlayPause(); return }
+        if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.togglePlayPause(); return }
         val currentTrack = _state.value.currentTrack ?: return
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()
@@ -1267,7 +1353,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        if (webPlayerMode) {
+        if (isWebServing) {
             com.varuna.rustify.webplayer.WebPlayerController.seekTo(positionMs)
             _state.value = _state.value.copy(positionMs = positionMs)
             return
@@ -1278,7 +1364,9 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun skipToNext() {
-        if (webPlayerMode) { com.varuna.rustify.webplayer.WebPlayerController.next(); return }
+        // Not delegated to the page: opening a track URL leaves Spotify's own context holding that
+        // single track, so its next button has nowhere to go. Rustify's queue is the one that
+        // advances, and the next track is then opened in the page below.
         val st = _state.value
         // Flush the outgoing track's real position, but only if the player actually holds it (after a
         // failed resolution it still reports the previous track's clock).
@@ -1295,7 +1383,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 currentTrack = next, isPlaying = false,
                 positionMs = 0L, durationMs = next.durationMs.toLong()
             )
-            playTrack(next)
+            startTrack(next)
             requestSave()
             return
         }
@@ -1306,7 +1394,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 currentTrack = next, isPlaying = false,
                 positionMs = 0L, durationMs = next.durationMs.toLong()
             )
-            playTrack(next)
+            startTrack(next)
             requestSave()
         } else if (idx == st.queue.lastIndex && st.currentTrack != null) {
             // Autoplay radio
@@ -1348,16 +1436,20 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun skipToPrevious() {
-        if (webPlayerMode) { com.varuna.rustify.webplayer.WebPlayerController.previous(); return }
+        // Same reasoning as skipToNext(): Rustify's queue navigates, the page just gets told what to
+        // open. seekTo(0) below is already routed to whichever engine is playing.
         val st = _state.value
         val idx = currentIndexIn(st)
         // Spotify-style "previous": once past the first few seconds it restarts the current track;
         // only within that opening window (or when nothing precedes it) does it go back a track. So a
         // double tap always reaches the previous song, and a single tap right after one starts still
         // goes back. Live position is only trusted when the player really holds this track.
-        val livePos = if (preparedTrackId == st.currentTrack?.id) {
-            exoPlayer.currentPosition.coerceAtLeast(0L)
-        } else 0L
+        val livePos = when {
+            // In web mode ExoPlayer holds nothing; the mirrored page position is the live clock.
+            isWebServing -> st.positionMs.coerceAtLeast(0L)
+            preparedTrackId == st.currentTrack?.id -> exoPlayer.currentPosition.coerceAtLeast(0L)
+            else -> 0L
+        }
         if (st.currentTrack != null && (livePos > PREVIOUS_RESTART_THRESHOLD_MS || idx <= 0)) {
             seekTo(0L)
             return
@@ -1369,7 +1461,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 currentTrack = prev, isPlaying = false,
                 positionMs = 0L, durationMs = prev.durationMs.toLong()
             )
-            playTrack(prev)
+            startTrack(prev)
             requestSave()
         }
     }
@@ -1432,8 +1524,20 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (track != null) {
             currentQueueIndex = idx
             // Tapping a row in the queue (or picking one from Android Auto) has to honour web mode
-            // too, otherwise it would start a second audio source alongside the page.
-            if (webPlayerMode && playInWebPlayer(track)) {
+            // too, otherwise it would start a second audio source alongside the page. The fallback
+            // keeps [youtubeId], which is how an explicitly chosen alternative reaches the engine.
+            val playHere = {
+                _state.value = _state.value.copy(
+                    currentTrack = track,
+                    isPlaying = false,
+                    isBuffering = true,
+                    positionMs = 0L,
+                    durationMs = track.durationMs.toLong()
+                )
+                playTrack(track, youtubeId)
+                requestSave()
+            }
+            if (webPlayerMode && playInWebPlayer(track, playHere)) {
                 requestSave()
                 return
             }

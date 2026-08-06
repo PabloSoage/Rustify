@@ -310,8 +310,18 @@
     <string name="match_play">再生</string>
     <string name="web_player_title">ウェブプレーヤー</string>
     <string name="web_player_reload">再読み込み</string>
-    <string name="web_player_backend">ウェブプレーヤーで再生（実験的）</string>
-    <string name="web_player_backend_desc">Rustifyの操作でSpotifyのウェブプレーヤーを制御します。Spotify本来の音質と即時再生が得られますが、ページ構造に依存するため変更で動作しなくなる場合があります。</string>
+    <string name="web_player_desktop_site">デスクトップ版</string>
+    <!-- E117 — 再生エンジンとしてのウェブプレーヤー（フォールバックと自己診断つき） -->
+    <string name="settings_playback_engine">再生エンジン</string>
+    <string name="web_player_backend">Spotifyのウェブプレーヤーを優先（実験的）</string>
+    <string name="web_player_backend_desc">Rustifyの操作でSpotify本体のウェブプレーヤーを制御して再生します。ローカルファイルやYouTube Music、ページが再生できない曲は上のバックエンドに引き継がれます。</string>
+    <string name="wp_test_run">ウェブプレーヤーをテスト</string>
+    <string name="wp_test_hint">必要な条件を順に確認し、実際に再生を開始します。再生中の曲、なければお気に入りを使います。</string>
+    <string name="wp_test_step_webview">WebViewとJavaScript</string>
+    <string name="wp_test_step_filters">uBlock Originのフィルターリスト</string>
+    <string name="wp_test_step_session">Spotifyにログイン済み</string>
+    <string name="wp_test_step_drm">Widevine DRM</string>
+    <string name="wp_test_step_playback">再生が始まる</string>
     <string name="update_check">アップデートを確認</string>
     <string name="update_checking">アップデートを確認中…</string>
     <string name="update_up_to_date">最新バージョンです</string>

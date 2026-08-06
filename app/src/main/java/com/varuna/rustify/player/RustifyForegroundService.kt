@@ -116,7 +116,7 @@ class RustifyForegroundService : MediaLibraryService() {
                 // player, so notification / lockscreen / headset / Android Auto transport has to be
                 // forwarded there instead of reaching ExoPlayer.
                 private fun webMode() =
-                    AudioPlayerService.instance?.isWebPlayerMode == true
+                    AudioPlayerService.instance?.isWebServing == true
 
                 override fun play() {
                     if (webMode()) AudioPlayerService.instance?.play() else super.play()
@@ -141,7 +141,7 @@ class RustifyForegroundService : MediaLibraryService() {
             // rewrites the reported state (and routes transport commands) while web mode is on, and
             // is a straight pass-through otherwise.
             val sessionPlayer = WebSessionPlayer(forwardingPlayer) {
-                AudioPlayerService.instance?.isWebPlayerMode == true
+                AudioPlayerService.instance?.isWebServing == true
             }
             webSessionPlayer = sessionPlayer
             WebPlayerController.onStateChanged = {

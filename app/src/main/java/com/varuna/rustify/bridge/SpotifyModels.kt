@@ -688,6 +688,14 @@ data class YtmTrack(
     }
 }
 
+/**
+ * Largest available source. The order of `images` is whatever Spotify's GraphQL returned in
+ * `coverArt.sources`, which is **not** guaranteed to be widest-first, so anything that will be seen
+ * at full size (sharing, full-screen art) has to ask for the biggest rather than take the first.
+ */
+internal fun List<SpotifyImage>.largest(): SpotifyImage? =
+    maxByOrNull { (it.width ?: 0) * (it.height ?: 0) }
+
 /** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w0-h0`). */
 internal fun maximiseThumbnail(url: String): String {
     if (url.isBlank()) return url

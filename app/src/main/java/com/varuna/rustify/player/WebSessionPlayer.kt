@@ -62,12 +62,15 @@ class WebSessionPlayer(
         seekCommand: Int
     ): ListenableFuture<*> {
         if (!isWebMode()) return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
+        // Next/previous go to Rustify's queue, not to the page's own buttons: opening a track URL
+        // leaves Spotify's context holding that single song, so its skip buttons have nowhere to go.
+        // The service then opens whatever comes next in the page.
         when (seekCommand) {
             Player.COMMAND_SEEK_TO_NEXT,
-            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> WebPlayerController.next()
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> AudioPlayerService.instance?.skipToNext()
 
             Player.COMMAND_SEEK_TO_PREVIOUS,
-            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> WebPlayerController.previous()
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> AudioPlayerService.instance?.skipToPrevious()
 
             else -> WebPlayerController.seekTo(positionMs)
         }

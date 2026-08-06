@@ -42,6 +42,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -487,6 +489,9 @@ fun SettingsScreen(
                 LyricsProvidersSection(context)
                 LocalMusicSection(context)
                 AudioBackendsSection(context)
+                // Right after the chain: it is the same decision ("what plays my music"), even
+                // though it cannot live inside the chain itself.
+                WebPlayerSection(context)
                 InvidiousBackendSection(context)
                 DeezerBackendSection(context)
             }
@@ -498,7 +503,6 @@ fun SettingsScreen(
             }
             "advanced" -> {
                 Spacer(modifier = Modifier.height(8.dp))
-                WebPlayerSection(context)
                 UpdatesSection(context)
                 LoggingSection(context, onNavigateLogViewer)
                 SpotifyHashInspectorSection()
@@ -2279,29 +2283,88 @@ private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onCh
     }
 }
 
-// Web player (experimental): route Rustify's transport controls to Spotify's web player instead of
-// ExoPlayer. Off by default — it depends on the page's markup and on the WebView staying alive.
+// Playback engine (experimental): prefer Spotify's own web player over Rustify's engine.
+//
+// It sits with the audio backends because that is what the user is choosing between, but it is NOT
+// an entry in the provider chain: every backend there answers "give me a URL ExoPlayer can play",
+// and the web player never yields one — the audio is produced, DRM-protected, inside the page. So
+// it is a separate switch, with per-track fallback to the chain when the page cannot serve a track.
 @Composable
 private fun WebPlayerSection(context: Context) {
     val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    val scope = rememberCoroutineScope()
+    val green = Color(0xFF1DB954)
     var enabled by remember { mutableStateOf(prefs.getBoolean("web_player_backend", false)) }
+    var testing by remember { mutableStateOf(false) }
+    var steps by remember {
+        mutableStateOf<List<com.varuna.rustify.webplayer.WebPlayerDiagnostics.Step>>(emptyList())
+    }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(24.dp))
     Text(
-        text = stringResource(R.string.web_player_title),
-        color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        text = stringResource(R.string.settings_playback_engine),
+        color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(bottom = 8.dp)
     )
-    SettingSwitchRow(
-        title = stringResource(R.string.web_player_backend),
-        desc = stringResource(R.string.web_player_backend_desc),
-        checked = enabled,
-        onChange = {
-            enabled = it
-            prefs.edit { putBoolean("web_player_backend", it) }
-            com.varuna.rustify.player.AudioPlayerService.instance?.setWebPlayerMode(it)
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            SettingSwitchRow(
+                title = stringResource(R.string.web_player_backend),
+                desc = stringResource(R.string.web_player_backend_desc),
+                checked = enabled,
+                onChange = {
+                    enabled = it
+                    prefs.edit { putBoolean("web_player_backend", it) }
+                    com.varuna.rustify.player.AudioPlayerService.instance?.setWebPlayerMode(it)
+                }
+            )
+
+            Spacer(Modifier.height(8.dp))
+            TextButton(
+                onClick = {
+                    testing = true
+                    steps = emptyList()
+                    scope.launch {
+                        val trackId = com.varuna.rustify.player.AudioPlayerService.instance
+                            ?.state?.value?.currentTrack?.id
+                        steps = runCatching {
+                            com.varuna.rustify.webplayer.WebPlayerDiagnostics.run(context, trackId)
+                        }.getOrDefault(emptyList())
+                        testing = false
+                    }
+                },
+                enabled = !testing
+            ) { Text(stringResource(R.string.wp_test_run), color = green) }
+            Text(stringResource(R.string.wp_test_hint), color = Color.Gray, fontSize = 11.sp)
+
+            if (testing) {
+                Spacer(Modifier.height(8.dp))
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = green)
+            }
+            steps.forEach { step ->
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (step.ok) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                        contentDescription = null,
+                        tint = if (step.ok) green else Color(0xFFE57373),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(stringResource(step.labelRes), color = Color.White, fontSize = 13.sp)
+                        if (step.detail.isNotBlank()) {
+                            Text(step.detail, color = Color.Gray, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
         }
-    )
+    }
 }
 
 // Updates: "check on startup" toggle plus a button to check now (GitHub releases).
