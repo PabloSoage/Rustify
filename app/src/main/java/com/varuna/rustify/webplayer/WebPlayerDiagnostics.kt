@@ -45,14 +45,18 @@ object WebPlayerDiagnostics {
             return steps
         }
         WebPlayerController.loadHomeIfNeeded()
-        val echo = WebPlayerController.eval("(function(){return 'ok';})();", timeoutMs = 8_000)
+        // Wait for a document before asking it anything: `loadUrl` is asynchronous, so evaluating
+        // straight away answers `null` and every later step then fails for the wrong reason.
+        val pageReady = WebPlayerController.awaitPageReady()
+        val echo = if (pageReady) {
+            WebPlayerController.eval("(function(){return 'ok';})();", timeoutMs = 8_000)
+        } else null
         val userAgent = runCatching { webView.settings.userAgentString }.getOrDefault("")
         steps += Step(
             R.string.wp_test_step_webview,
             echo == "ok",
             if (userAgent.contains("Windows")) "desktop UA" else "mobile UA"
         )
-
         // 2. Filtering. Not fatal — playback works unfiltered, there are just ads.
         val filters = runCatching { AdblockFilters.ensureLoaded(context) }.getOrDefault(false)
         steps += Step(R.string.wp_test_step_filters, filters)
@@ -62,6 +66,10 @@ object WebPlayerDiagnostics {
             CookieManager.getInstance().getCookie(WebPlayerController.SPOTIFY_WEB)
         }.getOrNull().orEmpty()
         steps += Step(R.string.wp_test_step_session, cookies.contains("sp_dc"))
+
+        // Steps 1–3 stand on their own; everything below has to interrogate the page, so without a
+        // working one it would report three failures for a single cause.
+        if (echo != "ok") return steps
 
         // 4. Widevine. This is the one that silently kills the embed: without the protected-media
         //    permission the page dies with "no supported keysystem", and the request itself is what

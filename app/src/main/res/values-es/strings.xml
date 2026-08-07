@@ -510,7 +510,8 @@
     <string name="match_play">Reproducir</string>
     <string name="web_player_title">Reproductor web</string>
     <string name="web_player_reload">Recargar</string>
-    <string name="web_player_desktop_site">Versión de escritorio</string>
+    <string name="web_player_layout_width">Anchura del diseño</string>
+    <string name="web_player_layout_mobile">Móvil</string>
     <!-- E117 — Reproductor web como motor de reproducción, con reserva y prueba -->
     <string name="settings_playback_engine">Motor de reproducción</string>
     <string name="web_player_backend">Preferir el reproductor web de Spotify (experimental)</string>

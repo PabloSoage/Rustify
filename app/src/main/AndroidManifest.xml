@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:ignore="all" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Required by ExoPlayer's C.WAKE_MODE_NETWORK. Without it playback stalls with the screen off:
+         the CPU suspends between tracks, so the work that follows STATE_ENDED (resolving and
+         buffering the next stream) never runs until the screen is woken. Media3 only holds the lock
+         while the player is actually playing, so it costs nothing when idle. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Voice control (speech recognition). Requested at runtime. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Travel playlist: current location to compute the route/ETA. Requested at runtime. -->

@@ -73,38 +73,58 @@ object WebPlayerController {
     // -------------------------------------------------------------------------------------------
 
     private const val PREFS = "rustify_settings"
-    private const val KEY_DESKTOP = "web_player_desktop_ua"
+    private const val KEY_LAYOUT_WIDTH = "web_player_layout_width"
 
-    /** Layout width the page is told to use in desktop mode; the WebView scales it down to fit. */
-    private const val DESKTOP_VIEWPORT_WIDTH = 1280
+    /**
+     * Layout widths the page can be laid out at, in CSS pixels, cycled from the screen's top bar —
+     * the equivalent of Chrome DevTools' device emulation. `0` means "don't pretend": mobile user
+     * agent and the phone's own width, which gets Spotify's mobile page (no player, but browsable).
+     *
+     * A narrower desktop width is the usable default: the player is responsive, so at 1024 it still
+     * shows everything while being scaled down far less than at 1280.
+     */
+    val LAYOUT_WIDTHS = listOf(1024, 1280, 800, 0)
 
-    @Volatile private var desktopMode = true
+    private const val DEFAULT_LAYOUT_WIDTH = 1024
+
+    @Volatile private var cachedLayoutWidth = DEFAULT_LAYOUT_WIDTH
 
     /** The WebView's own user agent, kept so the Chrome version survives our overrides. */
     @Volatile private var systemUserAgent: String? = null
 
-    fun isDesktopMode(context: Context): Boolean {
-        desktopMode = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_DESKTOP, true)
-        return desktopMode
+    /** Current layout width, read from prefs and cached. `0` = mobile page. */
+    fun layoutWidth(context: Context): Int {
+        cachedLayoutWidth = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_LAYOUT_WIDTH, DEFAULT_LAYOUT_WIDTH)
+        return cachedLayoutWidth
     }
 
     /**
-     * Switches between Spotify's desktop and mobile page. The user agent is read when a request is
-     * made, and the page branches on it at load time, so this reloads.
+     * Moves to the next width and applies it, returning the new value. The user agent is read when a
+     * request is made and the page branches on it at load time, so switching to or from the mobile
+     * page reloads; a pure width change only needs the viewport re-injected.
      */
-    fun setDesktopMode(context: Context, enabled: Boolean) {
+    fun cycleLayoutWidth(context: Context): Int {
+        val current = layoutWidth(context)
+        val next = LAYOUT_WIDTHS[(LAYOUT_WIDTHS.indexOf(current).coerceAtLeast(0) + 1) % LAYOUT_WIDTHS.size]
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit { putBoolean(KEY_DESKTOP, enabled) }
-        desktopMode = enabled
-        val wv = webView ?: return
+            .edit { putInt(KEY_LAYOUT_WIDTH, next) }
+        cachedLayoutWidth = next
+
+        val wv = webView ?: return next
+        val uaChanged = (current == 0) != (next == 0)
         wv.post {
             runCatching {
-                wv.settings.userAgentString =
-                    userAgentFor(enabled, systemUserAgent ?: wv.settings.userAgentString)
-                wv.reload()
+                if (uaChanged) {
+                    wv.settings.userAgentString =
+                        userAgentFor(next != 0, systemUserAgent ?: wv.settings.userAgentString)
+                    wv.reload()
+                } else {
+                    wv.evaluateJavascript(viewportJs(next), null)
+                }
             }
         }
+        return next
     }
 
     /**
@@ -134,7 +154,7 @@ object WebPlayerController {
     @SuppressLint("SetJavaScriptEnabled")
     fun getOrCreate(context: Context): WebView {
         webView?.let { return it }
-        val desktop = isDesktopMode(context)
+        val width = layoutWidth(context)
         val wv = WebView(context.applicationContext).apply {
             settings.apply {
                 javaScriptEnabled = true
@@ -142,11 +162,12 @@ object WebPlayerController {
                 mediaPlaybackRequiresUserGesture = false
                 val systemUa = userAgentString
                 systemUserAgent = systemUa
-                userAgentString = userAgentFor(desktop, systemUa)
-                // Lay the desktop page out at a desktop width and let the WebView scale it down to
-                // fit, the way Chrome's "Request desktop site" does. Without this the desktop markup
+                userAgentString = userAgentFor(width != 0, systemUa)
+                // Honour the viewport meta that [viewportJs] writes; without this the desktop markup
                 // is laid out in a phone-width viewport and its columns collapse into vertical
-                // strips of text. Zoom stays available for the parts that end up small.
+                // strips of text. The fit-to-screen zoom comes from the `initial-scale` in that meta
+                // rather than from loadWithOverviewMode, which only applies at load time. Zoom stays
+                // available for whatever ends up too small.
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(true)
@@ -171,11 +192,14 @@ object WebPlayerController {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // The page ships `width=device-width`; override it so the desktop layout is not
-                    // squeezed into the phone's width.
-                    if (desktopMode) {
-                        runCatching { view?.evaluateJavascript(JS_DESKTOP_VIEWPORT, null) }
-                    }
+                    applyPageTweaks(view)
+                }
+
+                // The player is a single-page app: after the first load it swaps the DOM without
+                // ever finishing another page, so the tweaks have to be re-applied here too.
+                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                    super.doUpdateVisitedHistory(view, url, isReload)
+                    applyPageTweaks(view)
                 }
 
                 override fun shouldInterceptRequest(
@@ -335,6 +359,24 @@ object WebPlayerController {
     }
 
     /**
+     * Waits until a document exists and has been parsed.
+     *
+     * `loadUrl` is asynchronous, so evaluating JavaScript straight after asking for a page runs
+     * against no document at all and comes back `null` — which reads as "JavaScript is broken" when
+     * it only means "too early". Anything that inspects the page has to go through here first.
+     */
+    suspend fun awaitPageReady(timeoutMs: Long = 15_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            when (eval("document.readyState;", timeoutMs = 2_000)) {
+                "interactive", "complete" -> return true
+                else -> delay(300)
+            }
+        }
+        return false
+    }
+
+    /**
      * Waits until the page is actually producing audio, re-pressing play periodically while it is
      * not. Returns false on timeout, which is what tells the caller the web player could not serve
      * this track and the normal engine should take over.
@@ -383,18 +425,67 @@ object WebPlayerController {
         "(function(){var m=document.querySelector('video,audio');" +
         "if(m&&m.paused){var b=document.querySelector('[data-testid=\"control-button-playpause\"]'); if(b){b.click();}}})();"
 
-    /** Forces a desktop-width layout viewport; see [DESKTOP_VIEWPORT_WIDTH]. */
-    private val JS_DESKTOP_VIEWPORT = """
+    /** Re-applies the layout width and the tap-to-play bridge. Cheap and idempotent. */
+    private fun applyPageTweaks(view: WebView?) {
+        val wv = view ?: return
+        runCatching {
+            if (cachedLayoutWidth != 0) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
+            wv.evaluateJavascript(JS_TAP_TO_PLAY, null)
+        }
+    }
+
+    /**
+     * Lays the page out at [width] CSS pixels and scales it so that width fills the screen.
+     *
+     * The explicit `initial-scale` is the part that matters. `loadWithOverviewMode` computes its
+     * fit-to-screen zoom when the page loads, and the viewport meta is rewritten *after* that, so
+     * the page was re-laid out wide but never re-zoomed — which is why it needed horizontal
+     * scrolling. Computing the scale here re-applies it every time the width changes.
+     */
+    private fun viewportJs(width: Int) = """
         (function(){
           try {
+            var w = $width;
             var m = document.querySelector('meta[name="viewport"]');
             if (!m) {
               m = document.createElement('meta');
               m.setAttribute('name','viewport');
               (document.head || document.documentElement).appendChild(m);
             }
-            var want = 'width=$DESKTOP_VIEWPORT_WIDTH';
+            var sw = window.screen.width || document.documentElement.clientWidth || w;
+            var scale = Math.round((sw / w) * 1000) / 1000;
+            var want = 'width=' + w + ', initial-scale=' + scale + ', user-scalable=yes';
             if (m.getAttribute('content') !== want) m.setAttribute('content', want);
+          } catch (e) {}
+        })();
+    """
+
+    /**
+     * Makes a single tap play a track row.
+     *
+     * Spotify's desktop player plays a row on **double**-click; a single click only selects it, and
+     * the per-row play button only appears on hover, which a touchscreen never produces. So on a
+     * phone tapping a song appeared to do nothing at all. This forwards a tap on a row as a
+     * `dblclick`, leaving anything that is already a control (buttons, links) to handle its own tap.
+     *
+     * Guarded by a flag on `window` so the SPA re-applying it never stacks listeners, and attached to
+     * `document` so it survives the SPA replacing the DOM.
+     */
+    private const val JS_TAP_TO_PLAY = """
+        (function(){
+          try {
+            if (window.__rustifyTapToPlay) return;
+            window.__rustifyTapToPlay = true;
+            document.addEventListener('click', function(e){
+              try {
+                var t = e.target;
+                if (!t || !t.closest) return;
+                if (t.closest('button, a, input, select, textarea, [role="button"], [role="link"], [role="checkbox"]')) return;
+                var row = t.closest('[data-testid="tracklist-row"], [data-testid="track-list-row"], [data-testid="tracklist-row-container"]');
+                if (!row) return;
+                row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+              } catch (err) {}
+            }, false);
           } catch (e) {}
         })();
     """

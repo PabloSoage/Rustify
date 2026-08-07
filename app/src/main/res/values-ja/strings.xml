@@ -310,7 +310,8 @@
     <string name="match_play">再生</string>
     <string name="web_player_title">ウェブプレーヤー</string>
     <string name="web_player_reload">再読み込み</string>
-    <string name="web_player_desktop_site">デスクトップ版</string>
+    <string name="web_player_layout_width">レイアウト幅</string>
+    <string name="web_player_layout_mobile">モバイル</string>
     <!-- E117 — 再生エンジンとしてのウェブプレーヤー（フォールバックと自己診断つき） -->
     <string name="settings_playback_engine">再生エンジン</string>
     <string name="web_player_backend">Spotifyのウェブプレーヤーを優先（実験的）</string>

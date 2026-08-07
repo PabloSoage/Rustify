@@ -193,6 +193,17 @@ class AudioPlayerService private constructor(private val context: Context) {
     /** How long the page gets to start a track before it is handed to the normal engine. */
     private val webStartTimeoutMs = 12_000L
 
+    /**
+     * Consecutive tracks the page failed to start. Falling back costs [webStartTimeoutMs] of silence,
+     * which is fine once but intolerable before *every* song when the web player simply doesn't work
+     * on this device — not signed in, DRM unavailable, Spotify changed its markup. After a couple of
+     * failures it stops being offered for the rest of the session; toggling the setting off and on
+     * (or a track that does start) re-arms it.
+     */
+    @Volatile private var webConsecutiveFailures = 0
+
+    private val webFailuresBeforeDisarm = 2
+
     private var webStartJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -203,6 +214,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (webPlayerMode == enabled) return
         webPlayerMode = enabled
         if (enabled) {
+            // Turning the preference on is the user saying "try again", so forget past failures.
+            webConsecutiveFailures = 0
             runCatching { exoPlayer.pause() }
             // Build the WebView and compile the filter lists now, so the first track does not spend
             // its whole watchdog window waiting for a cold start.
@@ -353,6 +366,13 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+        // Keep the CPU and the Wi-Fi radio alive *while playing*. Without this the player defaults to
+        // WAKE_MODE_NONE: with the screen off the device suspends, and the work that follows
+        // STATE_ENDED — resolving the next track's URL and buffering it, both of which need the
+        // network — simply doesn't run, so playback stops at a track boundary and only resumes when
+        // the screen is woken. Media3's WakeLockManager acquires the lock only while the player is
+        // playing and releases it on pause/idle/end, so this does not drain the battery when stopped.
+        .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
         .build().apply {
             setAudioAttributes(mediaAudioAttributes, true)
         }
@@ -1021,6 +1041,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     private fun playInWebPlayer(track: FullTrack, fallback: () -> Unit): Boolean {
         val id = track.id ?: return false
         if (id.startsWith("local:") || id.startsWith("ytm:")) return false
+        if (webConsecutiveFailures >= webFailuresBeforeDisarm) return false
         val controller = com.varuna.rustify.webplayer.WebPlayerController
         // Creating a WebView is a main-thread operation; from anywhere else, decline rather than
         // crash — the normal engine covers the track.
@@ -1049,11 +1070,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         webStartJob = mainScope.launch {
             if (controller.awaitPlaybackStart(webStartTimeoutMs)) {
                 webStartConfirmed = true
+                webConsecutiveFailures = 0
                 controller.onStateChanged?.invoke()
                 return@launch
             }
             // The page never produced audio for this track — give it to the normal engine.
-            android.util.Log.w("AudioPlayerService", "Web player did not start $id; falling back")
+            webConsecutiveFailures++
+            android.util.Log.w(
+                "AudioPlayerService",
+                "Web player did not start $id; falling back (failure $webConsecutiveFailures)"
+            )
             webServingCurrentTrack = false
             runCatching { controller.pause() }
             controller.onStateChanged?.invoke()

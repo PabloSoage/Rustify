@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DesktopWindows
@@ -19,10 +22,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.varuna.rustify.R
 
@@ -51,9 +57,10 @@ fun WebPlayerScreen(
 ) {
     val context = LocalContext.current
     var filtersReady by remember { mutableStateOf(false) }
-    // Desktop by default: Spotify serves phone user agents a "get the app" page instead of a usable
-    // library. The toggle is there because the desktop layout is dense on a phone.
-    var desktopSite by remember { mutableStateOf(WebPlayerController.isDesktopMode(context)) }
+    // A desktop layout by default: Spotify serves phone user agents a "get the app" page instead of
+    // a usable library. The width is cycleable because the desktop layout is dense on a phone —
+    // the same knob Chrome DevTools' device emulation gives you.
+    var layoutWidth by remember { mutableIntStateOf(WebPlayerController.layoutWidth(context)) }
 
     LaunchedEffect(Unit) { onEnter() }
 
@@ -87,14 +94,19 @@ fun WebPlayerScreen(
                 color = Color.White,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = {
-                desktopSite = !desktopSite
-                WebPlayerController.setDesktopMode(context, desktopSite)
-            }) {
+            TextButton(onClick = { layoutWidth = WebPlayerController.cycleLayoutWidth(context) }) {
                 Icon(
-                    if (desktopSite) Icons.Default.DesktopWindows else Icons.Default.PhoneAndroid,
-                    contentDescription = stringResource(R.string.web_player_desktop_site),
-                    tint = Color.White
+                    if (layoutWidth == 0) Icons.Default.PhoneAndroid else Icons.Default.DesktopWindows,
+                    contentDescription = stringResource(R.string.web_player_layout_width),
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (layoutWidth == 0) stringResource(R.string.web_player_layout_mobile)
+                           else layoutWidth.toString(),
+                    color = Color.White,
+                    fontSize = 12.sp
                 )
             }
             IconButton(onClick = { WebPlayerController.getOrCreate(context).reload() }) {
