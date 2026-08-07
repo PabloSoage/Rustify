@@ -637,6 +637,29 @@ class AudioPlayerService private constructor(private val context: Context) {
         }, androidx.core.content.ContextCompat.getMainExecutor(context))
     }
 
+    /**
+     * Covers the one window ExoPlayer's own wake lock cannot.
+     *
+     * `setWakeMode(WAKE_MODE_NETWORK)` keeps the device awake *while the player is playing*, but
+     * media3 drops the lock on `STATE_ENDED` and `STATE_IDLE` — and the gap between a track ending
+     * and the next one being prepared is exactly where the work lives: resolving the next stream URL
+     * over the network can take seconds, and it all happens with the player ended and nothing holding
+     * the CPU. With the screen off long enough for Doze to bite, that coroutine simply stops until
+     * something wakes the device, which is the "music stopped, turning the screen on resumed it"
+     * symptom.
+     *
+     * Not reference counted and always acquired with a timeout, so overlapping [playTrack] calls just
+     * extend it and a path that never reaches the `finally` still cannot leak it.
+     */
+    private val resolutionWakeLock: android.os.PowerManager.WakeLock by lazy {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Rustify:track-resolution")
+            .apply { setReferenceCounted(false) }
+    }
+
+    /** Upper bound for the lock, far beyond any real resolution; the `finally` is what normally frees it. */
+    private val resolutionWakeLockTimeoutMs = 90_000L
+
     private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         val trackId = track.id ?: return
         // A queued track is consumed once it actually starts playing.
@@ -688,6 +711,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         _state.value = _state.value.copy(isBuffering = true, isError = false, errorMessage = "")
 
         playJob?.cancel()
+        // Hold the CPU from here until the player is prepared: everything in between (resolution,
+        // network) runs while ExoPlayer is ended or idle and therefore holds nothing itself.
+        runCatching { resolutionWakeLock.acquire(resolutionWakeLockTimeoutMs) }
         playJob = mainScope.launch {
             try {
                 // Do NOT set a dummy MediaItem / pause the player here. The notification keeps the
@@ -886,6 +912,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Generation token — only the latest playTrack clears isResolving.
                 if (resolveGen.get() == myGen) {
                     isResolving = false
+                }
+                // By now prepare()+play() have already moved the player to BUFFERING with
+                // playWhenReady set, so media3's own lock has taken over; on the failure paths there
+                // is nothing left to keep awake either way.
+                if (resolveGen.get() == myGen) {
+                    runCatching { if (resolutionWakeLock.isHeld) resolutionWakeLock.release() }
                 }
             }
         }
@@ -1236,6 +1268,9 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun stopPlayerAndRelease() {
         playJob?.cancel()
+        // Cancelling the job skips its `finally`, so free the resolution lock here rather than
+        // waiting for its timeout.
+        runCatching { if (resolutionWakeLock.isHeld) resolutionWakeLock.release() }
         exoPlayer.stop()
         _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
         saveNow()
