@@ -366,6 +366,14 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+        // Decoder fallback matters for the Video tab. The default picks the single best-matching
+        // decoder and gives up if it fails to initialise; with fallback on, media3 tries the next
+        // one (typically the software decoder) instead. Vendor video decoders do fail on unusual
+        // profiles, and when they do it is per-video and perfectly reproducible.
+        .setRenderersFactory(
+            androidx.media3.exoplayer.DefaultRenderersFactory(context)
+                .setEnableDecoderFallback(true)
+        )
         // Keep the CPU and the Wi-Fi radio alive *while playing*. Without this the player defaults to
         // WAKE_MODE_NONE: with the screen off the device suspends, and the work that follows
         // STATE_ENDED — resolving the next track's URL and buffering it, both of which need the
