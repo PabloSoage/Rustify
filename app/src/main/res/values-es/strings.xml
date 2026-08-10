@@ -513,6 +513,12 @@
     <string name="web_player_layout_width">Anchura del diseño</string>
     <string name="web_player_layout_mobile">Móvil</string>
     <string name="web_player_two_finger_hint">Toca una canción con dos dedos para reproducirla: el reproductor de Spotify necesita un doble clic, que una pantalla táctil no puede enviar.</string>
+    <!-- E120 — Exención de Doze -->
+    <string name="settings_battery_title">Reproducción en segundo plano</string>
+    <string name="settings_battery_exempt">La optimización de batería está desactivada para Rustify</string>
+    <string name="settings_battery_restricted">La optimización de batería está limitando a Rustify</string>
+    <string name="settings_battery_desc">Con la pantalla apagada un rato, Android suspende el acceso a la red e ignora los bloqueos de activación, así que no puede cargarse la siguiente canción y la reproducción se para hasta que enciendes el móvil. Permitir el uso en segundo plano es la única forma de evitarlo. Reinstalar la app lo restablece.</string>
+    <string name="settings_battery_allow">Permitir uso en segundo plano</string>
     <!-- E117 — Reproductor web como motor de reproducción, con reserva y prueba -->
     <string name="settings_playback_engine">Motor de reproducción</string>
     <string name="web_player_backend">Preferir el reproductor web de Spotify (experimental)</string>

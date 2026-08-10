@@ -7,11 +7,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:ignore="all" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Required by ExoPlayer's C.WAKE_MODE_NETWORK. Without it playback stalls with the screen off:
-         the CPU suspends between tracks, so the work that follows STATE_ENDED (resolving and
-         buffering the next stream) never runs until the screen is woken. Media3 only holds the lock
-         while the player is actually playing, so it costs nothing when idle. -->
+    <!-- Required by ExoPlayer's C.WAKE_MODE_NETWORK and by the lock held across track resolution.
+         Without them the CPU can suspend between tracks, so the work that follows STATE_ENDED
+         (resolving and buffering the next stream) never runs until the screen is woken. Media3 only
+         holds its lock while actually playing, so it costs nothing when idle. Note this is only half
+         the story: once the device is in Doze the system IGNORES wake locks outright, and only the
+         battery-optimisation exemption helps — see REQUEST_IGNORE_BATTERY_OPTIMIZATIONS below. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets Settings offer the Doze exemption prompt directly. Without the exemption Android
+         "suspends network access" and "ignores wake locks" in Doze, so resolving the next track's
+         stream never completes and playback stops at the track boundary until the device is woken.
+         A wake lock cannot work around that; only the exemption list can. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Voice control (speech recognition). Requested at runtime. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Travel playlist: current location to compute the route/ETA. Requested at runtime. -->
@@ -38,6 +45,15 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <!-- Resolving the Doze exemption prompt, and the battery optimization settings screen some
+             OEM builds fall back to. Without this, resolveActivity() returns null on Android 11+ and
+             the button would look broken. -->
+        <intent>
+            <action android:name="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS" />
         </intent>
     </queries>
 

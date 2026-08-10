@@ -515,6 +515,12 @@
     <string name="web_player_layout_width">Layout width</string>
     <string name="web_player_layout_mobile">Mobile</string>
     <string name="web_player_two_finger_hint">Tap a song with two fingers to play it — Spotify\'s player needs a double-click, which a touchscreen can\'t send.</string>
+    <!-- E120 — Doze exemption -->
+    <string name="settings_battery_title">Background playback</string>
+    <string name="settings_battery_exempt">Battery optimisation is off for Rustify</string>
+    <string name="settings_battery_restricted">Battery optimisation is restricting Rustify</string>
+    <string name="settings_battery_desc">With the screen off for a while Android suspends network access and ignores wake locks, so the next track can\'t be loaded and playback stops until you wake the phone. Allowing background use is the only way around it. Reinstalling the app resets this.</string>
+    <string name="settings_battery_allow">Allow background use</string>
     <!-- E117 — Web player as a playback engine, with fallback and a self-test -->
     <string name="settings_playback_engine">Playback engine</string>
     <string name="web_player_backend">Prefer Spotify\'s web player (experimental)</string>

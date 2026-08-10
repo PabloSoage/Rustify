@@ -313,6 +313,12 @@
     <string name="web_player_layout_width">レイアウト幅</string>
     <string name="web_player_layout_mobile">モバイル</string>
     <string name="web_player_two_finger_hint">曲を2本指でタップすると再生します。Spotifyのプレーヤーはダブルクリックを必要とし、タッチ操作では送れないためです。</string>
+    <!-- E120 — Doze の除外 -->
+    <string name="settings_battery_title">バックグラウンド再生</string>
+    <string name="settings_battery_exempt">電池の最適化はRustifyで無効です</string>
+    <string name="settings_battery_restricted">電池の最適化がRustifyを制限しています</string>
+    <string name="settings_battery_desc">画面を消したまま時間が経つと、Androidはネットワークを停止しウェイクロックを無視するため、次の曲を読み込めず再生が止まります。復帰には画面を点ける必要があります。回避するにはバックグラウンド動作を許可するしかありません。アプリを再インストールすると設定は戻ります。</string>
+    <string name="settings_battery_allow">バックグラウンド動作を許可</string>
     <!-- E117 — 再生エンジンとしてのウェブプレーヤー（フォールバックと自己診断つき） -->
     <string name="settings_playback_engine">再生エンジン</string>
     <string name="web_player_backend">Spotifyのウェブプレーヤーを優先（実験的）</string>

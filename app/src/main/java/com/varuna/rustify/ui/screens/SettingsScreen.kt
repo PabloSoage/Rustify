@@ -113,7 +113,9 @@ import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.sync.DriveSyncManager
 import com.varuna.rustify.sync.DriveSyncPrefs
 import com.varuna.rustify.sync.GoogleDriveSync
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.varuna.rustify.util.AppLinksHosts
+import com.varuna.rustify.util.BatteryOptimization
 import com.varuna.rustify.util.LogCapture
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
@@ -485,6 +487,9 @@ fun SettingsScreen(
             null -> SettingsCategoryMenu { onCategoryChange(it) }
             "audio" -> {
                 Spacer(modifier = Modifier.height(8.dp))
+                // First: without the Doze exemption nothing below matters, because playback stops
+                // between songs with the screen off no matter which backend resolves the stream.
+                BatteryOptimizationSection(context)
                 // Order: lyrics first, then local music, then the audio backends.
                 LyricsProvidersSection(context)
                 LocalMusicSection(context)
@@ -2280,6 +2285,65 @@ private fun SettingSwitchRow(title: String, desc: String, checked: Boolean, onCh
             checked = checked, onCheckedChange = onChange,
             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954))
         )
+    }
+}
+
+// Doze exemption. Not a preference — a system state the user has to grant, shown here because when
+// it is missing the symptom looks like an app bug: playback stops between songs with the screen off.
+// Re-checked on every visit and after the prompt, since reinstalling the app clears it.
+@Composable
+private fun BatteryOptimizationSection(context: Context) {
+    val green = Color(0xFF1DB954)
+    var exempt by remember { mutableStateOf(BatteryOptimization.isExempt(context)) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { exempt = BatteryOptimization.isExempt(context) }
+
+    // The prompt does not report the outcome, and the user may also change it from system settings.
+    LifecycleResumeEffect(Unit) {
+        exempt = BatteryOptimization.isExempt(context)
+        onPauseOrDispose { }
+    }
+
+    Spacer(Modifier.height(24.dp))
+    Text(
+        text = stringResource(R.string.settings_battery_title),
+        color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (exempt) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                    contentDescription = null,
+                    tint = if (exempt) green else Color(0xFFE57373),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = stringResource(
+                        if (exempt) R.string.settings_battery_exempt
+                        else R.string.settings_battery_restricted
+                    ),
+                    color = Color.White, fontSize = 14.sp
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.settings_battery_desc),
+                color = Color.Gray, fontSize = 12.sp
+            )
+            if (!exempt) {
+                TextButton(onClick = {
+                    BatteryOptimization.requestIntent(context)?.let { launcher.launch(it) }
+                }) { Text(stringResource(R.string.settings_battery_allow), color = green) }
+            }
+        }
     }
 }
 
