@@ -45,17 +45,20 @@ object WebPlayerDiagnostics {
             return steps
         }
         WebPlayerController.loadHomeIfNeeded()
-        // Wait for a document before asking it anything: `loadUrl` is asynchronous, so evaluating
-        // straight away answers `null` and every later step then fails for the wrong reason.
+        // Wait for a real, secure document before asking it anything. `loadUrl` is asynchronous, and
+        // the blank page a WebView starts on already reports itself as loaded — see awaitPageReady.
         val pageReady = WebPlayerController.awaitPageReady()
         val echo = if (pageReady) {
             WebPlayerController.eval("(function(){return 'ok';})();", timeoutMs = 8_000)
         } else null
         val userAgent = runCatching { webView.settings.userAgentString }.getOrDefault("")
+        // The address is the single most useful thing to report: a step that fails on about:blank
+        // means something very different from one that fails on the real player.
+        val url = WebPlayerController.currentUrl().orEmpty().ifBlank { "no page" }
         steps += Step(
             R.string.wp_test_step_webview,
             echo == "ok",
-            if (userAgent.contains("Windows")) "desktop UA" else "mobile UA"
+            "${if (userAgent.contains("Windows")) "desktop UA" else "mobile UA"} · ${url.take(60)}"
         )
         // 2. Filtering. Not fatal — playback works unfiltered, there are just ads.
         val filters = runCatching { AdblockFilters.ensureLoaded(context) }.getOrDefault(false)
@@ -75,7 +78,8 @@ object WebPlayerDiagnostics {
         //    permission the page dies with "no supported keysystem", and the request itself is what
         //    exercises the permission callback, so it tests the real path rather than a capability
         //    flag.
-        steps += Step(R.string.wp_test_step_drm, checkDrm())
+        val drm = checkDrm()
+        steps += Step(R.string.wp_test_step_drm, drm == "ok", if (drm == "ok") "" else drm)
 
         // 5. Actual audio. The only step that proves the mode is usable.
         val target = if (trackId != null && SPOTIFY_ID.matches(trackId)) {
@@ -87,7 +91,11 @@ object WebPlayerDiagnostics {
         val playing = WebPlayerController.awaitPlaybackStart(PLAYBACK_TIMEOUT_MS)
         val heard = WebPlayerController.state.value.title
         WebPlayerController.pause()
-        steps += Step(R.string.wp_test_step_playback, playing, heard)
+        // On failure the page it ended up on says more than an empty label: a login wall, a country
+        // block and a genuine playback refusal all look identical otherwise.
+        val detail = if (playing) heard
+                     else WebPlayerController.currentUrl().orEmpty().take(60)
+        steps += Step(R.string.wp_test_step_playback, playing, detail)
 
         return steps
     }
@@ -95,25 +103,29 @@ object WebPlayerDiagnostics {
     /**
      * `requestMediaKeySystemAccess` is a promise, and `evaluateJavascript` cannot await one, so the
      * request is kicked off into a global and then polled.
+     *
+     * Returns the raw outcome rather than a boolean — `"ok"`, `"unsupported"`, `"insecure context"`
+     * or `"error:<DOMException name>"` — because those mean completely different things and the
+     * difference is the whole value of running the check.
      */
-    private suspend fun checkDrm(): Boolean {
-        WebPlayerController.eval(JS_DRM_REQUEST) ?: return false
+    private suspend fun checkDrm(): String {
+        WebPlayerController.eval(JS_DRM_REQUEST) ?: return "no answer"
         val deadline = System.currentTimeMillis() + DRM_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             delay(250)
-            when (WebPlayerController.eval("window.__rustifyDrm || 'pending';", timeoutMs = 2_000)) {
-                "ok" -> return true
+            when (val status = WebPlayerController.eval("window.__rustifyDrm || 'pending';", timeoutMs = 2_000)) {
                 null, "pending" -> {}
-                else -> return false
+                else -> return status
             }
         }
-        return false
+        return "timed out"
     }
 
     private val JS_DRM_REQUEST = """
         (function(){
           try {
             window.__rustifyDrm = 'pending';
+            if (!window.isSecureContext) { window.__rustifyDrm = 'insecure context'; return 'insecure'; }
             if (!navigator.requestMediaKeySystemAccess) { window.__rustifyDrm = 'unsupported'; return 'unsupported'; }
             navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
               initDataTypes: ['cenc'],

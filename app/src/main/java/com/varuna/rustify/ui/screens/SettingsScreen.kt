@@ -2339,8 +2339,22 @@ private fun BatteryOptimizationSection(context: Context) {
                 color = Color.Gray, fontSize = 12.sp
             )
             if (!exempt) {
+                // On these makes the status above can stay red even when the user has already set the
+                // manufacturer's own control correctly, because that control is a different switch
+                // from Android's and only Android's is readable. Say so instead of looking broken.
+                if (BatteryOptimization.hasVendorBatteryLayer()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.settings_battery_vendor_hint),
+                        color = Color(0xFFB0A070), fontSize = 12.sp
+                    )
+                }
                 TextButton(onClick = {
-                    BatteryOptimization.requestIntent(context)?.let { launcher.launch(it) }
+                    // First one that opens wins: resolveActivity lies often enough here that trying
+                    // is the only reliable check.
+                    BatteryOptimization.requestIntents(context).firstOrNull { intent ->
+                        runCatching { launcher.launch(intent) }.isSuccess
+                    }
                 }) { Text(stringResource(R.string.settings_battery_allow), color = green) }
             }
         }

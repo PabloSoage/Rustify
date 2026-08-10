@@ -262,9 +262,17 @@ object WebPlayerController {
         AdblockFilters.release()
     }
 
+    /**
+     * Loads the player unless a real page is already open. `about:blank` counts as "no page": a fresh
+     * WebView sits on it with a non-null url, so testing for null alone left the blank document in
+     * place and everything that needs a secure context failed against it.
+     */
     fun loadHomeIfNeeded() {
         val wv = webView ?: return
-        if (wv.url == null) wv.loadUrl(SPOTIFY_WEB)
+        val url = wv.url
+        if (url.isNullOrBlank() || url == "about:blank") {
+            mainHandler.post { runCatching { wv.loadUrl(SPOTIFY_WEB) } }
+        }
     }
 
     // -------------------------------------------------------------------------------------------
@@ -383,22 +391,38 @@ object WebPlayerController {
     }
 
     /**
-     * Waits until a document exists and has been parsed.
+     * Waits until a **real, secure** document has been parsed.
      *
      * `loadUrl` is asynchronous, so evaluating JavaScript straight after asking for a page runs
-     * against no document at all and comes back `null` — which reads as "JavaScript is broken" when
-     * it only means "too early". Anything that inspects the page has to go through here first.
+     * against no document and comes back `null` — which reads as "JavaScript is broken" when it only
+     * means "too early". Anything that inspects the page has to go through here first.
+     *
+     * Readiness alone is not enough, and getting that wrong was a real bug: `about:blank` reports
+     * `readyState === "complete"` immediately, so waiting only for that succeeded against the empty
+     * document the WebView starts on. Scripts run there, so a self-test would tick "JavaScript works"
+     * and then fail everything that needs the page — `about:blank` is **not a secure context**, so
+     * `requestMediaKeySystemAccess` (Widevine) is simply not available on it. Hence the secure-context
+     * requirement here.
      */
-    suspend fun awaitPageReady(timeoutMs: Long = 15_000): Boolean {
+    suspend fun awaitPageReady(timeoutMs: Long = 20_000): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            when (eval("document.readyState;", timeoutMs = 2_000)) {
-                "interactive", "complete" -> return true
-                else -> delay(300)
-            }
+            val parts = eval(JS_PAGE_STATE, timeoutMs = 2_000)?.split('|')
+            val ready = parts?.getOrNull(0) == "interactive" || parts?.getOrNull(0) == "complete"
+            val secure = parts?.getOrNull(1) == "1"
+            if (ready && secure) return true
+            delay(300)
         }
         return false
     }
+
+    /** Current page address, for diagnostics. Null when the page cannot be asked. */
+    suspend fun currentUrl(): String? =
+        eval(JS_PAGE_STATE, timeoutMs = 2_000)?.split('|')?.getOrNull(2)
+
+    private const val JS_PAGE_STATE =
+        "(function(){try{return document.readyState+'|'+(window.isSecureContext?'1':'0')+'|'+location.href;}" +
+        "catch(e){return 'error|0|';}})();"
 
     /**
      * Waits until the page is actually producing audio, re-pressing play periodically while it is

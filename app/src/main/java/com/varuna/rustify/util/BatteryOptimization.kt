@@ -41,20 +41,39 @@ object BatteryOptimization {
     }.getOrDefault(false)
 
     /**
-     * Opens the system prompt that adds the app to the exemption list. Falls back to the full
-     * battery-optimization settings list if the direct prompt is unavailable — some OEM builds
-     * remove it — so the user always has a way through.
+     * Candidate ways to reach the exemption, best first. The caller launches them in order until one
+     * opens, because `resolveActivity` is not a reliable gate here: package-visibility rules and OEM
+     * builds that reshuffle Settings both make it answer null for activities that do exist. Trying
+     * and catching is the honest test.
      *
-     * Returns the intent to launch, or null if neither is resolvable.
+     *  1. The direct prompt — one tap, flips the flag itself.
+     *  2. The full battery-optimization list, for builds that drop the direct prompt.
+     *  3. The app's own settings page, which is where manufacturer battery controls live.
      */
-    fun requestIntent(context: Context): Intent? {
-        val direct = Intent(
+    fun requestIntents(context: Context): List<Intent> = listOf(
+        Intent(
             Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
             Uri.parse("package:${context.packageName}")
+        ),
+        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
         )
-        if (direct.resolveActivity(context.packageManager) != null) return direct
+    )
 
-        val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-        return if (list.resolveActivity(context.packageManager) != null) list else null
+    /**
+     * True on manufacturers whose battery management is **separate from Android's** exemption list —
+     * Xiaomi/Redmi/POCO (MIUI, HyperOS) being the case in hand, plus the other usual offenders.
+     *
+     * This matters because [isExempt] can keep reporting false after the user has correctly set the
+     * manufacturer's own control to "no restrictions": the two are different switches, and only the
+     * Android one is readable. Without saying so, the app looks broken and the user has no way to
+     * tell they already did the right thing.
+     */
+    fun hasVendorBatteryLayer(): Boolean {
+        val vendor = (android.os.Build.MANUFACTURER + " " + android.os.Build.BRAND).lowercase()
+        return listOf("xiaomi", "redmi", "poco", "huawei", "honor", "oppo", "realme", "vivo", "oneplus")
+            .any { it in vendor }
     }
 }
