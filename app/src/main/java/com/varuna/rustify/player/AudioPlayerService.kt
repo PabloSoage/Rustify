@@ -662,6 +662,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         val trackId = track.id ?: return
+        ensureAudioRouteWatcher()
         // A queued track is consumed once it actually starts playing.
         synchronized(userQueue) { userQueue.removeAll { it.id == trackId } }
 
@@ -1378,10 +1379,57 @@ class AudioPlayerService private constructor(private val context: Context) {
     // focus when nobody asked. Skipped while the DJ is ducking so it does not fight the DJ volume.
     private fun refreshAudioFocus() {
         if (isDucking) return
+        // Never while the audio route is still settling — see [audioRouteSettlingMs].
+        if (System.currentTimeMillis() - lastAudioRouteChangeAt < audioRouteSettlingMs) {
+            android.util.Log.d("AudioPlayerService", "Skipping focus refresh: audio route just changed")
+            return
+        }
         runCatching {
             exoPlayer.setAudioAttributes(mediaAudioAttributes, false)
             exoPlayer.setAudioAttributes(mediaAudioAttributes, true)
         }
+    }
+
+    /**
+     * When an output device was last added or removed.
+     *
+     * The reported Bluetooth failure happens **only at the moment of connecting** (to a car, say) and
+     * never again once the link is up and working. That timing is the whole clue: it is not the focus
+     * reset on its own, it is the reset landing while Android is still moving audio onto the new
+     * device. Pressing play in the app right after connecting — the obvious thing to do — is exactly
+     * how the two meet.
+     *
+     * So the reset is withheld for a moment after any route change. Beyond that window it behaves
+     * exactly as before, and nothing else in playback is affected.
+     */
+    @Volatile private var lastAudioRouteChangeAt = 0L
+
+    private val audioRouteSettlingMs = 4_000L
+
+    private val routeWatcherRegistered = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private val audioDeviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>?) {
+            lastAudioRouteChangeAt = System.currentTimeMillis()
+        }
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) {
+            lastAudioRouteChangeAt = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * Registered on first playback rather than in an init block: [audioManager] is a lazy declared
+     * further down, so touching it during construction would dereference a delegate that does not
+     * exist yet.
+     */
+    private fun ensureAudioRouteWatcher() {
+        if (!routeWatcherRegistered.compareAndSet(false, true)) return
+        runCatching {
+            audioManager.registerAudioDeviceCallback(
+                audioDeviceCallback,
+                android.os.Handler(android.os.Looper.getMainLooper())
+            )
+        }.onFailure { routeWatcherRegistered.set(false) }
     }
 
     // AudioManager.mode reflects an active/ringing call WITHOUT needing READ_PHONE_STATE. Used to
