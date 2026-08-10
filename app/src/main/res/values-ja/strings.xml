@@ -319,6 +319,7 @@
     <string name="settings_battery_restricted">電池の最適化がRustifyを制限しています</string>
     <string name="settings_battery_desc">画面を消したまま時間が経つと、Androidはネットワークを停止しウェイクロックを無視するため、次の曲を読み込めず再生が止まります。復帰には画面を点ける必要があります。回避するにはバックグラウンド動作を許可するしかありません。アプリを再インストールすると設定は戻ります。</string>
     <string name="settings_battery_allow">バックグラウンド動作を許可</string>
+    <string name="track_video_unavailable">この曲の動画は見つかりませんでした</string>
     <string name="settings_battery_vendor_hint">メーカー独自の電池管理がAndroidのものとは別に動作しており、ここではAndroid側しか確認できません。正しく設定していても赤のままになることがあります。アプリの電池設定を「制限なし」にし、自動起動も有効にしたうえで、再生が止まるかどうかを確認してください。</string>
     <!-- E117 — 再生エンジンとしてのウェブプレーヤー（フォールバックと自己診断つき） -->
     <string name="settings_playback_engine">再生エンジン</string>

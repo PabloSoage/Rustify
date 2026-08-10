@@ -519,6 +519,7 @@
     <string name="settings_battery_restricted">La optimización de batería está limitando a Rustify</string>
     <string name="settings_battery_desc">Con la pantalla apagada un rato, Android suspende el acceso a la red e ignora los bloqueos de activación, así que no puede cargarse la siguiente canción y la reproducción se para hasta que enciendes el móvil. Permitir el uso en segundo plano es la única forma de evitarlo. Reinstalar la app lo restablece.</string>
     <string name="settings_battery_allow">Permitir uso en segundo plano</string>
+    <string name="track_video_unavailable">No se encontró vídeo para esta canción</string>
     <string name="settings_battery_vendor_hint">Tu fabricante añade su propia gestión de batería por encima de la de Android, y aquí solo puede leerse la de Android: por eso esto puede seguir en rojo aunque lo hayas configurado bien. Pon también la batería de la app en «Sin restricciones» y activa el Inicio automático; luego comprueba si la reproducción sigue parándose.</string>
     <!-- E117 — Reproductor web como motor de reproducción, con reserva y prueba -->
     <string name="settings_playback_engine">Motor de reproducción</string>

@@ -413,8 +413,13 @@ fun TrackScreen(
     var videoUrl by remember(trackId) { mutableStateOf<Pair<String, String?>?>(null) }
     val prefs = context.getSharedPreferences("RustifyPrefs", android.content.Context.MODE_PRIVATE)
     val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
+    // 0 = nothing attempted, 1 = resolving, 2 = finished with no video. Without this the tab silently
+    // fell back to the cover art, so "this song has no video" and "something went wrong" looked
+    // identical — which is exactly the distinction needed to chase the reported crash.
+    var videoLookup by remember(trackId) { mutableIntStateOf(0) }
     LaunchedEffect(mediaTab, trackId, maxQuality) {
         if (mediaTab == 2 && videoUrl == null && !trackId.startsWith("local:")) {
+            videoLookup = 1
             // resolveYouTubeIdNative blocks on network inside Rust, so it must not run on the main
             // thread (the canvas effect below already does this) — on the UI thread it freezes the
             // frame and can take the app down with it.
@@ -430,6 +435,7 @@ fun TrackScreen(
                     com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
                 }.getOrNull()
             }
+            videoLookup = if (videoUrl == null) 2 else 0
         }
     }
     LaunchedEffect(trackId) {
@@ -504,6 +510,25 @@ fun TrackScreen(
                                 contentScale = ContentScale.Crop,
                                 alpha = 0.5f
                             )
+                        }
+
+                        // Say what happened on the Video tab instead of quietly showing the cover.
+                        if (mediaTab == 2 && videoUrl == null && videoLookup != 0) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (videoLookup == 1) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        color = Color(0xFF1DB954),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = stringResource(R.string.track_video_unavailable),
+                                        color = Color(0xFFB0B0B0),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
                         }
 
                         // Tap to show UI when hidden

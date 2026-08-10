@@ -443,8 +443,11 @@ object WebPlayerController {
             // The first polls are ignored: a navigation that has not committed yet can still be
             // answered by the outgoing page, which reads as "already playing".
             if (polls > 2 && s.available && s.isPlaying && s.positionMs > 0) return true
-            // Every ~1.6s: the transport may only just have rendered.
-            if (s.available && !s.isPlaying && polls % 4 == 0) nudgePlay()
+            // Every ~1.6s: the transport may only just have rendered. Note this must NOT be gated on
+            // `available`, which is "there is a media element or media-session metadata" — both false
+            // on a page that has never played, which is precisely when play needs pressing. Gating on
+            // it meant the nudges never fired for a freshly opened track.
+            if (polls % 4 == 0) nudgePlay()
         }
         return false
     }
@@ -469,9 +472,32 @@ object WebPlayerController {
     private const val JS_PAUSE =
         "(function(){var m=document.querySelector('video,audio'); if(m&&!m.paused){m.pause();}})();"
 
-    private const val JS_AUTOPLAY =
-        "(function(){var m=document.querySelector('video,audio');" +
-        "if(m&&m.paused){var b=document.querySelector('[data-testid=\"control-button-playpause\"]'); if(b){b.click();}}})();"
+    /**
+     * Presses play on a page that has not played anything yet.
+     *
+     * The previous version only acted `if (m && m.paused)` — that is, only when a media element
+     * already existed. But a freshly loaded Spotify page has **no** `<video>`/`<audio>` at all; the
+     * player creates it when playback starts. So on exactly the page this is meant for, `m` was null
+     * and the button was never clicked. The track opened, sat there, and the watchdog timed out.
+     *
+     * Order matters: the big button on an entity page starts *that* entity, whereas the transport
+     * bar's button resumes whatever the session last had.
+     */
+    private const val JS_AUTOPLAY = """
+        (function(){
+          try {
+            var m = document.querySelector('video,audio');
+            if (m && !m.paused) return 'already playing';
+            var sels = ['[data-testid="play-button"]', '[data-testid="control-button-playpause"]'];
+            for (var i = 0; i < sels.length; i++) {
+              var b = document.querySelector(sels[i]);
+              if (b) { b.click(); return 'clicked ' + sels[i]; }
+            }
+            if (m) { m.play().catch(function(){}); return 'element play()'; }
+            return 'no control found';
+          } catch (e) { return 'error'; }
+        })();
+    """
 
     /** Re-applies the layout width and the tap-to-play bridge. Cheap and idempotent. */
     private fun applyPageTweaks(view: WebView?) {

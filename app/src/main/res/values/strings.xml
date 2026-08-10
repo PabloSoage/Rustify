@@ -521,6 +521,7 @@
     <string name="settings_battery_restricted">Battery optimisation is restricting Rustify</string>
     <string name="settings_battery_desc">With the screen off for a while Android suspends network access and ignores wake locks, so the next track can\'t be loaded and playback stops until you wake the phone. Allowing background use is the only way around it. Reinstalling the app resets this.</string>
     <string name="settings_battery_allow">Allow background use</string>
+    <string name="track_video_unavailable">No video found for this track</string>
     <string name="settings_battery_vendor_hint">Your manufacturer adds its own battery management on top of Android\'s, and only Android\'s can be read here — so this may stay red even once you\'ve set things correctly. Also set the app\'s battery setting to “No restrictions” and enable Autostart, then check whether playback still stops.</string>
     <!-- E117 — Web player as a playback engine, with fallback and a self-test -->
     <string name="settings_playback_engine">Playback engine</string>
