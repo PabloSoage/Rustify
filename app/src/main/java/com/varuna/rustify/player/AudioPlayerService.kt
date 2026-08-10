@@ -709,7 +709,15 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         val myGen = resolveGen.incrementAndGet()
         isResolving = true
-        _state.value = _state.value.copy(isBuffering = true, isError = false, errorMessage = "")
+        _state.value = _state.value.copy(
+            isBuffering = true, isError = false, errorMessage = "",
+            // Cleared for the incoming track instead of being left over from the outgoing one. It is
+            // only ever *set* after a resolution succeeds, so a network track following a local one
+            // inherited the green "playing from a local file" badge — and kept it while it buffered,
+            // and even while it failed with "yt-dlp returned no url". A `local:` id is local by
+            // definition; anything else has to earn the badge below.
+            isLocalSource = trackId.startsWith("local:")
+        )
 
         playJob?.cancel()
         // Hold the CPU from here until the player is prepared: everything in between (resolution,
@@ -733,30 +741,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                     streamUrl = trackId.removePrefix("local:")
                     android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
                 } else {
-                    // Match local first logic
-                    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-                    val matchLocalFirst = prefs.getBoolean("settings_match_local_first", false)
-                    val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
-
-                    if (matchLocalFirst && localMusicDirs.isNotEmpty()) {
-                        // An explicit YouTube alternative — a just-picked hint or a user-confirmed
-                        // persisted mapping — must win over the local match. Otherwise picking a
-                        // YouTube alternative for a locally-matched track silently does nothing (the
-                        // local file keeps playing). Only an alternative genuinely chosen by the user
-                        // (an in-flight hint or one marked in UserAlternatives) wins over the local
-                        // match; an auto-persisted mapping does not count, so the local match wins again.
-                        val hasUserAlternative = !effectiveYoutubeId.isNullOrBlank() ||
-                            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
-                        if (!hasUserAlternative) {
-                            val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
-                            if (match != null) {
-                                streamUrl = match.id?.removePrefix("local:")
-                                android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $streamUrl")
-                            }
-                        } else {
-                            android.util.Log.d("AudioPlayerService", "User YouTube alternative present for $trackId — skipping local match")
-                        }
-                    }
+                    // "Match local first": a file already on the device beats every cache and every
+                    // network backend below, which is why this runs before any of them.
+                    streamUrl = localStreamFor(track, effectiveYoutubeId)
 
                     // Only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
                     // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
@@ -966,6 +953,38 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Path of the local file [track] should play from, or null to resolve it over the network.
+     *
+     * Shared by [playTrack] and [preBufferNextTrack] so both agree on what counts as local. They used
+     * to disagree: pre-buffering went straight to the provider chain, so a track sitting in the user's
+     * own library still burned a yt-dlp resolution in the background — sometimes failing with
+     * "returned no url" for a song that was on the device all along.
+     *
+     * An explicit YouTube alternative — a just-picked hint or a user-confirmed persisted mapping —
+     * beats the local match. Otherwise picking an alternative for a locally-matched track would
+     * silently do nothing. An *auto*-persisted mapping does not count, so the local match wins again.
+     */
+    private fun localStreamFor(track: FullTrack, youtubeIdHint: String?): String? {
+        val trackId = track.id ?: return null
+        val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("settings_match_local_first", false)) return null
+        val dirs = prefs.getStringSet("local_music_directories", emptySet()).orEmpty()
+        if (dirs.isEmpty()) return null
+
+        val hasUserAlternative = !youtubeIdHint.isNullOrBlank() ||
+            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+        if (hasUserAlternative) {
+            android.util.Log.d("AudioPlayerService", "User YouTube alternative present for $trackId — skipping local match")
+            return null
+        }
+        val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
+            ?: return null
+        return match.id?.removePrefix("local:")?.also {
+            android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $it")
+        }
+    }
+
     private fun preBufferNextTrack() {
         val st = _state.value
         val idx = currentIndexIn(st)
@@ -975,32 +994,45 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (preResolvedUrls.containsKey(nextTrackId)) {
                 return
             }
+            // A track that will play off the device needs no network resolution: playTrack takes the
+            // local match before it looks at any cache, so anything resolved here would be thrown
+            // away — after possibly failing and logging a yt-dlp error for a song we already have.
+            // The lyrics preload below still runs, which is the other half of what this does.
             preBufferingJob?.cancel()
             preBufferingJob = mainScope.launch {
-                android.util.Log.d("AudioPlayerService", "Pre-buffering next track: ${nextTrack.name}")
+                // Inside the coroutine: matching against the local library can touch disk the first
+                // time, and this is called from the main thread.
+                val nextIsLocal = nextTrackId.startsWith("local:") ||
+                    withContext(Dispatchers.IO) { localStreamFor(nextTrack, null) } != null
 
-                // Register metadata in Rust so the resolver can match the track
-                val artistsJson = "[" + nextTrack.artists.joinToString(",") {
-                    "\"" + it.name.replace("\"", "\\\"") + "\""
-                } + "]"
-                NativeEngine.registerTrackMetadataNative(
-                    nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
-                )
+                if (!nextIsLocal) {
+                    android.util.Log.d("AudioPlayerService", "Pre-buffering next track: ${nextTrack.name}")
 
-                // Pre-buffer through the same backend chain as playTrack
-                // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
-                val res = withContext(Dispatchers.IO) {
-                    com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
-                        .resolveStreamUrl(nextTrack, hint = null)
-                }
-                res.onSuccess { (_, info) ->
-                    preResolvedUrls[nextTrackId] = info.uri
-                    resolvedStreamUrls[nextTrackId] = info.uri
-                    info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
-                    android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
-                }
-                res.onFailure { e ->
-                    android.util.Log.w("AudioPlayerService", "Pre-buffer chain failed for ${nextTrack.name}: ${e.message}")
+                    // Register metadata in Rust so the resolver can match the track
+                    val artistsJson = "[" + nextTrack.artists.joinToString(",") {
+                        "\"" + it.name.replace("\"", "\\\"") + "\""
+                    } + "]"
+                    NativeEngine.registerTrackMetadataNative(
+                        nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
+                    )
+
+                    // Pre-buffer through the same backend chain as playTrack
+                    // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
+                    val res = withContext(Dispatchers.IO) {
+                        com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                            .resolveStreamUrl(nextTrack, hint = null)
+                    }
+                    res.onSuccess { (_, info) ->
+                        preResolvedUrls[nextTrackId] = info.uri
+                        resolvedStreamUrls[nextTrackId] = info.uri
+                        info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
+                        android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
+                    }
+                    res.onFailure { e ->
+                        android.util.Log.w("AudioPlayerService", "Pre-buffer chain failed for ${nextTrack.name}: ${e.message}")
+                    }
+                } else {
+                    android.util.Log.d("AudioPlayerService", "Next track plays from a local file; no pre-buffer needed")
                 }
 
                 // Preload lyrics for the next track so they're ready when the user views the track screen
