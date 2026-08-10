@@ -118,6 +118,14 @@ fun WebPlayerScreen(
             }
         }
 
+        // The gesture is not discoverable, and without it tapping a song looks broken.
+        Text(
+            text = stringResource(R.string.web_player_two_finger_hint),
+            color = Color(0xFF9E9E9E),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+        )
+
         if (!filtersReady) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),

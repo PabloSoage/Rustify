@@ -312,6 +312,7 @@
     <string name="web_player_reload">再読み込み</string>
     <string name="web_player_layout_width">レイアウト幅</string>
     <string name="web_player_layout_mobile">モバイル</string>
+    <string name="web_player_two_finger_hint">曲を2本指でタップすると再生します。Spotifyのプレーヤーはダブルクリックを必要とし、タッチ操作では送れないためです。</string>
     <!-- E117 — 再生エンジンとしてのウェブプレーヤー（フォールバックと自己診断つき） -->
     <string name="settings_playback_engine">再生エンジン</string>
     <string name="web_player_backend">Spotifyのウェブプレーヤーを優先（実験的）</string>

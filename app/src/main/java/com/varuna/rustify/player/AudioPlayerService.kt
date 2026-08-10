@@ -897,10 +897,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                     _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
                     android.util.Log.d("AudioPlayerService", "In call — deferring playback of ${track.name}")
                 } else {
-                    // Start the fresh track with a clean focus multiplier so it can never inherit a stuck
-                    // duck from the previous track's focus churn (silent-but-advancing bug). Track is not
-                    // audible yet, so this is inaudible.
-                    refreshAudioFocus()
+                    // Deliberately NOT calling refreshAudioFocus() here any more — see its doc. It used
+                    // to run on every track as a pre-emptive reset, which meant abandoning and
+                    // re-requesting Android audio focus at every transition. That is the one thing this
+                    // app does with audio that no other player does, and it lines up with playback going
+                    // silent-but-advancing over Bluetooth. The reset is still one tap away on resume.
                     exoPlayer.play()
                 }
                 // onTrackStarted runs at the top of playTrack so the previous session flushes
@@ -1359,16 +1360,22 @@ class AudioPlayerService private constructor(private val context: Context) {
     fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
 
     // Reset media3's internal AudioFocusManager by briefly disabling and re-enabling focus handling.
-    // Disabling (handleAudioFocus=false) forces the internal focus volume multiplier back to 1.0 and
-    // abandons focus WITHOUT pausing; re-enabling immediately re-requests it. This clears the rare
-    // "stuck duck" state where a transient duck (a notification tone, Assistant, another app) lowered the
-    // internal multiplier and the matching focus-gain callback never arrived, leaving a track playing
-    // inaudibly while the position keeps advancing. The app cannot otherwise touch that multiplier
-    // (exoPlayer.volume is only the base layer: effective = base * focusMultiplier). Cheap and
-    // glitch-free: attributes are unchanged (no sink reinit), playback is not paused, and steady-state
-    // stays handleAudioFocus=true so call/duck/other-app interruption behavior is unchanged. Called only
-    // at safe points (a fresh track before it becomes audible, and on manual resume). Skipped while the
-    // DJ is ducking so it does not fight the DJ volume.
+    // Disabling routes through ExoPlayerImplInternal.setAudioAttributesInternal, which does
+    // `audioFocusManager.setAudioAttributes(handleAudioFocus ? attrs : null)` — i.e. it ABANDONS
+    // Android audio focus — and re-enabling requests it again. That forces the internal focus volume
+    // multiplier back to 1.0, which is the point: it clears the rare "stuck duck" where a transient
+    // duck (a notification tone, the Assistant, another app) lowered the multiplier and the matching
+    // focus-gain callback never arrived, leaving a track playing inaudibly while the position keeps
+    // advancing. The app cannot otherwise touch that multiplier (exoPlayer.volume is only the base
+    // layer: effective = base * focusMultiplier).
+    //
+    // ONLY called on manual resume. It used to run on every track as well, which meant an
+    // abandon/re-request of audio focus at every transition — unusual enough that it is the prime
+    // suspect for audio going silent-but-advancing when a Bluetooth device connects, since the route
+    // switch and the focus churn can collide and leave the A2DP stream torn down (only toggling
+    // Bluetooth rebuilds it; reconnecting the device does not). Keeping it on resume preserves the
+    // escape hatch — the user presses play precisely because they hear nothing — without touching
+    // focus when nobody asked. Skipped while the DJ is ducking so it does not fight the DJ volume.
     private fun refreshAudioFocus() {
         if (isDucking) return
         runCatching {

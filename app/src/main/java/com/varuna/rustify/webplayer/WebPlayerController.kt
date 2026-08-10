@@ -65,6 +65,28 @@ object WebPlayerController {
 
     @Volatile private var webView: WebView? = null
 
+    /**
+     * Every call into the WebView goes through here, and **never** through `WebView.post`.
+     *
+     * A `View` that is not attached to a window has no handler of its own, so `View.post` does not
+     * run the action — it parks it in a queue that is only drained when the view is next attached:
+     *
+     * ```java
+     * public boolean post(Runnable action) {
+     *   final AttachInfo attachInfo = mAttachInfo;
+     *   if (attachInfo != null) return attachInfo.mHandler.post(action);
+     *   getRunQueue().post(action);   // deferred until attach
+     * }
+     * ```
+     *
+     * This WebView is deliberately detached whenever its screen closes, so that audio survives
+     * navigating away — which meant every command sent while the screen was closed (play, pause,
+     * seek, state polling, opening a track, the Settings self-test) was silently queued and never
+     * executed. Posting to the main looper instead runs regardless of attachment, and the main
+     * thread is where the WebView was created, which is the thread it actually requires.
+     */
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /** True once a WebView exists, i.e. the web player can accept commands. */
     val isReady: Boolean get() = webView != null
 
@@ -113,7 +135,7 @@ object WebPlayerController {
 
         val wv = webView ?: return next
         val uaChanged = (current == 0) != (next == 0)
-        wv.post {
+        mainHandler.post {
             runCatching {
                 if (uaChanged) {
                     wv.settings.userAgentString =
@@ -251,7 +273,7 @@ object WebPlayerController {
 
     private fun run(js: String) {
         val wv = webView ?: return
-        wv.post { runCatching { wv.evaluateJavascript(js, null) } }
+        mainHandler.post { runCatching { wv.evaluateJavascript(js, null) } }
     }
 
     fun play() = run(JS_PLAY)
@@ -285,10 +307,12 @@ object WebPlayerController {
         // is looking for, so the watchdog would declare success before anything had happened.
         stateGeneration++
         _state.value = WebState()
-        wv.post {
+        mainHandler.post {
             runCatching { wv.loadUrl(url) }
             // The SPA needs a moment to render its transport before the click lands.
-            wv.postDelayed({ runCatching { wv.evaluateJavascript(JS_AUTOPLAY, null) } }, 2500)
+            mainHandler.postDelayed(
+                { runCatching { wv.evaluateJavascript(JS_AUTOPLAY, null) } }, 2500
+            )
         }
     }
 
@@ -305,7 +329,7 @@ object WebPlayerController {
         // `evaluateJavascript` answers asynchronously, so a reply issued before a navigation can land
         // after it and resurrect the previous track's state. Stamp each read and drop stale replies.
         val generation = stateGeneration
-        wv.post {
+        mainHandler.post {
             runCatching {
                 wv.evaluateJavascript(JS_READ_STATE) { raw ->
                     if (generation != stateGeneration) return@evaluateJavascript
@@ -348,7 +372,7 @@ object WebPlayerController {
                 cont.resume(null)
                 return@suspendCancellableCoroutine
             }
-            wv.post {
+            mainHandler.post {
                 runCatching {
                     wv.evaluateJavascript(js) { raw ->
                         if (cont.isActive) cont.resume(unquote(raw))
@@ -461,12 +485,16 @@ object WebPlayerController {
     """
 
     /**
-     * Makes a single tap play a track row.
+     * Plays a track row on a **two-finger tap**.
      *
-     * Spotify's desktop player plays a row on **double**-click; a single click only selects it, and
-     * the per-row play button only appears on hover, which a touchscreen never produces. So on a
-     * phone tapping a song appeared to do nothing at all. This forwards a tap on a row as a
-     * `dblclick`, leaving anything that is already a control (buttons, links) to handle its own tap.
+     * Spotify's desktop player plays a row on double-click; a single click only selects it, and the
+     * per-row play button only appears on hover, which a touchscreen never produces. So on a phone
+     * tapping a song appears to do nothing at all.
+     *
+     * A two-finger tap is used rather than forwarding every single tap, which made ordinary
+     * navigation launch songs by accident, and rather than a double tap, which the WebView already
+     * owns for zoom. Two fingers down, neither moving, both released quickly: the row under the
+     * first finger gets a synthetic `dblclick`.
      *
      * Guarded by a flag on `window` so the SPA re-applying it never stacks listeners, and attached to
      * `document` so it survives the SPA replacing the DOM.
@@ -474,18 +502,37 @@ object WebPlayerController {
     private const val JS_TAP_TO_PLAY = """
         (function(){
           try {
-            if (window.__rustifyTapToPlay) return;
-            window.__rustifyTapToPlay = true;
-            document.addEventListener('click', function(e){
-              try {
-                var t = e.target;
-                if (!t || !t.closest) return;
-                if (t.closest('button, a, input, select, textarea, [role="button"], [role="link"], [role="checkbox"]')) return;
-                var row = t.closest('[data-testid="tracklist-row"], [data-testid="track-list-row"], [data-testid="tracklist-row-container"]');
-                if (!row) return;
-                row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
-              } catch (err) {}
-            }, false);
+            if (window.__rustifyTwoFingerPlay) return;
+            window.__rustifyTwoFingerPlay = true;
+            var MOVE_SLOP = 14, MAX_MS = 600;
+            var pending = null;
+            document.addEventListener('touchstart', function(e){
+              if (e.touches.length === 2) {
+                var t = e.touches[0];
+                pending = { x: t.clientX, y: t.clientY, at: Date.now(), moved: false };
+              } else if (e.touches.length > 2) {
+                pending = null;
+              }
+            }, true);
+            document.addEventListener('touchmove', function(e){
+              if (!pending) return;
+              var t = e.touches[0];
+              if (!t) return;
+              if (Math.abs(t.clientX - pending.x) > MOVE_SLOP ||
+                  Math.abs(t.clientY - pending.y) > MOVE_SLOP) pending.moved = true;
+            }, true);
+            document.addEventListener('touchend', function(e){
+              if (!pending) return;
+              if (e.touches.length > 0) return;            // wait for both fingers to lift
+              var p = pending; pending = null;
+              if (p.moved || Date.now() - p.at > MAX_MS) return;
+              var el = document.elementFromPoint(p.x, p.y);
+              if (!el || !el.closest) return;
+              var row = el.closest('[data-testid="tracklist-row"], [data-testid="track-list-row"], [data-testid="tracklist-row-container"]');
+              if (!row) return;
+              row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+            }, true);
+            document.addEventListener('touchcancel', function(){ pending = null; }, true);
           } catch (e) {}
         })();
     """
