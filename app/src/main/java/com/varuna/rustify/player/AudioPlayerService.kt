@@ -1202,6 +1202,8 @@ class AudioPlayerService private constructor(private val context: Context) {
             // Include userQueue so cycling shuffle/repeat (which restores originalQueue) doesn't
             // silently drop the manually-queued tracks.
             originalQueue = queue,
+            // Picking a track by hand ends shuffle — same rule as loadPlaylist.
+            isShuffle = false,
             positionMs = 0L,
             durationMs = track.durationMs.toLong()
         )
@@ -1212,13 +1214,22 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0) {
+    /**
+     * Plays [tracks] starting at [initialIndex].
+     *
+     * Choosing a song by hand turns shuffle off, the way Spotify does it: shuffle is something you
+     * opt into — the shuffle button, or a list's shuffle-play — and a deliberate choice of track is
+     * the opposite of asking for a random order. [keepShuffle] is for [shufflePlay], the one caller
+     * that is itself the opt-in.
+     */
+    fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0, keepShuffle: Boolean = false) {
         if (tracks.isEmpty()) return
         // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
 
-        val baseQueue = if (_state.value.isShuffle) {
+        val shuffle = keepShuffle && _state.value.isShuffle
+        val baseQueue = if (shuffle) {
             val remaining = tracks.filterIndexed { i, _ -> i != idx }.shuffled()
             listOf(selected) + remaining
         } else {
@@ -1251,6 +1262,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             isPlaying = false,
             queue = queue,
             originalQueue = originalQueue,
+            isShuffle = shuffle,
             positionMs = 0L,
             durationMs = selected.durationMs.toLong()
         )
@@ -1271,7 +1283,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     fun shufflePlay(tracks: List<FullTrack>) {
         if (tracks.isEmpty()) return
         _state.value = _state.value.copy(isShuffle = true, isRepeat = false)
-        loadPlaylist(tracks, tracks.indices.random())
+        loadPlaylist(tracks, tracks.indices.random(), keepShuffle = true)
         requestSave()
     }
 
@@ -1282,11 +1294,22 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (!st.isShuffle && !st.isRepeat) {
             val current = st.currentTrack
             val curIdx = currentIndexIn(st)
+            // Shuffle applies to the generated queue only. The manually queued block keeps both its
+            // position (immediately after the current track) and its order — those songs were lined
+            // up deliberately. Scattering them also broke every later addition: with the block no
+            // longer contiguous, new tracks were inserted in front of it instead of behind.
+            val pending = synchronized(userQueue) { userQueue.toList() }
+            val manualEnd = if (curIdx >= 0) manualBlockEnd(st.queue, curIdx, pending) else -1
+            val manual = if (curIdx >= 0) st.queue.subList(curIdx + 1, manualEnd).toList() else emptyList()
             // Drop the current track by POSITION, not by id: filtering by id also removed the other
             // copies of a song a playlist legitimately repeats.
-            val remaining = if (curIdx >= 0) st.queue.filterIndexed { i, _ -> i != curIdx }.shuffled()
-                            else st.queue.filter { it.id != current?.id }.shuffled()
-            val newQueue = if (current != null) listOf(current) + remaining else remaining
+            val remaining = if (curIdx >= 0) {
+                st.queue.filterIndexed { i, _ -> i != curIdx && (i < curIdx || i >= manualEnd) }.shuffled()
+            } else {
+                st.queue.filter { it.id != current?.id }.shuffled()
+            }
+            val newQueue = if (current != null) listOf(current) + manual + remaining
+                           else manual + remaining
             currentQueueIndex = if (current != null) 0 else -1
             _state.value = st.copy(isShuffle = true, isRepeat = false, queue = newQueue)
             preResolvedUrls.clear()
@@ -1711,30 +1734,48 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /**
-     * Insert [trackToInsert] right after the current track and the run of already-queued tracks that
-     * follows it. [knownCurrentIdx] is used when the caller knows the exact position of the current
-     * track in [list] (the live queue), since an id lookup would land on the wrong copy when the
-     * queue repeats a song.
+     * First index in [list] past the block of manually queued tracks that follows [currentIdx].
+     *
+     * There are two queues: the one playback generated (a list, or a shuffle of it) and the one the
+     * user built by hand, which always sits between the current track and the rest. This walks the
+     * live queue and [pending] (the manual queue, in the order it was added) in lockstep and stops
+     * at the first position where they diverge.
+     *
+     * The lockstep matters. The previous version asked, row by row, "is this id anywhere in the
+     * manual queue?" and stopped at the first row that was not — the same answer while the block is
+     * intact, but "there are no manual tracks" as soon as anything moves them. Then the next
+     * addition went straight after the current track, in front of everything queued before it, so
+     * the manual queue played newest-first.
+     */
+    private fun manualBlockEnd(list: List<FullTrack>, currentIdx: Int, pending: List<FullTrack>): Int {
+        var i = currentIdx + 1
+        var p = 0
+        while (i < list.size && p < pending.size && list[i].id == pending[p].id) {
+            i++
+            p++
+        }
+        return i
+    }
+
+    /**
+     * Insert [trackToInsert] after the current track and the manual queue that follows it, so manual
+     * additions play in the order they were made. [pending] is the manual queue as it stands
+     * *before* this insertion. [knownCurrentIdx] is used when the caller knows the exact position of
+     * the current track in [list] (the live queue), since an id lookup would land on the wrong copy
+     * when the queue repeats a song.
      */
     private fun insertTrackAfterUserQueue(
         list: List<FullTrack>,
         currentTrack: FullTrack?,
         trackToInsert: FullTrack,
+        pending: List<FullTrack>,
         knownCurrentIdx: Int? = null
     ): List<FullTrack> {
         val currentIdx = knownCurrentIdx?.takeIf { it in list.indices && list[it].id == currentTrack?.id }
             ?: list.indexOfFirst { it.id == currentTrack?.id }
         if (currentIdx == -1) return list + trackToInsert
 
-        var count = 0
-        for (i in (currentIdx + 1) until list.size) {
-            if (userQueue.any { it.id == list[i].id }) {
-                count++
-            } else {
-                break
-            }
-        }
-        val targetIdx = currentIdx + 1 + count
+        val targetIdx = manualBlockEnd(list, currentIdx, pending)
         val result = list.toMutableList()
         if (targetIdx <= result.size) {
             result.add(targetIdx, trackToInsert)
@@ -1745,31 +1786,34 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun enqueue(track: FullTrack) {
+        val st = _state.value
+        // Snapshot before adding: the insertion point is "after what was already queued by hand".
+        val pending = synchronized(userQueue) { userQueue.toList() }
+        val curIdx = currentIndexIn(st)
+        val q = insertTrackAfterUserQueue(st.queue, st.currentTrack, track, pending, curIdx)
+        val orig = insertTrackAfterUserQueue(st.originalQueue, st.currentTrack, track, pending)
         synchronized(userQueue) { userQueue.add(track) }
-        val curIdx = currentIndexIn(_state.value)
-        val q = insertTrackAfterUserQueue(_state.value.queue, _state.value.currentTrack, track, curIdx)
-        val orig = insertTrackAfterUserQueue(_state.value.originalQueue, _state.value.currentTrack, track)
-        _state.value = _state.value.copy(queue = q, originalQueue = orig)
+        _state.value = st.copy(queue = q, originalQueue = orig)
         preBufferNextTrack()
         notifyQueueChanged(q)
         requestSave()
     }
 
     fun enqueueAll(tracks: List<FullTrack>) {
-        var currentQueue = _state.value.queue
-        var currentOrig = _state.value.originalQueue
-        val currentTrack = _state.value.currentTrack
-        synchronized(userQueue) {
-            tracks.forEach { track ->
-                userQueue.add(track)
-            }
-        }
-        val curIdx = currentIndexIn(_state.value)
+        val st = _state.value
+        var currentQueue = st.queue
+        var currentOrig = st.originalQueue
+        val currentTrack = st.currentTrack
+        val curIdx = currentIndexIn(st)
+        // Grows as we go, so each track lands behind the one added just before it.
+        val pending = synchronized(userQueue) { userQueue.toMutableList() }
         tracks.forEach { track ->
-            currentQueue = insertTrackAfterUserQueue(currentQueue, currentTrack, track, curIdx)
-            currentOrig = insertTrackAfterUserQueue(currentOrig, currentTrack, track)
+            currentQueue = insertTrackAfterUserQueue(currentQueue, currentTrack, track, pending, curIdx)
+            currentOrig = insertTrackAfterUserQueue(currentOrig, currentTrack, track, pending)
+            pending.add(track)
         }
-        _state.value = _state.value.copy(queue = currentQueue, originalQueue = currentOrig)
+        synchronized(userQueue) { userQueue.addAll(tracks) }
+        _state.value = st.copy(queue = currentQueue, originalQueue = currentOrig)
         preBufferNextTrack()
         notifyQueueChanged(currentQueue)
         requestSave()

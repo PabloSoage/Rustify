@@ -60,6 +60,18 @@ object AppUpdate {
         return listOf(m.groupValues[1].toInt(), m.groupValues[2].toInt(), patch.toInt())
     }
 
+    /**
+     * Orderable key for a version string, so releases sort by number rather than alphabetically
+     * ("2.12.9" sorts *above* "2.12.10" as text). Unparseable versions sort last.
+     */
+    private fun versionKey(s: String): Long {
+        val v = parseVersion(s)
+        if (v.isEmpty()) return -1L
+        return v.getOrElse(0) { 0 } * 1_000_000L +
+            v.getOrElse(1) { 0 } * 1_000L +
+            v.getOrElse(2) { 0 }
+    }
+
     /** True when [latest] is strictly greater than [current] component-by-component. */
     fun isNewer(latest: String, current: String): Boolean {
         val a = parseVersion(latest)
@@ -134,10 +146,27 @@ object AppUpdate {
     suspend fun check(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
         val installed = installedVersion(context)
 
-        // Prefer the full list (includes pre-releases and lets us build a cumulative changelog);
-        // fall back to releases/latest if the list endpoint fails.
-        val releases = runCatching { fetchReleases() }.getOrNull()?.takeIf { it.isNotEmpty() }
-            ?: listOf(JSONObject(getJson(LATEST_API)))
+        // Both endpoints, merged — neither is trustworthy on its own:
+        //
+        //  - `releases` is the only one that lists pre-releases and the only one that can produce a
+        //    cumulative changelog, but GitHub serves it from an index that can lag or drop entries.
+        //    It really happened: for a full day the list returned 20 releases topping out at
+        //    v2.12.9-beta while v2.12.10-beta was published and public, so an updater reading only
+        //    the list told everyone on 2.12.9 they were up to date.
+        //  - `releases/latest` always has the newest published release, but hides pre-releases and
+        //    carries only its own notes.
+        //
+        // Taking the union and sorting by version number (not by the order GitHub returns, and not
+        // as text — "2.12.9" sorts above "2.12.10" alphabetically) means either source alone is
+        // enough to notice a new build. Only a failure of *both* is an error.
+        val listed = runCatching { fetchReleases() }.getOrDefault(emptyList())
+        val newest = runCatching { JSONObject(getJson(LATEST_API)) }
+            .getOrNull()?.takeIf { it.optString("tag_name").isNotBlank() }
+        if (listed.isEmpty() && newest == null) error("Could not reach the GitHub releases API")
+
+        val releases = (listOfNotNull(newest) + listed)
+            .distinctBy { it.optString("tag_name") }
+            .sortedByDescending { versionKey(it.optString("tag_name")) }
 
         val missed = releases.filter { isNewer(it.optString("tag_name"), installed) }
         if (missed.isEmpty()) return@withContext null

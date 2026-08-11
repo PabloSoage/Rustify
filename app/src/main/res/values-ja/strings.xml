@@ -313,6 +313,9 @@
     <string name="web_player_layout_width">レイアウト幅</string>
     <string name="web_player_layout_mobile">モバイル</string>
     <string name="web_player_two_finger_hint">曲を2本指でタップすると再生します。Spotifyのプレーヤーはダブルクリックを必要とし、タッチ操作では送れないためです。</string>
+    <!-- E124 — 仮想マウス -->
+    <string name="web_player_pointer">ポインタ</string>
+    <string name="web_player_pointer_hint">ドラッグでポインタを移動 · タップでクリック · 2本指タップで再生 · 2本指でスクロール。</string>
     <!-- E120 — Doze の除外 -->
     <string name="settings_battery_title">バックグラウンド再生</string>
     <string name="settings_battery_exempt">電池の最適化はRustifyで無効です</string>

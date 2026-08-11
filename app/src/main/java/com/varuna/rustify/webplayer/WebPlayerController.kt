@@ -294,6 +294,16 @@ object WebPlayerController {
      */
     fun nudgePlay() = run(JS_AUTOPLAY)
 
+    /**
+     * What the last attempt to press play actually did — which selector matched, or that none did.
+     *
+     * "Playback did not start" has several causes that look the same from outside: the button was
+     * never found, it was found and pressed and the page still refused (no Premium, region block),
+     * or the page was not the one we thought. The self-test reports this so they can be told apart.
+     */
+    @Volatile var lastPlayAttempt: String? = null
+        private set
+
     fun togglePlayPause() = run(click("control-button-playpause"))
     // No next/previous here on purpose: opening a track URL leaves Spotify's own context holding
     // that single song, so its skip buttons have nowhere to go. Queue navigation belongs to
@@ -435,6 +445,7 @@ object WebPlayerController {
     suspend fun awaitPlaybackStart(timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         var polls = 0
+        lastPlayAttempt = null
         while (System.currentTimeMillis() < deadline) {
             delay(POLL_INTERVAL_MS)
             refreshState()
@@ -447,7 +458,9 @@ object WebPlayerController {
             // `available`, which is "there is a media element or media-session metadata" — both false
             // on a page that has never played, which is precisely when play needs pressing. Gating on
             // it meant the nudges never fired for a freshly opened track.
-            if (polls % 4 == 0) nudgePlay()
+            // Read the result rather than firing and forgetting: it is the only evidence of whether
+            // the button was even there, and it is what the self-test reports on failure.
+            if (polls % 4 == 0) lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
         }
         return false
     }
@@ -488,25 +501,154 @@ object WebPlayerController {
           try {
             var m = document.querySelector('video,audio');
             if (m && !m.paused) return 'already playing';
-            var sels = ['[data-testid="play-button"]', '[data-testid="control-button-playpause"]'];
+            var sels = [
+              '[data-testid="action-bar-row"] [data-testid="play-button"]',
+              '[data-testid="play-button"]',
+              '[data-testid="control-button-playpause"]'
+            ];
             for (var i = 0; i < sels.length; i++) {
               var b = document.querySelector(sels[i]);
               if (b) { b.click(); return 'clicked ' + sels[i]; }
             }
+            // Spotify has renamed these test ids before. The accessible name is the more durable
+            // handle, and it is localised, so match the start of it in the languages the app ships.
+            var btns = document.querySelectorAll('button[aria-label]');
+            for (var j = 0; j < btns.length; j++) {
+              var label = (btns[j].getAttribute('aria-label') || '').toLowerCase();
+              if (/^(play|reproducir|reproduzir|lire|abspielen|riprod)/.test(label) ||
+                  label.indexOf('再生') === 0) {
+                btns[j].click();
+                return 'clicked aria "' + label.slice(0, 24) + '"';
+              }
+            }
             if (m) { m.play().catch(function(){}); return 'element play()'; }
-            return 'no control found';
-          } catch (e) { return 'error'; }
+            return 'no play control on page';
+          } catch (e) { return 'error: ' + ((e && e.message) || 'unknown'); }
         })();
     """
 
-    /** Re-applies the layout width and the tap-to-play bridge. Cheap and idempotent. */
+    /** Re-applies the layout width and the tap/pointer bridges. Cheap and idempotent. */
     private fun applyPageTweaks(view: WebView?) {
         val wv = view ?: return
         runCatching {
             if (cachedLayoutWidth != 0) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
             wv.evaluateJavascript(JS_TAP_TO_PLAY, null)
+            wv.evaluateJavascript(JS_POINTER_BRIDGE, null)
         }
     }
+
+    // -------------------------------------------------------------------------------------------
+    // Virtual mouse
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * Moves the virtual cursor to ([fx], [fy]) — fractions of the visible page, 0..1 — and sends the
+     * hover events that go with it. Spotify's desktop layout hides the per-row play button until the
+     * row is hovered, which a touchscreen never does.
+     */
+    fun pointerMove(fx: Float, fy: Float) = run(pointerJs(fx, fy, "move"))
+
+    /** Clicks at ([fx], [fy]). [double] sends the double-click that plays a track row. */
+    fun pointerClick(fx: Float, fy: Float, double: Boolean) =
+        run(pointerJs(fx, fy, if (double) "dblclick" else "click"))
+
+    /** Scrolls the scrollable element under ([fx], [fy]) by [dx]/[dy] CSS pixels. */
+    fun pointerScroll(fx: Float, fy: Float, dx: Float, dy: Float) =
+        run(pointerJs(fx, fy, "scroll", dx, dy))
+
+    private fun pointerJs(fx: Float, fy: Float, action: String, dx: Float = 0f, dy: Float = 0f) =
+        "window.__rustifyPointer&&window.__rustifyPointer($fx,$fy,'$action',$dx,$dy);"
+
+    /**
+     * A synthetic mouse for a page that was written for one.
+     *
+     * Spotify's web player is a desktop application: rows play on double-click, controls appear on
+     * hover, and at the zoom needed to fit a 1024px layout on a phone its buttons are a few device
+     * pixels across — so a finger can neither hit them nor express what they expect. The screen
+     * drives a cursor over the page and calls in here to replay it as mouse events.
+     *
+     * Coordinates arrive as fractions of the *visual* viewport and are converted through
+     * `visualViewport`, so they stay correct when the page is zoomed or panned. `elementFromPoint`
+     * then resolves the target the same way a real pointer would.
+     *
+     * Hover is tracked so that leaving an element emits `mouseout`/`mouseleave` — React components
+     * that show a control on enter would otherwise never hide it again. Note that CSS `:hover` does
+     * not respond to synthetic events at all (they are untrusted); anything driven purely by CSS
+     * stays hidden, which is why double-click is still the way to play a row.
+     */
+    private const val JS_POINTER_BRIDGE = """
+        (function(){
+          try {
+            if (window.__rustifyPointer) return;
+            var hovered = null;
+            function at(fx, fy){
+              var vv = window.visualViewport;
+              var x = (vv ? vv.offsetLeft : 0) + fx * (vv ? vv.width : window.innerWidth);
+              var y = (vv ? vv.offsetTop : 0) + fy * (vv ? vv.height : window.innerHeight);
+              return { x: x, y: y, el: document.elementFromPoint(x, y) };
+            }
+            function fire(el, type, x, y, extra){
+              if (!el) return;
+              var init = { bubbles: true, cancelable: true, view: window,
+                           clientX: x, clientY: y, button: 0, buttons: 0 };
+              if (extra) { for (var k in extra) init[k] = extra[k]; }
+              el.dispatchEvent(new MouseEvent(type, init));
+            }
+            function scroller(el){
+              var n = el;
+              while (n && n !== document.body && n !== document.documentElement) {
+                var s = window.getComputedStyle(n);
+                if (n.scrollHeight > n.clientHeight + 1 && /(auto|scroll|overlay)/.test(s.overflowY)) return n;
+                n = n.parentElement;
+              }
+              return null;
+            }
+            window.__rustifyPointer = function(fx, fy, action, dx, dy){
+              try {
+                var p = at(fx, fy);
+                if (action === 'move') {
+                  if (hovered !== p.el) {
+                    if (hovered) {
+                      fire(hovered, 'mouseout', p.x, p.y, { relatedTarget: p.el });
+                      fire(hovered, 'mouseleave', p.x, p.y, { bubbles: false });
+                    }
+                    if (p.el) {
+                      fire(p.el, 'mouseover', p.x, p.y, { relatedTarget: hovered });
+                      fire(p.el, 'mouseenter', p.x, p.y, { bubbles: false });
+                    }
+                    hovered = p.el;
+                  }
+                  fire(p.el, 'mousemove', p.x, p.y);
+                  return 'move';
+                }
+                if (action === 'click' || action === 'dblclick') {
+                  if (hovered !== p.el) {
+                    fire(p.el, 'mouseover', p.x, p.y, { relatedTarget: hovered });
+                    hovered = p.el;
+                  }
+                  fire(p.el, 'mousemove', p.x, p.y);
+                  fire(p.el, 'mousedown', p.x, p.y, { buttons: 1 });
+                  fire(p.el, 'mouseup', p.x, p.y);
+                  fire(p.el, 'click', p.x, p.y, { detail: 1 });
+                  if (action === 'dblclick') {
+                    fire(p.el, 'mousedown', p.x, p.y, { buttons: 1, detail: 2 });
+                    fire(p.el, 'mouseup', p.x, p.y, { detail: 2 });
+                    fire(p.el, 'click', p.x, p.y, { detail: 2 });
+                    fire(p.el, 'dblclick', p.x, p.y, { detail: 2 });
+                  }
+                  return action;
+                }
+                if (action === 'scroll') {
+                  var n = scroller(p.el);
+                  if (n) { n.scrollBy(dx, dy); } else { window.scrollBy(dx, dy); }
+                  return 'scroll';
+                }
+                return 'unknown';
+              } catch (e) { return 'error'; }
+            };
+          } catch (e) {}
+        })();
+    """
 
     /**
      * Lays the page out at [width] CSS pixels and scales it so that width fills the screen.

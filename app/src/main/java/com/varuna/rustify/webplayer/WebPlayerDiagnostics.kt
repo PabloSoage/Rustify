@@ -91,10 +91,14 @@ object WebPlayerDiagnostics {
         val playing = WebPlayerController.awaitPlaybackStart(PLAYBACK_TIMEOUT_MS)
         val heard = WebPlayerController.state.value.title
         WebPlayerController.pause()
-        // On failure the page it ended up on says more than an empty label: a login wall, a country
-        // block and a genuine playback refusal all look identical otherwise.
-        val detail = if (playing) heard
-                     else WebPlayerController.currentUrl().orEmpty().take(60)
+        // On failure, the page it ended up on plus what pressing play actually did: a login wall, a
+        // missing button and a page that was pressed and refused anyway (no Premium, region block)
+        // all look identical otherwise, and only the last one means the mode is unusable.
+        val detail = if (playing) heard else buildString {
+            append(WebPlayerController.lastPlayAttempt ?: "play never attempted")
+            append(" · ")
+            append(WebPlayerController.currentUrl().orEmpty().take(48))
+        }
         steps += Step(R.string.wp_test_step_playback, playing, detail)
 
         return steps

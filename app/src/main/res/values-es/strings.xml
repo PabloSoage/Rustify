@@ -513,6 +513,9 @@
     <string name="web_player_layout_width">Anchura del diseño</string>
     <string name="web_player_layout_mobile">Móvil</string>
     <string name="web_player_two_finger_hint">Toca una canción con dos dedos para reproducirla: el reproductor de Spotify necesita un doble clic, que una pantalla táctil no puede enviar.</string>
+    <!-- E124 — ratón virtual -->
+    <string name="web_player_pointer">Puntero</string>
+    <string name="web_player_pointer_hint">Arrastra para mover el puntero · toca para hacer clic · toca con dos dedos para reproducir · dos dedos para desplazar.</string>
     <!-- E120 — Exención de Doze -->
     <string name="settings_battery_title">Reproducción en segundo plano</string>
     <string name="settings_battery_exempt">La optimización de batería está desactivada para Rustify</string>
