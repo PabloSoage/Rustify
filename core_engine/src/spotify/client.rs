@@ -98,6 +98,10 @@ pub struct GqlPersistedQuery {
 // SPOTIFY CLIENT
 // =============================================================================
 
+/// Treat a token as expired this long before it really is, so a request that is valid when it is
+/// built is still valid when it lands.
+const ACCESS_TOKEN_MARGIN_MS: u64 = 30_000;
+
 const SPOTIFY_API_BASE: &str = "https://api.spotify.com/v1";
 const SPOTIFY_GQL_BASE: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
 
@@ -474,10 +478,25 @@ impl SpotifyClient {
     // =========================================================================
 
     /// Get the current access token string.
+    ///
+    /// Refuses to hand out a token that has already expired. That sounds obvious, and it was not
+    /// what this did: it returned whatever was stored, so every request kept presenting a dead
+    /// token and coming back `401 Missing/invalid/expired access token` — including
+    /// `api_get`, which has a client-credentials fallback for public data that could never be
+    /// reached, because this returned `Ok` and the fallback only runs on `Err`.
+    ///
+    /// The margin is for the request that is fine when it is built and expired by the time it
+    /// arrives.
     pub fn access_token(&self) -> SpotifyResult<&str> {
-        self.credentials.as_ref()
-            .map(|c| c.access_token.as_str())
-            .ok_or(SpotifyError::NotAuthenticated)
+        let creds = self.credentials.as_ref().ok_or(SpotifyError::NotAuthenticated)?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if now + ACCESS_TOKEN_MARGIN_MS >= creds.expiration {
+            return Err(SpotifyError::TokenExpired);
+        }
+        Ok(creds.access_token.as_str())
     }
 
     /// Check if response was successful, extract error body if not.

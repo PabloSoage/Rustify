@@ -164,6 +164,7 @@
     <string name="track_menu_share_rustify">Share as Rustify link</string>
     <string name="share_track">Share Track</string>
     <string name="share_no_link">No link available for this track</string>
+    <string name="error_session_expired">Your Spotify session has expired. Sign in again from Settings and reopen the link.</string>
     <string name="share_no_target">No app available to share</string>
     <string name="paste_clipboard_empty">Clipboard is empty</string>
     <string name="paste_no_spotify_link">No Spotify link found in clipboard</string>
@@ -518,6 +519,8 @@
     <!-- E124 — virtual mouse -->
     <string name="web_player_pointer">Pointer</string>
     <string name="web_player_pointer_hint">Drag to move the pointer · tap to click · two-finger tap to play · two fingers to scroll.</string>
+    <string name="web_player_desktop_playback">Play through the desktop page</string>
+    <string name="web_player_desktop_playback_desc">Off: the phone page, which starts instantly but plays shuffled without Premium. On: on-demand, but this browser has to become the active Spotify device.</string>
     <!-- E120 — Doze exemption -->
     <string name="settings_battery_title">Background playback</string>
     <string name="settings_battery_exempt">Battery optimisation is off for Rustify</string>

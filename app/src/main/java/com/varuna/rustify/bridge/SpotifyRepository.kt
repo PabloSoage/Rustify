@@ -1529,11 +1529,20 @@ loadLocalTracksFromCache()
 
     /**
      * Get full track details.
+     *
+     * The auth retry is not optional here: this is what a shared `open.spotify.com/track/…` link
+     * lands on, and opening a link is exactly the case where the app has been closed for days and
+     * the access token is long dead. Without it the expired token went out as-is and the raw
+     * `API error 401: Missing/invalid/expired access token` was rendered on the track screen —
+     * which reads as "the link expired", when the link is a plain URL that carries no token at all.
+     *
      * @throws SpotifyEngineException on API errors
      */
     suspend fun getTrack(id: String): FullTrack = withContext(Dispatchers.IO) {
-        val json = NativeEngine.getSpotifyTrackNative(id)
-        FullTrack.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.getSpotifyTrackNative(id)
+            FullTrack.fromJson(checkForError(json))
+        }
     }
 
     /**
@@ -1583,8 +1592,10 @@ loadLocalTracksFromCache()
      * @throws SpotifyEngineException on API errors
      */
     suspend fun searchTracks(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.searchSpotifyNative(query, "tracks", limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.searchSpotifyNative(query, "tracks", limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+        }
     }
 
     /**
@@ -1592,8 +1603,10 @@ loadLocalTracksFromCache()
      * @throws SpotifyEngineException on API errors
      */
     suspend fun searchAlbums(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.searchSpotifyNative(query, "albums", limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.searchSpotifyNative(query, "albums", limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+        }
     }
 
     /**
@@ -1601,8 +1614,10 @@ loadLocalTracksFromCache()
      * @throws SpotifyEngineException on API errors
      */
     suspend fun searchArtists(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.searchSpotifyNative(query, "artists", limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.searchSpotifyNative(query, "artists", limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+        }
     }
 
     /**
@@ -1610,8 +1625,10 @@ loadLocalTracksFromCache()
      * @throws SpotifyEngineException on API errors
      */
     suspend fun searchPlaylists(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimplePlaylist> = withContext(Dispatchers.IO) {
-        val json = NativeEngine.searchSpotifyNative(query, "playlists", limit, offset)
-        PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.searchSpotifyNative(query, "playlists", limit, offset)
+            PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+        }
     }
 
     // =========================================================================

@@ -190,6 +190,8 @@ fun WebPlayerScreen(
                         .matchParentSize()
                         .pointerInput(viewSize) {
                             val slop = viewConfiguration.touchSlop
+                            // Two fingers are shakier than one, and both have to land and lift.
+                            val twoFingerSlop = slop * 2f
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 down.consume()
@@ -209,6 +211,11 @@ fun WebPlayerScreen(
                                     travelled += abs(delta.x) + abs(delta.y)
                                     if (delta == Offset.Zero) continue
                                     if (twoFingers) {
+                                        // Not until the gesture has clearly left the spot. Two
+                                        // fingers never land or lift together, so a two-finger tap
+                                        // reports a few pixels of travel — enough to scroll the page
+                                        // out from under the tap it was supposed to be.
+                                        if (travelled < twoFingerSlop) continue
                                         // Content follows the fingers, as on a phone.
                                         WebPlayerController.pointerScroll(
                                             cursor.x / w, cursor.y / h,
@@ -224,7 +231,7 @@ fun WebPlayerScreen(
                                 }
                                 // A tap is a press that went nowhere. Two fingers make it the
                                 // double-click Spotify's rows need; one finger is a plain click.
-                                if (travelled < slop) {
+                                if (travelled < if (twoFingers) twoFingerSlop else slop) {
                                     WebPlayerController.pointerClick(
                                         cursor.x / w, cursor.y / h, double = twoFingers
                                     )

@@ -227,6 +227,7 @@
     <string name="track_menu_share_rustify">Compartir como enlace Rustify</string>
     <string name="share_track">Compartir pista</string>
     <string name="share_no_link">No hay enlace disponible para esta pista</string>
+    <string name="error_session_expired">Tu sesión de Spotify ha caducado. Vuelve a iniciar sesión desde Ajustes y abre el enlace otra vez.</string>
     <string name="share_no_target">No hay ninguna app para compartir</string>
     <string name="paste_clipboard_empty">El portapapeles está vacío</string>
     <string name="paste_no_spotify_link">No se encontró un enlace de Spotify en el portapapeles</string>
@@ -516,6 +517,8 @@
     <!-- E124 — ratón virtual -->
     <string name="web_player_pointer">Puntero</string>
     <string name="web_player_pointer_hint">Arrastra para mover el puntero · toca para hacer clic · toca con dos dedos para reproducir · dos dedos para desplazar.</string>
+    <string name="web_player_desktop_playback">Reproducir con la página de escritorio</string>
+    <string name="web_player_desktop_playback_desc">Desactivado: la página de móvil, que arranca al instante pero reproduce en aleatorio sin Premium. Activado: a la carta, pero este navegador tiene que pasar a ser el dispositivo activo de Spotify.</string>
     <!-- E120 — Exención de Doze -->
     <string name="settings_battery_title">Reproducción en segundo plano</string>
     <string name="settings_battery_exempt">La optimización de batería está desactivada para Rustify</string>

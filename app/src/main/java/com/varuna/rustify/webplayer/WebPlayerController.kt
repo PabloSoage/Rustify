@@ -43,6 +43,15 @@ object WebPlayerController {
 
     data class WebState(
         val available: Boolean = false,
+        /**
+         * The page has a media element of its own, i.e. it is the thing producing sound.
+         *
+         * Without this, a page showing track metadata is indistinguishable from a page *playing* it —
+         * and Spotify's transport bar mirrors whatever device your account last used, so it happily
+         * shows a title, an artist and artwork while this browser is only acting as a remote control
+         * with nothing local to press play on. Metadata but no element means exactly that.
+         */
+        val hasLocalMedia: Boolean = false,
         val isPlaying: Boolean = false,
         val title: String = "",
         val artist: String = "",
@@ -96,6 +105,37 @@ object WebPlayerController {
 
     private const val PREFS = "rustify_settings"
     private const val KEY_LAYOUT_WIDTH = "web_player_layout_width"
+    private const val KEY_PLAYBACK_DESKTOP = "web_player_playback_desktop"
+
+    /**
+     * Which page the *backend* plays through, independently of the layout you browse in.
+     *
+     * The two behave differently and neither is strictly better, so this is a switch rather than a
+     * decision baked into the code:
+     *
+     *  - **Phone page** (default). Starts instantly on a tap — measured. But it is the mobile site,
+     *    so on an account without Premium it plays shuffled, and the backend can end up on a
+     *    different track than the one it asked for.
+     *  - **Desktop page.** On-demand and no shuffle restriction, but it is a Spotify Connect remote
+     *    before it is a player: unless this browser is the active device, its play button asks
+     *    whatever device you last used, and nothing happens here. [takeOverPlaybackDevice] is what
+     *    makes that case recoverable.
+     */
+    @Volatile private var cachedPlaybackDesktop = false
+
+    /** Reads and caches [KEY_PLAYBACK_DESKTOP]; the cache is what the playback path can reach. */
+    fun playbackUsesDesktop(context: Context): Boolean {
+        cachedPlaybackDesktop = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PLAYBACK_DESKTOP, false)
+        return cachedPlaybackDesktop
+    }
+
+    /** Persists the choice. Takes effect on the next track opened; nothing is reloaded now. */
+    fun setPlaybackUsesDesktop(context: Context, desktop: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit { putBoolean(KEY_PLAYBACK_DESKTOP, desktop) }
+        cachedPlaybackDesktop = desktop
+    }
 
     /**
      * Layout widths the page can be laid out at, in CSS pixels, cycled from the screen's top bar —
@@ -134,12 +174,14 @@ object WebPlayerController {
         cachedLayoutWidth = next
 
         val wv = webView ?: return next
-        val uaChanged = (current == 0) != (next == 0)
         mainHandler.post {
             runCatching {
-                if (uaChanged) {
-                    wv.settings.userAgentString =
-                        userAgentFor(next != 0, systemUserAgent ?: wv.settings.userAgentString)
+                // Compare against the agent the WebView is *actually* carrying, not against the
+                // previous preference: playback switches it to the phone agent behind the screen's
+                // back (see [playSpotifyUrl]), so the two can disagree.
+                val want = userAgentFor(next != 0, systemUserAgent ?: wv.settings.userAgentString)
+                if (wv.settings.userAgentString != want) {
+                    wv.settings.userAgentString = want
                     wv.reload()
                 } else {
                     wv.evaluateJavascript(viewportJs(next), null)
@@ -177,6 +219,7 @@ object WebPlayerController {
     fun getOrCreate(context: Context): WebView {
         webView?.let { return it }
         val width = layoutWidth(context)
+        playbackUsesDesktop(context)   // prime the cache; the playback path has no Context
         val wv = WebView(context.applicationContext).apply {
             settings.apply {
                 javaScriptEnabled = true
@@ -304,6 +347,13 @@ object WebPlayerController {
     @Volatile var lastPlayAttempt: String? = null
         private set
 
+    /**
+     * Result of the last attempt to claim playback for this page, or null if it was never needed
+     * (which is the good case — it means the page had a player of its own).
+     */
+    @Volatile var lastDeviceTakeover: String? = null
+        private set
+
     fun togglePlayPause() = run(click("control-button-playpause"))
     // No next/previous here on purpose: opening a track URL leaves Spotify's own context holding
     // that single song, so its skip buttons have nowhere to go. Queue navigation belongs to
@@ -317,6 +367,16 @@ object WebPlayerController {
     /**
      * Opens a Spotify entity in the page and starts it. [url] is a plain https Spotify URL; the page
      * is a SPA, so this navigates and then autoplays once the transport button appears.
+     *
+     * **Playback picks its own page**, independently of the layout the screen is browsing in — see
+     * [cachedPlaybackDesktop]. Nothing is reloaded for it, because opening a track is a navigation
+     * anyway.
+     *
+     * The desktop page was the obvious choice — it is the one with a real library — but measured, it
+     * does not play here. The self-test reached the point of reporting
+     * `clicked [data-testid="action-bar-row"] [data-testid="play-button"]` on the correct track
+     * address, with WebView, session and Widevine all passing, and nothing ever started. The phone
+     * page, by contrast, starts instantly on a plain tap, so it is the default.
      */
     fun playSpotifyUrl(url: String) {
         val wv = webView ?: return
@@ -326,6 +386,10 @@ object WebPlayerController {
         stateGeneration++
         _state.value = WebState()
         mainHandler.post {
+            runCatching {
+                val ua = userAgentFor(cachedPlaybackDesktop, systemUserAgent ?: wv.settings.userAgentString)
+                if (wv.settings.userAgentString != ua) wv.settings.userAgentString = ua
+            }
             runCatching { wv.loadUrl(url) }
             // The SPA needs a moment to render its transport before the click lands.
             mainHandler.postDelayed(
@@ -357,6 +421,7 @@ object WebPlayerController {
                         val previous = _state.value
                         _state.value = WebState(
                             available = o.optBoolean("available", false),
+                            hasLocalMedia = o.optBoolean("local", false),
                             isPlaying = o.optBoolean("playing", false),
                             title = o.optString("title"),
                             artist = o.optString("artist"),
@@ -399,6 +464,75 @@ object WebPlayerController {
             }
         }
     }
+
+    // -------------------------------------------------------------------------------------------
+    // Spotify Connect: making this page the device
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * Tells the page to play **here** instead of wherever the account last played.
+     *
+     * Spotify's transport bar is a Connect remote first and a player second: it shows the state of
+     * your last active device, and its play button asks *that* device to resume. Reported exactly
+     * that way — "I see my last Spotify playback in the miniplayer, but it won't let me interact with
+     * play" — and it matches a self-test that finds the button, clicks it, and never hears anything.
+     * The click was not being ignored; it was being sent somewhere else.
+     *
+     * The fix is the same one a person would do: open the device picker and choose this browser. Two
+     * evaluations with a pause between them, because the list is rendered when the picker opens.
+     *
+     * Returns a short description of what happened, for the self-test.
+     */
+    suspend fun takeOverPlaybackDevice(): String {
+        val opened = eval(JS_OPEN_DEVICE_PICKER) ?: "no answer"
+        if (!opened.startsWith("opened")) return opened
+        delay(900)
+        return eval(JS_PICK_THIS_BROWSER) ?: "no answer"
+    }
+
+    private const val JS_OPEN_DEVICE_PICKER = """
+        (function(){
+          try {
+            var sels = [
+              '[data-testid="control-button-connect-to-device"]',
+              '[data-testid="connect-device-picker-trigger"]',
+              'button[aria-label*="onnect"]',
+              'button[aria-label*="onectar"]',
+              'button[aria-label*="ispositiv"]'
+            ];
+            for (var i = 0; i < sels.length; i++) {
+              var b = document.querySelector(sels[i]);
+              if (b) { b.click(); return 'opened via ' + sels[i]; }
+            }
+            return 'no device picker';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Picks the entry that *is* this browser. Spotify labels it differently per platform and
+     * language ("Web Player (Chrome)", "This web browser", "Este navegador web"), so the list is
+     * matched on text rather than on a position or an id.
+     */
+    private const val JS_PICK_THIS_BROWSER = """
+        (function(){
+          try {
+            var items = document.querySelectorAll(
+              '[data-testid="device-picker-item"], [data-testid="connect-device-list-item"], ' +
+              '[data-testid="connect-device-list-item-current"], li button, [role="menuitem"]'
+            );
+            var wanted = /(web ?player|this (web )?browser|este navegador|ce navigateur|dieser browser)/i;
+            for (var i = 0; i < items.length; i++) {
+              var t = (items[i].textContent || '').trim();
+              if (wanted.test(t)) {
+                items[i].click();
+                return 'switched to "' + t.slice(0, 28) + '"';
+              }
+            }
+            return 'this browser not in device list (' + items.length + ' entries)';
+          } catch (e) { return 'error'; }
+        })();
+    """
 
     /**
      * Waits until a **real, secure** document has been parsed.
@@ -445,7 +579,9 @@ object WebPlayerController {
     suspend fun awaitPlaybackStart(timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         var polls = 0
+        var tookOver = false
         lastPlayAttempt = null
+        lastDeviceTakeover = null
         while (System.currentTimeMillis() < deadline) {
             delay(POLL_INTERVAL_MS)
             refreshState()
@@ -458,6 +594,14 @@ object WebPlayerController {
             // `available`, which is "there is a media element or media-session metadata" — both false
             // on a page that has never played, which is precisely when play needs pressing. Gating on
             // it meant the nudges never fired for a freshly opened track.
+            // Metadata with no media element of its own: the page is showing another device's
+            // playback and every click is being forwarded there. Pressing play harder will not help
+            // — claim the playback first, once, and then go back to nudging.
+            if (!tookOver && polls > 6 && !s.hasLocalMedia && s.title.isNotBlank()) {
+                tookOver = true
+                lastDeviceTakeover = takeOverPlaybackDevice()
+                continue
+            }
             // Read the result rather than firing and forgetting: it is the only evidence of whether
             // the button was even there, and it is what the self-test reports on failure.
             if (polls % 4 == 0) lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
@@ -501,6 +645,22 @@ object WebPlayerController {
           try {
             var m = document.querySelector('video,audio');
             if (m && !m.paused) return 'already playing';
+            // A bare .click() is not what a tap looks like. The phone page — the one that actually
+            // plays — is built for touch, and a control that waits for pointerdown/pointerup sees
+            // nothing in a lone click event. Press the way a finger does, then click.
+            function press(b){
+              var r = b.getBoundingClientRect();
+              var x = r.left + r.width / 2, y = r.top + r.height / 2;
+              var opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+              try {
+                var pd = Object.assign({ pointerId: 1, pointerType: 'touch', isPrimary: true }, opts);
+                b.dispatchEvent(new PointerEvent('pointerdown', pd));
+                b.dispatchEvent(new MouseEvent('mousedown', opts));
+                b.dispatchEvent(new PointerEvent('pointerup', pd));
+                b.dispatchEvent(new MouseEvent('mouseup', opts));
+              } catch (e) {}
+              b.click();
+            }
             var sels = [
               '[data-testid="action-bar-row"] [data-testid="play-button"]',
               '[data-testid="play-button"]',
@@ -508,7 +668,7 @@ object WebPlayerController {
             ];
             for (var i = 0; i < sels.length; i++) {
               var b = document.querySelector(sels[i]);
-              if (b) { b.click(); return 'clicked ' + sels[i]; }
+              if (b) { press(b); return 'clicked ' + sels[i]; }
             }
             // Spotify has renamed these test ids before. The accessible name is the more durable
             // handle, and it is localised, so match the start of it in the languages the app ships.
@@ -517,7 +677,7 @@ object WebPlayerController {
               var label = (btns[j].getAttribute('aria-label') || '').toLowerCase();
               if (/^(play|reproducir|reproduzir|lire|abspielen|riprod)/.test(label) ||
                   label.indexOf('再生') === 0) {
-                btns[j].click();
+                press(btns[j]);
                 return 'clicked aria "' + label.slice(0, 24) + '"';
               }
             }
@@ -531,7 +691,11 @@ object WebPlayerController {
     private fun applyPageTweaks(view: WebView?) {
         val wv = view ?: return
         runCatching {
-            if (cachedLayoutWidth != 0) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
+            // Only widen a page that was actually served as the desktop one. Playback switches the
+            // agent to the phone (see [playSpotifyUrl]), so the stored width can outlive the layout
+            // it belongs to — and laying the phone page out at 1024px just shrinks it to nothing.
+            val desktopPage = wv.settings.userAgentString.contains("Windows")
+            if (cachedLayoutWidth != 0 && desktopPage) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
             wv.evaluateJavascript(JS_TAP_TO_PLAY, null)
             wv.evaluateJavascript(JS_POINTER_BRIDGE, null)
         }
@@ -742,6 +906,7 @@ object WebPlayerController {
             if (md && md.artwork && md.artwork.length) { art = md.artwork[md.artwork.length-1].src || ''; }
             return JSON.stringify({
               available: !!m || !!md,
+              local: !!m,
               playing: !!m && !m.paused,
               title: md ? (md.title || '') : '',
               artist: md ? (md.artist || '') : '',

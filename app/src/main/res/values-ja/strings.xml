@@ -81,6 +81,7 @@
     <string name="track_menu_share_rustify">Rustifyリンクで共有</string>
     <string name="share_track">トラックを共有</string>
     <string name="share_no_link">このトラックのリンクはありません</string>
+    <string name="error_session_expired">Spotify のセッションが期限切れです。設定から再度ログインして、リンクを開き直してください。</string>
     <string name="share_no_target">共有できるアプリがありません</string>
     <string name="paste_clipboard_empty">クリップボードが空です</string>
     <string name="paste_no_spotify_link">クリップボードにSpotifyリンクが見つかりません</string>
@@ -316,6 +317,8 @@
     <!-- E124 — 仮想マウス -->
     <string name="web_player_pointer">ポインタ</string>
     <string name="web_player_pointer_hint">ドラッグでポインタを移動 · タップでクリック · 2本指タップで再生 · 2本指でスクロール。</string>
+    <string name="web_player_desktop_playback">デスクトップ版ページで再生</string>
+    <string name="web_player_desktop_playback_desc">オフ：モバイル版ページ。即座に始まりますが、Premium でない場合はシャッフル再生になります。オン：オンデマンド。ただしこのブラウザが Spotify のアクティブなデバイスになる必要があります。</string>
     <!-- E120 — Doze の除外 -->
     <string name="settings_battery_title">バックグラウンド再生</string>
     <string name="settings_battery_exempt">電池の最適化はRustifyで無効です</string>

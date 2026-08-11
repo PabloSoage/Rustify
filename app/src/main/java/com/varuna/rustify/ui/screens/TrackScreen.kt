@@ -343,6 +343,11 @@ fun TrackScreen(
     val hasPrevious = currentTrackIdx > 0
     val hasNext = currentTrackIdx != -1 && currentTrackIdx < currentQueue.size - 1
 
+    // An auth failure that survived the retry means the saved session is gone for good, and the raw
+    // engine text for it is a wall of JSON ("API error 401: {...expired access token}") that reads
+    // like the *link* expired. Resolved here because a string cannot be looked up inside the effect.
+    val sessionExpiredMsg = stringResource(R.string.error_session_expired)
+
     LaunchedEffect(trackId) {
         if (!isCurrentTrack) {
             isLoading = true
@@ -350,7 +355,10 @@ fun TrackScreen(
             try {
                 trackDetails = spotifyRepo.getTrack(trackId)
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Failed to load track"
+                errorMessage = when (com.varuna.rustify.util.classifyError(e)) {
+                    com.varuna.rustify.util.ErrorKind.AUTH -> sessionExpiredMsg
+                    else -> e.message ?: "Failed to load track"
+                }
             } finally {
                 isLoading = false
             }

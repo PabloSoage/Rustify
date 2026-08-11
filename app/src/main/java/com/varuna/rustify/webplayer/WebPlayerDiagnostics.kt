@@ -96,6 +96,12 @@ object WebPlayerDiagnostics {
         // all look identical otherwise, and only the last one means the mode is unusable.
         val detail = if (playing) heard else buildString {
             append(WebPlayerController.lastPlayAttempt ?: "play never attempted")
+            // Present only when the page turned out to be a remote for another device, which is the
+            // one failure that looks exactly like success right up to the sound.
+            WebPlayerController.lastDeviceTakeover?.let { append(" · takeover: $it") }
+            // A title without playback means the page loaded a *different* track — worth seeing,
+            // because "started the wrong song" and "started nothing" need opposite fixes.
+            if (heard.isNotBlank()) append(" · loaded \"${heard.take(24)}\"")
             append(" · ")
             append(WebPlayerController.currentUrl().orEmpty().take(48))
         }
