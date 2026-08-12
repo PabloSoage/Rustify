@@ -7,21 +7,23 @@ import kotlin.math.min
 /**
  * Kind of error produced by the engine / network layer, used to decide whether to retry.
  */
-enum class ErrorKind { TRANSIENT, PERMANENT, AUTH }
+enum class ErrorKind { TRANSIENT, PERMANENT, AUTH, RATE_LIMITED }
 
 /**
  * Classify an exception thrown by the engine or the network layer.
  *
  * Heuristics (conservative: unknown ⇒ PERMANENT so we never retry forever):
  * - AUTH: 401 / token expired — recoverable via session refresh.
- * - TRANSIENT: network IO, 429 (rate limit), 5xx, timeouts — recoverable via backoff.
+ * - TRANSIENT: network IO, 5xx, timeouts — recoverable via backoff.
+ * - RATE_LIMITED: 429. Transient in nature, but already retried where it belongs (see [retrying]).
  * - PERMANENT: everything else (e.g. "not found in YouTube Music") — do not insist.
  */
 fun classifyError(t: Throwable): ErrorKind {
     val msg = (t.message ?: "").lowercase()
     return when {
         t is SpotifyEngineException && (msg.contains("401") || msg.contains("expired") || msg.contains("not authenticated")) -> ErrorKind.AUTH
-        t is SpotifyEngineException && (msg.contains("429") || Regex("""\b5\d\d\b""").containsMatchIn(msg) ||
+        t is SpotifyEngineException && msg.contains("429") -> ErrorKind.RATE_LIMITED
+        t is SpotifyEngineException && (Regex("""\b5\d\d\b""").containsMatchIn(msg) ||
             msg.contains("network") || msg.contains("timed out") || msg.contains("timeout")) -> ErrorKind.TRANSIENT
         t is java.io.IOException -> ErrorKind.TRANSIENT
         else -> ErrorKind.PERMANENT
@@ -37,6 +39,11 @@ fun classifyError(t: Throwable): ErrorKind {
  *   recovered and the call is retried; if false the error is rethrown.
  *
  * PERMANENT errors are rethrown immediately. TRANSIENT errors exhaust [maxAttempts].
+ *
+ * RATE_LIMITED is rethrown immediately too, and that is deliberate. The Rust client already retries
+ * a 429 three times, honouring `Retry-After`; retrying here as well made the two layers multiply
+ * into **nine** requests for a single tap, each one telling Spotify to throttle harder. Whoever is
+ * closest to the wire owns rate-limit backoff, and that is the layer holding the header.
  */
 suspend fun <T> retrying(
     maxAttempts: Int = 3,
@@ -52,7 +59,7 @@ suspend fun <T> retrying(
         } catch (t: Throwable) {
             attempt++
             when (classifyError(t)) {
-                ErrorKind.PERMANENT -> throw t
+                ErrorKind.PERMANENT, ErrorKind.RATE_LIMITED -> throw t
                 ErrorKind.AUTH -> {
                     val recovered = onAuthError?.invoke() ?: false
                     if (!recovered || attempt >= maxAttempts) throw t

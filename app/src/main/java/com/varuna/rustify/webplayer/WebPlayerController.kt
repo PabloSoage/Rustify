@@ -106,6 +106,43 @@ object WebPlayerController {
     private const val PREFS = "rustify_settings"
     private const val KEY_LAYOUT_WIDTH = "web_player_layout_width"
     private const val KEY_PLAYBACK_DESKTOP = "web_player_playback_desktop"
+    private const val KEY_ADBLOCK = "web_player_adblock"
+
+    /**
+     * Hosts the player is *built out of*. Never filtered, whatever the lists say.
+     *
+     * The filter lists are uBlock Origin's, and uBO ships privacy rules that match Spotify's own
+     * telemetry and session endpoints — which is fine in a browser where the page still works
+     * without them, and not fine here, where the page *is* the audio backend. Worse, the source
+     * URL handed to the matcher is `open.spotify.com`, so everything on `scdn.co` /
+     * `spotifycdn.com` counts as third-party and is exposed to every `$third-party` rule in
+     * EasyPrivacy. Nothing is gained by filtering the site we are logged into, so it is exempt.
+     */
+    private val FIRST_PARTY_HOSTS = listOf(
+        "spotify.com", "spotifycdn.com", "spotifycdn.net", "scdn.co", "pscdn.co",
+        "spoti.fi", "byspotify.com", "spotify.net"
+    )
+
+    private fun isFirstParty(host: String?): Boolean {
+        val h = host?.lowercase() ?: return false
+        return FIRST_PARTY_HOSTS.any { h == it || h.endsWith(".$it") }
+    }
+
+    /** Whether third-party requests are filtered at all. On by default; a kill switch for testing. */
+    @Volatile private var cachedAdblock = true
+
+    fun adblockEnabled(context: Context): Boolean {
+        cachedAdblock = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ADBLOCK, true)
+        return cachedAdblock
+    }
+
+    /** Persists the choice and applies it immediately — the interceptor reads the cache per request. */
+    fun setAdblockEnabled(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit { putBoolean(KEY_ADBLOCK, on) }
+        cachedAdblock = on
+    }
 
     /**
      * Which page the *backend* plays through, independently of the layout you browse in.
@@ -220,6 +257,7 @@ object WebPlayerController {
         webView?.let { return it }
         val width = layoutWidth(context)
         playbackUsesDesktop(context)   // prime the cache; the playback path has no Context
+        adblockEnabled(context)
         val wv = WebView(context.applicationContext).apply {
             settings.apply {
                 javaScriptEnabled = true
@@ -255,6 +293,14 @@ object WebPlayerController {
             }
 
             webViewClient = object : WebViewClient() {
+                // The media hook has to be in place before the page's own code calls play(), so it
+                // goes in as early as the WebView will let us rather than waiting for the load to
+                // finish. Idempotent, so re-running it later costs nothing.
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    runCatching { view?.evaluateJavascript(JS_MEDIA_HOOK, null) }
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     applyPageTweaks(view)
@@ -273,6 +319,9 @@ object WebPlayerController {
                 ): WebResourceResponse? {
                     val req = request ?: return null
                     if (req.isForMainFrame) return null
+                    if (!cachedAdblock) return null
+                    // Spotify's own infrastructure is never filtered — see [FIRST_PARTY_HOSTS].
+                    if (isFirstParty(req.url?.host)) return null
                     val url = req.url?.toString() ?: return null
                     if (!url.startsWith("http")) return null
                     val blocked = runCatching {
@@ -361,7 +410,7 @@ object WebPlayerController {
 
     /** Seeks the underlying media element directly — far more reliable than dragging its slider. */
     fun seekTo(positionMs: Long) = run(
-        "(function(){var m=document.querySelector('video,audio'); if(m){m.currentTime=${positionMs / 1000.0};}})();"
+        "(function(){$JS_MEDIA_FN var m=__rmMedia(); if(m){m.currentTime=${positionMs / 1000.0};}})();"
     )
 
     /**
@@ -513,6 +562,13 @@ object WebPlayerController {
      * Picks the entry that *is* this browser. Spotify labels it differently per platform and
      * language ("Web Player (Chrome)", "This web browser", "Este navegador web"), so the list is
      * matched on text rather than on a position or an id.
+     *
+     * Two entries can match that description at once, which broke the first version of this: open
+     * the phone page, let it register, then switch to desktop and the picker lists a **"Mobile Web
+     * Player"** alongside this one. Clicking the first "web player" in the list then transfers
+     * playback to the device we are trying to move away from — reported as "I click this browser
+     * and it doesn't change". So phone entries are excluded, and so is whichever entry is already
+     * the active device, since selecting that is by definition a no-op.
      */
     private const val JS_PICK_THIS_BROWSER = """
         (function(){
@@ -522,14 +578,23 @@ object WebPlayerController {
               '[data-testid="connect-device-list-item-current"], li button, [role="menuitem"]'
             );
             var wanted = /(web ?player|this (web )?browser|este navegador|ce navigateur|dieser browser)/i;
+            var notHere = /(mobile|m[oó]vil|phone|tel[eé]fono|android|iphone|ipad|tablet|tv|speaker|altavoz)/i;
+            var skipped = 0;
             for (var i = 0; i < items.length; i++) {
-              var t = (items[i].textContent || '').trim();
-              if (wanted.test(t)) {
-                items[i].click();
-                return 'switched to "' + t.slice(0, 28) + '"';
-              }
+              var el = items[i];
+              var t = (el.textContent || '').trim();
+              if (!wanted.test(t)) continue;
+              if (notHere.test(t)) { skipped++; continue; }
+              // Already the active device: Spotify marks it, and clicking it changes nothing.
+              var active = el.getAttribute('aria-checked') === 'true' ||
+                           el.getAttribute('aria-current') === 'true' ||
+                           (el.getAttribute('data-testid') || '').indexOf('current') !== -1;
+              if (active) { skipped++; continue; }
+              el.click();
+              return 'switched to "' + t.slice(0, 28) + '"';
             }
-            return 'this browser not in device list (' + items.length + ' entries)';
+            return 'this browser not in device list (' + items.length + ' entries, ' +
+                   skipped + ' skipped)';
           } catch (e) { return 'error'; }
         })();
     """
@@ -559,6 +624,15 @@ object WebPlayerController {
         }
         return false
     }
+
+    /**
+     * One line describing the media elements the page holds, for the self-test.
+     *
+     * "Playback started" is now decided from an element that may be detached, may be one of several,
+     * and may be a silent placeholder — so when the test passes, this is the evidence that it passed
+     * on something real, and when it fails, it says whether there was anything to look at.
+     */
+    suspend fun mediaReport(): String = eval(JS_MEDIA_REPORT, timeoutMs = 2_000) ?: "no answer"
 
     /** Current page address, for diagnostics. Null when the page cannot be asked. */
     suspend fun currentUrl(): String? =
@@ -597,7 +671,11 @@ object WebPlayerController {
             // Metadata with no media element of its own: the page is showing another device's
             // playback and every click is being forwarded there. Pressing play harder will not help
             // — claim the playback first, once, and then go back to nudging.
-            if (!tookOver && polls > 6 && !s.hasLocalMedia && s.title.isNotBlank()) {
+            //
+            // Only on the desktop page. The phone page registers itself as a Connect device and
+            // plays locally, so a takeover there can only move playback *away* — which it did,
+            // audibly, while the media element was going undetected (see [JS_MEDIA_FN]).
+            if (!tookOver && cachedPlaybackDesktop && polls > 6 && !s.hasLocalMedia && s.title.isNotBlank()) {
                 tookOver = true
                 lastDeviceTakeover = takeOverPlaybackDevice()
                 continue
@@ -622,12 +700,121 @@ object WebPlayerController {
     private fun click(testId: String) =
         "(function(){var b=document.querySelector('[data-testid=\"$testId\"]'); if(b){b.click();}})();"
 
-    private const val JS_PLAY =
-        "(function(){var m=document.querySelector('video,audio'); if(m&&m.paused){m.play().catch(function(){});}" +
-        "else{var b=document.querySelector('[data-testid=\"control-button-playpause\"]'); if(b){b.click();}}})();"
+    /**
+     * Finds the element producing sound, which is **not** always in the document.
+     *
+     * `document.querySelector('video,audio')` was the whole detection, and on the phone page it
+     * finds nothing while the song is audibly playing: the element is constructed in script and fed
+     * by MSE without ever being appended. Everything downstream then went wrong at once — the
+     * self-test reported "playback starts" as failed on a track it could hear, and
+     * [awaitPlaybackStart] read "metadata but no player of its own" and fired a Spotify Connect
+     * takeover at a page that *was* the player, which is what made the song stop and restart.
+     *
+     * So collect from three places — the document, the element the hook below caught calling
+     * `play()`, and same-origin frames — and then **choose**, rather than taking the first hit. A
+     * page can hold more than one: web players routinely keep a silent, muted element alive purely
+     * to own the media session, and picking that one turns a false negative into the worse failure,
+     * a self-test that passes while nothing is audible. The score prefers, in order, an element that
+     * is running, one that can be heard, and one whose duration looks like a song.
+     */
+    private const val JS_MEDIA_FN = """
+        function __rmMedia(){
+          var seen = [];
+          function add(e){ if (e && seen.indexOf(e) === -1) seen.push(e); }
+          var nodes = document.querySelectorAll('video,audio');
+          for (var i = 0; i < nodes.length; i++) add(nodes[i]);
+          add(window.__rustifyMedia);
+          var fs = document.getElementsByTagName('iframe');
+          for (var j = 0; j < fs.length; j++) {
+            try {
+              var d = fs[j].contentDocument;
+              if (!d) continue;
+              var inner = d.querySelectorAll('video,audio');
+              for (var k = 0; k < inner.length; k++) add(inner[k]);
+            } catch (x) {}
+          }
+          if (!seen.length) return null;
+          function score(e){
+            var s = 0;
+            if (!e.paused) s += 8;
+            if (!e.muted && e.volume > 0) s += 4;
+            if (isFinite(e.duration) && e.duration > 1) s += 2;
+            if (e.currentTime > 0) s += 1;
+            return s;
+          }
+          var best = seen[0], bestScore = score(best);
+          for (var n = 1; n < seen.length; n++) {
+            var s2 = score(seen[n]);
+            if (s2 > bestScore) { best = seen[n]; bestScore = s2; }
+          }
+          return best;
+        }
+    """
 
-    private const val JS_PAUSE =
-        "(function(){var m=document.querySelector('video,audio'); if(m&&!m.paused){m.pause();}})();"
+    /**
+     * Records whichever media element the page plays, attached to the document or not.
+     *
+     * Patching the prototype catches it at the only moment it is guaranteed to be reachable — the
+     * call that starts it — and the capturing listeners catch elements handed to a source that
+     * starts on its own. Installed on every navigation; the `window` flag keeps it to one layer.
+     */
+    private const val JS_MEDIA_HOOK = """
+        (function(){
+          try {
+            if (window.__rustifyMediaHook) return 'already';
+            window.__rustifyMediaHook = true;
+            var proto = window.HTMLMediaElement && HTMLMediaElement.prototype;
+            if (proto && proto.play) {
+              var play = proto.play;
+              proto.play = function(){
+                try { window.__rustifyMedia = this; } catch (e) {}
+                return play.apply(this, arguments);
+              };
+            }
+            ['playing', 'loadedmetadata', 'timeupdate'].forEach(function(t){
+              document.addEventListener(t, function(e){
+                var el = e && e.target;
+                if (el && typeof el.currentTime === 'number') window.__rustifyMedia = el;
+              }, true);
+            });
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /** Backs [mediaReport]. Declared here because it interpolates [JS_MEDIA_FN]. */
+    private val JS_MEDIA_REPORT = """
+        (function(){
+          try {
+            $JS_MEDIA_FN
+            var inDom = document.querySelectorAll('video,audio').length;
+            var m = __rmMedia();
+            if (!m) return 'no media element';
+            function t(v){ return isFinite(v) ? Math.round(v) + 's' : '?'; }
+            return (m.paused ? 'paused' : 'playing') + ' ' + t(m.currentTime) + '/' + t(m.duration) +
+                   ' · ' + (m.muted ? 'muted' : 'vol ' + m.volume) +
+                   ' · ' + inDom + ' in DOM' + (document.contains(m) ? '' : ' · detached');
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    private val JS_PLAY = """
+        (function(){
+          $JS_MEDIA_FN
+          var m = __rmMedia();
+          if (m && m.paused) { m.play().catch(function(){}); return; }
+          var b = document.querySelector('[data-testid="control-button-playpause"]');
+          if (b) b.click();
+        })();
+    """
+
+    private val JS_PAUSE = """
+        (function(){
+          $JS_MEDIA_FN
+          var m = __rmMedia();
+          if (m && !m.paused) m.pause();
+        })();
+    """
 
     /**
      * Presses play on a page that has not played anything yet.
@@ -640,10 +827,11 @@ object WebPlayerController {
      * Order matters: the big button on an entity page starts *that* entity, whereas the transport
      * bar's button resumes whatever the session last had.
      */
-    private const val JS_AUTOPLAY = """
+    private val JS_AUTOPLAY = """
         (function(){
           try {
-            var m = document.querySelector('video,audio');
+            $JS_MEDIA_FN
+            var m = __rmMedia();
             if (m && !m.paused) return 'already playing';
             // A bare .click() is not what a tap looks like. The phone page — the one that actually
             // plays — is built for touch, and a control that waits for pointerdown/pointerup sees
@@ -696,6 +884,7 @@ object WebPlayerController {
             // it belongs to — and laying the phone page out at 1024px just shrinks it to nothing.
             val desktopPage = wv.settings.userAgentString.contains("Windows")
             if (cachedLayoutWidth != 0 && desktopPage) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
+            wv.evaluateJavascript(JS_MEDIA_HOOK, null)
             wv.evaluateJavascript(JS_TAP_TO_PLAY, null)
             wv.evaluateJavascript(JS_POINTER_BRIDGE, null)
         }
@@ -897,17 +1086,18 @@ object WebPlayerController {
      * Prefers `navigator.mediaSession.metadata`, which the page maintains itself, over reading its
      * markup. Falls back to the media element for timing.
      */
-    private const val JS_READ_STATE = """
+    private val JS_READ_STATE = """
         (function(){
           try {
-            var m = document.querySelector('video,audio');
+            $JS_MEDIA_FN
+            var m = __rmMedia();
             var md = (navigator.mediaSession && navigator.mediaSession.metadata) || null;
             var art = '';
             if (md && md.artwork && md.artwork.length) { art = md.artwork[md.artwork.length-1].src || ''; }
             return JSON.stringify({
               available: !!m || !!md,
               local: !!m,
-              playing: !!m && !m.paused,
+              playing: !!m && !m.paused && !m.ended,
               title: md ? (md.title || '') : '',
               artist: md ? (md.artist || '') : '',
               artwork: art,

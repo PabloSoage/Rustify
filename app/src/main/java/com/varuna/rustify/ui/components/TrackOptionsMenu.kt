@@ -97,6 +97,8 @@ fun TrackOptionsMenuBottomSheet(
     var newLocalPlaylistName by remember { mutableStateOf("") }
     var playlists by remember { mutableStateOf<List<SimplePlaylist>>(emptyList()) }
     var isLoadingPlaylists by remember { mutableStateOf(false) }
+    /** Playlist currently being written to, or null. Drives the row spinner and locks the list. */
+    var addingToPlaylistId by remember { mutableStateOf<String?>(null) }
 
     val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
     val downloadUriStr = prefs.getString("download_directory", null)
@@ -281,27 +283,42 @@ fun TrackOptionsMenuBottomSheet(
                         modifier = Modifier.fillMaxWidth().height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(stringResource(R.string.playlist_not_found), color = Color.Gray)
+                        Text(
+                            stringResource(R.string.playlist_none_owned),
+                            color = Color.Gray,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
                         items(playlists) { playlist ->
                             val addedMessage = stringResource(R.string.added_to_playlist, playlist.name)
+                            val busy = addingToPlaylistId != null
+                            val thisOne = addingToPlaylistId == playlist.id
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    // Locked while a request is in flight. Without this the row still
+                                    // looked idle for as long as the call took, so it read as "the
+                                    // button does nothing" and invited a second tap — which is a
+                                    // second write, on an endpoint that answers 429 when pushed.
+                                    .clickable(enabled = !busy) {
+                                        val trackId = track.id ?: return@clickable
+                                        addingToPlaylistId = playlist.id
                                         coroutineScope.launch {
-                                            track.id?.let { trackId ->
-                                                val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
-                                                if (res.success) {
-                                                    Toast.makeText(context, addedMessage, Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    Toast.makeText(context, "Error: ${res.error}", Toast.LENGTH_SHORT).show()
-                                                }
+                                            val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
+                                            addingToPlaylistId = null
+                                            if (res.success) {
+                                                Toast.makeText(context, addedMessage, Toast.LENGTH_SHORT).show()
+                                                showPlaylistSelector = false
+                                                onDismiss()
+                                            } else {
+                                                // Stay open on failure: closing the sheet threw the
+                                                // error away along with any chance of retrying.
+                                                Toast.makeText(
+                                                    context, addFailureMessage(context, res.error), Toast.LENGTH_LONG
+                                                ).show()
                                             }
-                                            showPlaylistSelector = false
-                                            onDismiss()
                                         }
                                     }
                                     .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -323,9 +340,17 @@ fun TrackOptionsMenuBottomSheet(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Text(
                                     text = playlist.name,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold
+                                    color = if (busy && !thisOne) Color.Gray else Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                if (thisOne) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFF1DB954)
+                                    )
+                                }
                             }
                             HorizontalDivider(color = Color.DarkGray)
                         }
@@ -430,9 +455,26 @@ fun TrackOptionsMenuBottomSheet(
                             isLoadingPlaylists = true
                             coroutineScope.launch {
                                 try {
+                                    // Saved playlists include everything you follow, and Spotify
+                                    // refuses a write to a playlist that is not yours — after a long
+                                    // wait and with an error that says nothing useful. Offering only
+                                    // the ones you own turns an unexplained failure into a choice
+                                    // that was never there. (Playlists someone else owns and shares
+                                    // with you as a collaborator are excluded too: the flag that
+                                    // would identify them is not in the list payload, and fetching
+                                    // it per playlist is exactly the request storm that earns a 429.)
+                                    val me = runCatching { spotifyRepo.getMe().id }.getOrNull()
                                     playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
-                                } catch (_: Exception) {
-                                    Toast.makeText(context, "Error al cargar playlists", Toast.LENGTH_SHORT).show()
+                                        .filter { me == null || it.owner?.id == me }
+                                } catch (e: Exception) {
+                                    // Say what actually went wrong. Swallowing it left the sheet
+                                    // sitting empty on a rate limit or an expired session, which
+                                    // reads as "the button does nothing".
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.playlists_load_failed, e.message ?: ""),
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                 } finally {
                                     isLoadingPlaylists = false
                                 }
@@ -638,5 +680,24 @@ private fun MenuOptionItem(
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+/**
+ * Turns a failed write into something a toast can actually convey.
+ *
+ * The engine reports `API error 429:{"error":{"status":429,…}}` — a status code welded to a JSON
+ * body. A short toast cut that off at the status, which is the one part that means nothing to
+ * anyone reading it, so the whole message was "429". Each case that a person can act on gets its
+ * own sentence; anything unrecognised keeps the raw text, trimmed to what will fit.
+ */
+private fun addFailureMessage(context: android.content.Context, error: String?): String {
+    val raw = error.orEmpty()
+    return when {
+        raw.contains("429") -> context.getString(R.string.error_rate_limited)
+        raw.contains("403") -> context.getString(R.string.error_playlist_not_writable)
+        raw.contains("401") || raw.contains("expired", ignoreCase = true) ->
+            context.getString(R.string.error_session_expired)
+        else -> context.getString(R.string.playlist_add_failed, raw.take(140).ifBlank { "?" })
     }
 }

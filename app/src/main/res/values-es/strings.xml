@@ -518,7 +518,14 @@
     <string name="web_player_pointer">Puntero</string>
     <string name="web_player_pointer_hint">Arrastra para mover el puntero · toca para hacer clic · toca con dos dedos para reproducir · dos dedos para desplazar.</string>
     <string name="web_player_desktop_playback">Reproducir con la página de escritorio</string>
-    <string name="web_player_desktop_playback_desc">Desactivado: la página de móvil, que arranca al instante pero reproduce en aleatorio sin Premium. Activado: a la carta, pero este navegador tiene que pasar a ser el dispositivo activo de Spotify.</string>
+    <string name="web_player_desktop_playback_desc">Desactivado: la página de móvil, que arranca al instante pero reproduce en aleatorio sin Premium. Activado: la página de escritorio; a la carta en teoría, pero aquí nunca se ha conseguido que suene, así que se mantiene solo para pruebas.</string>
+    <string name="web_player_adblock">Bloquear rastreadores</string>
+    <string name="web_player_adblock_desc">Filtra anuncios y rastreadores de terceros en el reproductor web con las listas de uBlock Origin. Los servidores de Spotify nunca se filtran. Desactívalo si alguna página se comporta de forma rara.</string>
+    <string name="playlists_load_failed">No se pudieron cargar tus playlists: %1$s</string>
+    <string name="playlist_none_owned">Todavía no tienes playlists propias. Solo se puede añadir a las que son tuyas.</string>
+    <string name="playlist_add_failed">No se pudo añadir la canción: %1$s</string>
+    <string name="error_rate_limited">Spotify está limitando las peticiones de la app. Espera un momento y vuelve a intentarlo.</string>
+    <string name="error_playlist_not_writable">No puedes añadir canciones a esta playlist: no es tuya.</string>
     <!-- E120 — Exención de Doze -->
     <string name="settings_battery_title">Reproducción en segundo plano</string>
     <string name="settings_battery_exempt">La optimización de batería está desactivada para Rustify</string>

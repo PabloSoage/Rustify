@@ -431,6 +431,36 @@ class AudioPlayerService private constructor(private val context: Context) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
             }
 
+            /**
+             * Keeps a pause the user asked for from being undone by audio focus.
+             *
+             * Reported as: with the music paused, the notification for "USB debugging connected"
+             * appears and playback resumes on its own. The notification's alert tone takes transient
+             * audio focus and hands it straight back, and media3's `AudioFocusManager` responds to
+             * the regain by restoring `playWhenReady` — it cannot tell that the pause it is undoing
+             * was never its own. Anything that plays a sound would do it; the ADB notice is just the
+             * one that happens often enough to notice.
+             *
+             * `reason` is what separates the two. Every deliberate pause — the app's button, the
+             * notification, a headset, Android Auto — funnels through `Player.pause()` and arrives
+             * as `USER_REQUEST`; a focus-driven resume arrives as `AUDIO_FOCUS_LOSS`. So a
+             * `playWhenReady` that turns true while [userPaused] holds is, by elimination, not the
+             * user's doing, and gets put back.
+             */
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                when {
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST ->
+                        userPaused = !playWhenReady
+                    playWhenReady && userPaused -> {
+                        android.util.Log.d(
+                            "AudioPlayerService",
+                            "Ignoring an unrequested resume (reason $reason) — the user had paused"
+                        )
+                        exoPlayer.pause()
+                    }
+                }
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
@@ -899,6 +929,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     // app does with audio that no other player does, and it lines up with playback going
                     // silent-but-advancing over Bluetooth. The reset is still one tap away on resume.
                     exoPlayer.play()
+                    ensurePlaybackTookHold(trackId)
                 }
                 // onTrackStarted runs at the top of playTrack so the previous session flushes
                 // deterministically on every switch, including a manual skip / a failing next track.
@@ -917,6 +948,47 @@ class AudioPlayerService private constructor(private val context: Context) {
                     runCatching { if (resolutionWakeLock.isHeld) resolutionWakeLock.release() }
                 }
             }
+        }
+    }
+
+    /**
+     * True while playback is paused because someone asked for it, as opposed to paused because
+     * something took the audio focus away. Maintained entirely from `onPlayWhenReadyChanged`, which
+     * is the one place every source of a pause — app button, notification, headset, Android Auto —
+     * converges, so it needs no bookkeeping at the call sites.
+     */
+    @Volatile private var userPaused = false
+
+    /**
+     * Confirms that `play()` actually took, and asks again once if it did not.
+     *
+     * `exoPlayer.play()` is a request, not a guarantee. Media3 abandons Android audio focus when the
+     * player reaches `STATE_ENDED`, so **every automatic track change is an abandon/re-request
+     * cycle**, and when the re-request comes back denied — another app holding focus for a beat, a
+     * Bluetooth route still settling — `AudioFocusManager` answers `PLAYER_COMMAND_DO_NOT_PLAY` and
+     * clears `playWhenReady` without a word. The queue has advanced, the notification shows the new
+     * song, and nothing plays until play is pressed by hand. That is the "sometimes the next track
+     * doesn't start on its own" report, and it explains why it is intermittent.
+     *
+     * `playWhenReady` false shortly after asking for it can only mean something took it away, which
+     * makes it a safe thing to test. A pause the user asked for in the meantime is excluded so this
+     * can never override them.
+     */
+    private fun ensurePlaybackTookHold(trackId: String, attempt: Int = 0) {
+        if (attempt >= 2) return
+        mainScope.launch {
+            delay(700.milliseconds)
+            if (preparedTrackId != trackId) return@launch          // moved on to another track
+            if (userPaused) return@launch                           // the user pressed pause
+            if (_state.value.isError || isInCall()) return@launch
+            if (exoPlayer.playWhenReady) return@launch              // it took
+            android.util.Log.w(
+                "AudioPlayerService",
+                "play() did not take hold for $trackId (audio focus denied?) — asking again"
+            )
+            refreshAudioFocus()
+            exoPlayer.play()
+            ensurePlaybackTookHold(trackId, attempt + 1)
         }
     }
 

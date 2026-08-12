@@ -41,6 +41,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -221,6 +222,33 @@ fun PlaylistScreen(
                     }
                 }
             } else {
+                // Pull-to-refresh, the same gesture the library's playlist list already has. Inside a
+                // playlist the list is served from the repository's cached live list, so a playlist
+                // edited elsewhere (or one left short by a failed page) had no way to be re-fetched
+                // without leaving the screen. `force` is what makes it a real re-read rather than the
+                // idempotent no-op loadFullPlaylist normally is.
+                PullToRefreshBox(
+                    isRefreshing = if (isLocal) isLoading else spotifyRepo.isPlaylistLoading(playlistId),
+                    onRefresh = {
+                        coroutineScope.launch {
+                            if (isLocal) {
+                                isLoading = true
+                                try {
+                                    localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
+                                    SpotifyRepository.localPlaylistTracksCache[playlistId] = localTracksState
+                                } catch (e: Exception) {
+                                    errorMessage = e.message
+                                } finally {
+                                    isLoading = false
+                                }
+                            } else {
+                                runCatching { playlistDetails = spotifyRepo.getPlaylist(playlistId) }
+                                spotifyRepo.loadFullPlaylist(playlistId, force = true)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 LazyColumn(
                     state = lazyListState,
                     modifier = Modifier.fillMaxSize(),
@@ -506,6 +534,7 @@ fun PlaylistScreen(
                             }
                         }
                     }
+                }
                 }
             }
 

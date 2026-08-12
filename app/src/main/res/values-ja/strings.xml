@@ -318,7 +318,14 @@
     <string name="web_player_pointer">ポインタ</string>
     <string name="web_player_pointer_hint">ドラッグでポインタを移動 · タップでクリック · 2本指タップで再生 · 2本指でスクロール。</string>
     <string name="web_player_desktop_playback">デスクトップ版ページで再生</string>
-    <string name="web_player_desktop_playback_desc">オフ：モバイル版ページ。即座に始まりますが、Premium でない場合はシャッフル再生になります。オン：オンデマンド。ただしこのブラウザが Spotify のアクティブなデバイスになる必要があります。</string>
+    <string name="web_player_desktop_playback_desc">オフ：モバイル版ページ。即座に始まりますが、Premium でない場合はシャッフル再生になります。オン：デスクトップ版ページ。理論上はオンデマンドですが、この端末で音が出たことは一度もないため、検証用としてのみ残しています。</string>
+    <string name="web_player_adblock">トラッカーをブロック</string>
+    <string name="web_player_adblock_desc">uBlock Origin のフィルターリストで、ウェブプレーヤー内のサードパーティ広告とトラッカーを遮断します。Spotify 自身のサーバーは決して遮断しません。ページの動作がおかしいときはオフにしてください。</string>
+    <string name="playlists_load_failed">プレイリストを読み込めませんでした：%1$s</string>
+    <string name="playlist_none_owned">自分のプレイリストがまだありません。追加できるのは自分が所有するプレイリストだけです。</string>
+    <string name="playlist_add_failed">曲を追加できませんでした：%1$s</string>
+    <string name="error_rate_limited">Spotify がリクエストを制限しています。少し待ってからもう一度お試しください。</string>
+    <string name="error_playlist_not_writable">このプレイリストには曲を追加できません（自分のものではありません）。</string>
     <!-- E120 — Doze の除外 -->
     <string name="settings_battery_title">バックグラウンド再生</string>
     <string name="settings_battery_exempt">電池の最適化はRustifyで無効です</string>

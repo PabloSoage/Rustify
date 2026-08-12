@@ -520,7 +520,14 @@
     <string name="web_player_pointer">Pointer</string>
     <string name="web_player_pointer_hint">Drag to move the pointer · tap to click · two-finger tap to play · two fingers to scroll.</string>
     <string name="web_player_desktop_playback">Play through the desktop page</string>
-    <string name="web_player_desktop_playback_desc">Off: the phone page, which starts instantly but plays shuffled without Premium. On: on-demand, but this browser has to become the active Spotify device.</string>
+    <string name="web_player_desktop_playback_desc">Off: the phone page, which starts instantly but plays shuffled without Premium. On: the desktop page — on-demand in theory, but it has never been observed to produce audio here, so it is kept for testing only.</string>
+    <string name="web_player_adblock">Block trackers</string>
+    <string name="web_player_adblock_desc">Filters third-party ads and trackers in the web player with uBlock Origin\'s lists. Spotify\'s own servers are never filtered. Turn it off if a page misbehaves.</string>
+    <string name="playlists_load_failed">Could not load your playlists: %1$s</string>
+    <string name="playlist_none_owned">You don\'t own any playlists yet. Only playlists you own can be added to.</string>
+    <string name="playlist_add_failed">Could not add the song: %1$s</string>
+    <string name="error_rate_limited">Spotify is rate-limiting the app. Wait a moment and try again.</string>
+    <string name="error_playlist_not_writable">You can\'t add songs to this playlist — it isn\'t yours.</string>
     <!-- E120 — Doze exemption -->
     <string name="settings_battery_title">Background playback</string>
     <string name="settings_battery_exempt">Battery optimisation is off for Rustify</string>

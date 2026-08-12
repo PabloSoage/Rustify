@@ -28,6 +28,9 @@ object WebPlayerDiagnostics {
     private const val PLAYBACK_TIMEOUT_MS = 20_000L
     private const val DRM_TIMEOUT_MS = 4_000L
 
+    /** How long a successful test keeps playing, so the result can be confirmed by ear. */
+    private const val AUDIBLE_PROOF_MS = 1_500L
+
     /**
      * Runs the whole sequence. [trackId] is the track to try — normally whatever is playing; when it
      * is missing or not a Spotify id the user's own Liked Songs page is used instead, which needs no
@@ -90,15 +93,28 @@ object WebPlayerDiagnostics {
         WebPlayerController.playSpotifyUrl(target)
         val playing = WebPlayerController.awaitPlaybackStart(PLAYBACK_TIMEOUT_MS)
         val heard = WebPlayerController.state.value.title
+        // Let it be heard. The watchdog returns the instant the position moves off zero, which on a
+        // page that starts quickly is well under a second — so the test would pass and pause again
+        // before any sound came out, and "it says OK but I hear nothing" is indistinguishable from a
+        // false positive. A moment of audio is the part a person can actually verify.
+        if (playing) delay(AUDIBLE_PROOF_MS)
+        // Read the element before pausing, or the report describes what the pause did.
+        val media = WebPlayerController.mediaReport()
         WebPlayerController.pause()
         // On failure, the page it ended up on plus what pressing play actually did: a login wall, a
         // missing button and a page that was pressed and refused anyway (no Premium, region block)
         // all look identical otherwise, and only the last one means the mode is unusable.
-        val detail = if (playing) heard else buildString {
+        val detail = if (playing) {
+            // On success too: passing is now decided from an element that may be detached, one of
+            // several, or a silent placeholder, so the evidence goes next to the verdict.
+            if (heard.isBlank()) media else "$heard · $media"
+        } else buildString {
             append(WebPlayerController.lastPlayAttempt ?: "play never attempted")
             // Present only when the page turned out to be a remote for another device, which is the
             // one failure that looks exactly like success right up to the sound.
             WebPlayerController.lastDeviceTakeover?.let { append(" · takeover: $it") }
+            append(" · ")
+            append(media)
             // A title without playback means the page loaded a *different* track — worth seeing,
             // because "started the wrong song" and "started nothing" need opposite fixes.
             if (heard.isNotBlank()) append(" · loaded \"${heard.take(24)}\"")

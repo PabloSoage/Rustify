@@ -102,6 +102,9 @@ pub struct GqlPersistedQuery {
 /// built is still valid when it lands.
 const ACCESS_TOKEN_MARGIN_MS: u64 = 30_000;
 
+/// Longest `Retry-After` worth waiting out inside a request. See [`SpotifyClient::send_with_retry`].
+const MAX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
+
 const SPOTIFY_API_BASE: &str = "https://api.spotify.com/v1";
 const SPOTIFY_GQL_BASE: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
 
@@ -534,6 +537,15 @@ impl SpotifyClient {
                                 .unwrap_or(delay),
                             None => delay,
                         };
+                        // Honouring an arbitrarily long `Retry-After` blocks the caller for as long
+                        // as Spotify feels like, and a rate limit measured in tens of seconds is not
+                        // something to wait out inside a tap: the UI sat frozen with no feedback for
+                        // a minute and then showed a 429 anyway. Past the cap, hand the response
+                        // back now so the caller can say "rate limited, try again shortly" while it
+                        // still means something.
+                        if wait > MAX_RETRY_AFTER {
+                            return Ok(r);
+                        }
                         tokio::time::sleep(wait).await;
                         delay *= 2;
                         continue;
@@ -577,12 +589,15 @@ impl SpotifyClient {
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
     }
 
+    /// Writes are **user-scoped**, so there is deliberately no client-credentials fallback here.
+    ///
+    /// An app token can read public metadata, which is why [`api_get`] falls back to one. It cannot
+    /// touch a user's library: `POST /playlists/{id}/tracks` with one comes back 400/403, which the
+    /// Kotlin retry layer classifies as permanent and gives up on — "adding to a playlist fails
+    /// with a 400". Propagating `TokenExpired` instead classifies as AUTH, which refreshes the
+    /// session and retries, and that is the outcome the caller actually wants.
     pub async fn api_post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> SpotifyResult<T> {
-        let token = if let Ok(user_token) = self.access_token() {
-            user_token.to_string()
-        } else {
-            self.fetch_client_credentials_token().await?
-        };
+        let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let mut req = self.http.post(&url)
@@ -599,12 +614,9 @@ impl SpotifyClient {
         res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
     }
 
+    /// User-scoped write. No client-credentials fallback — see [`api_post`].
     pub async fn api_put(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = if let Ok(user_token) = self.access_token() {
-            user_token.to_string()
-        } else {
-            self.fetch_client_credentials_token().await?
-        };
+        let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let mut req = self.http.put(&url)
@@ -621,12 +633,9 @@ impl SpotifyClient {
         Ok(())
     }
 
+    /// User-scoped write. No client-credentials fallback — see [`api_post`].
     pub async fn api_delete(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = if let Ok(user_token) = self.access_token() {
-            user_token.to_string()
-        } else {
-            self.fetch_client_credentials_token().await?
-        };
+        let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let mut req = self.http.delete(&url)

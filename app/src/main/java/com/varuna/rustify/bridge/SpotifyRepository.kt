@@ -1115,9 +1115,11 @@ loadLocalTracksFromCache()
             triggerBackgroundSync()
         } else {
             // Only wipe credentials when the failure is NOT a transient network problem.
-            // A network blip while restoring must not log the user out.
+            // A network blip — or a rate limit — while restoring must not log the user out.
             val errKind = classifyError(SpotifyEngineException(result.error ?: ""))
-            if (errKind != com.varuna.rustify.util.ErrorKind.TRANSIENT) {
+            if (errKind != com.varuna.rustify.util.ErrorKind.TRANSIENT &&
+                errKind != com.varuna.rustify.util.ErrorKind.RATE_LIMITED
+            ) {
                 prefs.edit {
                     remove(KEY_SP_DC)
                     remove(KEY_ACCESS_TOKEN)
@@ -1453,24 +1455,45 @@ loadLocalTracksFromCache()
      * @throws SpotifyEngineException on API errors
      */
     suspend fun createPlaylist(userId: String, name: String, description: String = "", public: Boolean = false): FullPlaylist = withContext(Dispatchers.IO) {
-        val json = NativeEngine.createSpotifyPlaylistNative(userId, name, description, public)
-        FullPlaylist.fromJson(checkForError(json))
+        retrying(onAuthError = { ensureSession() }) {
+            val json = NativeEngine.createSpotifyPlaylistNative(userId, name, description, public)
+            FullPlaylist.fromJson(checkForError(json))
+        }
     }
+
+    /**
+     * Runs a native call that answers with an `OperationResult`, refreshing the session and retrying
+     * when it fails for a recoverable reason.
+     *
+     * These endpoints report failure in their payload instead of throwing, so they slipped past
+     * [retrying] entirely — which is how "add to playlist" could come back `401 Missing/invalid/
+     * expired access token` and simply stay failed, with a session that one refresh would have
+     * fixed. Turning the failed result into a throw puts it back under the same policy every read
+     * already follows, and the result is rebuilt for the caller at the end.
+     */
+    private suspend fun writeOperation(call: () -> String): OperationResult =
+        runCatching {
+            retrying(onAuthError = { ensureSession() }) {
+                val res = OperationResult.fromJson(JSONObject(call()))
+                if (!res.success) throw SpotifyEngineException(res.error ?: "operation failed")
+                res
+            }
+        }.getOrElse { OperationResult(success = false, error = it.message) }
 
     /**
      * Update an existing playlist.
      */
     suspend fun updatePlaylist(id: String, name: String = "", description: String = ""): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.updateSpotifyPlaylistNative(id, name, description)
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.updateSpotifyPlaylistNative(id, name, description) }
     }
 
     /**
      * Add tracks to a playlist.
      */
     suspend fun addTracksToPlaylist(playlistId: String, trackIds: List<String>, position: Int = -1): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.addTracksToPlaylistNative(playlistId, JSONArray(trackIds).toString(), position)
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation {
+            NativeEngine.addTracksToPlaylistNative(playlistId, JSONArray(trackIds).toString(), position)
+        }
     }
 
     /**
@@ -1503,8 +1526,9 @@ loadLocalTracksFromCache()
      * Remove tracks from a playlist.
      */
     suspend fun removeTracksFromPlaylist(playlistId: String, trackIds: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.removeTracksFromPlaylistNative(playlistId, JSONArray(trackIds).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation {
+            NativeEngine.removeTracksFromPlaylistNative(playlistId, JSONArray(trackIds).toString())
+        }
     }
 
     /**

@@ -2376,6 +2376,9 @@ private fun WebPlayerSection(context: Context) {
     var desktopPlayback by remember {
         mutableStateOf(com.varuna.rustify.webplayer.WebPlayerController.playbackUsesDesktop(context))
     }
+    var adblock by remember {
+        mutableStateOf(com.varuna.rustify.webplayer.WebPlayerController.adblockEnabled(context))
+    }
     var testing by remember { mutableStateOf(false) }
     var steps by remember {
         mutableStateOf<List<com.varuna.rustify.webplayer.WebPlayerDiagnostics.Step>>(emptyList())
@@ -2412,6 +2415,17 @@ private fun WebPlayerSection(context: Context) {
                 onChange = {
                     desktopPlayback = it
                     com.varuna.rustify.webplayer.WebPlayerController.setPlaybackUsesDesktop(context, it)
+                }
+            )
+
+            Spacer(Modifier.height(8.dp))
+            SettingSwitchRow(
+                title = stringResource(R.string.web_player_adblock),
+                desc = stringResource(R.string.web_player_adblock_desc),
+                checked = adblock,
+                onChange = {
+                    adblock = it
+                    com.varuna.rustify.webplayer.WebPlayerController.setAdblockEnabled(context, it)
                 }
             )
 
