@@ -540,10 +540,13 @@
     <string name="web_player_backend_desc">Las canciones las reproduce el propio reproductor web de Spotify mientras los controles de Rustify lo manejan. Lo que no pueda reproducir —archivos locales, YouTube Music o una canción que la página no arranque— pasa a los backends de arriba.</string>
     <string name="wp_test_run">Probar el reproductor web</string>
     <string name="wp_test_hint">Comprueba cada requisito en orden y arranca una canción de verdad. Usa la que estés escuchando o tus Me gusta.</string>
+    <string name="notif_save">Guardar en tu biblioteca</string>
+    <string name="notif_saved">Quitar de tu biblioteca</string>
     <string name="wp_test_step_webview">WebView y JavaScript</string>
     <string name="wp_test_step_filters">Listas de filtros de uBlock Origin</string>
     <string name="wp_test_step_session">Sesión de Spotify iniciada</string>
     <string name="wp_test_step_drm">DRM Widevine</string>
+    <string name="wp_test_step_hosts">Servidores de Spotify alcanzables</string>
     <string name="wp_test_step_playback">La reproducción arranca</string>
     <string name="update_check">Buscar actualizaciones</string>
     <string name="update_checking">Buscando actualizaciones…</string>

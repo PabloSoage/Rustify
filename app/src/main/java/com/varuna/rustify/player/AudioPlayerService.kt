@@ -702,7 +702,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         val trackId = track.id ?: return
         ensureAudioRouteWatcher()
         // A queued track is consumed once it actually starts playing.
-        synchronized(userQueue) { userQueue.removeAll { it.id == trackId } }
+        consumeFromUserQueue(trackId)
 
         // Snapshot the intended start position now, synchronously, before the (possibly slow)
         // resolution below. The periodic position-ticker keeps copying exoPlayer.currentPosition into
@@ -1197,6 +1197,10 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (!controller.isReady) return false
         }
 
+        // The page is taking the track, so [playTrack] will not run for it. Consume the manual queue
+        // entry here instead — this is the other half of the fork, and for a long time it was missing.
+        consumeFromUserQueue(id)
+
         webStartJob?.cancel()
         webServingCurrentTrack = true
         webStartConfirmed = false
@@ -1264,7 +1268,10 @@ class AudioPlayerService private constructor(private val context: Context) {
         // binding it eagerly started the OS's 5s startForeground() clock while a slow backend
         // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR (with the UI
         // still alive). yt-dlp masked it by resolving from cache in <5s.
-        // Never re-inject the track being played as a queued duplicate of itself.
+        // Never re-inject the track being played as a queued duplicate of itself, and never re-inject
+        // one that is no longer pending — that is how a queue from another day ends up trailing a
+        // song picked today.
+        reconcileUserQueue(_state.value)
         val queue = listOf(track) + synchronized(userQueue) { userQueue.filter { it.id != track.id } }
         currentQueueIndex = 0
         _state.value = _state.value.copy(
@@ -1310,7 +1317,9 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         val selectedIdx = baseQueue.indexOfFirst { it.id == selected.id }
         // Only inject queued tracks that aren't already part of this list — otherwise starting a
-        // playlist that contains a queued song silently duplicated it.
+        // playlist that contains a queued song silently duplicated it — and only ones still pending
+        // against the queue being left behind.
+        reconcileUserQueue(_state.value)
         val injected = synchronized(userQueue) {
             userQueue.filter { uq -> baseQueue.none { it.id == uq.id } }
         }
@@ -1361,6 +1370,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun cyclePlaybackMode() {
         val st = _state.value
+        reconcileUserQueue(st)
         // Each branch swaps the whole queue, so the cached position has to be recomputed against the
         // new list before anything reads it (preBufferNextTrack does, immediately).
         if (!st.isShuffle && !st.isRepeat) {
@@ -1809,24 +1819,72 @@ class AudioPlayerService private constructor(private val context: Context) {
      * First index in [list] past the block of manually queued tracks that follows [currentIdx].
      *
      * There are two queues: the one playback generated (a list, or a shuffle of it) and the one the
-     * user built by hand, which always sits between the current track and the rest. This walks the
-     * live queue and [pending] (the manual queue, in the order it was added) in lockstep and stops
-     * at the first position where they diverge.
+     * user built by hand, which always sits between the current track and the rest. New additions go
+     * at the end of that block — the manual queue is first-in, first-out — so the block's extent has
+     * to be found before anything is inserted.
      *
-     * The lockstep matters. The previous version asked, row by row, "is this id anywhere in the
-     * manual queue?" and stopped at the first row that was not — the same answer while the block is
-     * intact, but "there are no manual tracks" as soon as anything moves them. Then the next
-     * addition went straight after the current track, in front of everything queued before it, so
-     * the manual queue played newest-first.
+     * The walk runs from the current track while each row is still owed by [pending], matching
+     * against it as a multiset rather than position by position. A strict lockstep looked equivalent
+     * and was not: it compared `list[i]` with `pending[p]` and gave up at the first difference, so a
+     * single entry out of place — one the user dragged, one left behind by a jump — answered "there
+     * is no manual block". Every later addition then landed immediately after the current track, in
+     * front of everything queued before it, and the manual queue played newest-first.
+     *
+     * Membership is only meaningful while [pending] describes the live queue, which is what
+     * [reconcileUserQueue] is for.
      */
     private fun manualBlockEnd(list: List<FullTrack>, currentIdx: Int, pending: List<FullTrack>): Int {
+        val owed = pending.mapNotNull { it.id }.toMutableList()
         var i = currentIdx + 1
-        var p = 0
-        while (i < list.size && p < pending.size && list[i].id == pending[p].id) {
+        while (i < list.size && owed.isNotEmpty()) {
+            val id = list[i].id ?: break
+            // remove() takes out one occurrence, so a song queued twice extends the block twice.
+            if (!owed.remove(id)) break
             i++
-            p++
         }
         return i
+    }
+
+    /**
+     * Drops from [userQueue] every track that is no longer waiting to be played.
+     *
+     * The manual queue is a projection of the live one: it names the tracks sitting between the
+     * current track and the rest, in the order they were added. Starting a track consumes its entry,
+     * but a jump does not — tapping a row past the manual block, or an entry removed with the queue
+     * rebuilt underneath it, leaves the name behind with nothing to point at.
+     *
+     * Stale entries are not inert. They break [manualBlockEnd]'s match, which turns the manual queue
+     * newest-first, and [loadPlaylist] injects them into every list started afterwards, so songs
+     * queued days ago reappear ahead of a playlist that was just told to shuffle. Reconciling against
+     * the live queue before each use keeps both honest whatever caused the drift.
+     */
+    private fun reconcileUserQueue(st: AudioPlayerState) {
+        // With no live queue there is nothing to check against: a restore that brought the manual
+        // queue back before the queue itself would otherwise read as "none of it is pending".
+        if (st.queue.isEmpty()) return
+        synchronized(userQueue) {
+            if (userQueue.isEmpty()) return
+            val curIdx = currentIndexIn(st)
+            val ahead = if (curIdx >= 0) st.queue.drop(curIdx + 1) else st.queue
+            val pendingIds = ahead.mapNotNull { it.id }.toMutableList()
+            userQueue.retainAll { t ->
+                val id = t.id ?: return@retainAll false
+                pendingIds.remove(id)
+            }
+        }
+    }
+
+    /**
+     * A manually queued track is spent once it starts, whichever engine started it.
+     *
+     * [playTrack] used to be the only place this happened, which was right until the web player
+     * became a first-class engine: a track the page accepts never reaches [playTrack], so in web
+     * mode the manual queue was never emptied. It grew without bound, and both of its failure modes
+     * followed — see [reconcileUserQueue].
+     */
+    private fun consumeFromUserQueue(trackId: String?) {
+        val id = trackId ?: return
+        synchronized(userQueue) { userQueue.removeAll { it.id == id } }
     }
 
     /**
@@ -1859,6 +1917,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun enqueue(track: FullTrack) {
         val st = _state.value
+        reconcileUserQueue(st)
         // Snapshot before adding: the insertion point is "after what was already queued by hand".
         val pending = synchronized(userQueue) { userQueue.toList() }
         val curIdx = currentIndexIn(st)
@@ -1873,6 +1932,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun enqueueAll(tracks: List<FullTrack>) {
         val st = _state.value
+        reconcileUserQueue(st)
         var currentQueue = st.queue
         var currentOrig = st.originalQueue
         val currentTrack = st.currentTrack

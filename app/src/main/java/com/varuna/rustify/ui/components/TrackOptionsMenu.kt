@@ -690,10 +690,25 @@ private fun MenuOptionItem(
  * body. A short toast cut that off at the status, which is the one part that means nothing to
  * anyone reading it, so the whole message was "429". Each case that a person can act on gets its
  * own sentence; anything unrecognised keeps the raw text, trimmed to what will fit.
+ *
+ * "What will fit" is the limit, not the information. A GraphQL refusal arrives as a JSON envelope
+ * whose useful part — which variable is missing, which member of the union came back — sits past
+ * anything a toast can hold, so the untrimmed text goes to the log (Settings → Logs) every time.
  */
 private fun addFailureMessage(context: android.content.Context, error: String?): String {
     val raw = error.orEmpty()
+    android.util.Log.e("TrackOptionsMenu", "add to playlist failed: $raw")
     return when {
+        // A GraphQL error names the problem inside the envelope. Show the message field rather than
+        // the wrapper, which is all a toast has room for otherwise.
+        raw.contains("\"message\"") -> {
+            val msg = Regex("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                .find(raw)?.groupValues?.get(1)?.take(140)
+            context.getString(R.string.playlist_add_failed, msg ?: raw.take(140))
+        }
+        // The mutation names its own refusal in the payload. Show it verbatim rather than folding it
+        // into "not writable": the useful cases (not yours, gone, already there) differ only there.
+        raw.contains("addToPlaylist") -> context.getString(R.string.playlist_add_failed, raw.take(140))
         raw.contains("429") -> context.getString(R.string.error_rate_limited)
         raw.contains("403") -> context.getString(R.string.error_playlist_not_writable)
         raw.contains("401") || raw.contains("expired", ignoreCase = true) ->

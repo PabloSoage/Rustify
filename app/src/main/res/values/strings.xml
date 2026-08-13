@@ -542,10 +542,13 @@
     <string name="web_player_backend_desc">Tracks are played by Spotify\'s own web player while Rustify\'s controls drive it. Anything it can\'t play — local files, YouTube Music, or a track the page refuses to start — falls back to the backends above.</string>
     <string name="wp_test_run">Test the web player</string>
     <string name="wp_test_hint">Checks every requirement in order and really starts a track. It uses whatever is playing, or your Liked Songs.</string>
+    <string name="notif_save">Save to your library</string>
+    <string name="notif_saved">Remove from your library</string>
     <string name="wp_test_step_webview">WebView and JavaScript</string>
     <string name="wp_test_step_filters">uBlock Origin filter lists</string>
     <string name="wp_test_step_session">Signed in to Spotify</string>
     <string name="wp_test_step_drm">Widevine DRM</string>
+    <string name="wp_test_step_hosts">Spotify\'s own hosts reachable</string>
     <string name="wp_test_step_playback">Playback starts</string>
     <string name="update_check">Check for updates</string>
     <string name="update_checking">Checking for updates…</string>

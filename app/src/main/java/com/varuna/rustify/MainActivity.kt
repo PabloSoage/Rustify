@@ -93,9 +93,11 @@ import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.TrackFavorites
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistAllSongsScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
@@ -1577,6 +1579,20 @@ fun MiniPlayer(
                     modifier = Modifier.bouncingMarquee()
                 )
             }
+
+            // Save to library. Same control as the track screen — a "+" that becomes the green
+            // check — so the two never disagree about what "saved" looks like. It is here so that
+            // hearting the song you are listening to does not mean opening it first.
+            //
+            // No parameter for it: [TrackFavorites.isSaved] reads Compose state, so this recomposes
+            // by itself when the song is saved from anywhere else, and both call sites of MiniPlayer
+            // get the button without threading anything through.
+            val favContext = LocalContext.current
+            val favScope = rememberCoroutineScope()
+            SpotifyLikeButton(
+                isLiked = TrackFavorites.isSaved(favContext, track),
+                onClick = { favScope.launch { TrackFavorites.toggle(favContext, track) } }
+            )
 
             // Previous Button
             IconButton(

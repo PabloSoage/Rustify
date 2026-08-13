@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
+import androidx.compose.runtime.snapshotFlow
 import androidx.core.net.toUri
 import androidx.media3.common.ForwardingPlayer
 import com.varuna.rustify.webplayer.WebPlayerController
@@ -13,19 +15,28 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.TrackFavorites
 import com.varuna.rustify.bridge.YtMusicRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * A [MediaLibraryService] (a superset of the former MediaSessionService) so Android Auto can browse a
@@ -48,6 +59,9 @@ class RustifyForegroundService : MediaLibraryService() {
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "rustify_playback"
+
+        /** Custom session command behind the notification's save button. */
+        private const val ACTION_TOGGLE_SAVED = "com.varuna.rustify.TOGGLE_SAVED"
     }
 
     @SuppressLint("ObsoleteSdkInt")
@@ -154,6 +168,7 @@ class RustifyForegroundService : MediaLibraryService() {
             // Expose the session to the repositories so they can invalidate the Auto tree
             // (notifyChildrenChanged) when the user changes favorites/playlists from the app.
             MediaBrowserNotifier.bind(mediaSession)
+            observeSaveButton()
         } else {
             android.util.Log.e("RustifyForegroundService", "ExoPlayer is null, cannot create MediaSession")
             stopSelf()
@@ -164,8 +179,102 @@ class RustifyForegroundService : MediaLibraryService() {
         return mediaSession
     }
 
+    // ── Save to library, from the notification ───────────────────────────────────────────
+    //
+    // Hearting the song you are hearing meant opening the app and navigating to it, which is a lot of
+    // taps for a decision made in two seconds while the song is still playing. The button lives in the
+    // session rather than in a hand-built notification because the notification is Media3's: it is
+    // rendered from the session's button preferences, which is also what puts the same control on the
+    // lock screen and in Android Auto for free.
+
+    /**
+     * Keeps the button's icon telling the truth.
+     *
+     * Two sources have to be watched, and they are different kinds of thing. The song comes from a
+     * `StateFlow`; whether it is saved is Compose state that the screens write directly, so
+     * `snapshotFlow` is what notices a heart pressed inside the app. Without the second one the icon
+     * would only be correct until the user saved the song from somewhere else and then stayed on it.
+     *
+     * `collectLatest` on the outer flow cancels the inner collection when the track changes, so only
+     * one saved-state observer is ever alive.
+     */
+    private fun observeSaveButton() {
+        val audio = AudioPlayerService.instance ?: return
+        autoScope.launch {
+            audio.state
+                .map { it.currentTrack }
+                .distinctUntilChanged { a, b -> a?.id == b?.id }
+                .collectLatest { track ->
+                    snapshotFlow { TrackFavorites.isSaved(this@RustifyForegroundService, track) }
+                        .distinctUntilChanged()
+                        .collect { saved -> applySaveButton(track, saved) }
+                }
+        }
+    }
+
+    /** Session calls belong on the application thread, which is not where the flows above run. */
+    private suspend fun applySaveButton(track: FullTrack?, saved: Boolean) {
+        withContext(Dispatchers.Main) {
+            val session = mediaSession ?: return@withContext
+            // Nothing playing, or something with no id to save: no button rather than a dead one.
+            val buttons = if (track?.id == null) {
+                ImmutableList.of()
+            } else {
+                ImmutableList.of(
+                    CommandButton.Builder(
+                        if (saved) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
+                    )
+                        .setDisplayName(
+                            getString(if (saved) R.string.notif_saved else R.string.notif_save)
+                        )
+                        .setSessionCommand(SessionCommand(ACTION_TOGGLE_SAVED, Bundle.EMPTY))
+                        .setEnabled(true)
+                        .build()
+                )
+            }
+            // A released session throws rather than ignoring the call, and this arrives from a
+            // coroutine that can outlive it by a frame.
+            runCatching { session.setMediaButtonPreferences(buttons) }
+        }
+    }
+
     // ── Android Auto browsable tree + browse→play ────────────────────────────────────────
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+
+        // A custom command is refused unless the controller was told it exists, and the notification
+        // is a controller like any other — without this its button would be there and do nothing.
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                .buildUpon()
+                .add(SessionCommand(ACTION_TOGGLE_SAVED, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != ACTION_TOGGLE_SAVED) {
+                return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+            }
+            // Answer now and save in the background: this runs on the application thread, and the
+            // Spotify half is a network call. The icon is not flipped here — [observeSaveButton] is
+            // watching the store, so it updates from what actually happened rather than from what was
+            // asked for, and a save that fails leaves the button correct.
+            val track = AudioPlayerService.instance?.state?.value?.currentTrack
+            autoScope.launch {
+                runCatching { TrackFavorites.toggle(this@RustifyForegroundService, track) }
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,

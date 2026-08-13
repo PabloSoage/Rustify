@@ -3,6 +3,7 @@ package com.varuna.rustify.webplayer
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -126,6 +127,39 @@ object WebPlayerController {
     private fun isFirstParty(host: String?): Boolean {
         val h = host?.lowercase() ?: return false
         return FIRST_PARTY_HOSTS.any { h == it || h.endsWith(".$it") }
+    }
+
+    /**
+     * Third parties that are answered with an empty resource instead of being allowed to **fail**.
+     *
+     * This is not filtering, and it is deliberately not behind the ad-blocker switch. It exists
+     * because of one measured chain, end to end:
+     *
+     * 1. `cdn.cookielaw.org/scripttemplates/otSDKStub.js` does not load. Measured, in every log since
+     *    the first console was ever captured.
+     * 2. Its `<script>` fires `error`, the player's loader rejects a promise with `undefined`, and the
+     *    startup ends there — `reject(undefined) @ … < HTMLScriptElement.onError`, with the
+     *    MediaSource built and never attached.
+     * 3. And **we were not the ones blocking it**: the same run reported `blocked 1 hosts, 0 scripts:
+     *    o22381.ingest.sentry.io`. The request went to the network and failed on its own, somewhere
+     *    between the device's DNS and the CDN.
+     *
+     * Which finally explains Firefox. uBlock Origin *does* carry cookie-consent lists, so there the
+     * script is blocked — and uBO neutralises a script by serving an **empty script**, which fires
+     * `load`. Same page, same phone, same failing third party: it plays because the load succeeds
+     * emptily instead of failing. Our lists do not carry that host, so the request went out and died.
+     *
+     * So it is answered here, before the network, with an empty script. Kept to consent managers,
+     * which are the ones a player has no business waiting on, and short: a list like this is a
+     * liability the moment it starts collecting hosts nobody measured.
+     */
+    private val NEUTRALISED_HOSTS = listOf(
+        "cookielaw.org", "onetrust.com", "optanon.blob.core.windows.net"
+    )
+
+    private fun isNeutralised(host: String?): Boolean {
+        val h = host?.lowercase() ?: return false
+        return NEUTRALISED_HOSTS.any { h == it || h.endsWith(".$it") }
     }
 
     /** Whether third-party requests are filtered at all. On by default; a kill switch for testing. */
@@ -290,6 +324,26 @@ object WebPlayerController {
                     }
                     super.onPermissionRequest(request)
                 }
+
+                // The page's own errors, which until now went nowhere. "No media element" says the
+                // player was never built; it cannot say why. Whatever threw on the way to building it
+                // said so here, and the self-test can now quote it instead of guessing.
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    val m = consoleMessage ?: return false
+                    if (m.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                        val source = m.sourceId().orEmpty().substringAfterLast('/').take(28)
+                        // Full text to the log — the self-test's copy is cut to fit on screen, and the
+                        // part that names the failing API is often past the cut.
+                        android.util.Log.w(
+                            "WebPlayerController",
+                            "page error: ${m.message()} (${m.sourceId()}:${m.lineNumber()})"
+                        )
+                        // 200, not 120: the message that matters now carries a stack, and a stack cut
+                        // at 120 characters is one frame — which is the frame inside the shim.
+                        recordPageError("${m.message().take(200)} ($source:${m.lineNumber()})")
+                    }
+                    return false
+                }
             }
 
             webViewClient = object : WebViewClient() {
@@ -298,7 +352,21 @@ object WebPlayerController {
                 // finish. Idempotent, so re-running it later costs nothing.
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                     super.onPageStarted(view, url, favicon)
-                    runCatching { view?.evaluateJavascript(JS_MEDIA_HOOK, null) }
+                    runCatching {
+                        // The shim has to beat the bundle's own feature detection, so it goes first
+                        // and at the earliest hook there is.
+                        if (view?.settings?.userAgentString?.contains("Windows") == true) {
+                            view?.evaluateJavascript(JS_DESKTOP_SHIM, null)
+                            view?.evaluateJavascript(JS_BUILD_PROBE, null)
+                            view?.evaluateJavascript(JS_VISIBLE_SHIM, null)
+                            view?.evaluateJavascript(JS_NET_HOOK, null)
+                            view?.evaluateJavascript(JS_DISMISS_CONSENT, null)
+                            view?.evaluateJavascript(JS_PROMISE_TRACE, null)
+                        }
+                        view?.evaluateJavascript(JS_ERROR_HOOK, null)
+                        view?.evaluateJavascript(JS_EME_RELAX, null)
+                        view?.evaluateJavascript(JS_MEDIA_HOOK, null)
+                    }
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -319,15 +387,31 @@ object WebPlayerController {
                 ): WebResourceResponse? {
                     val req = request ?: return null
                     if (req.isForMainFrame) return null
+                    // Before the switch on purpose: this is a stub for a resource that fails, not a
+                    // filter, and turning filtering off must not put the page back into the state
+                    // where a dead consent script stops playback. See [NEUTRALISED_HOSTS].
+                    if (isNeutralised(req.url?.host)) {
+                        val t = resourceTypeOf(req)
+                        android.util.Log.d("WebPlayerController", "stubbed $t ${req.url}")
+                        recordBlocked(t, req.url?.host)
+                        return blockedResponse(blockedMimeFor(t))
+                    }
                     if (!cachedAdblock) return null
                     // Spotify's own infrastructure is never filtered — see [FIRST_PARTY_HOSTS].
                     if (isFirstParty(req.url?.host)) return null
                     val url = req.url?.toString() ?: return null
                     if (!url.startsWith("http")) return null
+                    val type = resourceTypeOf(req)
                     val blocked = runCatching {
-                        NativeEngine.adblockMatchesNative(url, SPOTIFY_WEB, resourceTypeOf(req))
+                        NativeEngine.adblockMatchesNative(url, SPOTIFY_WEB, type)
                     }.getOrDefault(false)
-                    return if (blocked) blockedResponse() else null
+                    if (!blocked) return null
+                    // Logged, because a blocked request that breaks the page is indistinguishable
+                    // from one that does not until something breaks — and one of these cost fourteen
+                    // rounds. Settings → Logs.
+                    android.util.Log.d("WebPlayerController", "blocked $type $url")
+                    recordBlocked(type, req.url?.host)
+                    return blockedResponse(blockedMimeFor(type))
                 }
             }
         }
@@ -402,6 +486,78 @@ object WebPlayerController {
      */
     @Volatile var lastDeviceTakeover: String? = null
         private set
+
+    /**
+     * The last few distinct JavaScript errors the page reported, newest last.
+     *
+     * A page that throws on the way to building its player looks, from here, exactly like a page that
+     * simply has not built it yet — both answer "no media element". Keeping the console errors turns
+     * that dead end into a name and a line number. Distinct only: a broken bundle repeats the same
+     * error hundreds of times and the interesting one is rarely the last.
+     */
+    private val pageErrorLog = ArrayDeque<String>()
+
+    /**
+     * Errors that have been chased down and are not it, kept out of the handful the self-test can
+     * show. The reCAPTCHA frame belongs to a login widget that is not on the path to audio, and it
+     * was taking one of the few slots.
+     *
+     * **`cookielaw.org` is no longer on this list**, and its removal is the correction worth keeping.
+     * It was dismissed on the reasoning that Firefox blocks the same script and plays anyway — true,
+     * and irrelevant: uBlock Origin also removes the *element*, and our filtering is network-level
+     * only, so here the banner rendered with no script left to dismiss it and sat on top of the page.
+     * The device picker eventually found it: the only labelled control on the page was "Configuración
+     * de cookies". A filter list for "errors already explained" is exactly where a wrong explanation
+     * goes to hide, so this one stays short.
+     *
+     * Nothing is lost either way — every console error still goes to the log in full
+     * (Settings → Logs).
+     */
+    private val KNOWN_NOISE = listOf("requestStorageAccess")
+
+    private fun recordPageError(message: String) {
+        if (KNOWN_NOISE.any { it in message }) return
+        synchronized(pageErrorLog) {
+            if (message in pageErrorLog) return
+            pageErrorLog.addLast(message)
+            while (pageErrorLog.size > 8) pageErrorLog.removeFirst()
+        }
+    }
+
+    fun pageErrors(): List<String> = synchronized(pageErrorLog) { pageErrorLog.toList() }
+
+    fun clearPageErrors() {
+        synchronized(pageErrorLog) { pageErrorLog.clear() }
+        synchronized(blockedLog) { blockedLog.clear(); blockedScripts = 0 }
+    }
+
+    /**
+     * What the filter engine actually stopped during the last attempt.
+     *
+     * The MIME fix for blocked scripts changed nothing, and there are two very different reasons it
+     * might not have: either we never blocked that script and it failed on the network on its own, or
+     * we did and an empty script is not enough. The self-test cannot tell them apart from the page's
+     * side — a request that was refused and one that was answered with nothing both end at the same
+     * `resource failed` line — but this side knows exactly which requests it stopped.
+     *
+     * Hosts rather than URLs, deduplicated: the interesting question is *which third parties*, and a
+     * page load blocks the same tracker a dozen times.
+     */
+    private val blockedLog = LinkedHashSet<String>()
+    @Volatile private var blockedScripts = 0
+
+    private fun recordBlocked(type: String, host: String?) {
+        val h = host ?: return
+        if (type == "script") blockedScripts++
+        synchronized(blockedLog) {
+            if (blockedLog.size < 10) blockedLog.add(h)
+        }
+    }
+
+    fun blockedSummary(): String = synchronized(blockedLog) {
+        if (blockedLog.isEmpty()) return "none blocked"
+        "${blockedLog.size} hosts, $blockedScripts scripts: ${blockedLog.joinToString(" ")}"
+    }
 
     fun togglePlayPause() = run(click("control-button-playpause"))
     // No next/previous here on purpose: opening a track URL leaves Spotify's own context holding
@@ -530,13 +686,31 @@ object WebPlayerController {
      * The fix is the same one a person would do: open the device picker and choose this browser. Two
      * evaluations with a pause between them, because the list is rendered when the picker opens.
      *
-     * Returns a short description of what happened, for the self-test.
+     * Returns a short description of what happened, for the self-test — **including which selector
+     * opened the picker**. The first measurement that reached this step answered "this browser not in
+     * device list (1 entries, 0 skipped)", and one entry is not a device list; it is far more likely
+     * that the button that got clicked was not the device picker at all. Without naming the selector
+     * there is no way to tell those apart, and the fallbacks match on a fragment of a label
+     * ("onnect", "onectar") that other buttons can carry too.
+     *
+     * Tried repeatedly, because it **is** a race and that is measured, not assumed: two consecutive
+     * runs of the same build, on the same page, answered `switched to "Este navegador web"` and then
+     * `not in list of 3` with only the cookie-settings control in it. The device list is not rendered
+     * with the picker — it is fetched, and until it arrives the popover is an empty dialog. Two
+     * attempts were not enough; five over four seconds cost nothing when the alternative is a
+     * diagnostic that reports a different thing each time it is run.
      */
     suspend fun takeOverPlaybackDevice(): String {
         val opened = eval(JS_OPEN_DEVICE_PICKER) ?: "no answer"
         if (!opened.startsWith("opened")) return opened
-        delay(900)
-        return eval(JS_PICK_THIS_BROWSER) ?: "no answer"
+        val via = opened.removePrefix("opened via ").take(28)
+        var picked = "no answer"
+        repeat(5) { attempt ->
+            delay(if (attempt == 0) 700 else 850)
+            picked = eval(JS_PICK_THIS_BROWSER) ?: picked
+            if (!picked.startsWith("not in")) return "$via → $picked"
+        }
+        return "$via → $picked"
     }
 
     private const val JS_OPEN_DEVICE_PICKER = """
@@ -551,7 +725,13 @@ object WebPlayerController {
             ];
             for (var i = 0; i < sels.length; i++) {
               var b = document.querySelector(sels[i]);
-              if (b) { b.click(); return 'opened via ' + sels[i]; }
+              if (!b) continue;
+              b.click();
+              // The last three match a fragment of an accessible label, which other buttons can carry
+              // too. Naming the one that was actually clicked is what tells a picker that opened onto
+              // the wrong list from a picker that was never opened.
+              var lbl = (b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 20);
+              return 'opened via ' + (i < 2 ? sels[i].slice(0, 24) : 'label "' + lbl + '"');
             }
             return 'no device picker';
           } catch (e) { return 'error'; }
@@ -569,20 +749,30 @@ object WebPlayerController {
      * playback to the device we are trying to move away from — reported as "I click this browser
      * and it doesn't change". So phone entries are excluded, and so is whichever entry is already
      * the active device, since selecting that is by definition a no-op.
+     *
+     * When nothing matches it now **quotes what it did find**. "1 entries, 0 skipped" was a dead end:
+     * a count cannot say whether the list was the wrong list, whether Spotify renamed the entry, or
+     * whether the picker had not rendered yet. The labels can, and they are the only thing here that
+     * Spotify is free to change without warning.
      */
     private const val JS_PICK_THIS_BROWSER = """
         (function(){
           try {
             var items = document.querySelectorAll(
               '[data-testid="device-picker-item"], [data-testid="connect-device-list-item"], ' +
-              '[data-testid="connect-device-list-item-current"], li button, [role="menuitem"]'
+              '[data-testid="connect-device-list-item-current"], [data-testid*="device"], ' +
+              'li button, [role="menuitem"], [role="menuitemradio"], [role="option"]'
             );
+            var dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]').length;
             var wanted = /(web ?player|this (web )?browser|este navegador|ce navigateur|dieser browser)/i;
             var notHere = /(mobile|m[oó]vil|phone|tel[eé]fono|android|iphone|ipad|tablet|tv|speaker|altavoz)/i;
-            var skipped = 0;
+            var skipped = 0, seen = [];
             for (var i = 0; i < items.length; i++) {
               var el = items[i];
-              var t = (el.textContent || '').trim();
+              var t = (el.textContent || '').trim().replace(/\s+/g, ' ');
+              // Empty entries told us nothing last time and there were two of them. Only labelled
+              // ones are worth the space on the report.
+              if (t && seen.length < 4) seen.push('"' + t.slice(0, 22) + '"');
               if (!wanted.test(t)) continue;
               if (notHere.test(t)) { skipped++; continue; }
               // Already the active device: Spotify marks it, and clicking it changes nothing.
@@ -593,8 +783,9 @@ object WebPlayerController {
               el.click();
               return 'switched to "' + t.slice(0, 28) + '"';
             }
-            return 'this browser not in device list (' + items.length + ' entries, ' +
-                   skipped + ' skipped)';
+            return 'not in list of ' + items.length + ' (' + dialogs + ' dialogs, ' +
+                   skipped + ' skipped): ' +
+                   (seen.length ? seen.join(' ') : 'nothing labelled');
           } catch (e) { return 'error'; }
         })();
     """
@@ -633,6 +824,52 @@ object WebPlayerController {
      * on something real, and when it fails, it says whether there was anything to look at.
      */
     suspend fun mediaReport(): String = eval(JS_MEDIA_REPORT, timeoutMs = 2_000) ?: "no answer"
+
+    /**
+     * What the page is telling the user, if anything.
+     *
+     * Eleven rounds have gone into reading the page's machinery — its requests, its counters, its
+     * console — and none into reading the page. A web player that cannot play usually says so, in a
+     * sentence, in the language of the account: a toast, an inline notice, a dialog. If Spotify is
+     * refusing this for a reason it has a name for, that name is on screen and nowhere else, because
+     * a refusal the product expects is not an error the console reports.
+     */
+    suspend fun pageNotice(): String = eval(JS_PAGE_NOTICE, timeoutMs = 2_000).orEmpty()
+
+    private const val JS_PAGE_NOTICE = """
+        (function(){
+          try {
+            // Ordered: the things that exist only to say something wrong first, and open dialogs
+            // last — a dialog is worth reporting (the first measurement found two open and nobody
+            // knew what they were) but it is the one most likely to be something ordinary.
+            var sels = ['[role="alert"]', '[role="alertdialog"]', '[aria-live="assertive"]',
+                        '[data-testid*="error"]', '[data-testid*="notification"]',
+                        '[data-testid*="toast"]', '[data-testid*="banner"]',
+                        '[role="dialog"]', '[aria-modal="true"]'];
+            // Only what is actually on screen. The first measurement reported Spotify's language
+            // chooser and a country list, which are in the markup of every page and were never shown
+            // to anyone — an invisible dialog is not the page telling the user something, and quoting
+            // it as if it were is how a diagnostic starts inventing leads.
+            function visible(el){
+              try {
+                if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false;
+                var r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+              } catch (x) { return false; }
+            }
+            var out = [];
+            for (var i = 0; i < sels.length && out.length < 3; i++) {
+              var els = document.querySelectorAll(sels[i]);
+              for (var j = 0; j < els.length && out.length < 3; j++) {
+                if (!visible(els[j])) continue;
+                var t = (els[j].textContent || '').trim().replace(/\s+/g, ' ');
+                if (t && out.indexOf(t) === -1) out.push(t.slice(0, 70));
+              }
+            }
+            return out.join(' | ');
+          } catch (e) { return ''; }
+        })();
+    """
 
     /** Current page address, for diagnostics. Null when the page cannot be asked. */
     suspend fun currentUrl(): String? =
@@ -675,9 +912,24 @@ object WebPlayerController {
             // Only on the desktop page. The phone page registers itself as a Connect device and
             // plays locally, so a takeover there can only move playback *away* — which it did,
             // audibly, while the media element was going undetected (see [JS_MEDIA_FN]).
-            if (!tookOver && cachedPlaybackDesktop && polls > 6 && !s.hasLocalMedia && s.title.isNotBlank()) {
+            //
+            // The title requirement is gone. It was there to identify the "showing another device"
+            // case specifically, and it meant the takeover never ran once: the desktop page under
+            // test publishes no media-session metadata at all, so the title is blank and the
+            // condition could not be met on the very page it was written for — no `takeover:` has
+            // appeared in any measurement. Claiming playback for a page that simply has not rendered
+            // yet costs nothing: [JS_PICK_THIS_BROWSER] skips the entry that is already active and
+            // every phone entry, and it runs once.
+            if (!tookOver && cachedPlaybackDesktop && polls > 6 && !s.hasLocalMedia) {
                 tookOver = true
                 lastDeviceTakeover = takeOverPlaybackDevice()
+                // Press it again right away when the takeover actually landed. Until now the next
+                // nudge was up to four polls away, and the click before it went to a different device
+                // by definition — that is what the takeover was for. Waiting after succeeding wastes
+                // the only part of the attempt that changed anything.
+                if (lastDeviceTakeover?.contains("switched to") == true) {
+                    lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
+                }
                 continue
             }
             // Read the result rather than firing and forgetting: it is the only evidence of whether
@@ -782,6 +1034,586 @@ object WebPlayerController {
         })();
     """
 
+    /**
+     * Takes out a consent dialog that can no longer be answered — **if there is one, and there was
+     * not.**
+     *
+     * Written because the device picker came back with "Configuración de cookies" as the only labelled
+     * control on the page, which read as OneTrust's banner sitting over everything: the filter lists
+     * block `cdn.cookielaw.org/otSDKStub.js`, so the markup would render with no script left to
+     * dismiss it. The next measurement reported no `consent:` at all — this removed nothing, because
+     * with its script blocked OneTrust never builds a banner in the first place. That string was one
+     * of Spotify's own page controls, and what actually fixed the picker was widening the selectors
+     * that look for device entries; it now answers `switched to "Este navegador web"`.
+     *
+     * Kept, because it costs a guard and two id lookups per mutation batch and it removes a real
+     * variable: if the filter lists ever let the SDK through half-way, or Spotify changes provider, a
+     * modal consent dialog over the player is exactly the kind of thing that would look like yet
+     * another unexplained failure. When there is nothing to remove it says nothing, which is the
+     * behaviour a diagnostic should have.
+     *
+     * The overlay would be removed rather than accepted. Consent cannot be recorded anyway with the
+     * SDK blocked, and clicking "accept" on somebody's behalf to unblock a page is not ours to do.
+     */
+    private const val JS_DISMISS_CONSENT = """
+        (function(){
+          try {
+            if (window.__rustifyConsent) return 'already';
+            window.__rustifyConsent = true;
+            window.__rustifyConsentRemoved = 0;
+            var SELS = ['#onetrust-consent-sdk', '#onetrust-banner-sdk', '#onetrust-pc-sdk',
+                        '.onetrust-pc-dark-filter', '.ot-fade-in'];
+            function present(){
+              return document.getElementById('onetrust-consent-sdk') ||
+                     document.getElementById('onetrust-banner-sdk');
+            }
+            function sweep(){
+              var removed = 0;
+              for (var i = 0; i < SELS.length; i++) {
+                var els = document.querySelectorAll(SELS[i]);
+                for (var j = 0; j < els.length; j++) { els[j].remove(); removed++; }
+              }
+              if (removed) {
+                try {
+                  document.documentElement.style.overflow = '';
+                  if (document.body) {
+                    document.body.style.overflow = '';
+                    document.body.classList.remove('ot-overflow-hidden');
+                  }
+                } catch (e) {}
+                window.__rustifyConsentRemoved += removed;
+              }
+              return removed;
+            }
+            sweep();
+            var mo = new MutationObserver(function(){ if (present()) sweep(); });
+            mo.observe(document.documentElement, { childList: true, subtree: true });
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Gives the rejection a stack, by catching it where it is *created* instead of where it lands.
+     *
+     * One line has survived twelve rounds of narrowing: `rejected: undefined`, from the page under
+     * test, and everything else on that page is explained. `unhandledrejection` cannot help — a value
+     * rejected with `undefined` carries no stack, because nothing was ever thrown. But the *call* that
+     * rejected it has one, and that is reachable if we are holding the `reject` function when it is
+     * called.
+     *
+     * So `Promise` is wrapped: the executor's `reject`, and the static `Promise.reject`. When either
+     * is called with `undefined` or `null` — deliberate abandonment, not an error — three frames of
+     * the stack go to the console. Minified frames still name the chunk and the function, which is
+     * three chunks more than "undefined".
+     *
+     * **This one has a real cost and it is worth stating.** `RP.prototype = P.prototype` keeps
+     * `instanceof` working, but `Promise.prototype.constructor` still points at the original, so code
+     * comparing `x.constructor === Promise` now sees false. And only promises the page builds with
+     * `new Promise` or `Promise.reject` pass through here at all — `async`/`await` and `.then` chains
+     * use the intrinsic constructor and are invisible to this. It is desktop-only, like the rest, so
+     * the phone page that actually plays is untouched.
+     *
+     * How to tell if it broke something rather than measured it: the build counters. If `made`, `mse`
+     * and `eme` come back as anything other than `1, 1, 7`, the wrapper changed the page's behaviour
+     * and its output cannot be trusted.
+     */
+    private const val JS_PROMISE_TRACE = """
+        (function(){
+          try {
+            if (window.__rustifyPromise) return 'already';
+            if (!window.Promise) return 'unsupported';
+            window.__rustifyPromise = true;
+            var P = window.Promise;
+            function frames(){
+              try {
+                return String(new Error().stack || '').split('\n').slice(2, 5)
+                       .map(function(s){ return s.trim().replace(/^at\s+/, ''); })
+                       .join(' < ').slice(0, 180);
+              } catch (x) { return '?'; }
+            }
+            // Stamped like every other message, but inline: this hook is declared before the shared
+            // pg() helper and a const cannot reach forward.
+            function note(where, v){
+              try {
+                var seg = (location.pathname.split('/').filter(Boolean).pop() || 'root').slice(0, 8);
+                console.error('[rustify:' + seg + '] ' + where + '(' +
+                              (v === null ? 'null' : 'undefined') + ') @ ' + frames());
+              } catch (x) {}
+            }
+            var RP = function(executor){
+              return new P(function(res, rej){
+                executor(res, function(v){
+                  if (v === undefined || v === null) note('reject', v);
+                  rej(v);
+                });
+              });
+            };
+            RP.prototype = P.prototype;
+            RP.resolve = P.resolve.bind(P);
+            RP.all = P.all.bind(P);
+            RP.race = P.race.bind(P);
+            if (P.allSettled) RP.allSettled = P.allSettled.bind(P);
+            if (P.any) RP.any = P.any.bind(P);
+            RP.reject = function(v){
+              if (v === undefined || v === null) note('Promise.reject', v);
+              return P.reject(v);
+            };
+            window.Promise = RP;
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * `pg()` — the page a console message came from, as its last path segment.
+     *
+     * Shared by the hooks below, because without it the error list cannot be trusted. Opening a track
+     * is a navigation, and the page being navigated *away* from has requests in flight: those abort at
+     * commit, and an aborted `fetch` rejects with the same `TypeError: Failed to fetch` as one that
+     * never left. Three runs produced three different sets of failing hosts, which is what that noise
+     * looks like. `intl-es` is the home page the test starts on; the track id is the page under test.
+     */
+    private const val JS_PAGE_TAG = """
+        function pg(){
+          try {
+            var p = location.pathname.split('/').filter(Boolean);
+            return (p[p.length - 1] || 'root').slice(0, 8);
+          } catch (x) { return '?'; }
+        }
+    """
+
+    /**
+     * Asks again, without whatever this CDM refuses, when an EME request is turned down.
+     *
+     * Written for a hypothesis the next measurement killed. The split probe reports `pstate:ok
+     * plicense:NotSupportedError`: persistent *state* is supported after all, and the only refusal is
+     * `persistent-license` — the session type offline downloads need and streaming never asks for. So
+     * Widevine is not what stops the desktop page. Four of five configurations pass and each one
+     * instantiates a CDM.
+     *
+     * It stays because it costs nothing and can only run after the page's own request has already
+     * failed — the worst case is the failure that was going to happen anyway — and because the
+     * counter it keeps is now the more useful half: **whether the page asks for EME at all**. A page
+     * that never asks has died before the part where DRM could matter.
+     *
+     * It says so in the console when it fires, because a shim that silently changes what a page asked
+     * for is worse than no shim.
+     */
+    private const val JS_EME_RELAX = """
+        (function(){
+          try {
+            if (window.__rustifyEme) return 'already';
+            if (!navigator.requestMediaKeySystemAccess) return 'unsupported';
+            window.__rustifyEme = true;
+            $JS_PAGE_TAG
+            var orig = navigator.requestMediaKeySystemAccess.bind(navigator);
+            // Kept reachable so the self-test can still measure what the CDM really refuses. Asking
+            // through the shim would answer "supported" for the one configuration being investigated.
+            window.__rustifyEmeOrig = orig;
+            navigator.requestMediaKeySystemAccess = function(keySystem, configs){
+              try { window.__rustifyEmeCalls = (window.__rustifyEmeCalls || 0) + 1; } catch (e) {}
+              return orig(keySystem, configs).catch(function(err){
+                var relaxed = [], changed = false;
+                try {
+                  (configs || []).forEach(function(c){
+                    var copy = {};
+                    for (var k in c) copy[k] = c[k];
+                    if (copy.persistentState === 'required') { copy.persistentState = 'optional'; changed = true; }
+                    if (copy.sessionTypes && copy.sessionTypes.join(',') !== 'temporary') {
+                      copy.sessionTypes = ['temporary'];
+                      changed = true;
+                    }
+                    relaxed.push(copy);
+                  });
+                } catch (e) { throw err; }
+                if (!changed) throw err;
+                console.error('[rustify:' + pg() + '] EME retried without persistent state (was ' +
+                              ((err && err.name) || '?') + ')');
+                return orig(keySystem, relaxed);
+              });
+            };
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Routes what `console.error` never sees into the same pipe.
+     *
+     * A bundled application catches most of its own failures, and an unhandled promise rejection is
+     * not guaranteed to reach [WebChromeClient.onConsoleMessage] on every WebView build. Both are
+     * re-emitted as console errors here, tagged, so the one channel that is being read carries them.
+     *
+     * Naming what failed is the whole job, and the first version did not. Two things get thrown that
+     * are not `Error`s and reduce to nothing useful when concatenated:
+     *
+     *  - A capture-phase `error` listener on `window` also receives the **resource** load failures
+     *    that bubble up from elements. Those carry no message at all — the previous version printed
+     *    them as the bare word "error" — but they do carry the URL that would not load, which is the
+     *    only part worth having.
+     *  - A promise rejected with `undefined`, or with a plain object, printed as "unknown". Reported
+     *    by shape now, so at least its type and fields survive.
+     *
+     * Every message carries the page it came from — see [JS_PAGE_TAG].
+     */
+    private const val JS_ERROR_HOOK = """
+        (function(){
+          try {
+            if (window.__rustifyErrHook) return 'already';
+            window.__rustifyErrHook = true;
+            function cut(v, n){ try { return String(v).slice(0, n); } catch (x) { return '?'; } }
+            $JS_PAGE_TAG
+            window.addEventListener('error', function(e){
+              try {
+                var t = e && e.target;
+                if (t && t !== window && (t.src || t.href)) {
+                  console.error('[rustify:' + pg() + '] resource failed: ' + (t.tagName || '?') + ' ' +
+                                cut(t.src || t.href, 120));
+                  return;
+                }
+                var m = (e && (e.message || (e.error && e.error.message))) || 'no message';
+                console.error('[rustify:' + pg() + '] uncaught: ' + cut(m, 160) +
+                              (e && e.filename ? ' @ ' + cut(e.filename, 60) : ''));
+              } catch (x) {}
+            }, true);
+            window.addEventListener('unhandledrejection', function(e){
+              try {
+                var r = e ? e.reason : undefined;
+                var d;
+                if (r === undefined) d = 'undefined';
+                else if (r === null) d = 'null';
+                else if (r.message) d = (r.name ? r.name + ': ' : '') + cut(r.message, 160);
+                else if (typeof r === 'object') {
+                  try { d = cut(JSON.stringify(r), 160); }
+                  catch (y) { d = Object.prototype.toString.call(r); }
+                } else d = cut(r, 160);
+                var at = (r && r.stack) ? cut(String(r.stack).split('\n')[1], 80) : '';
+                console.error('[rustify:' + pg() + '] rejected: ' + d + (at ? ' @' + at : ''));
+              } catch (x) {}
+            });
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Makes the rest of the browser agree with the user agent string, for the desktop page only.
+     *
+     * `WebSettings.userAgentString` rewrites one header and nothing else. Everything else a page can
+     * ask still answers Android: `navigator.userAgentData.mobile` is true, its platform is "Android",
+     * `navigator.platform` is a Linux string and `maxTouchPoints` is not zero. A page that trusts the
+     * header gets the desktop bundle; a page that then asks the client hints — which is what a modern
+     * player does — gets told it is on a phone after the desktop code has already been chosen. The
+     * halves disagree, and the half that builds the player is the one that loses.
+     *
+     * This is the difference between our WebView and the Firefox that works on the same device with
+     * "request desktop site": Gecko does not implement client hints at all, so there is nothing there
+     * to contradict the header.
+     *
+     * Only the low-entropy surface is covered — it is what feature detection reads, and the request
+     * headers (`Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`) cannot be reached from here at all.
+     */
+    private const val JS_DESKTOP_SHIM = """
+        (function(){
+          try {
+            if (window.__rustifyDesktopShim) return 'already';
+            window.__rustifyDesktopShim = true;
+            function def(obj, name, value){
+              try {
+                Object.defineProperty(obj, name, { get: function(){ return value; }, configurable: true });
+              } catch (e) {}
+            }
+            def(navigator, 'platform', 'Win32');
+            def(navigator, 'maxTouchPoints', 0);
+            def(navigator, 'vendor', 'Google Inc.');
+            var brands = (navigator.userAgentData && navigator.userAgentData.brands) || [];
+            def(navigator, 'userAgentData', {
+              brands: brands,
+              mobile: false,
+              platform: 'Windows',
+              getHighEntropyValues: function(){
+                return Promise.resolve({
+                  architecture: 'x86', bitness: '64', brands: brands, fullVersionList: brands,
+                  mobile: false, model: '', platform: 'Windows', platformVersion: '10.0.0'
+                });
+              },
+              toJSON: function(){ return { brands: brands, mobile: false, platform: 'Windows' }; }
+            });
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Counts the three things a page must do before it can make a sound, so that "no media element"
+     * can say *how far it got*.
+     *
+     * Every diagnosis so far has run out of road at the same place: every check passes, no player is
+     * built, and the only unexplained line is a promise rejected with `undefined` from a minified
+     * vendor chunk. That message names nothing. These counters do — a page that never constructed a
+     * media element, never opened a `MediaSource` and never asked for a key system failed somewhere
+     * well before playback, and one that did all three and still has no element failed at the end.
+     * Opposite investigations, and until now nothing separated them.
+     *
+     * `Audio` and `MediaSource` are wrapped as well as `document.createElement`, because `new Audio()`
+     * does not go through the document, and constructing a `MediaSource` is the step that actually
+     * commits to streaming (unlike `isTypeSupported`, which anyone can ask). The wrappers keep the
+     * original prototypes and statics, so `instanceof` and feature detection are unaffected.
+     *
+     * Desktop only. The phone page works, and instrumenting a working path with this much monkey
+     * patching risks breaking the one mode that plays.
+     */
+    private const val JS_BUILD_PROBE = """
+        (function(){
+          try {
+            if (window.__rustifyBuildProbe) return 'already';
+            window.__rustifyBuildProbe = true;
+            window.__rustifyMade = 0;
+            window.__rustifyMse = 0;
+            // The elements themselves, so the report can say what state they were left in. Kept out
+            // of __rmMedia deliberately: a created, silent element must never be mistaken for
+            // playback, which is the failure that reads as success.
+            window.__rustifyMadeEls = [];
+            function keep(el){
+              try { if (window.__rustifyMadeEls.length < 3) window.__rustifyMadeEls.push(el); } catch (e) {}
+            }
+            // Never reset: JS_EME_RELAX may have counted before this ran.
+            window.__rustifyEmeCalls = window.__rustifyEmeCalls || 0;
+            var create = document.createElement;
+            document.createElement = function(tag){
+              var el = create.apply(document, arguments);
+              try {
+                var t = String(tag).toLowerCase();
+                if (t === 'audio' || t === 'video') { window.__rustifyMade++; keep(el); }
+              } catch (e) {}
+              return el;
+            };
+            var A = window.Audio;
+            if (A) {
+              var W = function(src){
+                var el = src === undefined ? new A() : new A(src);
+                try { window.__rustifyMade++; keep(el); } catch (e) {}
+                return el;
+              };
+              W.prototype = A.prototype;
+              window.Audio = W;
+            }
+            var MS = window.MediaSource;
+            if (MS) {
+              var M = function(){
+                var ms = new MS();
+                // Kept, not just counted. Its own readyState is the difference between a source that
+                // was never attached to the element and one that was and got no data.
+                try { window.__rustifyMse++; window.__rustifyMsObj = ms; } catch (e) {}
+                return ms;
+              };
+              M.prototype = MS.prototype;
+              M.isTypeSupported = function(t){ return MS.isTypeSupported(t); };
+              window.MediaSource = M;
+            }
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Tells the page it is on screen, and gives it frames, because it is neither.
+     *
+     * This WebView is **deliberately never attached to a window** — that is what lets audio survive
+     * leaving the screen (see [mainHandler]) — and a document with nowhere to draw is a hidden
+     * document. Two consequences, and the second one is not cosmetic:
+     *
+     *  - `document.visibilityState` reads `hidden`, and a player that waits to be seen before doing
+     *    anything waits forever.
+     *  - **`requestAnimationFrame` never fires.** Frames are driven by the compositor, and a hidden
+     *    document has no frames. Anything a page sequences through rAF simply stops — not with an
+     *    error, not slowly, just never — which is precisely the shape of this failure: a player built
+     *    completely (element, media source, seven EME negotiations) and then nothing.
+     *
+     * Lying about the property does not bring the frames back; those come from the compositor, which
+     * is not reading our getter. So rAF is re-implemented on a timer, and only when the document
+     * really was hidden when this ran — the real value is recorded first, and reported by the
+     * self-test, so this can be told apart from a page that was visible and stalled anyway.
+     *
+     * **Measured, and it was not this**: `vis:visible raf:yes`. A detached WebView still reports a
+     * visible document and still gets frames, so neither branch of the argument above applies here and
+     * the timer path never installs. Kept for the measurement, which is the part that earned its place
+     * — it is now one line on the report instead of a plausible story nobody had checked.
+     *
+     * Negative ids for the timer-backed callbacks, so `cancelAnimationFrame` can route each id back to
+     * whichever mechanism issued it and the two can never collide.
+     *
+     * Desktop only, for the same reason as [JS_BUILD_PROBE]: the phone page plays, and it plays
+     * detached, so it does not need this and must not be risked by it.
+     */
+    private const val JS_VISIBLE_SHIM = """
+        (function(){
+          try {
+            if (window.__rustifyVisShim) return 'already';
+            window.__rustifyVisShim = true;
+            // Recorded before anything is changed - it is the measurement this whole shim rests on.
+            window.__rustifyVis = document.visibilityState;
+            window.__rustifyRaf = 'pending';
+            try {
+              window.requestAnimationFrame(function(){
+                if (window.__rustifyRaf === 'pending') window.__rustifyRaf = 'yes';
+              });
+              setTimeout(function(){
+                if (window.__rustifyRaf === 'pending') window.__rustifyRaf = 'no';
+              }, 600);
+            } catch (e) {}
+            function def(name, value){
+              try {
+                Object.defineProperty(document, name, {
+                  get: function(){ return value; }, configurable: true
+                });
+              } catch (e) {}
+            }
+            def('visibilityState', 'visible');
+            def('hidden', false);
+            def('webkitVisibilityState', 'visible');
+            def('webkitHidden', false);
+            var stalled = window.__rustifyVis !== 'visible';
+            if (stalled && window.requestAnimationFrame) {
+              var raf = window.requestAnimationFrame.bind(window);
+              var caf = window.cancelAnimationFrame ? window.cancelAnimationFrame.bind(window) : null;
+              var timers = {}, next = 1;
+              window.requestAnimationFrame = function(cb){
+                var id = next++;
+                timers[id] = setTimeout(function(){
+                  delete timers[id];
+                  try { cb(performance.now()); } catch (e) {}
+                }, 16);
+                return -id;
+              };
+              window.cancelAnimationFrame = function(id){
+                if (id < 0) { clearTimeout(timers[-id]); delete timers[-id]; return; }
+                if (caf) return caf(id);
+              };
+            }
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
+    /**
+     * Names the request that dies, for a page whose own error reporting says only `undefined`.
+     *
+     * The player is a network application before it is an audio one: it fetches a token, resolves the
+     * hosts it should talk to, opens a websocket to be reachable as a device, and registers itself as
+     * one. Any of those failing leaves it sitting there with nothing to play through — which is what
+     * we see — and none of them announce themselves. One already showed up by accident, *Failed to
+     * resolve endpoints via x-resolve. Using fallbacks!*, and there was no way to tell whether the
+     * fallbacks then worked.
+     *
+     * Only Spotify's own hosts are reported, and only failures. Everything else on that page is
+     * advertising, consent and telemetry, and it drowns the interesting line — the self-test shows a
+     * handful of errors, so what goes in them has to be worth the space. Websockets are reported
+     * whatever the host, since there are only a couple and a closed one is never routine.
+     */
+    private const val JS_NET_HOOK = """
+        (function(){
+          try {
+            if (window.__rustifyNetHook) return 'already';
+            window.__rustifyNetHook = true;
+            function cut(v, n){ try { return String(v).slice(0, n); } catch (x) { return '?'; } }
+            $JS_PAGE_TAG
+            function loc(u){
+              try { var a = document.createElement('a'); a.href = u; return a; } catch (x) { return null; }
+            }
+            function tag(u){
+              var a = loc(u);
+              return a ? a.hostname + cut(a.pathname, 36) : cut(u, 56);
+            }
+            function ours(u){
+              var a = loc(u);
+              return !a || /spotify|scdn\.co|pscdn\.co/.test(a.hostname);
+            }
+            // Bound to window on purpose: a module calling bare `fetch()` in strict mode passes an
+            // undefined receiver, and native fetch answers that with "Illegal invocation" — which
+            // would break every request on the page instead of measuring them.
+            var of = window.fetch && window.fetch.bind(window);
+            if (of) {
+              // Kept reachable so the reachability probe does not report itself as page traffic.
+              window.__rustifyFetchOrig = of;
+              window.fetch = function(input){
+                var u = (input && input.url) || input;
+                return of.apply(null, arguments).then(function(r){
+                  try {
+                    if (r && !r.ok && ours(u)) console.error('[rustify:' + pg() + '] http ' + r.status + ' ' + tag(u));
+                  } catch (x) {}
+                  return r;
+                }, function(e){
+                  try {
+                    if (ours(u)) console.error('[rustify:' + pg() + '] fetch failed: ' + tag(u) +
+                                               ' - ' + cut((e && e.message) || e, 60));
+                  } catch (x) {}
+                  throw e;
+                });
+              };
+            }
+            var XP = window.XMLHttpRequest && XMLHttpRequest.prototype;
+            if (XP && XP.open && XP.send) {
+              var open = XP.open, send = XP.send;
+              XP.open = function(method, url){
+                try { this.__rustifyUrl = url; } catch (e) {}
+                return open.apply(this, arguments);
+              };
+              XP.send = function(){
+                var self = this;
+                try {
+                  self.addEventListener('error', function(){
+                    if (ours(self.__rustifyUrl)) console.error('[rustify:' + pg() + '] xhr failed: ' + tag(self.__rustifyUrl));
+                  });
+                  self.addEventListener('load', function(){
+                    if (self.status >= 400 && ours(self.__rustifyUrl)) {
+                      console.error('[rustify:' + pg() + '] xhr ' + self.status + ' ' + tag(self.__rustifyUrl));
+                    }
+                  });
+                } catch (e) {}
+                return send.apply(this, arguments);
+              };
+            }
+            var OW = window.WebSocket;
+            if (OW) {
+              var S = function(url, protocols){
+                var ws = protocols === undefined ? new OW(url) : new OW(url, protocols);
+                try {
+                  var opened = false, msgs = 0, at = Date.now();
+                  ws.addEventListener('open', function(){ opened = true; at = Date.now(); });
+                  ws.addEventListener('message', function(){ msgs++; });
+                  ws.addEventListener('error', function(){
+                    console.error('[rustify:' + pg() + '] ws error: ' + tag(url));
+                  });
+                  ws.addEventListener('close', function(e){
+                    // 1000 is a normal close. Anything else, on a socket the player needs to stay
+                    // reachable through, is the failure rather than the cleanup.
+                    //
+                    // The code alone was not enough: a 4000 is application-chosen, which already says
+                    // the handshake succeeded and the server hung up on purpose. Whether it ever
+                    // opened, how many messages arrived first and how long it lasted are what say
+                    // *why* - a socket closed before its first message never delivered the connection
+                    // id the player needs, and one that dies after 30 idle seconds is a timeout.
+                    if (!e || e.code !== 1000) {
+                      console.error('[rustify:' + pg() + '] ws closed ' + ((e && e.code) || '?') + ' ' + tag(url) +
+                                    (opened ? ' opened' : ' never opened') +
+                                    ' msgs ' + msgs + ' after ' + (Date.now() - at) + 'ms' +
+                                    (e && e.reason ? ' reason ' + cut(e.reason, 40) : ''));
+                    }
+                  });
+                } catch (x) {}
+                return ws;
+              };
+              S.prototype = OW.prototype;
+              ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function(k){ S[k] = OW[k]; });
+              window.WebSocket = S;
+            }
+            return 'installed';
+          } catch (e) { return 'error'; }
+        })();
+    """
+
     /** Backs [mediaReport]. Declared here because it interpolates [JS_MEDIA_FN]. */
     private val JS_MEDIA_REPORT = """
         (function(){
@@ -789,7 +1621,47 @@ object WebPlayerController {
             $JS_MEDIA_FN
             var inDom = document.querySelectorAll('video,audio').length;
             var m = __rmMedia();
-            if (!m) return 'no media element';
+            // How far it got, not just that it did not arrive — see [JS_BUILD_PROBE].
+            if (!m) {
+              var made = window.__rustifyMade === undefined ? '?' : window.__rustifyMade;
+              var line = 'no media element (made ' + made +
+                         ', mse ' + (window.__rustifyMse === undefined ? '?' : window.__rustifyMse) +
+                         ', eme ' + (window.__rustifyEmeCalls || 0) + ')';
+              // What the elements it *did* build were left holding.
+              //
+              // The previous version reported `nosrc` from `e.src` alone, and that was wrong in a way
+              // that inverted the conclusion: MSE is attached either through `URL.createObjectURL` —
+              // which does set `src` — or by assigning the MediaSource straight to `srcObject`, which
+              // does not. An element fed the modern way reads as having no source at all.
+              //
+              // So: how it was attached, and then the four things that say where it stopped.
+              // `networkState` separates "no source" (0) from "fetching" (2) and "nothing to fetch"
+              // (3); `buffered.length` says whether any audio ever arrived; the MediaSource's own
+              // readyState says whether it was ever attached (`open`) or is still `closed`; and the
+              // source buffer count says whether the player got as far as asking for a format.
+              var els = window.__rustifyMadeEls || [];
+              for (var i = 0; i < els.length && i < 2; i++) {
+                var e = els[i];
+                var src = e.src ? 'src' : (e.srcObject ? 'srcobj' : 'nosrc');
+                line += ' [rs' + e.readyState + ' net' + e.networkState + ' ' + src +
+                        (e.error ? ' err' + e.error.code : '') +
+                        ' buf' + ((e.buffered && e.buffered.length) || 0) +
+                        (e.paused ? '' : ' running') + ']';
+              }
+              var ms = window.__rustifyMsObj;
+              if (ms) {
+                line += ' [ms:' + ms.readyState +
+                        ' sb' + ((ms.sourceBuffers && ms.sourceBuffers.length) || 0) + ']';
+              }
+              // Whether the page was even considered on screen, and whether it was getting frames.
+              // Both measured before [JS_VISIBLE_SHIM] changed either.
+              if (window.__rustifyVis) {
+                line += ' vis:' + window.__rustifyVis + ' raf:' + (window.__rustifyRaf || '?');
+              }
+              // Whether a consent overlay was in the way, and how much of it there was.
+              if (window.__rustifyConsentRemoved) line += ' consent:' + window.__rustifyConsentRemoved;
+              return line;
+            }
             function t(v){ return isFinite(v) ? Math.round(v) + 's' : '?'; }
             return (m.paused ? 'paused' : 'playing') + ' ' + t(m.currentTime) + '/' + t(m.duration) +
                    ' · ' + (m.muted ? 'muted' : 'vol ' + m.volume) +
@@ -884,6 +1756,16 @@ object WebPlayerController {
             // it belongs to — and laying the phone page out at 1024px just shrinks it to nothing.
             val desktopPage = wv.settings.userAgentString.contains("Windows")
             if (cachedLayoutWidth != 0 && desktopPage) wv.evaluateJavascript(viewportJs(cachedLayoutWidth), null)
+            if (desktopPage) {
+                wv.evaluateJavascript(JS_DESKTOP_SHIM, null)
+                wv.evaluateJavascript(JS_BUILD_PROBE, null)
+                wv.evaluateJavascript(JS_VISIBLE_SHIM, null)
+                wv.evaluateJavascript(JS_NET_HOOK, null)
+                wv.evaluateJavascript(JS_DISMISS_CONSENT, null)
+                wv.evaluateJavascript(JS_PROMISE_TRACE, null)
+            }
+            wv.evaluateJavascript(JS_ERROR_HOOK, null)
+            wv.evaluateJavascript(JS_EME_RELAX, null)
             wv.evaluateJavascript(JS_MEDIA_HOOK, null)
             wv.evaluateJavascript(JS_TAP_TO_PLAY, null)
             wv.evaluateJavascript(JS_POINTER_BRIDGE, null)
@@ -1108,9 +1990,67 @@ object WebPlayerController {
         })();
     """
 
-    // Shared with WebPlayerScreen.
-    internal fun blockedResponse() =
-        WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+    /**
+     * What a blocked request answers. Shared with WebPlayerScreen.
+     *
+     * An empty body is not enough on its own. A cross-origin `fetch()` answered without CORS headers
+     * does not fail as "nothing came back" — it fails as a **security violation**, and the promise
+     * rejects with a `TypeError` the caller never expected. Measured on the desktop page: blocking
+     * Spotify's error sink produced *Access to fetch at 'https://…sentry.io/…' has been blocked*,
+     * and an `Uncaught (in promise) undefined` from the bundle right behind it.
+     *
+     * A blocked tracker should look like a request that worked and returned nothing: an empty `200`
+     * with permissive CORS headers. It stays blocked — nothing leaves the device — but the page's own
+     * error handling gets an answer it knows how to deal with.
+     *
+     * **And the content type has to match what was asked for.** This answered everything as
+     * `text/plain`, which for a `<script>` is not "empty", it is *refused*: Chromium will not execute
+     * a script served with a non-executable MIME type, and the element fires **`error`**. Fourteen
+     * rounds of measurement ended on that event —
+     * `reject(undefined) @ … < HTMLScriptElement.onError (vendor~web-player…)` — with the player
+     * abandoning its startup before it ever attached the MediaSource. The blocked script was
+     * `cdn.cookielaw.org/otSDKStub.js`, in every log since the first one, dismissed as noise twice.
+     *
+     * So a blocked script is answered as empty JavaScript, a stylesheet as empty CSS, and an image as
+     * a real 1×1 GIF — an empty body would fail to decode and fire `error` just the same. This is why
+     * Firefox with uBlock Origin plays the same page while blocking the same script: uBO neutralises a
+     * script by serving an empty *script*, not by making the load fail.
+     */
+    internal fun blockedResponse(mime: String = "text/plain"): WebResourceResponse {
+        val body = if (mime == "image/gif") TRANSPARENT_GIF else ByteArray(0)
+        val res = WebResourceResponse(mime, "utf-8", ByteArrayInputStream(body))
+        runCatching {
+            res.setStatusCodeAndReasonPhrase(200, "OK")
+            res.responseHeaders = mapOf(
+                "Access-Control-Allow-Origin" to "*",
+                "Access-Control-Allow-Methods" to "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers" to "*",
+                "Cache-Control" to "no-store"
+            )
+        }
+        return res
+    }
+
+    /**
+     * The MIME type a blocked request should be answered with, from what it asked for.
+     *
+     * Anything not listed keeps `text/plain`: `fetch`/XHR callers read the body, not the header, and an
+     * empty one is what they should see.
+     */
+    internal fun blockedMimeFor(resourceType: String): String = when (resourceType) {
+        "script" -> "application/javascript"
+        "stylesheet" -> "text/css"
+        "image" -> "image/gif"
+        else -> "text/plain"
+    }
+
+    /** Smallest valid GIF there is: 1×1, fully transparent. Decodes, so it fires `load`. */
+    private val TRANSPARENT_GIF = byteArrayOf(
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80.toByte(), 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xF9.toByte(), 0x04, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+        0x01, 0x00, 0x3B
+    )
 
     internal fun resourceTypeOf(request: WebResourceRequest): String {
         if (request.isForMainFrame) return "document"

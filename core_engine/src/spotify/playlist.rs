@@ -2,7 +2,8 @@
 //
 // Playlist endpoints.
 // GET requests now use 100% GraphQL via api-partner.spotify.com.
-// Write/mutation operations remain REST since they don't encounter Envoy blocks.
+// Most writes stay on REST, which they can: the exception is adding tracks, where REST answers a
+// web-player token with a 429 that no amount of waiting clears — see `add_tracks_to_playlist`.
 
 use crate::spotify::client::*;
 use crate::spotify::models::*;
@@ -150,23 +151,65 @@ impl SpotifyClient {
         self.api_put(&path, &Value::Object(body)).await
     }
 
-    /// Add tracks to a playlist via REST API.
+    /// Add tracks to a playlist via the GQL `addToPlaylist` mutation.
+    ///
+    /// This is the one mutation that had to leave REST. `POST /v1/playlists/{id}/tracks` answers a
+    /// web-player token with 429 no matter how patiently it is asked — the throttle is on the app
+    /// token, not on the account, so waiting out `Retry-After` only postponed the same refusal and
+    /// spent a minute of frozen UI doing it. The web player never touches that endpoint; it posts
+    /// this mutation to pathfinder with the same token that already serves every read here.
+    ///
+    /// [position] is a placement, not an index: the mutation takes `newPosition` rather than an
+    /// offset, and the only two placements the web player uses are the ends of the list.
     pub async fn add_tracks_to_playlist(
         &self,
         id: &str,
         track_ids: &[String],
         position: Option<u32>,
     ) -> SpotifyResult<()> {
+        if track_ids.is_empty() {
+            return Ok(());
+        }
         let uris: Vec<String> = track_ids.iter()
             .map(|tid| format!("spotify:track:{}", tid))
             .collect();
-        let path = format!("/playlists/{}/tracks", id);
-        let mut body = serde_json::Map::new();
-        body.insert("uris".to_string(), json!(uris));
-        if let Some(pos) = position {
-            body.insert("position".to_string(), json!(pos));
+        let move_type = if position == Some(0) {
+            "TOP_OF_PLAYLIST"
+        } else {
+            "BOTTOM_OF_PLAYLIST"
+        };
+        // `playlistItemUris`, not `uris`. Measured: the operation answered
+        // `missing variable '$playlistItemUris'`, which is also the proof that the name and the hash
+        // were right — pathfinder had resolved the query before it looked at the arguments.
+        let variables = json!({
+            "playlistUri": format!("spotify:playlist:{}", id),
+            "playlistItemUris": uris,
+            "newPosition": { "moveType": move_type, "fromUid": Value::Null }
+        });
+
+        // The hash is scraped from the live web player, like every other operation here; there is no
+        // static fallback on purpose, since a stale hash answers PersistedQueryNotFound and that is
+        // harder to read than "no hash for addToPlaylist".
+        let gql = self.gql_post(variables, "addToPlaylist", "").await?;
+
+        // A mutation that refuses still answers 200, naming the refusal as the union member in the
+        // payload, so the outcome has to be read rather than assumed. But only a *named* failure
+        // counts as one, and the field it arrives under is not assumed either: an earlier version
+        // demanded `data.addToPlaylist`, did not find it, and reported "no result" for a write that
+        // had already gone through. Anything reaching this point was accepted — `gql_post` raises on
+        // an `errors` array and on any HTTP status — so silence means success.
+        if let Some(data) = gql["data"].as_object() {
+            for value in data.values() {
+                let typename = value["__typename"].as_str().unwrap_or("");
+                if typename.contains("Error")
+                    || typename.contains("Failure")
+                    || typename.contains("Denied")
+                {
+                    return Err(SpotifyError::ApiError(403, format!("addToPlaylist: {}", typename)));
+                }
+            }
         }
-        self.api_post(&path, &Value::Object(body)).await
+        Ok(())
     }
 
     /// Remove tracks from a playlist via REST API.
