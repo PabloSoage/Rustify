@@ -3,6 +3,7 @@
 
 package com.varuna.rustify.player
 
+import com.varuna.rustify.bridge.TrackRef
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -20,6 +21,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LocalStreamServer
 import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.largest
@@ -405,6 +407,11 @@ class AudioPlayerService private constructor(private val context: Context) {
         val cachePath = context.filesDir.absolutePath
         NativeEngine.initCacheDirNative(cachePath)
 
+        // The loopback streaming server (3.2). Started off the main thread because starting it
+        // crosses JNI, and nothing here should ever wait on a JNI call from the UI thread.
+        // Nothing is routed through it yet — see LocalStreamServer.
+        mainScope.launch(Dispatchers.IO) { LocalStreamServer.ensureStarted() }
+
         loadUrlCache()
         loadState()
 
@@ -727,7 +734,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         listenerTracker.onTrackStarted(track)
 
         // Register metadata in Rust so the resolver can match the track (only if not local)
-        if (!trackId.startsWith("local:") && !trackId.startsWith("ytm:")) {
+        if (!TrackRef.isLocal(trackId) && !TrackRef.isYtm(trackId)) {
             val artistsJson = "[" + track.artists.joinToString(",") {
                 "\"" + it.name.replace("\"", "\\\"") + "\""
             } + "]"
@@ -738,12 +745,12 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         // Preload lyrics asynchronously so they're cached when user opens TrackScreen.
         // Skip lyrics for ytm: (no Spotify track id).
-        if (!trackId.startsWith("ytm:")) { preloadLyrics(track) }
+        if (!TrackRef.isYtm(trackId)) { preloadLyrics(track) }
 
         // Show buffering spinner immediately (resolver can take a few seconds).
         // Extract videoId from the ytm: prefix (bypasses the Spotify resolver).
         var effectiveYoutubeId = youtubeId
-        if (trackId.startsWith("ytm:")) { effectiveYoutubeId = trackId.removePrefix("ytm:") }
+        TrackRef.youtubeVideoIdOf(trackId)?.let { effectiveYoutubeId = it }
 
         val myGen = resolveGen.incrementAndGet()
         isResolving = true
@@ -754,7 +761,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             // inherited the green "playing from a local file" badge — and kept it while it buffered,
             // and even while it failed with "yt-dlp returned no url". A `local:` id is local by
             // definition; anything else has to earn the badge below.
-            isLocalSource = trackId.startsWith("local:")
+            isLocalSource = TrackRef.isLocal(trackId)
         )
 
         playJob?.cancel()
@@ -775,8 +782,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 var streamUrl: String? = null
 
-                if (trackId.startsWith("local:")) {
-                    streamUrl = trackId.removePrefix("local:")
+                if (TrackRef.isLocal(trackId)) {
+                    streamUrl = TrackRef.localUriOf(trackId) ?: trackId
                     android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
                 } else {
                     // "Match local first": a file already on the device beats every cache and every
@@ -868,7 +875,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 resolvedStreamUrls[trackId] = streamUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
-                val isLocalStream = trackId.startsWith("local:") || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
+                val isLocalStream = TrackRef.isLocal(trackId) || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
                 // Deezer serves a deezer://<sngId>?u=<b64> URI decrypted on the fly by a custom
                 // DataSource. It is not cacheable (the CDN URL expires and carries a per-track key) and
                 // does not go through the HTTP cache.
@@ -877,7 +884,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
-                if (!trackId.startsWith("local:") && !isLocalStream && !isDeezerStream) {
+                if (!TrackRef.isLocal(trackId) && !isLocalStream && !isDeezerStream) {
                     putCachedStreamUrl(trackId, streamUrl)
                 }
 
@@ -1060,7 +1067,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
             ?: return null
-        return match.id?.removePrefix("local:")?.also {
+        return TrackRef.localUriOf(match.id)?.also {
             android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $it")
         }
     }
@@ -1082,7 +1089,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             preBufferingJob = mainScope.launch {
                 // Inside the coroutine: matching against the local library can touch disk the first
                 // time, and this is called from the main thread.
-                val nextIsLocal = nextTrackId.startsWith("local:") ||
+                val nextIsLocal = TrackRef.isLocal(nextTrackId) ||
                     withContext(Dispatchers.IO) { localStreamFor(nextTrack, null) } != null
 
                 if (!nextIsLocal) {
@@ -1125,7 +1132,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         val trackId = track.id ?: return
         preloadedLyricsTrackId = trackId
         _preloadedLyrics.value = null // Reset for new track
-        if (trackId.startsWith("local:")) return
+        if (TrackRef.isLocal(trackId)) return
         mainScope.launch(Dispatchers.IO) {
             try {
                 val artist = track.artists.firstOrNull()?.name ?: return@launch
@@ -1186,7 +1193,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      */
     private fun playInWebPlayer(track: FullTrack, fallback: () -> Unit): Boolean {
         val id = track.id ?: return false
-        if (id.startsWith("local:") || id.startsWith("ytm:")) return false
+        if (TrackRef.isLocal(id) || TrackRef.isYtm(id)) return false
         if (webConsecutiveFailures >= webFailuresBeforeDisarm) return false
         val controller = com.varuna.rustify.webplayer.WebPlayerController
         // Creating a WebView is a main-thread operation; from anywhere else, decline rather than
@@ -1662,7 +1669,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             mainScope.launch(Dispatchers.IO) {
                 try {
                     val currentTrackId = st.currentTrack.id ?: return@launch
-                    if (currentTrackId.startsWith("local:")) return@launch
+                    if (TrackRef.isLocal(currentTrackId)) return@launch
                     val radioJson = NativeEngine.getSpotifyTrackRadioNative(currentTrackId)
                     val array = org.json.JSONArray(radioJson)
                     val newTracks = mutableListOf<FullTrack>()
@@ -2219,7 +2226,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             val item = currentItem.buildUpon().setUri(audioUrl).build()
 
             // Restore audio cache
-            val isLocalStream = trackId.startsWith("local:") || audioUrl.startsWith("content://") || audioUrl.startsWith("file://")
+            val isLocalStream = TrackRef.isLocal(trackId) || audioUrl.startsWith("content://") || audioUrl.startsWith("file://")
             val mediaSource = if (isLocalStream) {
                 DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
                     .createMediaSource(item)

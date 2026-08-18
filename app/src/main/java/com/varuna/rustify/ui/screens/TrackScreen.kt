@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.bridge.TrackRef
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -426,13 +427,13 @@ fun TrackScreen(
     // identical — which is exactly the distinction needed to chase the reported crash.
     var videoLookup by remember(trackId) { mutableIntStateOf(0) }
     LaunchedEffect(mediaTab, trackId, maxQuality) {
-        if (mediaTab == 2 && videoUrl == null && !trackId.startsWith("local:")) {
+        if (mediaTab == 2 && videoUrl == null && !TrackRef.isLocal(trackId)) {
             videoLookup = 1
             // resolveYouTubeIdNative blocks on network inside Rust, so it must not run on the main
             // thread (the canvas effect below already does this) — on the UI thread it freezes the
             // frame and can take the app down with it.
-            val ytId = if (trackId.startsWith("ytm:")) trackId.removePrefix("ytm:")
-                else runCatching {
+            val ytId = TrackRef.youtubeVideoIdOf(trackId)
+                ?: runCatching {
                     kotlinx.coroutines.withContext(Dispatchers.IO) {
                         Regex("[A-Za-z0-9_-]{11}")
                             .find(NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
@@ -744,7 +745,7 @@ fun TrackScreen(
                                     val mediaTabs = buildList {
                                         add(0 to stringResource(R.string.track_tab_image))
                                         if (!canvasUrl.isNullOrEmpty()) add(1 to stringResource(R.string.track_tab_canvas))
-                                        if (!trackId.startsWith("local:")) add(2 to stringResource(R.string.track_tab_video))
+                                        if (!TrackRef.isLocal(trackId)) add(2 to stringResource(R.string.track_tab_video))
                                     }
                                     if (mediaTabs.size > 1) {
                                         Row(
@@ -1208,7 +1209,7 @@ fun TrackScreenControls(
         }
 
             // Title and Like button
-            val isYtm = track.id?.startsWith("ytm:") == true
+            val isYtm = TrackRef.isYtm(track.id)
             Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1239,7 +1240,7 @@ fun TrackScreenControls(
 
             // Like / YTM Favorite Button
             if (isYtm) {
-                val vid = track.id?.removePrefix("ytm:") ?: ""
+                val vid = TrackRef.youtubeVideoIdOf(track.id) ?: ""
                 val ctx = LocalContext.current
                 val effectiveYtmRepo = ytmRepo ?: remember(ctx) {
                     com.varuna.rustify.bridge.YtMusicRepository(ctx.applicationContext)
@@ -1341,7 +1342,7 @@ fun TrackScreenControls(
                 verticalAlignment = Alignment.CenterVertically
             ) {
             // Alternative source picker (YouTube mapping)
-            val isLocal = track.id?.startsWith("local:") == true
+            val isLocal = TrackRef.isLocal(track.id)
             if (!isLocal) {
                 IconButton(onClick = onShowMappingDialog) {
                     Icon(

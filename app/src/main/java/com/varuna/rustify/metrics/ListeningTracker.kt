@@ -1,5 +1,6 @@
 package com.varuna.rustify.metrics
 
+import com.varuna.rustify.bridge.TrackRef
 import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
 import kotlinx.coroutines.CoroutineScope
@@ -63,8 +64,8 @@ class ListeningTracker(private val appContext: Context) {
         val counted = !s.errored &&
             (s.listenedMs >= 30_000 || (s.track.durationMs > 0 && s.listenedMs >= s.track.durationMs / 2))
         val source = when {
-            tid.startsWith("local:") -> "local"
-            tid.startsWith("ytm:") -> "ytm"
+            TrackRef.isLocal(tid) -> "local"
+            TrackRef.isYtm(tid) -> "ytm"
             else -> "spotify"
         }
         val json = JSONObject().apply {

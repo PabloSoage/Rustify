@@ -1,5 +1,7 @@
 package com.varuna.rustify.player
 
+import com.varuna.rustify.bridge.PlaylistRef
+import com.varuna.rustify.bridge.TrackRef
 import android.content.Context
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
@@ -90,8 +92,8 @@ object AndroidAutoBrowse {
             parentId == "ytm_playlists" -> ytmRepo.playlists.map {
                 Node("ytmpl:${it.localId}", it.name, "", true, null, it.items.firstOrNull()?.thumbnailUrl)
             }
-            parentId.startsWith("ytmpl:") -> {
-                val lid = parentId.removePrefix("ytmpl:")
+            PlaylistRef.isYtmLocal(parentId) -> {
+                val lid = PlaylistRef.deviceLocalIdOf(parentId)
                 ytmRepo.playlists.firstOrNull { it.localId == lid }?.items?.map { trackNode(it.toFullTrack(), imageUrl = it.thumbnailUrl) } ?: emptyList()
             }
 
@@ -122,8 +124,8 @@ object AndroidAutoBrowse {
                     ?: repo.localTracks.firstOrNull { it.id == id }
                     ?: ytmRepo.favorites.firstOrNull { "ytm:${it.videoId}" == id }?.toFullTrack()
             }
-            mediaId.startsWith("ytm:") -> ytmRepo.favorites.firstOrNull { "ytm:${it.videoId}" == mediaId }?.toFullTrack()
-            mediaId.startsWith("local:") -> repo.localTracks.firstOrNull { it.id == mediaId }
+            TrackRef.isYtm(mediaId) -> ytmRepo.favorites.firstOrNull { "ytm:${it.videoId}" == mediaId }?.toFullTrack()
+            TrackRef.isLocal(mediaId) -> repo.localTracks.firstOrNull { it.id == mediaId }
             else -> repo.likedTracks.firstOrNull { it.id == mediaId }
         }
     }

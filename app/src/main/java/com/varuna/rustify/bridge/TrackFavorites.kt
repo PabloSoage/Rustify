@@ -39,14 +39,17 @@ object TrackFavorites {
      * `snapshotFlow { }` outside composition emits — which is how the notification keeps its icon
      * honest while the song is hearted from somewhere else.
      */
-    fun isSaved(context: Context, track: FullTrack?): Boolean {
-        val id = track?.id ?: return false
-        return when {
-            id.startsWith("ytm:") -> ytm(context).isFavorite(id.removePrefix("ytm:"))
-            id.startsWith("local:") -> SpotifyRepository.instance?.isLocalFavorite(id) == true
-            else -> SpotifyRepository.instance?.isTrackLiked(id) == true
+    fun isSaved(context: Context, track: FullTrack?): Boolean =
+        when (val ref = TrackRef.parse(track?.id)) {
+            is TrackRef.Ytm -> ytm(context).isFavorite(ref.videoId)
+            is TrackRef.Local -> SpotifyRepository.instance?.isLocalFavorite(ref.raw) == true
+            is TrackRef.Spotify -> SpotifyRepository.instance?.isTrackLiked(ref.id) == true
+            // A local file inside a Spotify playlist has no Spotify id, so there is nothing to like
+            // and no store that would hold it. This used to fall into the `else` branch and ask
+            // Spotify about an id that does not exist.
+            is TrackRef.SpotifyLocal -> false
+            null -> false
         }
-    }
 
     /**
      * Flips it, and returns the state it ended up in — read back from the store rather than assumed,
@@ -58,15 +61,14 @@ object TrackFavorites {
      * touches the network, and it does its own dispatching.
      */
     suspend fun toggle(context: Context, track: FullTrack?): Boolean {
-        val id = track?.id ?: return false
-        return when {
-            id.startsWith("ytm:") -> {
-                val vid = id.removePrefix("ytm:")
+        if (track == null) return false
+        return when (val ref = TrackRef.parse(track.id)) {
+            is TrackRef.Ytm -> {
                 val repo = ytm(context)
                 withContext(Dispatchers.Main) {
                     repo.toggleFavorite(
                         YtmTrack(
-                            videoId = vid,
+                            videoId = ref.videoId,
                             title = track.name,
                             artists = track.artists.map { YtmArtistRef(it.id, it.name) },
                             albumId = null,
@@ -74,21 +76,24 @@ object TrackFavorites {
                             thumbnailUrl = track.album?.images?.firstOrNull()?.url ?: ""
                         )
                     )
-                    repo.isFavorite(vid)
+                    repo.isFavorite(ref.videoId)
                 }
             }
-            id.startsWith("local:") -> {
+            is TrackRef.Local -> {
                 val repo = SpotifyRepository.instance ?: return false
                 withContext(Dispatchers.Main) {
-                    repo.toggleLocalFavorite(id)
-                    repo.isLocalFavorite(id)
+                    repo.toggleLocalFavorite(ref.raw)
+                    repo.isLocalFavorite(ref.raw)
                 }
             }
-            else -> {
+            is TrackRef.Spotify -> {
                 val repo = SpotifyRepository.instance ?: return false
                 repo.toggleLikeTrack(track)
-                repo.isTrackLiked(id)
+                repo.isTrackLiked(ref.id)
             }
+            // Nothing to save, and nowhere to save it — see [isSaved].
+            is TrackRef.SpotifyLocal -> false
+            null -> false
         }
     }
 }

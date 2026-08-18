@@ -1,5 +1,6 @@
 package com.varuna.rustify.audio
 
+import com.varuna.rustify.bridge.TrackRef
 import android.content.Context
 import android.util.Log
 import com.varuna.rustify.R
@@ -62,9 +63,14 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         }
     }
 
-    /** YouTube video id carried directly by a "ytm:" track id, or null for Spotify/local ids. */
-    private fun youtubeIdOf(trackId: String): String? =
-        trackId.removePrefix("ytm:").takeIf { trackId.startsWith("ytm:") && it.isNotBlank() }
+    /**
+     * YouTube video id carried directly by a "ytm:" track id, or null for Spotify/local ids.
+     *
+     * This is the helper v2.11.8 had to add by hand, in two places, after a "ytm:" id reached the
+     * Spotify resolver. It is now one line delegating to the shared codec, which is where the next
+     * kind of id will be taught about exactly once.
+     */
+    private fun youtubeIdOf(trackId: String): String? = TrackRef.youtubeVideoIdOf(trackId)
 
     override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> =
         withContext(Dispatchers.IO) {

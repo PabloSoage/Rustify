@@ -44,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -2961,10 +2962,16 @@ private fun DeezerBackendSection(context: Context) {
 
 @Composable
 private fun AudioBackendsSection(context: Context) {
-    val knownIds = remember { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
-    val catalog = remember { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
-    var streamOrder by remember { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
-    var downloadOrder by remember { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, knownIds)) }
+    // Bumped by [AddonsSection] whenever the installed add-ons change. Without it these three
+    // `remember`s would be computed once and an add-on installed a moment later would be missing
+    // from the order lists until the screen was left and reopened — which reads as "installing did
+    // nothing".
+    var backendsRevision by remember { mutableIntStateOf(0) }
+
+    val knownIds = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
+    val catalog = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
+    var streamOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
+    var downloadOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, knownIds)) }
 
     Spacer(modifier = Modifier.height(24.dp))
     Text(stringResource(R.string.settings_audio_backends), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
@@ -2979,6 +2986,138 @@ private fun AudioBackendsSection(context: Context) {
             ReorderableBackendList(downloadOrder, catalog) { newOrder -> downloadOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, newOrder) }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.settings_backends_drag_hint), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+
+    AddonsSection(context, onAddonsChanged = { backendsRevision++ })
+}
+
+/**
+ * Installing audio backends by URL.
+ *
+ * Kept beneath the backend order on purpose: an installed addon becomes one more entry in the lists
+ * above, so this is where new entries come from rather than a separate world — and
+ * [onAddonsChanged] is what makes those lists show it without leaving the screen.
+ */
+@Composable
+private fun AddonsSection(context: Context, onAddonsChanged: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var addons by remember { mutableStateOf<List<com.varuna.rustify.bridge.InstalledAddon>>(emptyList()) }
+    var url by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun reload() {
+        addons = com.varuna.rustify.bridge.AddonRepository.list()
+        com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons(context)
+        onAddonsChanged()
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        stringResource(R.string.settings_addons),
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.settings_addons_desc),
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(12.dp))
+
+            addons.forEach { addon ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(addon.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "${addon.id} · ${addon.version}",
+                            color = Color(0xFF888888),
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = addon.enabled,
+                        onCheckedChange = { on ->
+                            scope.launch {
+                                com.varuna.rustify.bridge.AddonRepository.setEnabled(addon.id, on)
+                                reload()
+                            }
+                        }
+                    )
+                    IconButton(onClick = {
+                        scope.launch {
+                            com.varuna.rustify.bridge.AddonRepository.uninstall(addon.id)
+                            reload()
+                        }
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFAA4444))
+                    }
+                }
+            }
+
+            if (addons.isEmpty()) {
+                Text(
+                    stringResource(R.string.settings_addons_empty),
+                    color = Color(0xFF666666),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it; error = null },
+                label = { Text(stringResource(R.string.settings_addons_url_label)) },
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+            error?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(it, color = Color(0xFFCC5555), fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (url.isBlank() || busy) return@Button
+                    busy = true
+                    error = null
+                    scope.launch {
+                        com.varuna.rustify.bridge.AddonRepository.install(url)
+                            .onSuccess { url = ""; reload() }
+                            .onFailure { error = it.message }
+                        busy = false
+                    }
+                },
+                enabled = !busy && url.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.settings_addons_install))
+            }
+
+            Spacer(Modifier.height(12.dp))
+            // Not decoration: an addon is code written by someone else, and this is the one place
+            // the user gets told what it will and will not be given.
+            Text(
+                stringResource(R.string.settings_addons_privacy),
+                color = Color(0xFF888888),
+                fontSize = 11.sp
+            )
         }
     }
 }

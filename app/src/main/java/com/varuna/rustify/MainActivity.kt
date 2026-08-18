@@ -122,6 +122,7 @@ import com.varuna.rustify.ui.theme.RustifyTheme
 import com.varuna.rustify.util.SpotifyLink
 import com.varuna.rustify.util.SpotifyLinkParser
 import com.varuna.rustify.util.bouncingMarquee
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 
@@ -489,6 +490,16 @@ class MainActivity : ComponentActivity() {
         // Audio backends bootstrap centralized in AudioSourceRegistry. yt-dlp remains the default
         // provider; new backends (Invidious/Deemix) are initialized here as well.
         com.varuna.rustify.audio.AudioSourceRegistry.initialize(application)
+
+        // And the installed add-ons (3.0), which are backends too. Without this they would only join
+        // the chain once the Settings screen had been opened, so a track played straight after
+        // launch would silently skip every add-on the user installed.
+        //
+        // Off the main thread: it crosses JNI to read the installed list.
+        lifecycleScope.launch {
+            runCatching { com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons(application) }
+                .onFailure { android.util.Log.e("MainActivity", "could not load add-ons", it) }
+        }
 
         window.attributes.layoutInDisplayCutoutMode =
             android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES

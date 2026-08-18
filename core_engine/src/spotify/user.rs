@@ -8,6 +8,7 @@
 //   - savedArtists:  GQL libraryV3 IDs → REST batch (now via proper REST types)
 //   - savedPlaylists: pure GQL libraryV3 (already worked fine)
 
+use crate::env::Env;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 use serde_json::{json, Value};
@@ -15,7 +16,7 @@ use serde_json::{json, Value};
 const HASH_LIBRARY_TRACKS: &str = "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240";
 const HASH_LIBRARY_V3: &str = "2de10199b2441d6e4ae875f27d2db361020c399fb10b03951120223fbed10b08";
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Get the current user's profile via REST API.
     pub async fn get_me(&self) -> SpotifyResult<SpotifyUser> {
         let rest: RestUser = self.api_get("/me").await?;

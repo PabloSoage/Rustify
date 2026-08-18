@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.bridge.TrackRef
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -1077,7 +1078,7 @@ fun TravelScreen(
                         runCatching {
                             val user = spotifyRepo.getMe()
                             val pl = spotifyRepo.createPlaylist(user.id, name)
-                            val ids = reorderable.mapNotNull { it.id }.filter { it.isNotBlank() && !it.startsWith("local:") }
+                            val ids = reorderable.mapNotNull { it.id }.filter { it.isNotBlank() && !TrackRef.isLocal(it) }
                             spotifyRepo.addAllTracksToPlaylist(context, pl.id, ids)
                             pl.id
                         }.onSuccess { onResult(true) }

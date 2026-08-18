@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.bridge.PlaylistRef
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -95,7 +96,7 @@ fun PlaylistScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Local playlist: the id already carries the "localpl:" prefix resolved by routing.
-    val isLocal = playlistId.startsWith("localpl:")
+    val isLocal = PlaylistRef.isLocal(playlistId)
     val localPlaylist = if (isLocal) spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId } else null
     var playlistDetails by remember { mutableStateOf<FullPlaylist?>(null) }
     // Spotify playlists use the repository's live list (it survives screen recreation such as
@@ -747,7 +748,7 @@ fun PlaylistScreen(
                 val trackToRemove = selectedTrackForMenu!!
                 coroutineScope.launch {
                     trackToRemove.id?.let { tid ->
-                        if (playlistId.startsWith("localpl:")) {
+                        if (PlaylistRef.isLocal(playlistId)) {
                             spotifyRepo.removeFromLocalPlaylist(playlistId, tid)
                             localTracksState = spotifyRepo.localPlaylistTracks(playlistId)
                         } else {

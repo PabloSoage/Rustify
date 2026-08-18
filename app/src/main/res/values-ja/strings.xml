@@ -387,6 +387,13 @@
     <string name="backend_ytdlp">yt-dlp（YouTube）</string>
     <string name="backend_invidious">Invidious（YouTube）</string>
     <string name="backend_deezer">Deezer（HiFi / FLAC）</string>
+    <string name="backend_addon">アドオン</string>
+    <string name="settings_addons">アドオン</string>
+    <string name="settings_addons_desc">音声バックエンドをURLからインストールします。上のリストに加わるので、他と同じように並べ替えたり無効にしたりできます。</string>
+    <string name="settings_addons_empty">アドオンはインストールされていません。</string>
+    <string name="settings_addons_url_label">アドオンのURL（https）</string>
+    <string name="settings_addons_install">インストール</string>
+    <string name="settings_addons_privacy">アドオンに渡されるのは、解決中の曲のタイトル・アーティスト・長さ・識別子だけです。Spotifyのセッションが渡されることはなく、この端末に保存された曲が送信されることもありません。</string>
     <string name="egg_found_title">🦀 見つけたね！</string>
     <string name="egg_found_msg">RustとKotlin、そして大量のコーヒーで作りました。カニをつついてみて…</string>
     <string name="egg_jojo_msg">時が止まる。物語は別の場所で続く…</string>

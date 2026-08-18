@@ -77,6 +77,41 @@ object AudioBackendSettings {
         return parsed.filter { it.id in knownIds }
     }
 
+    /**
+     * Adds [ids] to both orders, **enabled**, but only the ones not stored yet.
+     *
+     * [loadOrder] appends unknown ids disabled, which is right for a provider that arrives with a
+     * new app version — it must not change behaviour on upgrade — and wrong for one the user just
+     * installed by pasting a URL. Installing it *is* the opt-in; leaving it off would make the
+     * add-on look broken with nothing on screen explaining why.
+     *
+     * Ids already present are left exactly as they are, so turning an add-on off in the backend
+     * order survives every later refresh.
+     */
+    fun adoptNewProviders(context: Context, ids: List<String>) {
+        if (ids.isEmpty()) return
+        for (key in listOf(KEY_STREAM, KEY_DOWNLOAD)) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val raw = prefs.getString(key, null)
+            val stored = mutableListOf<BackendEntry>()
+            if (!raw.isNullOrBlank()) {
+                runCatching {
+                    val arr = JSONArray(raw)
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val id = o.optString("id", "")
+                        if (id.isNotBlank()) stored.add(BackendEntry(id, o.optBoolean("enabled", false)))
+                    }
+                }
+            }
+            val present = stored.map { it.id }.toSet()
+            val missing = ids.filter { it !in present }
+            if (missing.isEmpty()) continue
+            stored.addAll(missing.map { BackendEntry(it, enabled = true) })
+            saveOrder(context, key, stored)
+        }
+    }
+
     fun saveOrder(context: Context, key: String, entries: List<BackendEntry>) {
         val arr = JSONArray()
         entries.forEach { e ->

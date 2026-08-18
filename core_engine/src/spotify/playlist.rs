@@ -5,11 +5,12 @@
 // Most writes stay on REST, which they can: the exception is adding tracks, where REST answers a
 // web-player token with a 429 that no amount of waiting clears — see `add_tracks_to_playlist`.
 
+use crate::env::Env;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 use serde_json::{json, Value};
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Fetch full playlist details via GraphQL API.
     pub async fn get_playlist(&self, id: &str) -> SpotifyResult<FullPlaylist> {
         let uri = format!("spotify:playlist:{}", id);

@@ -5,6 +5,7 @@ use crate::youtube::models::YouTubeTrack;
 // and ExoPlayer streams directly from googlevideo. Keeping it only added attack surface
 // (the 0.0.0.0 fallback exposed /resolve to the LAN). The cache-dir + mappings helpers
 // below are still required by the resolver.
+use crate::env::{schema, storage, Env, LogLevel};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
@@ -46,8 +47,29 @@ static CACHE_DIR: OnceLock<String> = OnceLock::new();
 
 pub fn init_cache_dir(dir: &str) {
     let _ = CACHE_DIR.set(dir.to_string());
-    // Load existing mappings
-    let map = load_mappings_from_disk(dir);
+}
+
+/// Brings persisted state up to date and loads the manual YouTube id mappings into memory.
+///
+/// Async because storage is, and awaited rather than spawned at startup: a resolve that runs before
+/// the mappings land would silently ignore a mapping the user chose by hand, which reads as "my
+/// override stopped working".
+///
+/// `legacy_dir` is the pre-3.0 cache directory, where `youtube_mappings.json` used to live. The
+/// migration copies it and leaves the original alone — see [`schema::migrate_to_v1`].
+pub async fn init_mappings<E: Env>(legacy_dir: &str) {
+    if let Err(e) = schema::migrate::<E>(Some(legacy_dir)).await {
+        E::log(
+            LogLevel::Error,
+            "Mappings",
+            &format!("schema migration failed, keeping in-memory only: {e}"),
+        );
+    }
+    let map = storage::get_json::<E, HashMap<String, String>>(schema::MAPPINGS_KEY)
+        .await
+        .unwrap_or(None)
+        .unwrap_or_default();
+    log_info!("[Mappings] loaded {} manual mappings", map.len());
     let mappings_lock = YOUTUBE_MAPPINGS.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut lock) = mappings_lock.lock() {
         *lock = map;
@@ -58,7 +80,7 @@ pub fn get_cache_dir() -> Option<String> {
     CACHE_DIR.get().cloned()
 }
 
-pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&str>, cache_dir: &str) -> Option<String> {
+pub async fn resolve_youtube_id_direct<E: Env>(track_id: &str, youtube_id_opt: Option<&str>, cache_dir: &str) -> Option<String> {
     if let Some(yt_id) = youtube_id_opt {
         log_info!("[Resolver] Using explicit/hint YT id={} for spotify_id={}", yt_id, track_id);
         return Some(yt_id.to_string());
@@ -67,7 +89,7 @@ pub async fn resolve_youtube_id_direct(track_id: &str, youtube_id_opt: Option<&s
         log_info!("[Resolver] Using mapped YT id={} for spotify_id={} (user mapping wins over auto-resolve)", mapped, track_id);
         return Some(mapped);
     }
-    resolve_youtube_id(track_id, cache_dir).await
+    resolve_youtube_id::<E>(track_id, cache_dir).await
 }
 
 pub fn register_track_meta(id: String, name: String, artists: Vec<String>, duration_ms: u32, isrc: String) {
@@ -77,14 +99,34 @@ pub fn register_track_meta(id: String, name: String, artists: Vec<String>, durat
     }
 }
 
-pub fn set_alternative_track(spotify_id: String, youtube_id: String) {
+/// Records a manual mapping and persists it.
+///
+/// Memory is updated synchronously so the very next resolve sees it; the write goes out on a
+/// background task, because the caller is a JNI bridge and a JNI call blocks the thread that made
+/// it — including the UI thread, if that is where it came from.
+pub fn set_alternative_track<E: Env>(spotify_id: String, youtube_id: String) {
     let mappings_lock = YOUTUBE_MAPPINGS.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut lock) = mappings_lock.lock() {
-        lock.insert(spotify_id.clone(), youtube_id.clone());
-        if let Some(cache_dir) = CACHE_DIR.get() {
-            save_mappings_to_disk(cache_dir, &lock);
+    let snapshot = match mappings_lock.lock() {
+        Ok(mut lock) => {
+            lock.insert(spotify_id, youtube_id);
+            // Cloned under the lock: the write must not observe a half-applied later edit, and the
+            // lock must not be held across an await.
+            lock.clone()
         }
-    }
+        Err(_) => {
+            log_info!("[Mappings] CRITICAL: mutex poisoned — mapping not recorded");
+            return;
+        }
+    };
+    E::exec_concurrent(async move {
+        if let Err(e) = storage::set_json::<E, _>(schema::MAPPINGS_KEY, Some(&snapshot)).await {
+            E::log(
+                LogLevel::Error,
+                "Mappings",
+                &format!("could not persist manual mappings: {e}"),
+            );
+        }
+    });
 }
 
 pub fn get_alternative_track(spotify_id: &str) -> Option<String> {
@@ -99,23 +141,23 @@ pub fn get_alternative_track(spotify_id: &str) -> Option<String> {
 }
 
 // Background queue updates (pre-buffering task)
-pub fn update_playback_queue(track_ids: Vec<String>) {
+pub fn update_playback_queue<E: Env>(track_ids: Vec<String>) {
     let cache_dir = match CACHE_DIR.get() {
         Some(dir) => dir.clone(),
         None => return,
     };
 
-    tokio::spawn(async move {
+    E::exec_concurrent(async move {
         // Pre-buffer up to next 3 tracks in queue
         let tracks_to_buffer = track_ids.iter().take(3);
         for track_id in tracks_to_buffer {
             // Resolve YouTube URL to cache the mapping
-            let _ = resolve_youtube_id(track_id, &cache_dir).await;
+            let _ = resolve_youtube_id::<E>(track_id, &cache_dir).await;
         }
     });
 }
 
-pub async fn resolve_youtube_id(track_id: &str, cache_dir: &str) -> Option<String> {
+pub async fn resolve_youtube_id<E: Env>(track_id: &str, cache_dir: &str) -> Option<String> {
     // Check if we already have an alternative YT ID mapped
     let alt = get_alternative_track(track_id);
     if let Some(yt_id) = alt {
@@ -153,8 +195,8 @@ pub async fn resolve_youtube_id(track_id: &str, cache_dir: &str) -> Option<Strin
     let best_match = match_best_track(&meta, &results)?;
     log_info!("[Resolver] Best match: id={} title='{}'", best_match.id, best_match.title);
 
-    // Cache the mapping in memory and disk
-    set_alternative_track(track_id.to_string(), best_match.id.clone());
+    // Cache the mapping in memory and storage
+    set_alternative_track::<E>(track_id.to_string(), best_match.id.clone());
 
     log_info!("[Resolver] resolve_youtube_id finished successfully");
     Some(best_match.id)
@@ -292,19 +334,6 @@ fn clean_text(text: &str) -> String {
         .collect::<String>()
 }
 
-fn load_mappings_from_disk(cache_dir: &str) -> HashMap<String, String> {
-    let path = format!("{}/youtube_mappings.json", cache_dir);
-    if let Ok(content) = std::fs::read_to_string(path) {
-        if let Ok(map) = serde_json::from_str(&content) {
-            return map;
-        }
-    }
-    HashMap::new()
-}
-
-fn save_mappings_to_disk(cache_dir: &str, map: &HashMap<String, String>) {
-    let path = format!("{}/youtube_mappings.json", cache_dir);
-    if let Ok(content) = serde_json::to_string(map) {
-        let _ = std::fs::write(path, content);
-    }
-}
+// `load_mappings_from_disk` / `save_mappings_to_disk` were removed in 3.0. Mappings now live under
+// `env::schema::MAPPINGS_KEY` in versioned storage, with atomic writes; the one remaining read of
+// the old loose file is the v0 → v1 migration in `env::schema`.

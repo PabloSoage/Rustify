@@ -32,8 +32,8 @@
 // protobuf wire format directly instead of pulling in `prost` + a build.rs/protoc
 // codegen step. This keeps Cargo.toml and the NDK build untouched.
 
+use crate::env::{Env, HttpRequest};
 use crate::spotify::client::*;
-use reqwest::header;
 
 const CANVAZ_ENDPOINT: &str = "https://spclient.wg.spotify.com/canvaz-cache/v0/canvases";
 
@@ -166,7 +166,7 @@ fn parse_canvaz_url(buf: &[u8]) -> Option<String> {
     None
 }
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Fetch the Spotify Canvas (looping mp4) for a track.
     ///
     /// `track_uri` may be either a full URI (`spotify:track:<id>`) or a bare id.
@@ -184,31 +184,26 @@ impl SpotifyClient {
 
         let body = build_request(&uri);
 
-        let http = self.clone_http();
-        let res = http
-            .post(CANVAZ_ENDPOINT)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::ACCEPT, "application/protobuf")
-            .header(header::CONTENT_TYPE, "application/x-protobuf")
-            // Spotify serves canvases only to app clients; spoof a mobile client.
-            .header(header::USER_AGENT, "Spotify/9.0.34.593 iOS/18.4")
-            .body(body)
-            .send()
-            .await?;
+        let req = HttpRequest::post(CANVAZ_ENDPOINT)
+            .bearer(&token)
+            .header("Accept", "application/protobuf")
+            .header("Content-Type", "application/x-protobuf")
+            // Spotify serves canvases only to app clients; spoof a mobile client. Note this is the
+            // one request that must NOT carry the desktop-browser agent the rest of the client uses,
+            // which is why it does not go through `base_request`.
+            .header("User-Agent", "Spotify/9.0.34.593 iOS/18.4")
+            .body_bytes(body);
+        let res = E::fetch(req).await?;
 
-        let status = res.status();
-        if !status.is_success() {
-            let code = status.as_u16();
+        if !res.is_success() {
             // 404 / no-canvas → treat as "no canvas" rather than a hard error.
-            if code == 404 {
+            if res.status == 404 {
                 return Ok(None);
             }
-            let msg = res.text().await.unwrap_or_default();
-            return Err(SpotifyError::ApiError(code, msg));
+            return Err(SpotifyError::ApiError(res.status, res.text()));
         }
 
-        let bytes = res.bytes().await?;
-        Ok(parse_response_url(&bytes))
+        Ok(parse_response_url(&res.body))
     }
 }
 

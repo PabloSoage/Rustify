@@ -189,7 +189,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
      * unless [force] is set.
      */
     fun loadFullPlaylist(id: String, force: Boolean = false) {
-        if (id.startsWith("localpl:")) return
+        if (PlaylistRef.isLocal(id)) return
         if (spotifyPlaylistJobs[id]?.isActive == true) return
         val list = playlistTracksLive(id)
         if (list.isNotEmpty() && !force) return
@@ -661,7 +661,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
 
     /** Marks/unmarks a local track as a favorite. No-op if it is not a "local:" id. */
     fun toggleLocalFavorite(id: String) {
-        if (!id.startsWith("local:")) return
+        if (!TrackRef.isLocal(id)) return
         localFavoriteIds[id] = localFavoriteIds[id] != true
         saveLocalFavorites()
         com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
@@ -687,7 +687,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         // Local playlists resolve their track ids against scanned local files only
         // (see localPlaylistTracks), so a non-"local:" id (Spotify/YTM) would be stored but silently
         // never render — "added" yet invisible. Keep non-local tracks out.
-        if (!trackId.startsWith("local:")) return
+        if (!TrackRef.isLocal(trackId)) return
         val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
         val pl = localPlaylists[i]
         if (trackId in pl.trackIds) return
@@ -1509,7 +1509,7 @@ loadLocalTracksFromCache()
     suspend fun addAllTracksToPlaylist(context: Context, playlistId: String, trackIds: List<String>): Int = withContext(Dispatchers.IO) {
         var added = 0
         // Filter out blanks / local tracks (no valid Spotify uri).
-        val validIds = trackIds.filter { it.isNotBlank() && !it.startsWith("local:") }
+        val validIds = trackIds.filter { it.isNotBlank() && !TrackRef.isLocal(it) }
         for (chunk in validIds.chunked(100)) {
             val res = addTracksToPlaylist(playlistId, chunk)
             if (res.success) {

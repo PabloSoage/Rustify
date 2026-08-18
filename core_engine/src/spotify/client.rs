@@ -6,14 +6,16 @@
 // exactly replicating the spotify-gql-client behavior.
 
 use regex::Regex;
-use reqwest::{header, Client};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use totp_rs::{Algorithm, Secret, TOTP};
 
+use crate::env::android::AndroidEnv;
+use crate::env::{Env, EnvError, HttpRequest, HttpResponse, Method};
 use crate::spotify::models::*;
 
 // =============================================================================
@@ -55,15 +57,25 @@ impl std::fmt::Display for SpotifyError {
 
 impl std::error::Error for SpotifyError {}
 
-impl From<reqwest::Error> for SpotifyError {
-    fn from(e: reqwest::Error) -> Self {
-        SpotifyError::NetworkError(e.to_string())
-    }
-}
+// `From<reqwest::Error>` was removed in 3.0: nothing in this layer can produce one any more. The
+// Spotify client no longer knows which HTTP stack it is talking through — `EnvError` is what it
+// sees, and `AndroidEnv` is the only place `reqwest` still appears.
 
 impl From<serde_json::Error> for SpotifyError {
     fn from(e: serde_json::Error) -> Self {
         SpotifyError::ParseError(e.to_string())
+    }
+}
+
+impl From<EnvError> for SpotifyError {
+    fn from(e: EnvError) -> Self {
+        match e {
+            // A failed `fetch` is a transport failure by definition: an HTTP error status is a
+            // *successful* fetch and arrives in `HttpResponse::status`.
+            EnvError::Fetch(m) => SpotifyError::NetworkError(m),
+            EnvError::Serde(m) => SpotifyError::ParseError(m),
+            EnvError::Storage(m) | EnvError::Other(m) => SpotifyError::InternalError(m),
+        }
     }
 }
 
@@ -114,13 +126,33 @@ const NUANCE_GIST_URL: &str = "https://api.github.com/gists/22ed9c6ba463899e9334
 /// Spotify server time endpoint for TOTP synchronization.
 const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 
-/// Generate a random-ish user agent to avoid fingerprinting.
-fn generate_user_agent() -> String {
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36".to_string()
+/// The user agent every Spotify request presents.
+///
+/// A `&'static str` rather than a `String`: it used to be built once when the `reqwest::Client` was
+/// constructed, and since requests became plain data it is stamped on **every** one — so returning
+/// an owned `String` meant an allocation per request for a constant.
+fn generate_user_agent() -> &'static str {
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
-pub struct SpotifyClient {
-    http: Client,
+/// How long the GQL hash scraper may take. Generous because it pulls the web-player bundle, which is
+/// several megabytes, and then a series of chunks — but bounded, because it runs at login.
+const SCRAPE_TIMEOUT_MS: u64 = 30_000;
+
+/// How long any single Spotify request may take before it is abandoned. Was a client-wide setting
+/// on the old `reqwest::Client`; now stamped on every request by [`SpotifyClient::base_request`].
+const REQUEST_TIMEOUT_MS: u64 = 15_000;
+
+/// The Spotify client, generic over its platform.
+///
+/// `E` **defaults to [`AndroidEnv`]**, which is what makes this a small change rather than a
+/// rewrite: every existing mention of `SpotifyClient` still means `SpotifyClient<AndroidEnv>` and
+/// keeps compiling. A test writes `SpotifyClient::<MockEnv>::new()` and gets a client that touches
+/// no network at all.
+///
+/// `PhantomData<fn() -> E>` rather than `PhantomData<E>`: the function-pointer form is `Send + Sync`
+/// whatever `E` is, and this struct lives inside a `RwLock` in a `static`.
+pub struct SpotifyClient<E: Env = AndroidEnv> {
     credentials: Option<SpotifyCredentials>,
     sp_dc: Option<String>,
     client_credentials: RwLock<Option<String>>,
@@ -128,17 +160,12 @@ pub struct SpotifyClient {
     gql_hashes: RwLock<HashMap<String, String>>,
     cache_dir: RwLock<Option<String>>,
     accept_language: RwLock<Option<String>>,
+    _env: PhantomData<fn() -> E>,
 }
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     pub fn new() -> Self {
         Self {
-            http: Client::builder()
-                .user_agent(generate_user_agent())
-                .timeout(std::time::Duration::from_secs(15))
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .build()
-                .unwrap(),
             credentials: None,
             sp_dc: None,
             client_credentials: RwLock::new(None),
@@ -146,11 +173,28 @@ impl SpotifyClient {
             gql_hashes: RwLock::new(HashMap::new()),
             cache_dir: RwLock::new(None),
             accept_language: RwLock::new(None),
+            _env: PhantomData,
         }
     }
 
     pub fn set_accept_language(&self, lang: &str) {
         *self.accept_language.write().unwrap() = Some(lang.to_string());
+    }
+
+    /// Every outgoing request starts here.
+    ///
+    /// The user agent and the timeout used to be baked into a single `reqwest::Client`, so they
+    /// applied by construction. `Env::fetch` is deliberately unopinionated — a platform layer has no
+    /// business knowing that Spotify wants to be talked to like a desktop browser — so those live
+    /// here instead, in the one place that does know.
+    fn base_request(&self, method: Method, url: impl Into<String>) -> HttpRequest {
+        let mut req = HttpRequest::new(method, url)
+            .header("User-Agent", generate_user_agent())
+            .timeout_ms(REQUEST_TIMEOUT_MS);
+        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+            req = req.header("Accept-Language", lang);
+        }
+        req
     }
 
     // =========================================================================
@@ -269,19 +313,19 @@ impl SpotifyClient {
     }
 
     async fn fetch_nuance(&self) -> SpotifyResult<TotpNuance> {
-        let res = self.http.get(NUANCE_GIST_URL)
-            .header(header::ACCEPT, "application/vnd.github.v3+json")
-            .send()
-            .await?;
+        let req = self
+            .base_request(Method::Get, NUANCE_GIST_URL)
+            .header("Accept", "application/vnd.github.v3+json");
+        let res = E::fetch(req).await?;
 
-        if !res.status().is_success() {
+        if !res.is_success() {
             return Err(SpotifyError::ApiError(
-                res.status().as_u16(),
+                res.status,
                 "Failed to fetch TOTP nuance from GitHub".into()
             ));
         }
 
-        let gist: Value = res.json().await?;
+        let gist: Value = res.json()?;
 
         let content_str = gist["files"]["nuances.json"]["content"]
             .as_str()
@@ -296,18 +340,16 @@ impl SpotifyClient {
     }
 
     async fn fetch_server_time(&self) -> SpotifyResult<u64> {
-        let res = self.http.get(SERVER_TIME_URL)
-            .send()
-            .await?;
+        let res = E::fetch(self.base_request(Method::Get, SERVER_TIME_URL)).await?;
 
-        if !res.status().is_success() {
+        if !res.is_success() {
             return Err(SpotifyError::ApiError(
-                res.status().as_u16(),
+                res.status,
                 "Failed to fetch server time".into()
             ));
         }
 
-        let time_resp: ServerTimeResponse = res.json().await
+        let time_resp: ServerTimeResponse = res.json()
             .map_err(|e| SpotifyError::ParseError(format!("Failed to parse server time: {}", e)))?;
 
         Ok(time_resp.server_time)
@@ -338,19 +380,17 @@ impl SpotifyClient {
         let clean_sp_dc = sp_dc.trim_start_matches("sp_dc=").trim_end_matches(';');
         let cookie_header = format!("sp_dc={};", clean_sp_dc);
 
-        let res = self.http.get(&url)
-            .header(header::COOKIE, cookie_header)
-            .header("App-Platform", "WebPlayer")
-            .send()
-            .await?;
+        let req = self
+            .base_request(Method::Get, url.as_str())
+            .header("Cookie", cookie_header)
+            .header("App-Platform", "WebPlayer");
+        let res = E::fetch(req).await?;
 
-        if !res.status().is_success() {
-            let status = res.status().as_u16();
-            let body = res.text().await.unwrap_or_default();
-            return Err(SpotifyError::ApiError(status, format!("Token request failed: {}", body)));
+        if !res.is_success() {
+            return Err(SpotifyError::ApiError(res.status, format!("Token request failed: {}", res.text())));
         }
 
-        let creds: SpotifyCredentials = res.json().await
+        let creds: SpotifyCredentials = res.json()
             .map_err(|e| SpotifyError::ParseError(format!("Failed to parse token response: {}", e)))?;
 
         if creds.access_token.len() < 100 {
@@ -375,9 +415,9 @@ impl SpotifyClient {
         }
     }
 
-    pub fn clone_http(&self) -> reqwest::Client {
-        self.http.clone()
-    }
+    // `clone_http()` was removed in 3.0. It existed so other modules could borrow this client's
+    // `reqwest::Client`; there is no client to borrow now — callers use `E::fetch` directly, which
+    // is the same HTTP stack without the coupling.
 
     pub fn update_gql_hashes(&self, new_hashes: HashMap<String, String>) {
         {
@@ -447,17 +487,15 @@ impl SpotifyClient {
         let client_secret = "049386348c4146059d646b9a89d7fa2a".to_string();
 
         let url = "https://accounts.spotify.com/api/token";
-        
-        let res = self.http.post(url)
-            .basic_auth(&client_id, Some(&client_secret))
-            .form(&[("grant_type", "client_credentials")])
-            .send()
-            .await?;
 
-        if !res.status().is_success() {
-            let status = res.status().as_u16();
-            let body = res.text().await.unwrap_or_default();
-            return Err(SpotifyError::ApiError(status, format!("Client credentials request failed: {}", body)));
+        let req = self
+            .base_request(Method::Post, url)
+            .basic_auth(&client_id, &client_secret)
+            .body_form(&[("grant_type", "client_credentials")]);
+        let res = E::fetch(req).await?;
+
+        if !res.is_success() {
+            return Err(SpotifyError::ApiError(res.status, format!("Client credentials request failed: {}", res.text())));
         }
 
         #[derive(Deserialize)]
@@ -466,7 +504,7 @@ impl SpotifyClient {
             expires_in: u64,
         }
 
-        let resp: ClientCredentialsResponse = res.json().await?;
+        let resp: ClientCredentialsResponse = res.json()?;
         let token = resp.access_token.clone();
 
         // Update cache
@@ -503,40 +541,38 @@ impl SpotifyClient {
     }
 
     /// Check if response was successful, extract error body if not.
-    async fn check_response_success(res: reqwest::Response) -> SpotifyResult<reqwest::Response> {
-        if !res.status().is_success() {
-            let status = res.status().as_u16();
-            let body = res.text().await.unwrap_or_default();
-            return Err(SpotifyError::ApiError(status, body));
+    fn check_response_success(res: HttpResponse) -> SpotifyResult<HttpResponse> {
+        if !res.is_success() {
+            return Err(SpotifyError::ApiError(res.status, res.text()));
         }
         Ok(res)
     }
 
     /// Send a request with automatic retries on transient network failures and
     /// rate-limiting / 5xx responses (E10 RC-3). Up to 3 attempts with exponential
-    /// backoff (400ms, 800ms, 1600ms) + jitter. Honours `Retry-After` when present.
+    /// backoff (400ms, 800ms, 1600ms). Honours `Retry-After` when present.
     /// AUTH/401 and other permanent errors are returned immediately so the caller
     /// can refresh the session or surface the error.
-    async fn send_with_retry<F>(&self, build: F) -> SpotifyResult<reqwest::Response>
-    where
-        F: Fn() -> reqwest::RequestBuilder,
-    {
+    ///
+    /// Takes the request **by value** now that a request is plain data. The old signature took a
+    /// closure building a `reqwest::RequestBuilder` because a builder cannot be reused, and every
+    /// caller carried a `try_clone().unwrap_or_else(|| …rebuild the whole thing…)` to work around
+    /// it. Cloning a struct needs no fallback path, so five of those disappeared.
+    async fn send_with_retry(&self, req: HttpRequest) -> SpotifyResult<HttpResponse> {
         let mut delay = std::time::Duration::from_millis(400);
         for attempt in 0..3u32 {
-            match build().send().await {
+            match E::fetch(req.clone()).await {
                 Ok(r) => {
-                    let code = r.status().as_u16();
+                    let code = r.status;
                     if code == 429 || (500..600).contains(&code) {
                         if attempt == 2 {
                             return Ok(r);
                         }
-                        let wait = match r.headers().get(reqwest::header::RETRY_AFTER) {
-                            Some(v) => v.to_str().ok()
-                                .and_then(|s| s.parse::<u64>().ok())
-                                .map(std::time::Duration::from_secs)
-                                .unwrap_or(delay),
-                            None => delay,
-                        };
+                        let wait = r
+                            .header("retry-after")
+                            .and_then(|v| v.parse::<u64>().ok())
+                            .map(std::time::Duration::from_secs)
+                            .unwrap_or(delay);
                         // Honouring an arbitrarily long `Retry-After` blocks the caller for as long
                         // as Spotify feels like, and a rate limit measured in tens of seconds is not
                         // something to wait out inside a tap: the UI sat frozen with no feedback for
@@ -553,19 +589,25 @@ impl SpotifyClient {
                     return Ok(r);
                 }
                 Err(e) => {
-                    if e.is_timeout() || e.is_connect() || e.is_request() {
-                        if attempt == 2 {
-                            return Err(SpotifyError::from(e));
-                        }
-                        tokio::time::sleep(delay).await;
-                        delay *= 2;
-                        continue;
+                    // Every `Err` from `fetch` is a transport failure — timeout, DNS, connection
+                    // refused — because an HTTP error status comes back as `Ok`. The old code had to
+                    // sort `reqwest::Error` into transient and permanent kinds; there is nothing
+                    // left to sort, so all of them are worth one more attempt.
+                    if attempt == 2 {
+                        return Err(SpotifyError::from(e));
                     }
-                    return Err(SpotifyError::from(e));
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
                 }
             }
         }
         unreachable!()
+    }
+
+    /// Sends, retries, and rejects an error status — the three steps every REST call repeated.
+    async fn send_checked(&self, req: HttpRequest) -> SpotifyResult<HttpResponse> {
+        let res = self.send_with_retry(req).await?;
+        Self::check_response_success(res)
     }
 
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> SpotifyResult<T> {
@@ -576,17 +618,10 @@ impl SpotifyClient {
         };
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let mut req = self.http.get(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token));
-
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
-            req = req.header(header::ACCEPT_LANGUAGE, lang);
-        }
-
-        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.get(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)))).await?;
-
-        let res = Self::check_response_success(res).await?;
-        res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
+        let req = self.base_request(Method::Get, url).bearer(&token);
+        let res = self.send_checked(req).await?;
+        res.json()
+            .map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
     }
 
     /// Writes are **user-scoped**, so there is deliberately no client-credentials fallback here.
@@ -600,18 +635,13 @@ impl SpotifyClient {
         let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let mut req = self.http.post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body);
-
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
-            req = req.header(header::ACCEPT_LANGUAGE, lang);
-        }
-
-        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.post(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
-
-        let res = Self::check_response_success(res).await?;
-        res.json().await.map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
+        let req = self
+            .base_request(Method::Post, url)
+            .bearer(&token)
+            .body_json(body)?;
+        let res = self.send_checked(req).await?;
+        res.json()
+            .map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
     }
 
     /// User-scoped write. No client-credentials fallback — see [`api_post`].
@@ -619,17 +649,11 @@ impl SpotifyClient {
         let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let mut req = self.http.put(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body);
-
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
-            req = req.header(header::ACCEPT_LANGUAGE, lang);
-        }
-
-        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.put(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
-
-        Self::check_response_success(res).await?;
+        let req = self
+            .base_request(Method::Put, url)
+            .bearer(&token)
+            .body_json(body)?;
+        self.send_checked(req).await?;
         Ok(())
     }
 
@@ -638,17 +662,11 @@ impl SpotifyClient {
         let token = self.access_token()?.to_string();
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
-        let mut req = self.http.delete(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .json(body);
-
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
-            req = req.header(header::ACCEPT_LANGUAGE, lang);
-        }
-
-        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.delete(&url).header(header::AUTHORIZATION, format!("Bearer {}", token)).json(body))).await?;
-
-        Self::check_response_success(res).await?;
+        let req = self
+            .base_request(Method::Delete, url)
+            .bearer(&token)
+            .body_json(body)?;
+        self.send_checked(req).await?;
         Ok(())
     }
 
@@ -739,21 +757,15 @@ impl SpotifyClient {
             },
         };
 
-        let mut req = self.http.post(SPOTIFY_GQL_BASE)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::CONTENT_TYPE, "application/json")
+        let req = self
+            .base_request(Method::Post, SPOTIFY_GQL_BASE)
+            .bearer(token)
             .header("App-Platform", "WebPlayer")
-            .json(&body);
+            .body_json(&body)?;
 
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
-            req = req.header(header::ACCEPT_LANGUAGE, lang);
-        }
+        let res = self.send_checked(req).await?;
 
-        let res = self.send_with_retry(|| req.try_clone().unwrap_or_else(|| self.http.post(SPOTIFY_GQL_BASE).header(header::AUTHORIZATION, format!("Bearer {}", token)).header(header::CONTENT_TYPE, "application/json").header("App-Platform", "WebPlayer").json(&body))).await?;
-
-        let res = Self::check_response_success(res).await?;
-
-        let json: Value = res.json().await
+        let json: Value = res.json()
             .map_err(|e| SpotifyError::ParseError(format!("GQL {} parse error: {}", operation_name, e)))?;
 
         if let Some(errors) = json.get("errors") {
@@ -778,7 +790,7 @@ impl SpotifyClient {
 
     /// Scrapes open.spotify.com and Spotify Web Player JS chunks to dynamically extract the latest sha256 GQL operation hashes.
     pub async fn fetch_gql_hashes(&self) -> SpotifyResult<()> {
-        let new_hashes = scrape_gql_hashes_with_client(&self.http).await?;
+        let new_hashes = scrape_gql_hashes::<E>().await?;
         self.update_gql_hashes(new_hashes);
         Ok(())
     }
@@ -1075,10 +1087,16 @@ pub fn parse_js_dict_raw(s: &str) -> SpotifyResult<HashMap<i32, String>> {
     Ok(map)
 }
 
-pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyResult<HashMap<String, String>> {
+/// Scrapes open.spotify.com and its JS chunks for the current GQL operation hashes.
+///
+/// Generic over the environment like everything else since 3.0. The former
+/// `scrape_gql_hashes_with_client(&reqwest::Client)` had to be handed the client because it was a
+/// private field nobody outside could reach; now the platform *is* the type parameter.
+pub async fn scrape_gql_hashes<E: Env>() -> SpotifyResult<HashMap<String, String>> {
     // Step 1: Fetch Spotify homepage
-    let resp = http.get("https://open.spotify.com").send().await?;
-    let html = resp.text().await?;
+    let html = E::fetch(HttpRequest::get("https://open.spotify.com").header("User-Agent", generate_user_agent()).timeout_ms(SCRAPE_TIMEOUT_MS))
+        .await?
+        .text();
 
     // Step 2: Extract JS links
     let re_js = Regex::new(r#"src="([^"]+\.js)""#).unwrap();
@@ -1110,8 +1128,7 @@ pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyRes
         .ok_or_else(|| SpotifyError::InternalError("Could not parse CDN base from JS URL".into()))?;
 
     // Step 5: Fetch the web-player JS pack
-    let resp = http.get(&js_pack_url).send().await?;
-    let js_content = resp.text().await?;
+    let js_content = E::fetch(HttpRequest::get(js_pack_url.as_str()).timeout_ms(SCRAPE_TIMEOUT_MS)).await?.text();
 
     // Step 6: Extract chunk mappings
     let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)}"#).unwrap();
@@ -1141,11 +1158,9 @@ pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyRes
     // Fetch each chunk and append to raw_hashes
     for chunk in combined_chunks {
         let url = format!("{}/{}", cdn_base, chunk);
-        if let Ok(resp) = http.get(&url).send().await {
-            if resp.status().is_success() {
-                if let Ok(text) = resp.text().await {
-                    raw_hashes.push_str(&text);
-                }
+        if let Ok(resp) = E::fetch(HttpRequest::get(url.as_str()).timeout_ms(SCRAPE_TIMEOUT_MS)).await {
+            if resp.is_success() {
+                raw_hashes.push_str(&resp.text());
             }
         }
     }
@@ -1159,7 +1174,127 @@ pub async fn scrape_gql_hashes_with_client(http: &reqwest::Client) -> SpotifyRes
         new_hashes.insert(op_name, hash);
     }
 
-    eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes via scrape_gql_hashes_with_client", new_hashes.len());
+    eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes via scrape_gql_hashes", new_hashes.len());
 
     Ok(new_hashes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::mock::{self, MockEnv};
+
+    /// The point of point A, demonstrated: a real `SpotifyClient`, exercised end to end, with no
+    /// network, no device and no Android. None of this was testable before 3.0.
+    fn client() -> SpotifyClient<MockEnv> {
+        SpotifyClient::<MockEnv>::new()
+    }
+
+    #[tokio::test]
+    async fn an_unauthenticated_client_refuses_writes_without_calling_out() {
+        let _guard = mock::lock_and_reset();
+        // No canned responses registered at all: if this touched the network the mock would say so.
+        let result: SpotifyResult<Value> = client().api_post("/me/tracks", &Value::Null).await;
+        assert!(matches!(result, Err(SpotifyError::NotAuthenticated)));
+        assert!(mock::state().requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_refused_app_token_is_surfaced_with_its_status() {
+        let _guard = mock::lock_and_reset();
+        // The token endpoint deliberately does *not* go through `send_with_retry` — it did not
+        // before 3.0 either — so this is one attempt and one error, not three.
+        mock::on_prefix(
+            "https://accounts.spotify.com/api/token",
+            HttpResponse {
+                status: 429,
+                headers: vec![("Retry-After".into(), "0".into())],
+                body: b"slow down".to_vec(),
+            },
+        );
+        let result = client().fetch_client_credentials_token().await;
+        assert!(matches!(result, Err(SpotifyError::ApiError(429, _))));
+        assert_eq!(mock::state().requests.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_long_retry_after_is_surfaced_immediately_rather_than_waited_out() {
+        let _guard = mock::lock_and_reset();
+        // 600 s is far past MAX_RETRY_AFTER. The test finishing at all is the assertion: before the
+        // cap existed this would have parked the caller for ten minutes.
+        mock::on_prefix(
+            "https://api.spotify.com/v1",
+            HttpResponse {
+                status: 429,
+                headers: vec![("Retry-After".into(), "600".into())],
+                body: Vec::new(),
+            },
+        );
+        mock::on_prefix(
+            "https://accounts.spotify.com/api/token",
+            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
+        );
+        let result: SpotifyResult<Value> = client().api_get("/tracks?ids=1").await;
+        assert!(matches!(result, Err(SpotifyError::ApiError(429, _))));
+        // One token call plus exactly one API attempt — not three.
+        let api_attempts = mock::state()
+            .requests
+            .iter()
+            .filter(|r| r.url.starts_with("https://api.spotify.com/v1"))
+            .count();
+        assert_eq!(api_attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn public_reads_fall_back_to_an_app_token() {
+        let _guard = mock::lock_and_reset();
+        mock::on_prefix(
+            "https://accounts.spotify.com/api/token",
+            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
+        );
+        mock::on_prefix(
+            "https://api.spotify.com/v1/tracks",
+            HttpResponse::ok(r#"{"ok":true}"#),
+        );
+
+        let value: Value = client().api_get("/tracks?ids=1").await.unwrap();
+        assert_eq!(value["ok"], Value::Bool(true));
+
+        // And the fallback token really was presented, rather than the request going out bare.
+        let sent = mock::state()
+            .requests
+            .iter()
+            .find(|r| r.url.starts_with("https://api.spotify.com/v1/tracks"))
+            .cloned()
+            .expect("the API call should have been made");
+        assert!(sent
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer app-token"));
+    }
+
+    #[tokio::test]
+    async fn the_accept_language_setting_reaches_the_wire() {
+        let _guard = mock::lock_and_reset();
+        mock::on_prefix(
+            "https://accounts.spotify.com/api/token",
+            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
+        );
+        mock::on_prefix("https://api.spotify.com/v1", HttpResponse::ok("{}"));
+
+        let client = client();
+        client.set_accept_language("ja");
+        let _: SpotifyResult<Value> = client.api_get("/tracks?ids=1").await;
+
+        let sent = mock::state()
+            .requests
+            .iter()
+            .find(|r| r.url.starts_with("https://api.spotify.com/v1"))
+            .cloned()
+            .expect("the API call should have been made");
+        assert!(sent
+            .headers
+            .iter()
+            .any(|(k, v)| k == "Accept-Language" && v == "ja"));
+    }
 }

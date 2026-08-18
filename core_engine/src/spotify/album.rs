@@ -3,6 +3,7 @@
 // Album endpoints rewritten to use 100% GraphQL via api-partner.spotify.com,
 // completely bypassing Envoy REST 429 blocks for Free accounts.
 
+use crate::env::Env;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 use serde_json::json;
@@ -11,7 +12,7 @@ const HASH_WHATS_NEW_FEED: &str = "3b53dede3c6054e8b7c962dd280eb6761c5d1c82b06b0
 const HASH_ADD_TO_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915";
 const HASH_REMOVE_FROM_LIBRARY: &str = "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915";
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Fetch full album details via GraphQL API.
     pub async fn get_album(&self, id: &str) -> SpotifyResult<FullAlbum> {
         let uri = format!("spotify:album:{}", id);

@@ -5,6 +5,7 @@
 // which now correctly uses RestBatchTracksResponse).
 // Albums, artists, and playlists are parsed inline from GQL.
 
+use crate::env::Env;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 use serde_json::json;
@@ -15,7 +16,7 @@ const HASH_SEARCH_ALBUMS: &str = "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c
 const HASH_SEARCH_ARTISTS: &str = "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909";
 const HASH_SEARCH_PLAYLISTS: &str = "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58";
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Extract track IDs from GQL tracksV2 search results and batch-fetch
     /// full details from REST.  batch_get_tracks now uses RestBatchTracksResponse
     /// (proper snake_case) so deserialization is correct.

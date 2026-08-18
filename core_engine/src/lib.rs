@@ -8,8 +8,12 @@
 //   4. Return as Java String
 
 pub mod adblock_engine;
+pub mod addon;
+pub mod env;
 pub mod matcher;
+pub mod server;
 pub mod spotify;
+pub mod types;
 pub mod youtube;
 
 use jni::objects::{JClass, JString};
@@ -22,7 +26,10 @@ use tokio::runtime::Runtime;
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 /// Helper function to initialize and retrieve the Tokio Runtime securely.
-fn get_runtime() -> &'static Runtime {
+///
+/// `pub(crate)` since 3.0: `env::android::AndroidEnv::exec_concurrent` needs *this* runtime. A bare
+/// `tokio::spawn` panics when no runtime is in scope, and JNI calls arrive on JVM threads.
+pub(crate) fn get_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("Failed to initialize Tokio Runtime"))
 }
 
@@ -92,6 +99,13 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_initCacheDirN
         let mutf8 = cache_dir.mutf8_chars(env)?;
         let cache_dir_str = mutf8.to_string();
         youtube::server::init_cache_dir(&cache_dir_str);
+        // Same directory: `Env` keys live under `store/` inside it.
+        env::android::init_storage_dir(&cache_dir_str);
+        // Awaited, not spawned: a resolve that ran before the mappings landed would ignore an
+        // override the user set by hand. This only touches local files, never the network.
+        get_runtime().block_on(youtube::server::init_mappings::<env::android::AndroidEnv>(
+            &cache_dir_str,
+        ));
         Ok(())
     });
 }
@@ -131,7 +145,218 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setAlternativ
     let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
         let s_id = spotify_id.mutf8_chars(env)?.to_string();
         let y_id = youtube_id.mutf8_chars(env)?.to_string();
-        youtube::server::set_alternative_track(s_id, y_id);
+        youtube::server::set_alternative_track::<env::android::AndroidEnv>(s_id, y_id);
+        Ok(())
+    });
+}
+
+// =============================================================================
+// ADDONS (installable audio backends)
+// =============================================================================
+
+/// JNI Bridge: Install an addon by URL. Returns the addon as JSON, or an error object.
+///
+/// Fetches and validates the manifest first, so an addon that cannot be reached, is served over
+/// plain http, points at a private address, or does not describe itself properly never reaches the
+/// installed list. See `addon::security` for what is refused and why.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_installAddonNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    url: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let url_str = url.mutf8_chars(env)?.to_string();
+        let result = get_runtime()
+            .block_on(addon::registry::install::<env::android::AndroidEnv>(&url_str));
+        serialize_result(result)
+    })
+}
+
+/// JNI Bridge: The installed addons, in the order they are tried. JSON array.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listAddonsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let addons = get_runtime().block_on(addon::registry::list::<env::android::AndroidEnv>());
+        serde_json::to_string(&addons).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// JNI Bridge: Remove an addon.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_uninstallAddonNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id_str = id.mutf8_chars(env)?.to_string();
+        let result =
+            get_runtime().block_on(addon::registry::uninstall::<env::android::AndroidEnv>(&id_str));
+        serialize_result(result.map(|_| spotify::models::OperationResult::ok()))
+    })
+}
+
+/// JNI Bridge: Turn an addon off without uninstalling it.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setAddonEnabledNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: JString<'local>,
+    enabled: jboolean,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id_str = id.mutf8_chars(env)?.to_string();
+        let result = get_runtime().block_on(addon::registry::set_enabled::<
+            env::android::AndroidEnv,
+        >(&id_str, enabled == JNI_TRUE));
+        serialize_result(result.map(|_| spotify::models::OperationResult::ok()))
+    })
+}
+
+/// JNI Bridge: Reorder the fallback chain. `idsJson` is a JSON array of addon ids.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_reorderAddonsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    ids_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let json = ids_json.mutf8_chars(env)?.to_string();
+        let ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+        let result =
+            get_runtime().block_on(addon::registry::reorder::<env::android::AndroidEnv>(&ids));
+        serialize_result(result.map(|_| spotify::models::OperationResult::ok()))
+    })
+}
+
+/// JNI Bridge: Ask one addon to resolve a track.
+///
+/// Returns the answer as JSON, `{}` when the addon does not have the track, or an error object.
+/// `{}` is a normal outcome and means "move on to the next provider".
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveViaAddonNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    addon_id: JString<'local>,
+    query_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id_str = addon_id.mutf8_chars(env)?.to_string();
+        let query_str = query_json.mutf8_chars(env)?.to_string();
+
+        match serde_json::from_str::<addon::TrackQuery>(&query_str) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(query) => get_runtime().block_on(async {
+                let installed = addon::registry::list::<env::android::AndroidEnv>().await;
+                match installed.iter().find(|a| a.manifest.id == id_str) {
+                    None => serialize_result::<(), _>(Err(addon::AddonError::Refused(
+                        "no such addon".into(),
+                    ))),
+                    Some(found) => {
+                        match addon::transport::resolve_stream::<env::android::AndroidEnv>(
+                            found, &query,
+                        )
+                        .await
+                        {
+                            // A normal outcome, not a failure: move on to the next provider.
+                            Ok(None) => "{}".to_string(),
+                            Ok(Some(answer)) => {
+                                serde_json::to_string(&answer).unwrap_or_else(|_| "{}".to_string())
+                            }
+                            Err(e) => serialize_result::<(), _>(Err(e)),
+                        }
+                    }
+                }
+            }),
+        }
+    })
+}
+
+// =============================================================================
+// LOCAL STREAMING SERVER
+// =============================================================================
+
+/// JNI Bridge: Start the loopback streaming server (idempotent).
+///
+/// Returns `{"port":N,"token":"..."}` on success, or `{"success":false,"error":"..."}`.
+/// The token is what makes the server usable only by this app: on Android any installed app can
+/// reach `127.0.0.1`, so binding to loopback is necessary and not sufficient.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startLocalServerNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let started = get_runtime().block_on(server::start::<env::android::AndroidEnv>());
+        match started {
+            Ok(handle) => format!(
+                r#"{{"port":{},"token":{}}}"#,
+                handle.port,
+                serde_json::to_string(&handle.token).unwrap_or_else(|_| "\"\"".to_string())
+            ),
+            Err(e) => serialize_result::<(), _>(Err(e)),
+        }
+    })
+}
+
+/// JNI Bridge: Register something for the local server to serve, and get back its URL.
+///
+/// `source` is either a path on this device or an `http(s)` URL; `cachePath` is where an upstream
+/// should be stored (empty for "do not cache", in which case an upstream registration is refused —
+/// there is nowhere to put the bytes). `expiresAtMs` of 0 means the registration does not expire.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocalStreamNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    source: JString<'local>,
+    mime: JString<'local>,
+    cache_path: JString<'local>,
+    expires_at_ms: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let source_str = source.mutf8_chars(env)?.to_string();
+        let mime_str = mime.mutf8_chars(env)?.to_string();
+        let cache_str = cache_path.mutf8_chars(env)?.to_string();
+
+        // An empty answer means "the server is not running", which the caller handles by playing
+        // the upstream URL directly — the behaviour it had before this server existed.
+        match server::current() {
+            None => String::new(),
+            Some(handle) => {
+                let is_remote =
+                    source_str.starts_with("http://") || source_str.starts_with("https://");
+                let entry = server::handles::StreamEntry {
+                    source: if is_remote {
+                        server::handles::Source::Upstream {
+                            url: source_str,
+                            cache: if cache_str.is_empty() { None } else { Some(cache_str) },
+                        }
+                    } else {
+                        server::handles::Source::File(source_str)
+                    },
+                    mime: if mime_str.is_empty() { None } else { Some(mime_str) },
+                    expires_at_ms: if expires_at_ms == 0 { None } else { Some(expires_at_ms) },
+                };
+                handle.stream_url(&server::handles::register(entry))
+            }
+        }
+    })
+}
+
+/// JNI Bridge: Drop a registration once the player is done with it.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetLocalStreamNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: JString<'local>,
+) {
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let handle_str = handle.mutf8_chars(env)?.to_string();
+        server::handles::forget(&handle_str);
         Ok(())
     });
 }
@@ -187,7 +412,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveYouTub
                 Some(dir) => dir,
                 None => "/data/data/com.varuna.rustify/cache".to_string(),
             };
-            youtube::server::resolve_youtube_id_direct(&tid, yid_opt.as_deref(), &cache_dir).await
+            youtube::server::resolve_youtube_id_direct::<env::android::AndroidEnv>(&tid, yid_opt.as_deref(), &cache_dir).await
         });
         async_result.unwrap_or_default()
     })
@@ -202,7 +427,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateQueueNa
     let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
         let json_str = track_ids_json.mutf8_chars(env)?.to_string();
         let track_ids: Vec<String> = serde_json::from_str(&json_str).unwrap_or_default();
-        youtube::server::update_playback_queue(track_ids);
+        youtube::server::update_playback_queue::<env::android::AndroidEnv>(track_ids);
         Ok(())
     });
 }
@@ -1089,11 +1314,9 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
     let _ = jni_bridge!(env_unowned, |env| {
         get_runtime().spawn(async {
             eprintln!("[Spotify] Background hash warmup started...");
-            let client_clone = {
-                let client = spotify::client::get_spotify_client().read().unwrap();
-                client.clone_http()
-            };
-            match spotify::client::scrape_gql_hashes_with_client(&client_clone).await {
+            // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
+            // type parameter, so nothing has to be cloned out of the lock to make the call.
+            match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
                 Ok(new_hashes) => {
                     let client = spotify::client::get_spotify_client().read().unwrap();
                     client.update_gql_hashes(new_hashes);

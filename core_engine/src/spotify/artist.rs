@@ -4,11 +4,12 @@
 // GET requests now use 100% GraphQL via api-partner.spotify.com,
 // completely bypassing REST blocks for Free accounts.
 
+use crate::env::Env;
 use crate::spotify::client::*;
 use crate::spotify::models::*;
 use serde_json::json;
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Fetch artist details via GraphQL API.
     pub async fn get_artist(&self, id: &str) -> SpotifyResult<FullArtist> {
         let uri = format!("spotify:artist:{}", id);

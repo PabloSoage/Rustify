@@ -59,6 +59,76 @@ object NativeEngine {
      */
     external fun updateQueueNative(trackIdsJson: String)
 
+    // ── Addons: installable audio backends (3.3) ────────────────────────────────────────────
+    //
+    // A backend stops being "code plus a release" and becomes a URL. What an addon is told about a
+    // track is the whole of `AddonTrackQuery` and nothing else: no Spotify token, no cookie, no
+    // account id ever reaches one.
+
+    /**
+     * Installs an addon served at [url]. Fetches and validates its manifest first, so one that is
+     * unreachable, served over plain http, pointing at a private address, or badly described never
+     * reaches the installed list.
+     *
+     * @return the addon as JSON, or `{"success":false,"error":"..."}`.
+     */
+    external fun installAddonNative(url: String): String
+
+    /** The installed addons as a JSON array, in the order they are tried. */
+    external fun listAddonsNative(): String
+
+    external fun uninstallAddonNative(id: String): String
+
+    /** Turns an addon off without losing the installation. */
+    external fun setAddonEnabledNative(id: String, enabled: Boolean): String
+
+    /** Reorders the fallback chain. [idsJson] is a JSON array of addon ids. */
+    external fun reorderAddonsNative(idsJson: String): String
+
+    /**
+     * Asks one addon to resolve a track.
+     *
+     * @return the answer as JSON, `{}` when the addon does not have this track — a normal outcome
+     *   meaning "move on to the next provider" — or `{"success":false,...}` on failure.
+     */
+    external fun resolveViaAddonNative(addonId: String, queryJson: String): String
+
+    // ── Local streaming server (3.2) ────────────────────────────────────────────────────────
+    //
+    // Lets Media3 play an ordinary http:// URL instead of needing a custom DataSource for the disk
+    // cache and for decryption. The server binds 127.0.0.1 only, on an ephemeral port, and every
+    // request carries a per-process token: on Android any installed app can reach localhost, so
+    // binding to loopback is necessary and nowhere near sufficient.
+
+    /**
+     * Starts the loopback streaming server, or returns the one already running.
+     * @return `{"port":N,"token":"..."}`, or `{"success":false,"error":"..."}` on failure.
+     */
+    external fun startLocalServerNative(): String
+
+    /**
+     * Registers something for the local server to serve.
+     *
+     * @param source a path on this device, or an `http(s)` URL to fetch on first request.
+     * @param mime advisory content type; empty for `application/octet-stream`.
+     * @param cachePath where an upstream is stored. Empty means "do not cache", and an upstream
+     *   registration with no cache path is refused — there would be nowhere to put the bytes.
+     * @param expiresAtMs epoch millis after which the registration is dropped; 0 never expires.
+     *   Upstream URLs do expire (a googlevideo URL lasts about six hours) and serving a dead one is
+     *   worse than refusing.
+     * @return the URL to hand to the player, or an empty string if the server is not running — in
+     *   which case the caller plays the upstream URL directly, exactly as it did before.
+     */
+    external fun registerLocalStreamNative(
+        source: String,
+        mime: String,
+        cachePath: String,
+        expiresAtMs: Long
+    ): String
+
+    /** Drops a registration once the player is done with it. */
+    external fun forgetLocalStreamNative(handle: String)
+
     /**
      * Sets the Accept-Language header for the Spotify Client
      */

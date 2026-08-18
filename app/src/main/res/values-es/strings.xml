@@ -26,6 +26,13 @@
     <string name="backend_ytdlp">yt-dlp (YouTube)</string>
     <string name="backend_invidious">Invidious (YouTube)</string>
     <string name="backend_deezer">Deezer (HiFi / FLAC)</string>
+    <string name="backend_addon">Complemento</string>
+    <string name="settings_addons">Complementos</string>
+    <string name="settings_addons_desc">Instala un backend de audio por URL. Se suma a las listas de arriba, así que puedes ordenarlo y desactivarlo como cualquier otro.</string>
+    <string name="settings_addons_empty">No hay complementos instalados.</string>
+    <string name="settings_addons_url_label">URL del complemento (https)</string>
+    <string name="settings_addons_install">Instalar</string>
+    <string name="settings_addons_privacy">A un complemento se le dice el título, los artistas, la duración y los identificadores de la canción que se está resolviendo, y nada más. Nunca recibe tu sesión de Spotify, y las canciones guardadas en este dispositivo no se envían nunca.</string>
     <string name="egg_found_title">🦀 ¡Lo encontraste!</string>
     <string name="egg_found_msg">Hecho con Rust, Kotlin y demasiado café. Pícale al cangrejo…</string>
     <string name="egg_jojo_msg">El tiempo se detiene. La historia continúa en otra parte…</string>

@@ -2,13 +2,14 @@
 //
 // Browse/Home endpoints using the GraphQL API, matching the Spotube plugin.
 
+use crate::env::Env;
 use crate::spotify::client::{SpotifyClient, SpotifyResult};
 use crate::spotify::models::*;
 use serde_json::json;
 
 const HASH_HOME: &str = "d62af2714f2623c923cc9eeca4b9545b4363abaa9188a9e94e2b63b823419a2c";
 
-impl SpotifyClient {
+impl<E: Env> SpotifyClient<E> {
     /// Fetch the home/browse sections via GraphQL home query.
     pub async fn get_browse_sections(&self, limit: u32) -> SpotifyResult<Vec<BrowseSection>> {
         let variables = json!({

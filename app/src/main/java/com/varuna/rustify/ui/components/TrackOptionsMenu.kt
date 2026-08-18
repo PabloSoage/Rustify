@@ -1,6 +1,7 @@
 
 package com.varuna.rustify.ui.components
 
+import com.varuna.rustify.bridge.TrackRef
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -426,8 +427,8 @@ fun TrackOptionsMenuBottomSheet(
                     }
                 )
 
-                val isLocalTrack = track.id?.startsWith("local:") == true
-                val isYtmTrack = track.id?.startsWith("ytm:") == true
+                val isLocalTrack = TrackRef.isLocal(track.id)
+                val isYtmTrack = TrackRef.isYtm(track.id)
 
                 // Local favorite (only for "local:" tracks).
                 if (isLocalTrack) {
@@ -545,7 +546,7 @@ fun TrackOptionsMenuBottomSheet(
                             icon = Icons.Default.Share,
                             label = stringResource(R.string.track_menu_share),
                             onClick = {
-                                val videoId = track.id?.removePrefix("ytm:") ?: ""
+                                val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
                                 com.varuna.rustify.util.ShareUtils.shareYtmLink(context, "https://music.youtube.com/watch?v=$videoId")
                                 onDismiss()
                             }
@@ -557,7 +558,7 @@ fun TrackOptionsMenuBottomSheet(
                                 icon = Icons.Default.Share,
                                 label = stringResource(R.string.track_menu_share_rustify),
                                 onClick = {
-                                    val videoId = track.id?.removePrefix("ytm:") ?: ""
+                                    val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
                                     com.varuna.rustify.util.ShareUtils.shareRustifyUrl(
                                         context,
                                         url = "https://music.youtube.com/watch?v=$videoId",
