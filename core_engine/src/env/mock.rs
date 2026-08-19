@@ -4,9 +4,42 @@
 // when a test moves it. This is the payoff of the whole abstraction — before it there was no way to
 // exercise the engine without a network and a device.
 
-use super::{Env, EnvError, HttpRequest, HttpResponse, LogLevel, TryEnvFuture};
+use super::{
+    ByteStream, Env, EnvError, HttpRequest, HttpResponse, HttpResponseHead, LogLevel, TryEnvFuture,
+};
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
+
+/// How a canned body is cut up by [`Env::fetch_stream`].
+///
+/// **Deliberately hostile sizes.** A real network hands over whatever it feels like, and the one
+/// assumption that would quietly break the Deezer proxy is "a chunk ends where a stripe ends". So
+/// the default pattern is primes and near-misses around the 2048-byte stripe: 1 byte, 7, one short
+/// of a stripe, exactly a stripe, and two and a half. A test that passes against this cannot be
+/// passing by alignment luck.
+const DEFAULT_CHUNK_SIZES: [usize; 6] = [1, 7, 2047, 2048, 5000, 3];
+
+/// Splits `body` following `sizes`, cycling through them. An empty `sizes` means one chunk.
+fn split_into_chunks(body: &[u8], sizes: &[usize]) -> Vec<Bytes> {
+    if body.is_empty() {
+        return Vec::new();
+    }
+    if sizes.is_empty() {
+        return vec![Bytes::copy_from_slice(body)];
+    }
+    let mut chunks = Vec::new();
+    let mut offset = 0;
+    let mut i = 0;
+    while offset < body.len() {
+        let want = sizes[i % sizes.len()].max(1);
+        let end = offset.saturating_add(want).min(body.len());
+        chunks.push(Bytes::copy_from_slice(&body[offset..end]));
+        offset = end;
+        i += 1;
+    }
+    chunks
+}
 
 #[derive(Debug, Default)]
 pub struct MockState {
@@ -20,6 +53,17 @@ pub struct MockState {
     pub requests: Vec<HttpRequest>,
     pub now_ms: i64,
     pub logs: Vec<(LogLevel, String, String)>,
+    /// Chunk sizes `fetch_stream` cuts a canned body into, cycled. See [`DEFAULT_CHUNK_SIZES`].
+    pub stream_chunk_sizes: Vec<usize>,
+}
+
+impl MockState {
+    fn fresh() -> Self {
+        MockState {
+            stream_chunk_sizes: DEFAULT_CHUNK_SIZES.to_vec(),
+            ..MockState::default()
+        }
+    }
 }
 
 static STATE: OnceLock<Mutex<MockState>> = OnceLock::new();
@@ -31,7 +75,7 @@ static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn state() -> MutexGuard<'static, MockState> {
     STATE
-        .get_or_init(|| Mutex::new(MockState::default()))
+        .get_or_init(|| Mutex::new(MockState::fresh()))
         .lock()
         // A panic inside one test must not cascade into "poisoned" failures in every later one.
         .unwrap_or_else(|e| e.into_inner())
@@ -41,7 +85,7 @@ pub fn state() -> MutexGuard<'static, MockState> {
 #[must_use = "the guard must outlive the test, or another test will race with it"]
 pub fn lock_and_reset() -> MutexGuard<'static, ()> {
     let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    *state() = MockState::default();
+    *state() = MockState::fresh();
     guard
 }
 
@@ -115,6 +159,31 @@ impl Env for MockEnv {
         })
     }
 
+
+    fn fetch_stream(req: HttpRequest) -> TryEnvFuture<(HttpResponseHead, ByteStream)> {
+        let url = req.url.clone();
+        let (found, sizes) = {
+            let mut state = state();
+            state.requests.push(req);
+            let found = state.responses.get(&url).cloned().or_else(|| {
+                state
+                    .response_prefixes
+                    .iter()
+                    .find(|(prefix, _)| url.starts_with(prefix.as_str()))
+                    .map(|(_, response)| response.clone())
+            });
+            (found, state.stream_chunk_sizes.clone())
+        };
+        Box::pin(async move {
+            let response =
+                found.ok_or_else(|| EnvError::Fetch(format!("no canned response for {url}")))?;
+            let head = HttpResponseHead {
+                status: response.status,
+                headers: response.headers.clone(),
+            };
+            Ok((head, ByteStream::from_chunks(split_into_chunks(&response.body, &sizes))))
+        })
+    }
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>> {
         let value = state().storage.get(key).cloned();
         Box::pin(async move { Ok(value) })

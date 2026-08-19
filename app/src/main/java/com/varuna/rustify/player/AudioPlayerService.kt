@@ -78,6 +78,15 @@ class AudioPlayerService private constructor(private val context: Context) {
         /** Past this point into a track, "previous" restarts it instead of going back a track. */
         private const val PREVIOUS_RESTART_THRESHOLD_MS = 10_000L
 
+        /**
+         * How a URL served by our own loopback server is recognised.
+         *
+         * Three decisions hang off it — which `DataSource` to use, whether the URL may be persisted
+         * across sessions, and whether a failure means the cached copy is bad — so it is one
+         * constant rather than three string literals that could drift apart.
+         */
+        private const val LOOPBACK_PREFIX = "http://127.0.0.1:"
+
         @Volatile
         private var downloadCache: SimpleCache? = null
 
@@ -533,7 +542,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     // play — and it has to be listed here or that case retries with a backoff and
                     // then gives up, on a track that plays perfectly well from its backend.
                     if (cause.responseCode == 404 &&
-                        cause.dataSpec.uri.toString().startsWith("http://127.0.0.1:")
+                        cause.dataSpec.uri.toString().startsWith(LOOPBACK_PREFIX)
                     ) {
                         isExpiredUrl = true
                         currentTrackId?.let {
@@ -939,12 +948,15 @@ class AudioPlayerService private constructor(private val context: Context) {
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
-                // Only ever the upstream URL, never the loopback one: the port and the token are
-                // good for this process only, so persisting one would hand the next session a URL
-                // that cannot connect to anything.
+                // Only ever the upstream URL, never a loopback one: the port and the token are good
+                // for this process only, so persisting one would hand the next session a URL that
+                // cannot connect to anything. A backend can produce one directly now — Deezer
+                // returns the proxy URL — so this checks the URL rather than where it came from.
                 val persistable = streamUrl
                 if (!TrackRef.isLocal(trackId) && !isLocalStream && !isDeezerStream &&
-                    !persistable.isNullOrBlank() && !persistable.startsWith("deezer://")
+                    !persistable.isNullOrBlank() &&
+                    !persistable.startsWith("deezer://") &&
+                    !persistable.startsWith(LOOPBACK_PREFIX)
                 ) {
                     putCachedStreamUrl(trackId, persistable)
                 }
@@ -960,11 +972,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                         DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
                             .createMediaSource(mediaItem)
                     }
-                    routedUrl != null -> {
-                        // Straight off the loopback server. Deliberately not through
-                        // `cacheDataSourceFactory`: these bytes are already on disk, and putting
-                        // Media3's own cache in front of them would store a second copy of a file
-                        // this device already has.
+                    playbackUrl.startsWith(LOOPBACK_PREFIX) -> {
+                        // Straight off the loopback server — either from the stream cache, or the
+                        // Deezer proxy decrypting as it goes. Checked on the URL rather than on
+                        // `routedUrl`, because since 3.2 a backend can hand one back directly.
+                        //
+                        // Deliberately not through `cacheDataSourceFactory`: cached bytes are
+                        // already on this device, and Media3's own cache in front of them would
+                        // store a second copy of a file we already have.
                         android.util.Log.d("AudioPlayerService", "Serving $trackId from the local server")
                         DefaultMediaSourceFactory(androidx.media3.datasource.DefaultHttpDataSource.Factory())
                             .createMediaSource(mediaItem)
@@ -1828,7 +1843,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             // If it was playing from the stream cache, that file is what just failed — drop it, or
             // a corrupt entry would be served again on every retry and nothing short of emptying the
             // whole cache could clear it. A retry of a network stream leaves the cache alone.
-            if (resolvedStreamUrls[it]?.startsWith("http://127.0.0.1:") == true) {
+            if (resolvedStreamUrls[it]?.startsWith(LOOPBACK_PREFIX) == true) {
                 com.varuna.rustify.audio.StreamRouting.forget(context, it)
             }
             resolvedStreamUrls.remove(it)

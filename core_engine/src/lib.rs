@@ -313,18 +313,25 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startLocalSer
 #[serde(rename_all = "camelCase")]
 struct RegisterStreamRequest {
     /// Where the bytes come from. Must be `http(s)`: local music is deliberately not routed.
+    #[serde(default)]
     upstream_url: String,
-    /// Stable per track, per backend and per format.
+    /// Stable per track, per backend and per format. Not used in `"proxy"` mode.
+    #[serde(default)]
     cache_key: String,
     #[serde(default)]
     cache_root: String,
     #[serde(default)]
     mime: String,
-    /// Set when the bytes are Deezer-encrypted, so the fill knows to decrypt them on the way in.
+    /// Set when the bytes are Deezer-encrypted, so the fill knows to decrypt them on the way in —
+    /// and, in `"proxy"` mode, so the server knows what key to decrypt them *with*.
     #[serde(default)]
     deezer_sng_id: String,
     #[serde(default)]
     ttl_ms: i64,
+    /// `"cache"` (the default) asks whether the track is already on disk. `"proxy"` asks for a URL
+    /// that streams and decrypts straight from the CDN — for a track nothing has stored yet.
+    #[serde(default)]
+    mode: String,
 }
 
 #[derive(serde::Serialize)]
@@ -354,6 +361,37 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocal
         let raw = request_json.mutf8_chars(env)?.to_string();
         match serde_json::from_str::<RegisterStreamRequest>(&raw) {
             Err(_) => r#"{"status":"refused","reason":"bad request"}"#.to_string(),
+            Ok(request) if request.mode == "proxy" => {
+                let answer = match server::register_proxy::<env::android::AndroidEnv>(
+                    &request.upstream_url,
+                    &request.deezer_sng_id,
+                    if request.mime.is_empty() {
+                        None
+                    } else {
+                        Some(request.mime)
+                    },
+                    if request.ttl_ms > 0 {
+                        Some(request.ttl_ms)
+                    } else {
+                        None
+                    },
+                ) {
+                    Some(url) => RegisterStreamAnswer {
+                        status: "ready",
+                        url: Some(url),
+                        reason: None,
+                    },
+                    // The server is not up, or the request was not something to proxy. Either way
+                    // the caller falls back to playing it the way it did before.
+                    None => RegisterStreamAnswer {
+                        status: "notCached",
+                        url: None,
+                        reason: None,
+                    },
+                };
+                serde_json::to_string(&answer)
+                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
+            }
             Ok(request) => {
                 let cache_root = request.cache_root;
                 let registration = server::Registration {

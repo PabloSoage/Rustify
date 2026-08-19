@@ -116,6 +116,47 @@ object LocalStreamServer {
         }
     }
 
+    /**
+     * Registers an encrypted Deezer track to be **streamed and decrypted through the server**, and
+     * returns the URL to play.
+     *
+     * The other half of [registerReady], and the answer to a different question. That one asks "is
+     * this already on disk?" and says nothing if it is not. This one says "play this now, from the
+     * CDN" — nothing has to be downloaded first, because the decryption happens to the bytes as they
+     * pass through.
+     *
+     * @return the loopback URL, or null when the server is not running — in which case the caller
+     *   plays the track the way it did before this existed.
+     */
+    suspend fun registerDeezerProxy(
+        upstreamUrl: String,
+        sngId: String,
+        mime: String? = null
+    ): String? {
+        if (upstreamUrl.isBlank() || sngId.isBlank()) return null
+        if (!ensureStarted()) return null
+
+        val request = JSONObject().apply {
+            put("mode", "proxy")
+            put("upstreamUrl", upstreamUrl)
+            put("deezerSngId", sngId)
+            mime?.let { put("mime", it) }
+        }
+
+        val raw = runCatching { NativeEngine.registerLocalStream(request.toString()) }
+            .onFailure { Log.w(TAG, "registerLocalStream (proxy) threw", it) }
+            .getOrNull() ?: return null
+
+        return runCatching {
+            JSONObject(raw).takeIf { it.optString("status") == "ready" }
+                ?.optString("url")
+                ?.takeIf { it.isNotBlank() }
+        }.getOrElse {
+            Log.w(TAG, "could not read the proxy registration answer: $raw", it)
+            null
+        }
+    }
+
     /** Drops a registration. The handle is the last path segment of the URL [registerReady] gave. */
     fun forget(streamUrl: String) {
         val handle = streamUrl.substringAfterLast("/stream/", "").substringBefore('?')

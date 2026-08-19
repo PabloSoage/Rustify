@@ -1,6 +1,6 @@
 [package]
 name = "core_engine"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 
 [lib]
@@ -54,6 +54,15 @@ urlencoding = "2.1.3"
 # HTTP Basic auth headers. Was reqwest's `.basic_auth()` before the Env trait moved requests to
 # plain data; a hand-rolled encoder is 15 lines nobody would test as hard as this crate is.
 base64 = "0.22"
+
+# Streaming response bodies (3.2). `Env::fetch_stream` hands back the body a chunk at a time so the
+# local server can decrypt Deezer stripes as they arrive instead of downloading the whole track
+# first. Already in the tree via `reqwest` and `hyper`, so declaring it costs nothing in binary size
+# — it just stops us borrowing a transitive dependency by accident.
+#
+# No `futures-*`: the chunks travel through a `tokio::sync::mpsc` channel rather than a boxed
+# `Stream`, because `http_body_util::BoxBody` requires `Send + Sync` and a boxed stream is not.
+bytes = "1"
 
 # Deezer stream decryption (3.1). Deezer serves tracks Blowfish/CBC-encrypted in 2048-byte stripes;
 # this used to be Kotlin-only (`DeezerCrypto.kt`), which meant the Windows and iOS ports would each

@@ -6,22 +6,36 @@
 // upstream URL in its query string is an open proxy, reachable by any app on the device that can
 // guess the port. Callers register what they want served and get back a name for it.
 //
-// Since 3.1 an entry is always a **file that already exists**. It used to be able to name an
-// upstream URL to be fetched on first request, which meant a request could arrive for something
-// not downloaded yet and had to be answered `503 Retry-After` while a background fill ran. Nothing
-// ever benefited from that: the player is told the loopback URL only once the bytes are on disk,
-// and otherwise plays the upstream URL itself. Deciding at registration instead of at request time
-// deleted the 503 path, the fallback dance in the player, and a whole enum.
+// An entry is one of exactly two things, and the difference between them is the rule 3.1
+// established and 3.2 keeps: **the server never waits for a download.**
+//
+// 3.1 removed an earlier shape where an entry could name an upstream URL to be fetched on first
+// request, which meant a request could arrive for something not downloaded yet and had to be
+// answered `503 Retry-After` while a fill ran in the background. That is gone and stays gone.
+// [`Served::DeezerProxy`] is not a return to it: a proxy entry is created **deliberately, to play
+// right now**, never as a fallback for a file that turned out to be missing. It streams — it does
+// not download and then answer.
 
 use crate::env::Env;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+/// Where the bytes of a registered stream come from.
+#[derive(Debug, Clone)]
+pub enum Served {
+    /// A file on this device, complete. Registration happens after the download, never before.
+    File(String),
+    /// Deezer's CDN, decrypted stripe by stripe on the way through — see [`super::proxy`].
+    ///
+    /// The URL is held here rather than in the request path for the reason the whole handle table
+    /// exists: a server that accepts an upstream URL from its caller is an open proxy for every
+    /// other app on the device.
+    DeezerProxy { url: String, sng_id: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamEntry {
-    /// A path on this device. The file is expected to be complete: registration happens after the
-    /// download, never before it.
-    pub path: String,
+    pub served: Served,
     pub mime: Option<String>,
     /// Epoch millis after which the entry is refused. `None` means it does not expire.
     ///
@@ -92,7 +106,7 @@ mod tests {
 
     fn entry(expires_at_ms: Option<i64>) -> StreamEntry {
         StreamEntry {
-            path: "/tmp/a.mp3".into(),
+            served: Served::File("/tmp/a.mp3".into()),
             mime: Some("audio/mpeg".into()),
             expires_at_ms,
         }

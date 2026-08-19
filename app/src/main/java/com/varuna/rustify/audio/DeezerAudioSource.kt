@@ -37,15 +37,36 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
             val arl = DeezerArl.ensureArl(appContext) ?: error("no working Deezer ARL")
             val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(appContext))
                 ?: error("Deezer resolve failed (track not on Deezer or format unavailable)")
-            val b64 = Base64.encodeToString(media.url.toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
+            val mime = if (media.format.contains("FLAC", true)) "audio/flac" else "audio/mpeg"
+
+            // Since 3.2 the local server can decrypt as the bytes arrive, so even the first play of
+            // a track nothing has stored yet is an ordinary http:// URL: no custom `DataSource`, and
+            // seeking is a real HTTP `Range` instead of a hand-rolled reimplementation of one.
+            //
+            // Behind the same switch as everything else the server does. "Stored songs" off has to
+            // mean the app behaves as it did in 2.12.14, and that only holds if it covers this too.
+            val proxied = if (StreamRouting.isEnabled(appContext)) {
+                com.varuna.rustify.bridge.LocalStreamServer
+                    .registerDeezerProxy(media.url, media.sngId, mime)
+            } else {
+                null
+            }
+
+            // The fallback is not optional. If the server did not come up — or the user turned the
+            // whole thing off — Deezer still has to play, and this is exactly what it did before.
+            val fallback = "deezer://${media.sngId}?u=" +
+                Base64.encodeToString(
+                    media.url.toByteArray(Charsets.UTF_8),
+                    Base64.URL_SAFE or Base64.NO_WRAP
+                )
+
             StreamInfo(
-                uri = "deezer://${media.sngId}?u=$b64",
-                mimeType = if (media.format.contains("FLAC", true)) "audio/flac" else "audio/mpeg",
-                requiresProxy = true,
-                // The reason the local server exists. The bytes go into the cache **decrypted**, by
-                // the Rust side, so the second play is an ordinary file behind an ordinary URL and
-                // needs no custom `DataSource` at all — no ARL, no re-resolve, and seeking works
-                // because it is a real HTTP `Range` over a real file.
+                uri = proxied ?: fallback,
+                mimeType = mime,
+                requiresProxy = proxied == null,
+                // Still worth caching even when the proxy is playing it: the proxy re-fetches from
+                // the CDN on every play and needs the ARL-derived URL to still be alive, and the
+                // cache needs neither.
                 cache = CacheHint(upstreamUrl = media.url, deezerSngId = media.sngId)
             )
         }

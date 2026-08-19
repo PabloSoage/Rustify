@@ -20,17 +20,23 @@
 // **Nothing is ever downloaded while a request is waiting.** Since 3.1 that is structural rather
 // than careful: [`register`] hands back a loopback URL only when the file is already on disk, and
 // otherwise says so, so the caller keeps playing the upstream URL exactly as it did before this
-// server existed. Everything this serves is therefore a local file that already exists — which is
-// what let the `503 Retry-After` path, the `Source` enum and the fallback dance in the player all
+// server existed. That is what let the `503 Retry-After` path and the fallback dance in the player
 // go away at once.
+//
+// 3.2 adds the second thing it can serve, and it does not weaken that rule: an encrypted Deezer
+// track, **streamed** from the CDN and decrypted stripe by stripe as it passes through
+// ([`proxy`]). Nothing is downloaded first there either — the first byte out is produced from the
+// first stripe in. A proxy entry is registered deliberately, to play now, never as a fallback for a
+// file that turned out to be missing, which is the distinction that keeps the 503 buried.
 
 pub mod cache;
 pub mod fill;
 pub mod handles;
+pub mod proxy;
 pub mod range;
 
-use crate::env::{Env, EnvError, LogLevel};
-use handles::StreamEntry;
+use crate::env::{Env, EnvError, HttpRequest, LogLevel};
+use handles::{Served, StreamEntry};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Bytes, Frame, SizeHint};
@@ -60,6 +66,12 @@ const CHUNK_BYTES: usize = 64 * 1024;
 /// from under it. A day is long enough that no listening session outlives it, and short enough that
 /// the table cannot grow without bound across weeks of use.
 const DEFAULT_TTL_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// How long a Deezer proxy registration stays valid.
+///
+/// Two hours rather than a day, because behind it is a CDN URL with its own expiry. Outliving what
+/// it points at buys nothing and turns "this track is over" into "this track fails oddly".
+const PROXY_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 
 /// What the app needs to build URLs for this server.
 #[derive(Debug, Clone)]
@@ -242,7 +254,7 @@ pub fn register<E: Env>(request: Registration, cache_root: &str) -> Registered {
     // put an await between "is it there" and "hand out its URL".
     if path.is_file() {
         let entry = StreamEntry {
-            path: path_str,
+            served: Served::File(path_str),
             mime: request.mime,
             expires_at_ms: Some(E::now_ms() + request.ttl_ms.unwrap_or(DEFAULT_TTL_MS)),
         };
@@ -265,6 +277,38 @@ pub fn register<E: Env>(request: Registration, cache_root: &str) -> Registered {
         Some(cache_root.to_owned()),
     );
     Registered::NotCached
+}
+
+/// Registers an encrypted Deezer track to be **streamed and decrypted on the way through**.
+///
+/// Separate from [`register`] because it answers a different question. `register` asks "is this
+/// already on disk?" and refuses to start anything if the answer is no. This one is a deliberate
+/// "play this now, from the CDN", and it always succeeds when the server is up — there is nothing
+/// to wait for, because the decryption happens as the bytes arrive rather than before they do.
+///
+/// Returns `None` when the server is not running, which the caller handles by playing the track the
+/// way it did before this existed.
+pub fn register_proxy<E: Env>(
+    url: &str,
+    sng_id: &str,
+    mime: Option<String>,
+    ttl_ms: Option<i64>,
+) -> Option<String> {
+    let server = current()?;
+    if !(url.starts_with("http://") || url.starts_with("https://")) || sng_id.is_empty() {
+        return None;
+    }
+    let entry = StreamEntry {
+        served: Served::DeezerProxy {
+            url: url.to_owned(),
+            sng_id: sng_id.to_owned(),
+        },
+        mime,
+        // Shorter than a cache entry's day by default: behind this handle is a CDN URL that expires,
+        // and a handle that outlives what it points at only produces confusing failures later.
+        expires_at_ms: Some(E::now_ms() + ttl_ms.unwrap_or(PROXY_TTL_MS)),
+    };
+    Some(server.stream_url(&handles::register::<E>(entry)))
 }
 
 // =============================================================================
@@ -338,7 +382,25 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
         None => return text(StatusCode::NOT_FOUND, "unknown handle"),
     };
 
-    let metadata = match tokio::fs::metadata(&entry.path).await {
+    let mime = entry
+        .mime
+        .clone()
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+
+    match &entry.served {
+        Served::File(path) => serve_file::<E>(path, &mime, range_header).await,
+        Served::DeezerProxy { url, sng_id } => {
+            serve_proxy::<E>(url, sng_id, &mime, range_header).await
+        }
+    }
+}
+
+async fn serve_file<E: Env>(
+    path: &str,
+    mime: &str,
+    range_header: Option<&str>,
+) -> Response<ResBody> {
+    let metadata = match tokio::fs::metadata(path).await {
         Ok(m) => m,
         // The cache was swept between registration and this request. `404` rather than `500`: the
         // player treats it as a dead source and re-resolves, which is the outcome that recovers.
@@ -346,13 +408,12 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
             E::log(
                 LogLevel::Warn,
                 "LocalServer",
-                &format!("cannot stat {}: {e}", entry.path),
+                &format!("cannot stat {path}: {e}"),
             );
             return text(StatusCode::NOT_FOUND, "gone");
         }
     };
     let file_len = metadata.len();
-    let mime = entry.mime.as_deref().unwrap_or("application/octet-stream");
 
     let (status, start, len, content_range) = match range::parse(range_header, file_len) {
         range::RangeOutcome::Unsatisfiable => {
@@ -372,13 +433,13 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
         ),
     };
 
-    let body = match file_body(&entry.path, start, len).await {
+    let body = match file_body(path, start, len).await {
         Ok(body) => body,
         Err(e) => {
             E::log(
                 LogLevel::Warn,
                 "LocalServer",
-                &format!("cannot open {}: {e}", entry.path),
+                &format!("cannot open {path}: {e}"),
             );
             return text(StatusCode::INTERNAL_SERVER_ERROR, "read failed");
         }
@@ -395,6 +456,117 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
     builder
         .body(body)
         .unwrap_or_else(|_| text(StatusCode::INTERNAL_SERVER_ERROR, ""))
+}
+
+/// Serves an encrypted Deezer track straight off the CDN, decrypting it on the way through.
+///
+/// The arithmetic lives in [`proxy`] and is tested there; this function is the plumbing around it.
+async fn serve_proxy<E: Env>(
+    url: &str,
+    sng_id: &str,
+    mime: &str,
+    range_header: Option<&str>,
+) -> Response<ResBody> {
+    let mut intent = proxy::parse_intent(range_header);
+    let ranged = !matches!(intent, proxy::Intent::Whole);
+
+    // A suffix range (`bytes=-N`) is the one shape that cannot be stripe-aligned without knowing how
+    // big the file is, and there is no way to know that without asking. One byte is the cheapest
+    // question there is; if even that fails, serving from the start beats refusing.
+    if let proxy::Intent::Suffix(n) = intent {
+        intent = match probe_total::<E>(url).await {
+            Some(total) => proxy::resolve_suffix(n, total),
+            None => proxy::Intent::Whole,
+        };
+    }
+
+    let plan = proxy::plan_upstream(intent);
+    let mut request = HttpRequest::get(url);
+    if let Some(range) = &plan.upstream_range {
+        request = request.header("Range", range.clone());
+    }
+
+    let (head, stream) = match E::fetch_stream(request).await {
+        Ok(pair) => pair,
+        Err(e) => {
+            E::log(
+                LogLevel::Warn,
+                "LocalServer",
+                &format!("proxy could not reach the CDN: {e}"),
+            );
+            return text(StatusCode::BAD_GATEWAY, "upstream unreachable");
+        }
+    };
+
+    if !head.is_success() {
+        // **The upstream status is passed through, not collapsed into 502.** A Deezer URL that has
+        // expired answers 403 or 410, and that is exactly what `AudioPlayerService` keys on to drop
+        // the cached URL and re-resolve. Turning it into 502 would make that recovery unreachable —
+        // the mistake `docs/11` warned about and 3.0 already had to fix once.
+        let status =
+            StatusCode::from_u16(head.status).unwrap_or(StatusCode::BAD_GATEWAY);
+        E::log(
+            LogLevel::Warn,
+            "LocalServer",
+            &format!("CDN answered {} for a proxied track", head.status),
+        );
+        return text(status, "upstream refused");
+    }
+
+    // How big is the track? `Content-Range` says so when we asked for a range; otherwise
+    // `Content-Length` does, but only when we asked for the whole thing.
+    let total = head.content_range_total().or_else(|| {
+        if plan.aligned == 0 {
+            head.content_length()
+        } else {
+            None
+        }
+    });
+
+    let answer = proxy::answer(&plan, ranged, total);
+
+    if answer.status == 416 {
+        let mut builder = Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::ACCEPT_RANGES, "bytes");
+        if let Some(range) = answer.content_range {
+            builder = builder.header(header::CONTENT_RANGE, range);
+        }
+        return builder
+            .body(full_body(Bytes::new()))
+            .unwrap_or_else(|_| text(StatusCode::INTERNAL_SERVER_ERROR, ""));
+    }
+
+    let body = proxy::DecryptingBody::new(stream, sng_id, &plan, answer.remaining).boxed();
+
+    let mut builder = Response::builder()
+        .status(StatusCode::from_u16(answer.status).unwrap_or(StatusCode::OK))
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::ACCEPT_RANGES, "bytes");
+    if let Some(length) = answer.content_length {
+        builder = builder.header(header::CONTENT_LENGTH, length);
+    }
+    if let Some(range) = answer.content_range {
+        builder = builder.header(header::CONTENT_RANGE, range);
+    }
+    builder
+        .body(body)
+        .unwrap_or_else(|_| text(StatusCode::INTERNAL_SERVER_ERROR, ""))
+}
+
+/// Asks the CDN for one byte, purely to read the total size out of its `Content-Range`.
+///
+/// Only ever used for a suffix range, which players ask for rarely. Cheaper than the alternatives:
+/// a `HEAD` that some CDNs answer differently, or fetching the tail and discovering afterwards that
+/// it does not start on a stripe boundary.
+async fn probe_total<E: Env>(url: &str) -> Option<u64> {
+    let request = HttpRequest::get(url).header("Range", "bytes=0-0");
+    let response = E::fetch(request).await.ok()?;
+    if !response.is_success() {
+        return None;
+    }
+    let value = response.header("Content-Range")?;
+    value.rsplit('/').next()?.trim().parse().ok()
 }
 
 // =============================================================================

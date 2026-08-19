@@ -3,7 +3,11 @@
 // The Android implementation of [`Env`]. This is the only file in the engine that is allowed to
 // assume Android; everything above it is portable by construction.
 
-use super::{Env, EnvError, HttpRequest, HttpResponse, LogLevel, Method, TryEnvFuture};
+use super::{
+    ByteStream, Env, EnvError, HttpRequest, HttpResponse, HttpResponseHead, LogLevel, Method,
+    TryEnvFuture,
+};
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -36,6 +40,26 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// is a "this will never finish" detector: a FLAC on a bad connection can genuinely take minutes,
 /// and the 30 s request ceiling would kill every one of them.
 const DOWNLOAD_TIMEOUT_MS: u64 = 10 * 60 * 1000;
+
+/// A second client, for [`Env::fetch_stream`] only.
+///
+/// It exists because of one setting: [`HTTP`] carries a whole-request timeout, which is right for a
+/// request and wrong for a stream. A proxied track is a single HTTP response that stays open for the
+/// length of the song, so a thirty-second ceiling on it is a timer that cuts playback off in the
+/// middle of the third minute — and it would look like a network problem rather than like ours.
+///
+/// The connect timeout stays: failing to reach the CDN at all still has to give up.
+static STREAMING_HTTP: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn streaming_client() -> &'static reqwest::Client {
+    STREAMING_HTTP.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
 
 fn http_client() -> &'static reqwest::Client {
     HTTP.get_or_init(|| {
@@ -190,6 +214,63 @@ impl Env for AndroidEnv {
         })
     }
 
+
+    fn fetch_stream(req: HttpRequest) -> TryEnvFuture<(HttpResponseHead, ByteStream)> {
+        Box::pin(async move {
+            // Deliberately built without `http_client()`: that client carries a 30 s whole-request
+            // timeout, and a whole-request timeout on a stream is a timer that cuts the song off in
+            // the middle. This one bounds the connection and nothing else.
+            let client = streaming_client();
+            let mut builder = client.request(to_reqwest_method(req.method), &req.url);
+            for (name, value) in &req.headers {
+                builder = builder.header(name.as_str(), value.as_str());
+            }
+            if let Some(body) = req.body {
+                builder = builder.body(body);
+            }
+
+            let response = builder
+                .send()
+                .await
+                .map_err(|e| EnvError::Fetch(e.to_string()))?;
+
+            let head = HttpResponseHead {
+                status: response.status().as_u16(),
+                headers: response
+                    .headers()
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        value
+                            .to_str()
+                            .ok()
+                            .map(|value| (name.as_str().to_string(), value.to_string()))
+                    })
+                    .collect(),
+            };
+
+            // The body is pumped by its own task, feeding a bounded channel. That is what gives
+            // backpressure for free: when the player stops reading, `send` parks and the task stops
+            // pulling from the CDN — a paused track is not still downloading. And when the reader
+            // goes away, `send` fails, the task ends and the connection closes.
+            let (tx, stream) = ByteStream::channel();
+            crate::get_runtime().spawn(async move {
+                let mut response = response;
+                loop {
+                    let chunk = match response.chunk().await {
+                        Ok(Some(chunk)) => Ok(chunk),
+                        Ok(None) => break,
+                        Err(e) => Err(EnvError::Fetch(e.to_string())),
+                    };
+                    let failed = chunk.is_err();
+                    if tx.send(chunk).await.is_err() || failed {
+                        break;
+                    }
+                }
+            });
+
+            Ok((head, stream))
+        })
+    }
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>> {
         let path = storage_path(key);
         Box::pin(async move {

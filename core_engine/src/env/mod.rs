@@ -26,6 +26,9 @@ use serde::Serialize;
 use std::future::Future;
 use std::pin::Pin;
 
+use bytes::Bytes;
+
+
 /// A boxed future, because trait methods cannot return `impl Future` and stay usable here.
 /// `Send` is required: work started by the engine is handed to a multi-threaded Tokio runtime.
 pub type EnvFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -183,6 +186,104 @@ impl HttpRequest {
     }
 }
 
+
+/// A response's metadata, without its body — what a streaming fetch can hand back before the bytes
+/// have arrived.
+///
+/// Separate from [`HttpResponse`] rather than a field of it. Making `HttpResponse` a head plus an
+/// optional body would give every existing caller an `Option` to unwrap for a case that cannot
+/// happen to them, which is how a type stops carrying information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpResponseHead {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+}
+
+impl HttpResponseHead {
+    pub fn is_success(&self) -> bool {
+        (200..300).contains(&self.status)
+    }
+
+    /// Case-insensitive, because header names are.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    pub fn content_length(&self) -> Option<u64> {
+        self.header("Content-Length")?.trim().parse().ok()
+    }
+
+    /// The total size from a `Content-Range: bytes a-b/total`, when the server sent one.
+    ///
+    /// This is the only way to learn how big a track is when you asked for part of it, and the proxy
+    /// needs it to tell the player what it is seeking within. A `*` total means "I do not know",
+    /// which is not an error and not a number.
+    pub fn content_range_total(&self) -> Option<u64> {
+        let value = self.header("Content-Range")?;
+        let total = value.rsplit('/').next()?.trim();
+        total.parse().ok()
+    }
+}
+
+/// A response body arriving in pieces.
+///
+/// The pieces are whatever the network hands over: they are **not** aligned to anything, and a
+/// consumer that assumes otherwise is the bug this type exists to make visible. The Deezer proxy
+/// buffers them back into 2048-byte stripes precisely because it cannot assume.
+///
+/// A **channel** rather than a boxed `Stream`, for one concrete reason: this ends up inside
+/// `http_body_util::BoxBody`, which requires `Send + Sync`, and `Pin<Box<dyn Stream + Send>>` is not
+/// `Sync`. The alternative box that drops `Sync` also drops `Send`, and the server spawns its
+/// connections. A `Receiver` is both, and needs no trait imported to poll.
+///
+/// The channel is **bounded**, which is what makes backpressure free: a producer that has run ahead
+/// blocks on `send` until the player asks for more, so a paused track is not still downloading.
+pub struct ByteStream(tokio::sync::mpsc::Receiver<Result<Bytes, EnvError>>);
+
+impl ByteStream {
+    /// How far ahead of the reader a producer may get. Small on purpose — see above.
+    pub const BUFFERED_CHUNKS: usize = 4;
+
+    pub fn new(receiver: tokio::sync::mpsc::Receiver<Result<Bytes, EnvError>>) -> Self {
+        ByteStream(receiver)
+    }
+
+    /// A sender/receiver pair sized for streaming.
+    pub fn channel() -> (
+        tokio::sync::mpsc::Sender<Result<Bytes, EnvError>>,
+        ByteStream,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(Self::BUFFERED_CHUNKS);
+        (tx, ByteStream(rx))
+    }
+
+    /// Everything at once, for a body that is already in memory. No task, so a test is deterministic.
+    pub fn from_chunks(chunks: Vec<Bytes>) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(chunks.len().max(1));
+        for chunk in chunks {
+            // Cannot fail: the channel was sized to hold exactly this many and nobody else has it.
+            let _ = tx.try_send(Ok(chunk));
+        }
+        ByteStream(rx)
+    }
+
+    /// The next piece, or `None` when there are no more.
+    pub fn poll_chunk(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<Bytes, EnvError>>> {
+        self.0.poll_recv(cx)
+    }
+}
+
+impl std::fmt::Debug for ByteStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ByteStream")
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status: u16,
@@ -272,6 +373,22 @@ pub trait Env: 'static {
     /// A non-2xx status is an `Err`, unlike in `fetch` — there is no useful "response object" to
     /// hand back when the destination is a file.
     fn fetch_to_file(req: HttpRequest, path: &str) -> TryEnvFuture<u64>;
+
+    /// Performs the request and hands back the head plus the body **as it arrives**.
+    ///
+    /// The third mode, and the one the other two cannot cover. [`Env::fetch`] materialises the whole
+    /// body before anyone sees a byte of it, and [`Env::fetch_to_file`] writes it away and tells you
+    /// how much; neither lets a caller *transform bytes on their way through*. That is exactly what
+    /// serving an encrypted Deezer track requires: decrypt each stripe as it lands and emit it, so
+    /// playback starts on the first one rather than after the last.
+    ///
+    /// A non-2xx status is `Ok` with the status in the head, as in [`Env::fetch`] — a 403 from a
+    /// CDN is a successful fetch of an unsuccessful response, and the proxy needs to pass it on
+    /// rather than convert it into a transport failure.
+    ///
+    /// **No whole-request timeout.** A proxied stream lives as long as the track does, and a ceiling
+    /// here would cut playback off mid-song. Implementors bound the *connection*, not the transfer.
+    fn fetch_stream(req: HttpRequest) -> TryEnvFuture<(HttpResponseHead, ByteStream)>;
 
     /// `Ok(None)` means "no such key", which is not an error.
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>>;
