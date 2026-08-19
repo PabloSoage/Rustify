@@ -84,7 +84,7 @@ fun ArtistScreen(
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
     onViewAllSongs: (String) -> Unit = {},
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     var artistDetails by remember { mutableStateOf<FullArtist?>(null) }
     // Seed from the in-memory cache so returning from the miniplayer does not show a spinner.

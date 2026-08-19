@@ -92,7 +92,7 @@ fun PlaylistScreen(
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Local playlist: the id already carries the "localpl:" prefix resolved by routing.

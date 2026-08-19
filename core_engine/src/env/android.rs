@@ -72,6 +72,66 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+
+/// Clients that connect to one host at one pinned set of addresses.
+///
+/// Keyed by host plus the addresses, so a name that legitimately moves gets a new client rather than
+/// a stale one. `reqwest` can only pin at build time, hence a client per pinned host — add-ons are
+/// few, and a handful of pooled clients is a trade worth making to close DNS rebinding.
+static PINNED_HTTP: OnceLock<std::sync::Mutex<std::collections::HashMap<String, reqwest::Client>>> =
+    OnceLock::new();
+
+fn pinned_client(host: &str, addrs: &[std::net::SocketAddr]) -> reqwest::Client {
+    let key = {
+        let mut key = String::from(host);
+        for addr in addrs {
+            key.push('|');
+            key.push_str(&addr.to_string());
+        }
+        key
+    };
+    let map = PINNED_HTTP.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Ok(map) = map.lock() {
+        if let Some(client) = map.get(&key) {
+            return client.clone();
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(DEFAULT_REQUEST_TIMEOUT)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .resolve_to_addrs(host, addrs)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    if let Ok(mut map) = map.lock() {
+        // Bounded: an add-on list is short, and this is not a general-purpose cache. Clearing
+        // wholesale beats an eviction policy for something that should never reach ten entries.
+        if map.len() > 32 {
+            map.clear();
+        }
+        map.insert(key, client.clone());
+    }
+    client
+}
+
+/// The client for a request: the shared one, or a pinned one when the caller approved addresses.
+fn client_for(req: &HttpRequest) -> reqwest::Client {
+    if req.pin_to.is_empty() {
+        return http_client().clone();
+    }
+    match reqwest::Url::parse(&req.url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+    {
+        Some(host) => pinned_client(&host, &req.pin_to),
+        // A URL with no host cannot be pinned and cannot be fetched either; let the normal client
+        // produce the normal error rather than inventing one here.
+        None => http_client().clone(),
+    }
+}
+
 /// Keys live in their own subdirectory so they cannot collide with the loose JSON files the engine
 /// wrote before this abstraction existed (`youtube_mappings.json` and friends).
 fn storage_path(key: &str) -> Option<PathBuf> {
@@ -97,7 +157,7 @@ pub struct AndroidEnv;
 impl Env for AndroidEnv {
     fn fetch(req: HttpRequest) -> TryEnvFuture<HttpResponse> {
         Box::pin(async move {
-            let mut builder = http_client().request(to_reqwest_method(req.method), &req.url);
+            let mut builder = client_for(&req).request(to_reqwest_method(req.method), &req.url);
             for (name, value) in &req.headers {
                 builder = builder.header(name.as_str(), value.as_str());
             }
@@ -142,7 +202,7 @@ impl Env for AndroidEnv {
     fn fetch_to_file(req: HttpRequest, path: &str) -> TryEnvFuture<u64> {
         let path = PathBuf::from(path);
         Box::pin(async move {
-            let mut builder = http_client().request(to_reqwest_method(req.method), &req.url);
+            let mut builder = client_for(&req).request(to_reqwest_method(req.method), &req.url);
             for (name, value) in &req.headers {
                 builder = builder.header(name.as_str(), value.as_str());
             }
@@ -269,6 +329,19 @@ impl Env for AndroidEnv {
             });
 
             Ok((head, stream))
+        })
+    }
+
+    fn resolve_host(host: &str, port: u16) -> TryEnvFuture<Vec<std::net::SocketAddr>> {
+        let target = format!("{host}:{port}");
+        Box::pin(async move {
+            // `lookup_host` runs the platform resolver on a blocking pool, which is exactly what is
+            // wanted: the same answer the connection would have got, one step earlier, where it can
+            // still be refused.
+            let addrs = tokio::net::lookup_host(target.as_str())
+                .await
+                .map_err(|e| EnvError::Fetch(format!("could not resolve {target}: {e}")))?;
+            Ok(addrs.collect())
         })
     }
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>> {

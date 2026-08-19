@@ -131,7 +131,9 @@ object LocalStreamServer {
     suspend fun registerDeezerProxy(
         upstreamUrl: String,
         sngId: String,
-        mime: String? = null
+        mime: String? = null,
+        cacheKey: String? = null,
+        cacheRoot: String? = null
     ): String? {
         if (upstreamUrl.isBlank() || sngId.isBlank()) return null
         if (!ensureStarted()) return null
@@ -141,6 +143,12 @@ object LocalStreamServer {
             put("upstreamUrl", upstreamUrl)
             put("deezerSngId", sngId)
             mime?.let { put("mime", it) }
+            // Both, or neither: the copy is written as the track plays, so the server needs to know
+            // where before it starts. Leaving them out means "play it, do not keep it".
+            if (!cacheKey.isNullOrBlank() && !cacheRoot.isNullOrBlank()) {
+                put("cacheKey", cacheKey)
+                put("cacheRoot", cacheRoot)
+            }
         }
 
         val raw = runCatching { NativeEngine.registerLocalStream(request.toString()) }

@@ -213,6 +213,13 @@ pub fn answer(plan: &Plan, ranged: bool, total: Option<u64>) -> Answer {
 // THE BODY
 // =============================================================================
 
+/// One piece of a track on its way into the cache, or the note that says it all arrived.
+pub enum WritePart {
+    Data(Bytes),
+    /// Sent only after a clean end of stream. Without it the writer throws the partial file away.
+    Complete,
+}
+
 /// A response body that decrypts Deezer stripes as they come off the network.
 ///
 /// `Unpin` by construction: the upstream is already a `Pin<Box<…>>` and everything else is plain
@@ -230,6 +237,12 @@ pub struct DecryptingBody {
     /// Bytes still owed. `None` means "until upstream ends".
     remaining: Option<u64>,
     finished: bool,
+    /// Where a copy of the decrypted bytes goes, so the track lands in the cache **as it plays**
+    /// instead of being downloaded a second time in the background.
+    ///
+    /// Best effort, always: if the writer falls behind, this is dropped and playback carries on. A
+    /// cache is worth nothing if it can affect the thing it is meant to speed up.
+    sink: Option<tokio::sync::mpsc::Sender<WritePart>>,
 }
 
 impl DecryptingBody {
@@ -242,6 +255,40 @@ impl DecryptingBody {
             skip: plan.skip,
             remaining,
             finished: false,
+            sink: None,
+        }
+    }
+
+    /// Also write what comes out to `sink`.
+    ///
+    /// Only ever attached when this body is serving the **whole** track from the start: a partial
+    /// range would write a file with a hole in it, and a file with a hole is worse than no file
+    /// because nothing later can tell.
+    pub fn writing_through(mut self, sink: tokio::sync::mpsc::Sender<WritePart>) -> Self {
+        if self.skip == 0 && self.stripe_index == 0 && self.remaining.is_none() {
+            self.sink = Some(sink);
+        }
+        self
+    }
+
+    /// Passes a run of decrypted bytes to the cache writer, giving up on it if it cannot keep up.
+    fn tee(&mut self, data: &Bytes) {
+        let Some(sink) = self.sink.as_ref() else {
+            return;
+        };
+        // `try_send` and not `send`: this runs inside `poll_frame`, which cannot await, and a
+        // dropped chunk would silently corrupt the cached file. Falling behind means no cache
+        // entry, which is a missing optimisation rather than a wrong one.
+        if sink.try_send(WritePart::Data(data.clone())).is_err() {
+            self.sink = None;
+        }
+    }
+
+    /// Tells the writer the file is whole. Anything else — an error, a client that hung up, a
+    /// truncated upstream — leaves the sender to drop, and the writer discards what it has.
+    fn complete(&mut self) {
+        if let Some(sink) = self.sink.take() {
+            let _ = sink.try_send(WritePart::Complete);
         }
     }
 
@@ -302,7 +349,10 @@ impl Body for DecryptingBody {
                     this.stripe_index +=
                         deezer::decrypt_aligned(&this.key, &mut out, this.stripe_index);
                     match this.shape(out) {
-                        Some(data) => return Poll::Ready(Some(Ok(Frame::data(data)))),
+                        Some(data) => {
+                            this.tee(&data);
+                            return Poll::Ready(Some(Ok(Frame::data(data))));
+                        }
                         None => continue,
                     }
                 }
@@ -311,11 +361,19 @@ impl Body for DecryptingBody {
                     let tail = std::mem::take(&mut this.carry);
                     this.finished = true;
                     if tail.is_empty() {
+                        this.complete();
                         return Poll::Ready(None);
                     }
                     return match this.shape(tail) {
-                        Some(data) => Poll::Ready(Some(Ok(Frame::data(data)))),
-                        None => Poll::Ready(None),
+                        Some(data) => {
+                            this.tee(&data);
+                            this.complete();
+                            Poll::Ready(Some(Ok(Frame::data(data))))
+                        }
+                        None => {
+                            this.complete();
+                            Poll::Ready(None)
+                        }
                     };
                 }
             }

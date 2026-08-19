@@ -55,6 +55,14 @@ pub struct MockState {
     pub logs: Vec<(LogLevel, String, String)>,
     /// Chunk sizes `fetch_stream` cuts a canned body into, cycled. See [`DEFAULT_CHUNK_SIZES`].
     pub stream_chunk_sizes: Vec<usize>,
+    /// Host → the addresses it resolves to. Lets a test say "this name points at 127.0.0.1" and
+    /// watch the add-on layer refuse it, which is the whole of the DNS-rebinding defence.
+    pub dns: HashMap<String, Vec<std::net::IpAddr>>,
+}
+
+/// Says what `host` resolves to for the rest of the test.
+pub fn on_dns(host: impl Into<String>, addrs: Vec<std::net::IpAddr>) {
+    state().dns.insert(host.into(), addrs);
 }
 
 impl MockState {
@@ -182,6 +190,22 @@ impl Env for MockEnv {
                 headers: response.headers.clone(),
             };
             Ok((head, ByteStream::from_chunks(split_into_chunks(&response.body, &sizes))))
+        })
+    }
+
+    fn resolve_host(host: &str, port: u16) -> TryEnvFuture<Vec<std::net::SocketAddr>> {
+        let host = host.to_owned();
+        let canned = state().dns.get(&host).cloned();
+        Box::pin(async move {
+            // Loud when a test has not said what a name resolves to, for the same reason an
+            // unregistered URL is loud: silence would let the test describe something else.
+            let addrs = canned.ok_or_else(|| {
+                EnvError::Fetch(format!("no canned DNS answer for {host}"))
+            })?;
+            Ok(addrs
+                .into_iter()
+                .map(|ip| std::net::SocketAddr::new(ip, port))
+                .collect())
         })
     }
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>> {

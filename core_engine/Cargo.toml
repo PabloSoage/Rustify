@@ -1,6 +1,6 @@
 [package]
 name = "core_engine"
-version = "2.1.0"
+version = "3.0.0"
 edition = "2021"
 
 [lib]
@@ -21,7 +21,9 @@ jni = { version = "0.22.4", default-features = false }
 
 # High-performance asynchronous concurrency and threading.
 # `net` since 3.2: the local streaming server binds a TcpListener (see src/server/).
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "net"] }
+# `time` since 3.3: stated rather than inherited from reqwest — `tokio::time::timeout` bounds the
+# rustypipe calls, and a feature we rely on directly should be one we ask for directly.
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "net", "time"] }
 
 # Local streaming server on 127.0.0.1 — lets Media3 play a plain http:// URL instead of needing a
 # custom DataSource for the disk cache and for decryption. `reqwest` already pulls hyper 1.x, so

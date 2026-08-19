@@ -119,8 +119,9 @@ import com.varuna.rustify.ui.screens.YtMusicLocalPlaylistScreen
 import com.varuna.rustify.ui.screens.YtMusicPlaylistScreen
 import com.varuna.rustify.ui.screens.YtMusicSearchScreen
 import com.varuna.rustify.ui.theme.RustifyTheme
-import com.varuna.rustify.util.SpotifyLink
-import com.varuna.rustify.util.SpotifyLinkParser
+import com.varuna.rustify.util.LinkTarget
+import com.varuna.rustify.util.canonicalUrl
+import com.varuna.rustify.util.deepLinkToken
 import com.varuna.rustify.util.bouncingMarquee
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -355,21 +356,24 @@ class MainActivity : ComponentActivity() {
      * or null if no Spotify link is found.
      */
     private fun extractSpotifyLink(text: String): String? {
-        return when (val link = SpotifyLinkParser.parse(text)) {
-            is SpotifyLink.Track -> "track:${link.id}"
-            is SpotifyLink.Album -> "album:${link.id}"
-            is SpotifyLink.Playlist -> "playlist:${link.id}"
-            is SpotifyLink.Artist -> "artist:${link.id}"
-            null -> null
+        val link = LinkTarget.parse(text) ?: return null
+        return when (link) {
+            is LinkTarget.SpotifyTrack,
+            is LinkTarget.SpotifyAlbum,
+            is LinkTarget.SpotifyPlaylist,
+            is LinkTarget.SpotifyArtist -> link.deepLinkToken
+            // A YouTube Music link is a link, just not a Spotify one — [extractAnyLink] takes it.
+            else -> null
         }
     }
 
     /**
      * Extract a Spotify OR YouTube Music link from arbitrary text (share / wrapper payload).
-     * Spotify is tried first, then YTM. Returns a tagged token or null.
+     *
+     * One parser for both since 3.3: there is no "try Spotify, then try YTM" any more, because
+     * there is no longer one parser per service to try. Returns a tagged token or null.
      */
-    private fun extractAnyLink(text: String): String? =
-        extractSpotifyLink(text) ?: com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(text)
+    private fun extractAnyLink(text: String): String? = LinkTarget.parse(text)?.deepLinkToken
 
     @SuppressLint("AppBundleLocaleChanges")
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -409,12 +413,12 @@ class MainActivity : ComponentActivity() {
             val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)
             val wrapperHost = prefs.getString("rustify_wrapper_host", null)
             val knownHosts = listOfNotNull(wrapperHost) + com.varuna.rustify.util.AppLinksHosts.verifiedHosts
-            if (uri?.scheme == "https" && uri.host in knownHosts
-                && uri.pathSegments.firstOrNull() == "r"
-            ) {
-                val payload = uri.getQueryParameter("s")                 // format A: ?s=open.spotify.com/track/ID
-                    ?: uri.pathSegments.drop(1).joinToString("/")        // format B: /r/track/ID
-                return extractAnyLink(payload)                           // Spotify or YTM
+            if (uri?.scheme == "https") {
+                // Unwrapping lives in the core alongside the wrapping, so the two cannot drift —
+                // it understands both `?s=<url>` and the older `/r/track/ID` path form.
+                LinkTarget.unwrap(uri.toString(), knownHosts)?.let { payload ->
+                    return extractAnyLink(payload)                       // Spotify or YTM
+                }
             }
             if (uri?.host == "open.spotify.com") {
                 // pathSegments ignores the intl-xx prefix automatically: look for the entity type.
@@ -434,8 +438,8 @@ class MainActivity : ComponentActivity() {
                     return "${uri.host}:${pathSegments[0]}"
                 }
             } else if (uri?.host == "music.youtube.com" || uri?.host == "www.youtube.com" || uri?.host == "youtu.be") {
-                // Single source of truth — delegate to YtMusicLinkParser.
-                com.varuna.rustify.util.YtMusicLinkParser.toDeepLinkToken(uri.toString())?.let { return it }
+                // Single source of truth — the parser in the core.
+                LinkTarget.parse(uri.toString())?.let { return it.deepLinkToken }
             }
         } else if (intent?.action == android.content.Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
@@ -621,6 +625,11 @@ fun EngineTester(
     var isLoggedIn by remember { mutableStateOf(spotifyRepo.hasSavedSession()) }
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
+    // What you were in the middle of. Refreshed whenever Home becomes visible, because it changes
+    // while you are elsewhere in the app — playing something is what updates it.
+    var continueListening by remember {
+        mutableStateOf<List<com.varuna.rustify.bridge.ListeningSession>>(emptyList())
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // In-app updater: the startup check leaves the new release here (if any) and the
     // changelog+download dialog is rendered as an overlay (visible both in the app and on the
@@ -987,6 +996,11 @@ fun EngineTester(
                 saveableStateHolder.SaveableStateProvider(screenKey) {
                     when (currentScreen) {
                     is Screen.Home -> {
+                        // Refreshed whenever Home is shown: what you were in the middle of changes
+                        // while you are somewhere else in the app, because playing is what changes it.
+                        LaunchedEffect(currentScreen) {
+                            continueListening = com.varuna.rustify.bridge.ContinueListening.list()
+                        }
                         HomeScreen(
                             browseSections = browseSections,
                             isRunning = isRunning,
@@ -1036,6 +1050,21 @@ fun EngineTester(
                             },
                             onWebPlayerClick = {
                                 navigationStack.add(Screen.WebPlayer)
+                            },
+                            continueListening = continueListening,
+                            onResumeListening = { session ->
+                                coroutineScope.launch {
+                                    resumeListening(session, spotifyRepo, audioPlayerService)
+                                    continueListening =
+                                        com.varuna.rustify.bridge.ContinueListening.list()
+                                }
+                            },
+                            onForgetListening = { session ->
+                                coroutineScope.launch {
+                                    com.varuna.rustify.bridge.ContinueListening.forget(session.id)
+                                    continueListening =
+                                        com.varuna.rustify.bridge.ContinueListening.list()
+                                }
                             }
                         )
                     }
@@ -1099,20 +1128,22 @@ fun EngineTester(
                                 } catch (e: Exception) { null }
                                 if (pasted.isNullOrBlank()) {
                                     android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
-                                } else when (val link = com.varuna.rustify.util.YtMusicLinkParser.parse(pasted)) {
-                                    is com.varuna.rustify.util.YtmLink.Track -> {
+                                } else when (val link = LinkTarget.parse(pasted)) {
+                                    is LinkTarget.YtmTrack -> {
                                         val yt = FullTrack(
-                                            id = "ytm:${link.videoId}", name = "YouTube Music",
-                                            externalUri = "https://music.youtube.com/watch?v=${link.videoId}",
+                                            id = "ytm:${link.id}", name = "YouTube Music",
+                                            externalUri = link.canonicalUrl,
                                             explicit = false, durationMs = 0, isrc = "",
                                             artists = emptyList(), album = null
                                         )
                                         audioPlayerService.loadPlaylist(listOf(yt), 0)
                                     }
-                                    is com.varuna.rustify.util.YtmLink.Album -> navigationStack.add(Screen.YtmAlbumDetail(link.browseId, ""))
-                                    is com.varuna.rustify.util.YtmLink.Artist -> navigationStack.add(Screen.YtmArtistDetail(link.channelId, ""))
-                                    is com.varuna.rustify.util.YtmLink.Playlist -> navigationStack.add(Screen.YtmPlaylistDetail(link.playlistId, ""))
-                                    null -> android.widget.Toast.makeText(context, R.string.paste_no_ytm_link, android.widget.Toast.LENGTH_SHORT).show()
+                                    is LinkTarget.YtmAlbum -> navigationStack.add(Screen.YtmAlbumDetail(link.id, ""))
+                                    is LinkTarget.YtmArtist -> navigationStack.add(Screen.YtmArtistDetail(link.id, ""))
+                                    is LinkTarget.YtmPlaylist -> navigationStack.add(Screen.YtmPlaylistDetail(link.id, ""))
+                                    // A Spotify link pasted into the YouTube Music screen is a link,
+                                    // just not one this screen can open.
+                                    else -> android.widget.Toast.makeText(context, R.string.paste_no_ytm_link, android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             },
                             currentTrackId = currentTrack?.id
@@ -1125,7 +1156,16 @@ fun EngineTester(
                         playlistImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onTrackClick = { tracks, index ->
+                            audioPlayerService.loadPlaylist(
+                                tracks, index,
+                                context = com.varuna.rustify.player.PlaybackContext(
+                                    id = "playlist:${currentScreen.id}",
+                                    label = currentScreen.name,
+                                    imageUrl = currentScreen.images.firstOrNull()?.url.orEmpty()
+                                )
+                            )
+                        },
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
@@ -1148,7 +1188,16 @@ fun EngineTester(
                         albumImages = currentScreen.images,
                         spotifyRepo = spotifyRepo,
                         onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                        onTrackClick = { tracks, index ->
+                            audioPlayerService.loadPlaylist(
+                                tracks, index,
+                                context = com.varuna.rustify.player.PlaybackContext(
+                                    id = "album:${currentScreen.id}",
+                                    label = currentScreen.name,
+                                    imageUrl = currentScreen.images.firstOrNull()?.url.orEmpty()
+                                )
+                            )
+                        },
                         onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                         onGoToQueue = {
                             currentTrack?.id?.let { id ->
@@ -1160,7 +1209,8 @@ fun EngineTester(
                         },
                         onArtistClick = { id -> navigationStack.add(Screen.ArtistDetail(id)) },
                         onGoToRadio = { id, name -> navigationStack.add(Screen.RadioDetail(id, name)) },
-                        onShufflePlay = { audioPlayerService.shufflePlay(it) }
+                        onShufflePlay = { audioPlayerService.shufflePlay(it) },
+                        currentTrackId = currentTrack?.id
                     )
                 }
                 is Screen.ArtistDetail -> {
@@ -1682,3 +1732,53 @@ fun MiniPlayer(
     }
 }
 
+
+/**
+ * Puts a "continue listening" session back on, from the track and position it stored.
+ *
+ * The session keeps track **ids**, not tracks — ids are the only thing every platform agrees on —
+ * so the queue is refetched from the context it came from. That is one request, because the context
+ * id says which: `album:X` is one album fetch, `playlist:X` is one playlist fetch. Refetching also
+ * means a playlist that changed since gets its current contents rather than a stale copy.
+ *
+ * If the track it left off on is no longer there, playback starts at the top rather than refusing:
+ * the user asked for this album, and giving them the album is closer to right than giving them
+ * nothing.
+ */
+private suspend fun resumeListening(
+    session: com.varuna.rustify.bridge.ListeningSession,
+    spotifyRepo: SpotifyRepository,
+    audioPlayerService: AudioPlayerService
+) {
+    val (kind, id) = session.id.split(':', limit = 2).let {
+        if (it.size == 2) it[0] to it[1] else return
+    }
+    val tracks = runCatching {
+        when (kind) {
+            "album" -> spotifyRepo.getAlbumTracks(id, limit = 50).items
+            "playlist" -> spotifyRepo.getPlaylistTracks(id, limit = 50).items
+            else -> emptyList()
+        }
+    }.getOrElse { emptyList() }
+    if (tracks.isEmpty()) return
+
+    val target = session.currentTrackId
+    val index = tracks.indexOfFirst { it.id == target }.takeIf { it >= 0 } ?: 0
+    // Only start mid-track when we landed on the track that was actually left off on -- dropping two
+    // minutes into a different song is worse than starting it. The position goes IN, rather than a
+    // seekTo() after the call: resolving a track is asynchronous, so by the time this returns the
+    // player is not holding it yet and the start position has already been read as zero. That is why
+    // resuming always began at the top of the song.
+    val startAt = if (tracks[index].id == target) session.positionMs.coerceAtLeast(0L) else 0L
+    audioPlayerService.loadPlaylist(
+        tracks,
+        index,
+        context = com.varuna.rustify.player.PlaybackContext(
+            id = session.id,
+            label = session.label,
+            subtitle = session.subtitle,
+            imageUrl = session.imageUrl
+        ),
+        startPositionMs = startAt
+    )
+}

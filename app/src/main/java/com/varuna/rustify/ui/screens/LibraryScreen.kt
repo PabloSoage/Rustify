@@ -132,7 +132,7 @@ fun LibraryScreen(
     onYtmOpenLocalPlaylist: (String) -> Unit = {},
     onYtmOpenPlaylist: (String, String) -> Unit = { _, _ -> },
     onYtmPasteLink: () -> Unit = {},
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
@@ -642,7 +642,7 @@ fun LibraryTracks(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     onGoToRadio: ((String, String) -> Unit)? = null,
-    currentTrackId: String? = null,
+    currentTrackId: String?,
     searchQuery: String = ""
 ) {
     val tracks = spotifyRepo.likedTracks
@@ -822,7 +822,7 @@ fun LibraryLocalMusic(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     onPlaylistClick: (String, String, List<SpotifyImage>) -> Unit,
-    currentTrackId: String? = null,
+    currentTrackId: String?,
     searchQuery: String = "",
     selectedGroup: String,
     onGroupSelected: (String) -> Unit

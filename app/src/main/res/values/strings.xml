@@ -38,6 +38,7 @@
     <string name="settings_stream_cache_desc">A song you have played once is kept here, so playing it again starts straight away, uses no data and works with no connection at all. Up to 512 MB; the oldest go first. Songs already on your phone are never copied. Keeping songs off also stops the local player server from starting at all, so nothing new to 3.1 runs.</string>
     <string name="settings_stream_cache_using">Using %1$s</string>
     <string name="settings_stream_cache_clear">Clear</string>
+    <string name="home_continue_listening">Pick up where you left off</string>
     <string name="egg_found_title">🦀 You found it!</string>
     <string name="egg_found_msg">Made with Rust, Kotlin and too much coffee. Poke the crab…</string>
     <string name="egg_jojo_msg">Time stops. The story continues elsewhere…</string>

@@ -11,7 +11,9 @@ pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
 pub mod env;
+pub mod links;
 pub mod matcher;
+pub mod player;
 pub mod server;
 pub mod spotify;
 pub mod types;
@@ -64,6 +66,155 @@ macro_rules! jni_bridge {
             _ => std::ptr::null_mut(),
         }
     }};
+}
+
+
+
+// =============================================================================
+// CONTINUE LISTENING (point G)
+// =============================================================================
+
+/// JNI Bridge: record where playback is in a context, so Home can offer it back.
+///
+/// The whole [`player::session::Session`] as JSON. Anything not worth resuming — barely started, or
+/// finished — **removes** the entry rather than being ignored, so an album you completed stops being
+/// offered instead of freezing at its last twenty seconds.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_recordListeningNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    session_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = session_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<player::session::Session>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(session) => {
+                let outcome = get_runtime()
+                    .block_on(player::session::record::<env::android::AndroidEnv>(session));
+                serialize_result(outcome.map(|_| spotify::models::OperationResult {
+                    success: true,
+                    error: None,
+                }))
+            }
+        }
+    })
+}
+
+/// JNI Bridge: the contexts to offer, newest first, as a JSON array.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listContinueListeningNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let sessions =
+            get_runtime().block_on(player::session::list::<env::android::AndroidEnv>());
+        serde_json::to_string(&sessions).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// JNI Bridge: drop one context, or every one when `id` is empty.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetListeningNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id_str = id.mutf8_chars(env)?.to_string();
+        let outcome = get_runtime().block_on(async {
+            if id_str.is_empty() {
+                player::session::clear::<env::android::AndroidEnv>().await
+            } else {
+                player::session::forget::<env::android::AndroidEnv>(&id_str).await
+            }
+        });
+        serialize_result(outcome.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+// =============================================================================
+// LINKS (point F)
+// =============================================================================
+
+/// JNI Bridge: read any link Rustify understands out of arbitrary text.
+///
+/// Pure and in-memory — no `block_on`, no network — so it is safe from any thread, which matters
+/// because the deep-link handler runs on the main one.
+///
+/// @return `{"kind":"track","id":"…","token":"track:…","url":"…","scheme":"rustify://…"}`, or `{}`
+///   when the text is not one of our links. `{}` means "not ours", never "unsafe".
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_parseLinkNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    text: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = text.mutf8_chars(env)?.to_string();
+        match links::parse(&raw) {
+            None => "{}".to_string(),
+            Some(target) => {
+                let answer = serde_json::json!({
+                    "kind": target.kind(),
+                    "id": target.id(),
+                    "token": target.deep_link_token(),
+                    "url": target.canonical_url(),
+                    "scheme": target.rustify_scheme(),
+                });
+                answer.to_string()
+            }
+        }
+    })
+}
+
+/// JNI Bridge: wrap a link so that tapping it opens Rustify.
+///
+/// An empty `host` means "no verified host configured", which falls back to the `rustify://` scheme.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_wrapLinkNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    url: JString<'local>,
+    host: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let url_str = url.mutf8_chars(env)?.to_string();
+        let host_str = host.mutf8_chars(env)?.to_string();
+        links::wrap(
+            &url_str,
+            if host_str.trim().is_empty() {
+                None
+            } else {
+                Some(host_str.as_str())
+            },
+        )
+    })
+}
+
+/// JNI Bridge: recover the link inside a wrapper URL, or `""` if it is not one of ours.
+///
+/// `knownHostsJson` is a JSON array of the hosts the manifest actually verifies. Checked rather than
+/// trusted: an arbitrary site must not be able to hand the app a link and have it treated as if it
+/// came from the user's own domain.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_unwrapLinkNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    url: JString<'local>,
+    known_hosts_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let url_str = url.mutf8_chars(env)?.to_string();
+        let hosts_raw = known_hosts_json.mutf8_chars(env)?.to_string();
+        let hosts: Vec<String> = serde_json::from_str(&hosts_raw).unwrap_or_default();
+        let refs: Vec<&str> = hosts.iter().map(String::as_str).collect();
+        links::unwrap_wrapper(&url_str, &refs).unwrap_or_default()
+    })
 }
 
 // =============================================================================
@@ -374,6 +525,13 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocal
                         Some(request.ttl_ms)
                     } else {
                         None
+                    },
+                    // Where a copy lands as it plays. Absent when the user has storing off, which
+                    // is the same switch that governs everything else the server does.
+                    if request.cache_root.is_empty() || request.cache_key.is_empty() {
+                        None
+                    } else {
+                        Some((request.cache_root.as_str(), request.cache_key.as_str()))
                     },
                 ) {
                     Some(url) => RegisterStreamAnswer {

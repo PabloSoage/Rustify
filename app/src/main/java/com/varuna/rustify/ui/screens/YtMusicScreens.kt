@@ -84,8 +84,8 @@ import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.YtmTrack
 import com.varuna.rustify.ui.components.TrackRowItem
 import com.varuna.rustify.util.ShareUtils
-import com.varuna.rustify.util.YtMusicLinkParser
-import com.varuna.rustify.util.YtmLink
+import com.varuna.rustify.util.LinkTarget
+import com.varuna.rustify.util.canonicalUrl
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -118,7 +118,7 @@ fun YtMusicSearchScreen(
     onAlbum: (browseId: String, title: String) -> Unit,
     onArtist: (channelId: String, name: String) -> Unit,
     onPlaylist: (playlistId: String, title: String) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -140,21 +140,22 @@ fun YtMusicSearchScreen(
             Toast.makeText(context, R.string.paste_clipboard_empty, Toast.LENGTH_SHORT).show()
             return
         }
-        when (val link = YtMusicLinkParser.parse(pasted)) {
-            is YtmLink.Track -> {
+        when (val link = LinkTarget.parse(pasted)) {
+            is LinkTarget.YtmTrack -> {
                 // No YtmTrack metadata for a bare link — hand a minimal ytm: FullTrack to the player.
                 val yt = FullTrack(
-                    id = "ytm:${link.videoId}", name = "YouTube Music",
-                    externalUri = "https://music.youtube.com/watch?v=${link.videoId}",
+                    id = "ytm:${link.id}", name = "YouTube Music",
+                    externalUri = link.canonicalUrl,
                     explicit = false, durationMs = 0, isrc = "",
                     artists = emptyList(), album = null
                 )
                 onTrackClick(listOf(yt), 0)
             }
-            is YtmLink.Album -> onAlbum(link.browseId, "")
-            is YtmLink.Artist -> onArtist(link.channelId, "")
-            is YtmLink.Playlist -> onPlaylist(link.playlistId, "")
-            null -> Toast.makeText(context, R.string.paste_no_ytm_link, Toast.LENGTH_SHORT).show()
+            is LinkTarget.YtmAlbum -> onAlbum(link.id, "")
+            is LinkTarget.YtmArtist -> onArtist(link.id, "")
+            is LinkTarget.YtmPlaylist -> onPlaylist(link.id, "")
+            // A Spotify link is a link, just not one this screen can open.
+            else -> Toast.makeText(context, R.string.paste_no_ytm_link, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -288,7 +289,7 @@ fun YtMusicAlbumScreen(
     title: String,
     onBack: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmAlbum?>(null) }
@@ -297,7 +298,7 @@ fun YtMusicAlbumScreen(
     LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Album(browseId)))
+        ShareUtils.shareYtmLink(context, LinkTarget.YtmAlbum(browseId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -347,7 +348,7 @@ fun YtMusicArtistScreen(
     onBack: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onAlbum: (browseId: String, title: String) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmArtist?>(null) }
@@ -356,7 +357,7 @@ fun YtMusicArtistScreen(
     LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
     YtmDetailScaffold(name, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Artist(channelId)))
+        ShareUtils.shareYtmLink(context, LinkTarget.YtmArtist(channelId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -417,7 +418,7 @@ fun YtMusicPlaylistScreen(
     title: String,
     onBack: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val context = LocalContext.current
     var data by remember { mutableStateOf<YtmPlaylist?>(null) }
@@ -426,7 +427,7 @@ fun YtMusicPlaylistScreen(
     LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Playlist(playlistId)))
+        ShareUtils.shareYtmLink(context, LinkTarget.YtmPlaylist(playlistId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -468,7 +469,7 @@ fun YtMusicLocalPlaylistScreen(
     localId: String,
     onBack: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     // Read the reactive list so add/remove recomposes.
     val pl = repo.playlists.firstOrNull { it.localId == localId }
@@ -681,7 +682,7 @@ fun YtmTrackListItem(
                 text = { Text(stringResource(R.string.track_menu_share)) },
                 onClick = {
                     showMenu = false
-                    ShareUtils.shareYtmLink(context, YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)))
+                    ShareUtils.shareYtmLink(context, LinkTarget.YtmTrack(track.videoId).canonicalUrl)
                 },
                 leadingIcon = { Icon(Icons.Default.Share, null) }
             )
@@ -692,7 +693,7 @@ fun YtmTrackListItem(
                         showMenu = false
                         ShareUtils.shareRustifyUrl(
                             context,
-                            url = YtMusicLinkParser.canonicalUrl(YtmLink.Track(track.videoId)),
+                            url = LinkTarget.YtmTrack(track.videoId).canonicalUrl,
                             title = track.title,
                             subtitle = track.artists.joinToString(", ") { it.name },
                             imageUrl = track.thumbnailUrl.takeIf { it.isNotBlank() }

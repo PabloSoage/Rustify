@@ -39,6 +39,23 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
+/**
+ * What a queue came from, so "continue listening" can offer it back.
+ *
+ * Supplied by whoever started playback, because only they know: a list of tracks does not say
+ * whether it is an album, a playlist, or three songs someone queued by hand. Absent means "not
+ * something to come back to", which is the right answer for most queues.
+ *
+ * @param id stable per context — `"album:ID"`, `"playlist:ID"`, `"radio:ID"`. Coming back to the
+ *   same one updates the entry rather than adding another.
+ */
+data class PlaybackContext(
+    val id: String,
+    val label: String,
+    val subtitle: String = "",
+    val imageUrl: String = ""
+)
+
 data class AudioPlayerState(
     val currentTrack: FullTrack? = null,
     val isPlaying: Boolean = false,
@@ -401,6 +418,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         instance = this
     }
 
+    /**
+     * What the current queue came *from* — an album, a playlist, a radio.
+     *
+     * Null when the queue has no context, which is the common case (a single track, a search
+     * result, the user's own queue) and is why "continue listening" is not simply the last thing
+     * that played. Only something you can be *in the middle of* is worth offering back.
+     */
+    @Volatile
+    private var playbackContext: PlaybackContext? = null
+
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private var mediaControllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
 
@@ -601,6 +628,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         mainScope.launch {
             var lastSaveTime = 0L
             var lastSavedPosition = 0L
+            var lastContextRecord = 0L
             while (true) {
                 // Only trust the player's clock while it actually holds the current logical track.
                 // During a switch (and while an extraction retry is backing off, when isBuffering is
@@ -627,6 +655,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                         lastSavedPosition = _state.value.positionMs
                     }
                     lastSaveTime = now
+                }
+                // "Continue listening" — a separate, much slower clock. This one crosses JNI and
+                // writes a file, so it runs every twenty seconds rather than every half-second: the
+                // cost of being twenty seconds behind is resuming twenty seconds early, and nobody
+                // notices that. What people do notice is a phone that never sleeps.
+                if (now - lastContextRecord > com.varuna.rustify.bridge.ContinueListening.RECORD_INTERVAL_MS) {
+                    lastContextRecord = now
+                    recordListeningContext()
                 }
                 delay(500.milliseconds)
             }
@@ -939,34 +975,23 @@ class AudioPlayerService private constructor(private val context: Context) {
                 resolvedStreamUrls[trackId] = playbackUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
                 val isLocalStream = TrackRef.isLocal(trackId) || playbackUrl.startsWith("content://") || playbackUrl.startsWith("file://")
-                // Deezer serves a deezer://<sngId>?u=<b64> URI decrypted on the fly by a custom
-                // DataSource. It is not cacheable (the CDN URL expires and carries a per-track key) and
-                // does not go through the HTTP cache. Once the track is in the stream cache this stops
-                // being true — the decryption happened on the way in and `playbackUrl` is loopback.
-                val isDeezerStream = playbackUrl.startsWith("deezer://")
                 // Expose to the UI whether the current track plays from a local file (for the green button).
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
                 // Only ever the upstream URL, never a loopback one: the port and the token are good
                 // for this process only, so persisting one would hand the next session a URL that
-                // cannot connect to anything. A backend can produce one directly now — Deezer
-                // returns the proxy URL — so this checks the URL rather than where it came from.
+                // cannot connect to anything. A backend can produce one directly — Deezer returns
+                // the proxy URL — so this checks the URL rather than where it came from.
                 val persistable = streamUrl
-                if (!TrackRef.isLocal(trackId) && !isLocalStream && !isDeezerStream &&
+                if (!TrackRef.isLocal(trackId) && !isLocalStream &&
                     !persistable.isNullOrBlank() &&
-                    !persistable.startsWith("deezer://") &&
                     !persistable.startsWith(LOOPBACK_PREFIX)
                 ) {
                     putCachedStreamUrl(trackId, persistable)
                 }
 
                 val mediaSource = when {
-                    isDeezerStream -> {
-                        android.util.Log.d("AudioPlayerService", "Creating Deezer decrypting media source")
-                        DefaultMediaSourceFactory(com.varuna.rustify.audio.DeezerDecryptingDataSource.Factory())
-                            .createMediaSource(mediaItem)
-                    }
                     isLocalStream -> {
                         android.util.Log.d("AudioPlayerService", "Creating DefaultMediaSource for local track")
                         DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
@@ -1154,6 +1179,39 @@ class AudioPlayerService private constructor(private val context: Context) {
             ?: return null
         return TrackRef.localUriOf(match.id)?.also {
             android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $it")
+        }
+    }
+
+    /**
+     * Writes down where this context is, so Home can offer it back.
+     *
+     * Silent about everything it does not do: no context, nothing playing, or an error — none of
+     * those is a session, and none of them is worth a log line every twenty seconds.
+     */
+    private fun recordListeningContext() {
+        val context = playbackContext ?: return
+        val st = _state.value
+        if (st.isError || st.queue.isEmpty()) return
+        val index = currentIndexIn(st)
+        if (index < 0) return
+
+        val session = com.varuna.rustify.bridge.ListeningSession(
+            id = context.id,
+            label = context.label,
+            subtitle = context.subtitle,
+            imageUrl = context.imageUrl,
+            queue = st.queue.mapNotNull { it.id },
+            index = index,
+            positionMs = st.positionMs,
+            durationMs = st.durationMs,
+            updatedAtMs = System.currentTimeMillis()
+        )
+        // The queue can contain a track with no id; if that shifted the indices the session would
+        // resume on the wrong song, so it is dropped rather than stored wrong.
+        if (session.queue.size != st.queue.size) return
+
+        mainScope.launch(Dispatchers.IO) {
+            com.varuna.rustify.bridge.ContinueListening.record(session)
         }
     }
 
@@ -1398,8 +1456,25 @@ class AudioPlayerService private constructor(private val context: Context) {
      * the opposite of asking for a random order. [keepShuffle] is for [shufflePlay], the one caller
      * that is itself the opt-in.
      */
-    fun loadPlaylist(tracks: List<FullTrack>, initialIndex: Int = 0, keepShuffle: Boolean = false) {
+    /**
+     * @param startPositionMs where the selected track should start. Handed to the state **before**
+     *   [startTrack], because that is where `playTrack` reads it (`desiredStartMs`) and seeks after
+     *   `prepare()`. Seeking from the caller after this returns does nothing: the resolution is
+     *   asynchronous, so at that moment ExoPlayer is not holding this track yet, and the position it
+     *   later starts from was already captured as zero.
+     */
+    fun loadPlaylist(
+        tracks: List<FullTrack>,
+        initialIndex: Int = 0,
+        keepShuffle: Boolean = false,
+        context: PlaybackContext? = null,
+        startPositionMs: Long = 0L
+    ) {
         if (tracks.isEmpty()) return
+        // Set before anything plays, and **cleared when absent**: a queue started from somewhere
+        // with no context must not inherit the last one, or resuming would take you to an album you
+        // never opened.
+        playbackContext = context
         // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
@@ -1441,7 +1516,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             queue = queue,
             originalQueue = originalQueue,
             isShuffle = shuffle,
-            positionMs = 0L,
+            positionMs = startPositionMs.coerceAtLeast(0L),
             durationMs = selected.durationMs.toLong()
         )
         preResolvedUrls.clear()

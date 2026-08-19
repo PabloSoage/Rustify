@@ -30,12 +30,17 @@ import java.io.File
  *
  * ## The key
  *
- * The track id, and only the track id. Not the backend and not the format, because [cachedUrlFor]
- * runs before either of those is known — and knowing them is exactly the work being avoided. The
- * consequence, stated rather than hidden: after switching backend or quality, a track already on
- * disk keeps playing from disk until the entry is swept out or the cache is cleared. [forget]
- * covers the one case where that would be wrong on the spot — the user picking a different YouTube
- * match, which is a deliberate "no, not that audio".
+ * A **generation** plus the track id. Not the backend and not the format, because [cachedUrlFor]
+ * runs before either of those is known — and knowing them is exactly the work being avoided.
+ *
+ * The generation is what closes the gap that would otherwise leave. Change your backend order or
+ * your Deezer quality and [bumpGeneration] moves the whole cache out of reach in one integer, so
+ * the next play of every track re-resolves through the settings you just chose. The old entries are
+ * not deleted — they are simply never asked for again, and the budget sweep reclaims them oldest
+ * first, so nobody loses an offline copy the moment they tap a switch.
+ *
+ * [forget] covers the one case that has to be immediate: picking a different YouTube match for one
+ * song, which is a deliberate "no, not that audio".
  */
 object StreamRouting {
 
@@ -69,6 +74,37 @@ object StreamRouting {
     fun cacheRoot(context: Context): String =
         File(context.cacheDir, "stream-cache").absolutePath
 
+    private const val GENERATION_KEY = "stream_cache_generation"
+
+    /**
+     * Which generation of settings the cache belongs to.
+     *
+     * Every key carries it, so bumping it makes the whole cache unreachable at once without
+     * deleting anything.
+     */
+    private fun generation(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(GENERATION_KEY, 1)
+
+    /**
+     * Declares that what a cached track *contains* may no longer be what the user wants.
+     *
+     * Call it whenever a setting changes the audio a backend would produce: the backend order, a
+     * backend being enabled or disabled, the Deezer format chain. Not for anything cosmetic — a
+     * needless bump costs the user a re-download of everything they had.
+     */
+    fun bumpGeneration(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putInt(GENERATION_KEY, prefs.getInt(GENERATION_KEY, 1) + 1).apply()
+    }
+
+    /**
+     * The cache key for a track, under the current generation.
+     *
+     * Public because `StreamRoutingTest` pins its shape: it has to survive `sanitise` without two
+     * different tracks — or the same track in two generations — colliding.
+     */
+    fun keyFor(context: Context, trackId: String): String = "g${generation(context)}-$trackId"
+
     /** Bytes currently held. Crosses JNI and walks a directory, hence `suspend`. */
     suspend fun size(context: Context): Long =
         runCatching { NativeEngine.streamCacheSize(cacheRoot(context)) }.getOrDefault(0L)
@@ -86,7 +122,7 @@ object StreamRouting {
         if (!routable(context, trackId)) return null
         if (!LocalStreamServer.ensureStarted()) return null
         return LocalStreamServer.registerReady(
-            cacheKey = trackId,
+            cacheKey = keyFor(context, trackId),
             cacheRoot = cacheRoot(context)
         )
     }
@@ -106,15 +142,15 @@ object StreamRouting {
         if (!routable(context, trackId)) return null
 
         val hint = info.cache
-        // A provider that says nothing about caching is not cached. Deezer's `uri` is a
-        // `deezer://` URI and yt-dlp's expires in six hours: what to *store* is not something to
-        // guess from a playback URL, so a provider has to say it on purpose.
+        // A provider that says nothing about caching is not cached. yt-dlp's URL expires in six
+        // hours and Deezer's playback URL is our own server, so what to *store* is not something to
+        // guess from a playback URL — a provider says it on purpose or not at all.
         if (hint == null || hint.upstreamUrl.isBlank()) return null
         if (!LocalStreamServer.ensureStarted()) return null
 
         return runCatching {
             LocalStreamServer.registerReady(
-                cacheKey = trackId,
+                cacheKey = keyFor(context, trackId),
                 cacheRoot = cacheRoot(context),
                 upstreamUrl = hint.upstreamUrl,
                 mime = info.mimeType,
@@ -132,7 +168,7 @@ object StreamRouting {
     fun forget(context: Context, trackId: String) {
         if (trackId.isBlank()) return
         runCatching {
-            val file = File(cacheRoot(context), sanitise(trackId))
+            val file = File(cacheRoot(context), sanitise(keyFor(context, trackId)))
             if (file.isFile) file.delete()
         }.onFailure { Log.w(TAG, "could not drop the cached copy of $trackId", it) }
     }

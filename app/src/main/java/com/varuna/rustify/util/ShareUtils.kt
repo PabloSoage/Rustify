@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
  *
  * Two entry points:
  *  - [shareSpotifyLink] always shares the canonical `https://open.spotify.com/<type>/<id>` URL.
- *  - [shareRustifyLink] wraps the URL via [RustifyWrapperLink.wrap] (verified host or rustify:// fallback).
+ *  - [shareRustifyLink] wraps the URL via [LinkTarget.wrap] (verified host or rustify:// fallback).
  *    The Settings toggle controls whether the UI shows the "Share as Rustify" button at all — this
  *    helper does NOT read prefs; the caller decides whether to call it.
  */
@@ -57,7 +57,7 @@ object ShareUtils {
 
     /**
      * Shares the entity as a Rustify wrapper link.
-     * Reads the wrapper host from [rustify_settings] only to pass it to [RustifyWrapperLink.wrap];
+     * Reads the wrapper host from [rustify_settings] only to pass it to [LinkTarget.wrap];
      * the host is NOT used to gate visibility — the caller decides that via the Settings toggle.
      *
      * When [title]/[imageUrl] are supplied the artwork is attached as a real image with the title,
@@ -82,7 +82,7 @@ object ShareUtils {
         val spotifyUrl = "https://open.spotify.com/$type/$id"
         val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
         val host = prefs.getString("rustify_wrapper_host", null)
-        val link = RustifyWrapperLink.wrap(spotifyUrl, host)
+        val link = LinkTarget.wrap(spotifyUrl, host)
         shareLinkWithArtwork(context, link, title, subtitle, imageUrl)
     }
 
@@ -192,7 +192,7 @@ object ShareUtils {
 
     /**
      * Shares a YouTube Music entity link. Mirror of [shareSpotifyLink] + [shareRustifyLink]:
-     * if the "share as Rustify link" toggle is on it wraps [ytmUrl] via [RustifyWrapperLink.wrap]
+     * if the "share as Rustify link" toggle is on it wraps [ytmUrl] via [LinkTarget.wrap]
      * (verified host or `rustify://ytm*` fallback); otherwise shares the canonical YTM URL as-is.
      *
      * Reads the same `share_as_rustify_link` pref the Spotify path uses, so behaviour is consistent
@@ -225,7 +225,7 @@ object ShareUtils {
         }
         val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
         val host = prefs.getString("rustify_wrapper_host", null)
-        shareLinkWithArtwork(context, RustifyWrapperLink.wrap(url, host), title, subtitle, imageUrl)
+        shareLinkWithArtwork(context, LinkTarget.wrap(url, host), title, subtitle, imageUrl)
     }
 
     private fun shareText(context: Context, text: String) {

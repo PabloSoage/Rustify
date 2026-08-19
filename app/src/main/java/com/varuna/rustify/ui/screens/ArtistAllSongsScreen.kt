@@ -46,7 +46,7 @@ fun ArtistAllSongsScreen(
     onBack: () -> Unit,
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
-    currentTrackId: String? = null,
+    currentTrackId: String?,
 ) {
     val green = Color(0xFF1DB954)
     val tracks = spotifyRepo.artistAllTracksLive(artistId)

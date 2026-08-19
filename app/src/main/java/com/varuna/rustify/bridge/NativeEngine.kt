@@ -38,6 +38,36 @@ object NativeEngine {
     /** Every blocking bridge goes through here, so there is exactly one place that names the pool. */
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
+
+    // =====================================================================
+    // CONTINUE LISTENING
+    // =====================================================================
+    //
+    // Reads and writes stored state, so both are `suspend`.
+
+    private external fun recordListeningNative(sessionJson: String): String
+
+    /**
+     * Records where playback is in a context (an album, a playlist, a radio), so Home can offer it
+     * back.
+     *
+     * Anything not worth resuming — barely started, or finished — **removes** the entry rather than
+     * being ignored: an album you completed should stop being offered, not freeze at its last
+     * twenty seconds.
+     */
+    suspend fun recordListening(sessionJson: String): String =
+        io { recordListeningNative(sessionJson) }
+
+    private external fun listContinueListeningNative(): String
+
+    /** The contexts to offer, newest first, as a JSON array. */
+    suspend fun listContinueListening(): String = io { listContinueListeningNative() }
+
+    private external fun forgetListeningNative(id: String): String
+
+    /** Drops one context, or every one when [id] is empty. */
+    suspend fun forgetListening(id: String): String = io { forgetListeningNative(id) }
+
     // =====================================================================
     // YOUTUBE ENGINE
     // =====================================================================
@@ -85,6 +115,31 @@ object NativeEngine {
 
     /** In memory. Tells the engine what is queued so it can pre-buffer. */
     external fun updateQueueNative(trackIdsJson: String)
+
+
+    // =====================================================================
+    // LINKS
+    // =====================================================================
+    //
+    // In memory and pure: parsing a link touches nothing but the string it is given, so these stay
+    // plain. The deep-link handler runs on the main thread and has to.
+
+    /**
+     * Reads any link Rustify understands out of arbitrary text.
+     *
+     * @return `{"kind":"track","id":"…","token":"track:…","url":"…","scheme":"rustify://…"}`, or
+     *   `{}` when the text is not one of ours. `{}` means "not ours", never "unsafe".
+     */
+    external fun parseLinkNative(text: String): String
+
+    /** Wraps a link so tapping it opens Rustify. An empty [host] falls back to `rustify://`. */
+    external fun wrapLinkNative(url: String, host: String): String
+
+    /**
+     * Recovers the link inside a wrapper URL, or `""` if it is not one.
+     * [knownHostsJson] is a JSON array — checked, not trusted.
+     */
+    external fun unwrapLinkNative(url: String, knownHostsJson: String): String
 
     // ── Add-ons: installable audio backends ─────────────────────────────────────────────────
     //

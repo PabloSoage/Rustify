@@ -30,7 +30,14 @@ pub enum Served {
     /// The URL is held here rather than in the request path for the reason the whole handle table
     /// exists: a server that accepts an upstream URL from its caller is an open proxy for every
     /// other app on the device.
-    DeezerProxy { url: String, sng_id: String },
+    ///
+    /// `cache_path` is where a copy goes as it plays. `None` means "do not cache" — the user turned
+    /// storing off, or there is nowhere to put it.
+    DeezerProxy {
+        url: String,
+        sng_id: String,
+        cache_path: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]

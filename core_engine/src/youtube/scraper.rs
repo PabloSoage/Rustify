@@ -82,7 +82,7 @@ impl YouTubeScraper {
         let mut all_tracks = Vec::new();
 
         // 1. Fetch Tracks
-        if let Ok(results) = rp.query().music_search_tracks(query).await {
+        if let Some(Ok(results)) = super::ytmusic::bounded("scraper search_tracks", rp.query().music_search_tracks(query)).await {
             let tracks: Vec<YouTubeTrack> = results
                 .items
                 .items
@@ -99,7 +99,7 @@ impl YouTubeScraper {
         }
 
         // 2. Fetch Videos (often needed for OSTs or covers)
-        if let Ok(results) = rp.query().music_search_videos(query).await {
+        if let Some(Ok(results)) = super::ytmusic::bounded("scraper search_videos", rp.query().music_search_videos(query)).await {
             let videos: Vec<YouTubeTrack> = results
                 .items
                 .items

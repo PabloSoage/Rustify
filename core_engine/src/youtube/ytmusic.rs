@@ -31,6 +31,31 @@ use super::models::*;
 use super::scraper::get_client;
 use rustypipe::model::{AlbumItem, ArtistItem, MusicPlaylistItem, TrackItem};
 
+/// Ceiling on any single `rustypipe` call.
+///
+/// `rustypipe` is the one declared exception to the `Env` rule (see `env/mod.rs`): it carries its
+/// own HTTP client, so none of the timeouts the rest of the engine sets reach it. Being a declared
+/// exception is fine; being unbounded is not — "a request that never returns on a slow connection"
+/// is point N's failure mode, and it does not care that the request was made by a third party.
+///
+/// This bounds it from the outside, which is the half that can be done without owning its client.
+/// The other half — actually routing it through `Env` — needs an injection point the crate may not
+/// have, and guessing at an API that cannot be checked from here is how a build breaks twice.
+const YTM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Runs a `rustypipe` call under [`YTM_TIMEOUT`], turning "hangs forever" into "gave up".
+///
+/// `None` on timeout, so every caller degrades exactly the way it already does when a section fails.
+pub(crate) async fn bounded<T>(what: &str, call: impl std::future::Future<Output = T>) -> Option<T> {
+    match tokio::time::timeout(YTM_TIMEOUT, call).await {
+        Ok(value) => Some(value),
+        Err(_) => {
+            eprintln!("[YTM] {what} timed out after {YTM_TIMEOUT:?}");
+            None
+        }
+    }
+}
+
 /// Map a RustyPipe `TrackItem` into our JNI `YtmTrack`.
 fn map_track(t: &TrackItem) -> YtmTrack {
     YtmTrack {
@@ -95,17 +120,17 @@ pub async fn ytm_search(query: &str) -> YtmSearchResults {
         Err(_) => return results,
     };
 
-    if let Ok(r) = rp.query().music_search_tracks(query).await {
+    if let Some(Ok(r)) = bounded("search_tracks", rp.query().music_search_tracks(query)).await {
         results.tracks = r.items.items.iter().map(map_track).collect();
     }
-    if let Ok(r) = rp.query().music_search_albums(query).await {
+    if let Some(Ok(r)) = bounded("search_albums", rp.query().music_search_albums(query)).await {
         results.albums = r.items.items.iter().map(map_album_slim).collect();
     }
-    if let Ok(r) = rp.query().music_search_artists(query).await {
+    if let Some(Ok(r)) = bounded("search_artists", rp.query().music_search_artists(query)).await {
         results.artists = r.items.items.iter().map(map_artist_ref).collect();
     }
     // `community = true` includes user-created playlists in the results.
-    if let Ok(r) = rp.query().music_search_playlists(query, true).await {
+    if let Some(Ok(r)) = bounded("search_playlists", rp.query().music_search_playlists(query, true)).await {
         results.playlists = r.items.items.iter().map(map_playlist_item).collect();
     }
 
@@ -115,7 +140,7 @@ pub async fn ytm_search(query: &str) -> YtmSearchResults {
 /// Resolve a full album (header + track list) from its browse id (e.g. `MPREb_...`).
 pub async fn ytm_get_album(browse_id: &str) -> Option<YtmAlbum> {
     let rp = get_client().ok()?;
-    let album = rp.query().music_album(browse_id).await.ok()?;
+    let album = bounded("music_album", rp.query().music_album(browse_id)).await?.ok()?;
     Some(YtmAlbum {
         browse_id: album.id.clone(),
         title: album.name.clone(),
@@ -149,7 +174,7 @@ pub async fn ytm_get_album(browse_id: &str) -> Option<YtmAlbum> {
 pub async fn ytm_get_artist(channel_id: &str) -> Option<YtmArtist> {
     let rp = get_client().ok()?;
     // all_albums = false → the concise artist page (top tracks + a subset of albums).
-    let artist = rp.query().music_artist(channel_id, false).await.ok()?;
+    let artist = bounded("music_artist", rp.query().music_artist(channel_id, false)).await?.ok()?;
     Some(YtmArtist {
         channel_id: artist.id.clone(),
         name: artist.name.clone(),
@@ -167,7 +192,7 @@ pub async fn ytm_get_artist(channel_id: &str) -> Option<YtmArtist> {
 /// Resolve a remote YTM playlist (header + tracks) from its playlist id.
 pub async fn ytm_get_playlist(playlist_id: &str) -> Option<YtmPlaylist> {
     let rp = get_client().ok()?;
-    let pl = rp.query().music_playlist(playlist_id).await.ok()?;
+    let pl = bounded("music_playlist", rp.query().music_playlist(playlist_id)).await?.ok()?;
     Some(YtmPlaylist {
         playlist_id: pl.id.clone(),
         title: pl.name.clone(),
@@ -184,9 +209,9 @@ pub async fn ytm_radio(video_id: &str) -> Vec<YtmTrack> {
         Ok(rp) => rp,
         Err(_) => return vec![],
     };
-    match rp.query().music_radio_track(video_id).await {
+    match bounded("music_radio_track", rp.query().music_radio_track(video_id)).await {
         // music_radio_track returns a Paginator<TrackItem>.
-        Ok(radio) => radio.items.iter().map(map_track).collect(),
-        Err(_) => vec![],
+        Some(Ok(radio)) => radio.items.iter().map(map_track).collect(),
+        _ => vec![],
     }
 }

@@ -64,8 +64,8 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
-import com.varuna.rustify.util.SpotifyLink
-import com.varuna.rustify.util.SpotifyLinkParser
+import com.varuna.rustify.util.LinkTarget
+
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,7 +88,7 @@ fun SearchScreen(
     onArtistClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
@@ -182,15 +182,16 @@ fun SearchScreen(
                                 android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
                                 return@IconButton
                             }
-                            when (val link = SpotifyLinkParser.parse(pasted)) {
-                                is SpotifyLink.Track -> {
+                            when (val link = LinkTarget.parse(pasted)) {
+                                is LinkTarget.SpotifyTrack -> {
                                     android.util.Log.d("SearchScreen", "Pasted Spotify track: ${link.id}")
                                     onOpenTrack(link.id)
                                 }
-                                is SpotifyLink.Album -> onAlbumClick(link.id, "", emptyList())
-                                is SpotifyLink.Playlist -> onPlaylistClick(link.id, "", emptyList())
-                                is SpotifyLink.Artist -> onArtistClick(link.id)
-                                null -> android.widget.Toast.makeText(context, R.string.paste_no_spotify_link, android.widget.Toast.LENGTH_SHORT).show()
+                                is LinkTarget.SpotifyAlbum -> onAlbumClick(link.id, "", emptyList())
+                                is LinkTarget.SpotifyPlaylist -> onPlaylistClick(link.id, "", emptyList())
+                                is LinkTarget.SpotifyArtist -> onArtistClick(link.id)
+                                // A YouTube Music link is a link, just not one this screen opens.
+                                else -> android.widget.Toast.makeText(context, R.string.paste_no_spotify_link, android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }) {
                             Icon(Icons.Default.Add, contentDescription = "Paste Spotify link", tint = Color.White)

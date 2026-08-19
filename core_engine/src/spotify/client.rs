@@ -809,7 +809,7 @@ impl<E: Env> SpotifyClient<E> {
 
         let req = self
             .base_request(Method::Post, SPOTIFY_GQL_BASE)
-            .bearer(token)
+            .bearer(&token)
             .header("App-Platform", "WebPlayer")
             .body_json(&body)?;
 

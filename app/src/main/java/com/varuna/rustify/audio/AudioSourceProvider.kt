@@ -23,9 +23,10 @@ data class StreamInfo(
  * What the local streaming server should store for this track, so the next play is a file read.
  *
  * Separate from [StreamInfo.uri] because they are genuinely different things and guessing one from
- * the other is how this goes wrong: Deezer's `uri` is a `deezer://` URI that no HTTP client can
- * fetch, and yt-dlp's `uri` is a googlevideo URL that dies in six hours. A provider that wants its
- * audio cached says so on purpose; one that says nothing is not cached, which is the safe default.
+ * the other is how this goes wrong: yt-dlp's `uri` is a googlevideo URL that dies in six hours, and
+ * an add-on's may be anything at all. A provider that wants its audio cached says so on purpose; one
+ * that says nothing is not cached, which is the safe default — and Deezer is now the example of the
+ * latter, because its bytes are written to the cache by the server as they play.
  *
  * @param upstreamUrl the plain `http(s)` URL the bytes actually come from.
  * @param deezerSngId set only by Deezer: the bytes arrive Blowfish-striped and are decrypted on the

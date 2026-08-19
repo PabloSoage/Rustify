@@ -13,9 +13,9 @@
 // 4 KiB of S-box constants, which is not a thing to write from memory, and CBC on top of a block
 // cipher is four lines.
 //
-// This used to live only in `DeezerCrypto.kt`. The Kotlin side is still there, for the first play
-// of a track that is not cached yet (see `docs/stremio-core/PLAN-3.x.md` §4.6); the two are kept in
-// step by a shared test vector, exactly as `TrackId` and `TrackRef` are.
+// This used to live in Kotlin as well (`DeezerCrypto.kt`), as the fallback for a track that was not
+// cached yet. That fallback is gone since 3.3 — the proxy in `server::proxy` decrypts as the bytes
+// arrive, so there is one implementation of this scheme and it is here.
 
 // `Block<Blowfish>` is the crate's own alias for the 8-byte block type. Spelled this way rather
 // than reaching into `cipher::generic_array` because the alias is what the trait signatures use.
@@ -112,6 +112,39 @@ pub fn decrypt_aligned(key: &[u8; 16], buffer: &mut [u8], first_stripe_index: u6
     covered
 }
 
+/// Does this look like the start of a file Deezer would have served?
+///
+/// Deezer serves MP3 and FLAC, and both announce themselves: `fLaC`, an `ID3` tag, or an MPEG frame
+/// sync. That closed set is what makes the check safe here and nowhere else — for an arbitrary
+/// backend, "I do not recognise this" would say nothing.
+///
+/// It exists because a wrong key **does not fail**: Blowfish decrypts anything into something, and
+/// what comes out is noise that plays. Without this, a bad key writes a cache entry that sounds
+/// broken for as long as the entry lives, and every retry serves the same noise.
+///
+/// A short head is accepted: there is nothing to judge, and refusing would drop a legitimate tiny
+/// file.
+pub fn looks_like_audio(head: &[u8]) -> bool {
+    if head.len() < 4 {
+        return true;
+    }
+    // FLAC.
+    if &head[..4] == b"fLaC" {
+        return true;
+    }
+    // MP3 with an ID3v2 tag in front.
+    if &head[..3] == b"ID3" {
+        return true;
+    }
+    // A bare MPEG audio frame: eleven set bits, and a version/layer that is not the reserved one.
+    if head[0] == 0xFF && (head[1] & 0xE0) == 0xE0 {
+        let version = (head[1] >> 3) & 0x03;
+        let layer = (head[1] >> 1) & 0x03;
+        return version != 0x01 && layer != 0x00;
+    }
+    false
+}
+
 /// Decrypts the whole of `src` into `dst`.
 ///
 /// Reads and writes a stripe-aligned window at a time, so a lossless track never sits in memory:
@@ -163,9 +196,12 @@ pub async fn decrypt_file(sng_id: &str, src: &str, dst: &str) -> std::io::Result
 mod tests {
     use super::*;
 
-    /// The shared vector. `DeezerCryptoTest.kt` derives a key for the same id and asserts the same
-    /// sixteen bytes, which is what keeps the Kotlin path (still used for the first, uncached play)
-    /// and this one from drifting apart.
+    /// A known vector, kept as a literal.
+    ///
+    /// It was a *shared* vector while a second implementation existed in Kotlin. That one is gone,
+    /// so this is no longer guarding against drift — it guards against a refactor of the derivation
+    /// that still passes `the_key_derivation_follows_the_documented_rule`, which recomputes rather
+    /// than remembers.
     const VECTOR_SNG_ID: &str = "3135556";
     /// The sixteen bytes both implementations must produce for [`VECTOR_SNG_ID`].
     const VECTOR_KEY: [u8; 16] = [
@@ -174,9 +210,9 @@ mod tests {
     ];
 
     #[test]
-    fn the_key_matches_the_vector_shared_with_the_kotlin_side() {
-        // A literal, not a recomputation: this is the value `DeezerCryptoTest.kt` asserts, and a
-        // change to either derivation that is not a change to both fails here.
+    fn the_key_matches_the_known_vector() {
+        // A literal, not a recomputation. The test below derives the key from the rule; this one
+        // remembers what the rule produced, so changing both together still fails here.
         assert_eq!(blowfish_key(VECTOR_SNG_ID), VECTOR_KEY);
     }
 
@@ -243,6 +279,26 @@ mod tests {
         assert!(!stripe_is_encrypted(2));
         assert!(stripe_is_encrypted(3));
         assert!(stripe_is_encrypted(300));
+    }
+
+    #[test]
+    fn noise_from_a_wrong_key_is_recognised_as_not_being_audio() {
+        // The failure this catches is the one that does not fail: a wrong key decrypts to
+        // something, and that something plays. These are the four shapes Deezer actually serves.
+        assert!(looks_like_audio(b"fLaC\x00\x00\x00\x22"));
+        assert!(looks_like_audio(b"ID3\x03\x00\x00\x00"));
+        assert!(looks_like_audio(&[0xFF, 0xFB, 0x90, 0x64])); // MPEG-1 Layer III
+        assert!(looks_like_audio(&[0xFF, 0xF3, 0x48, 0xC4])); // MPEG-2 Layer III
+
+        // And what a wrong key produces: bytes with no structure at all.
+        assert!(!looks_like_audio(&[0x9c, 0x41, 0x7e, 0x02, 0xd3]));
+        assert!(!looks_like_audio(b"\x00\x00\x00\x00"));
+        // Eleven sync bits but a reserved version, which no real frame uses.
+        assert!(!looks_like_audio(&[0xFF, 0xEB, 0x90, 0x64]));
+
+        // Too short to judge is not the same as wrong.
+        assert!(looks_like_audio(b"fL"));
+        assert!(looks_like_audio(b""));
     }
 
     #[test]

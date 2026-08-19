@@ -6,13 +6,18 @@
 // the app to code written by someone else; the checks are part of the feature, not a hardening pass
 // to be done later, and every one of them is here because of a specific way this could go wrong.
 //
-// **What this does not protect against, said plainly:** a hostname that passes these checks can
-// still resolve to a private address (DNS rebinding), because the check happens on the name and the
-// connection happens after a lookup we do not control. Closing that needs resolve-then-pin at the
-// connector, which `reqwest` does not make available. It is a real hole and it is written down
-// rather than implied away.
+// **DNS rebinding, and how it is closed (3.3).** Until 3.3 the note here said this was a real hole:
+// a hostname that passes the checks below can still *resolve* to a private address, because the
+// check happens on the name and the connection happens after a lookup nobody controlled. The answer
+// is resolve-then-pin — look the name up ourselves, refuse the addresses we do not like, and then
+// connect to **exactly** the address we approved rather than to whatever a second lookup returns.
+// [`check_addresses`] is the refusing half; `HttpRequest::pin_to` is the pinning half.
+//
+// What that leaves: an attacker who controls the DNS answer can still choose *which public address*
+// we reach. That is not the hole — it is what a domain name means.
 
 use super::AddonError;
+use std::net::{IpAddr, SocketAddr};
 use url::{Host, Url};
 
 /// Whether `http://` to a loopback address is tolerated. Debug builds only: it exists so an addon
@@ -106,6 +111,52 @@ fn check_host(url: &Url) -> Result<(), AddonError> {
         return Err(AddonError::Refused(format!(
             "refusing a private or local address: {host}"
         )));
+    }
+    Ok(())
+}
+
+/// Is this address one we are willing to connect to?
+///
+/// The same judgement [`check_host`] makes about a literal address, applied to what a name actually
+/// resolved to. Separate and public because it is the half that closes DNS rebinding: the name is
+/// checked once, the addresses are checked once, and then the addresses are what we connect to.
+pub fn is_private_addr(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_unspecified()
+                || ip.is_documentation()
+                || (ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1]))
+        }
+        IpAddr::V6(ip) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+/// Refuses a resolution that landed anywhere private.
+///
+/// **All of them, not the first.** A name that resolves to one public address and one private one
+/// is the attack, not a coincidence: connecting would pick whichever the client felt like. An empty
+/// answer is refused too — there is nothing to pin, so falling back to an unpinned connection would
+/// hand the decision straight back to the resolver.
+pub fn check_addresses(host: &str, addrs: &[SocketAddr]) -> Result<(), AddonError> {
+    if addrs.is_empty() {
+        return Err(AddonError::Unreachable(format!("{host} did not resolve")));
+    }
+    for addr in addrs {
+        if is_private_addr(addr.ip()) {
+            return Err(AddonError::Refused(format!(
+                "{host} resolves to a private address ({}); refusing to connect",
+                addr.ip()
+            )));
+        }
     }
     Ok(())
 }

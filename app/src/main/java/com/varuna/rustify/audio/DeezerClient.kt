@@ -15,7 +15,8 @@ import org.json.JSONObject
  *
  * Flow: `deezer.getUserData` (ARL -> api/license token) -> track id by ISRC (or search) ->
  * `song.getData` (TRACK_TOKEN) -> `media.deezer.com/v1/get_url` (encrypted CDN URL). Decryption lives
- * in [DeezerCrypto] (streaming in [DeezerDecryptingDataSource], download in [DeezerAudioSource]).
+ * in the Rust core (`core_engine/src/audio/deezer.rs`), reached through the local player server —
+ * see [DeezerAudioSource] and `docs/stremio-core/DEEZER-CRYPTO.md`.
  */
 class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
 

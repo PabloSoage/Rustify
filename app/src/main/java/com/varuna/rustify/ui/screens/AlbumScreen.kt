@@ -85,7 +85,7 @@ fun AlbumScreen(
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
     // Seed from the in-memory cache so returning from the miniplayer does not trigger a reload.

@@ -293,6 +293,7 @@ pub fn register_proxy<E: Env>(
     sng_id: &str,
     mime: Option<String>,
     ttl_ms: Option<i64>,
+    cache: Option<(&str, &str)>,
 ) -> Option<String> {
     let server = current()?;
     if !(url.starts_with("http://") || url.starts_with("https://")) || sng_id.is_empty() {
@@ -302,6 +303,16 @@ pub fn register_proxy<E: Env>(
         served: Served::DeezerProxy {
             url: url.to_owned(),
             sng_id: sng_id.to_owned(),
+            // Where a copy lands while it plays. This is what stopped the track being fetched
+            // twice: before 3.3 the proxy streamed it *and* a background job downloaded the same
+            // bytes again for the cache.
+            cache_path: cache.and_then(|(root, key)| {
+                if root.is_empty() || key.is_empty() {
+                    None
+                } else {
+                    Some(cache::path_for(root, key).to_string_lossy().into_owned())
+                }
+            }),
         },
         mime,
         // Shorter than a cache entry's day by default: behind this handle is a CDN URL that expires,
@@ -389,9 +400,11 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
 
     match &entry.served {
         Served::File(path) => serve_file::<E>(path, &mime, range_header).await,
-        Served::DeezerProxy { url, sng_id } => {
-            serve_proxy::<E>(url, sng_id, &mime, range_header).await
-        }
+        Served::DeezerProxy {
+            url,
+            sng_id,
+            cache_path,
+        } => serve_proxy::<E>(url, sng_id, cache_path.as_deref(), &mime, range_header).await,
     }
 }
 
@@ -464,6 +477,7 @@ async fn serve_file<E: Env>(
 async fn serve_proxy<E: Env>(
     url: &str,
     sng_id: &str,
+    cache_path: Option<&str>,
     mime: &str,
     range_header: Option<&str>,
 ) -> Response<ResBody> {
@@ -537,7 +551,21 @@ async fn serve_proxy<E: Env>(
             .unwrap_or_else(|_| text(StatusCode::INTERNAL_SERVER_ERROR, ""));
     }
 
-    let body = proxy::DecryptingBody::new(stream, sng_id, &plan, answer.remaining).boxed();
+    // Cache it while it plays, rather than downloading the same track a second time in the
+    // background. `writing_through` refuses on its own if this response is a partial range — a
+    // cached file with a hole in it is worse than none, because nothing later can tell.
+    let mut body = proxy::DecryptingBody::new(stream, sng_id, &plan, answer.remaining);
+    let serves_whole_track =
+        plan.skip == 0 && plan.stripe_index == 0 && answer.remaining.is_none();
+    if let (Some(path), true) = (cache_path, serves_whole_track) {
+        let sweep_root = std::path::Path::new(path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned());
+        if let Some(sink) = fill::spawn_writer::<E>(path.to_owned(), sweep_root) {
+            body = body.writing_through(sink);
+        }
+    }
+    let body = body.boxed();
 
     let mut builder = Response::builder()
         .status(StatusCode::from_u16(answer.status).unwrap_or(StatusCode::OK))

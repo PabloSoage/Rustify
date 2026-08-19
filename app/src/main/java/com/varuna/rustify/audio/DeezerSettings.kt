@@ -35,7 +35,18 @@ object DeezerSettings {
     fun setWorkingArl(ctx: Context, v: String) = p(ctx).edit { putString(K_WORKING, v.trim()) }
 
     fun quality(ctx: Context): String = p(ctx).getString(K_QUALITY, "flac") ?: "flac"
-    fun setQuality(ctx: Context, v: String) = p(ctx).edit { putString(K_QUALITY, v) }
+
+    /**
+     * Changing this changes the bytes a track is made of, so anything already stored for it is the
+     * wrong quality now. The generation bump is what makes the cache stop answering with it — see
+     * [StreamRouting]. Guarded on an actual change, because a needless bump costs a re-download of
+     * everything the user had.
+     */
+    fun setQuality(ctx: Context, v: String) {
+        val changed = quality(ctx) != v
+        p(ctx).edit { putString(K_QUALITY, v) }
+        if (changed) StreamRouting.bumpGeneration(ctx)
+    }
 
     /** Formats to request from get_url, in preference order (fallback within the same request). */
     fun formatChain(ctx: Context): List<String> = when (quality(ctx)) {

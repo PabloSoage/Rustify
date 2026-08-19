@@ -113,12 +113,21 @@ object AudioBackendSettings {
     }
 
     fun saveOrder(context: Context, key: String, entries: List<BackendEntry>) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val arr = JSONArray()
         entries.forEach { e ->
             arr.put(JSONObject().apply { put("id", e.id); put("enabled", e.enabled) })
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit { putString(key, arr.toString()) }
+        val next = arr.toString()
+        val changed = prefs.getString(key, null) != next
+        prefs.edit { putString(key, next) }
+
+        // Reordering or disabling a backend changes which one produces the audio, so what is
+        // already stored may no longer be what the user wants. Bumping the generation puts the
+        // whole cache out of reach in one integer instead of deleting anything — see
+        // [StreamRouting]. Guarded on an actual change, because a needless bump costs the user a
+        // re-download of everything they had.
+        if (changed) StreamRouting.bumpGeneration(context)
     }
 
     /** Enabled ids in priority order — what the chain consumes. */

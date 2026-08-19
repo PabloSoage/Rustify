@@ -119,6 +119,15 @@ pub struct HttpRequest {
     pub headers: Vec<(String, String)>,
     pub body: Option<Vec<u8>>,
     pub timeout_ms: Option<u64>,
+    /// Connect to **exactly** these addresses instead of resolving the host again.
+    ///
+    /// This is the pinning half of resolve-then-pin, and it exists for one attack: a name that
+    /// passes the add-on security checks and then resolves to a private address on the second
+    /// lookup. The caller resolves once, refuses what it does not like, and hands the survivors
+    /// here — so the connection cannot go anywhere the check did not approve.
+    ///
+    /// Empty means "resolve normally", which is what every request that is not an add-on's does.
+    pub pin_to: Vec<std::net::SocketAddr>,
 }
 
 impl HttpRequest {
@@ -129,6 +138,7 @@ impl HttpRequest {
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
+            pin_to: Vec::new(),
         }
     }
 
@@ -159,6 +169,12 @@ impl HttpRequest {
 
     pub fn timeout_ms(mut self, ms: u64) -> Self {
         self.timeout_ms = Some(ms);
+        self
+    }
+
+    /// See [`HttpRequest::pin_to`].
+    pub fn pinned_to(mut self, addrs: Vec<std::net::SocketAddr>) -> Self {
+        self.pin_to = addrs;
         self
     }
 
@@ -389,6 +405,15 @@ pub trait Env: 'static {
     /// **No whole-request timeout.** A proxied stream lives as long as the track does, and a ceiling
     /// here would cut playback off mid-song. Implementors bound the *connection*, not the transfer.
     fn fetch_stream(req: HttpRequest) -> TryEnvFuture<(HttpResponseHead, ByteStream)>;
+
+    /// Looks a host up, without connecting to it.
+    ///
+    /// The resolving half of resolve-then-pin. It exists so the add-on layer can see the addresses
+    /// a name points at **before** anything connects, refuse the ones it does not like, and then
+    /// pin what is left via [`HttpRequest::pin_to`]. Doing the lookup inside the HTTP client would
+    /// leave a second, unchecked lookup between the decision and the connection — which is exactly
+    /// what DNS rebinding is.
+    fn resolve_host(host: &str, port: u16) -> TryEnvFuture<Vec<std::net::SocketAddr>>;
 
     /// `Ok(None)` means "no such key", which is not an error.
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>>;

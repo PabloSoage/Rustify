@@ -7,6 +7,8 @@ use super::manifest::{Manifest, MAX_MANIFEST_BYTES};
 use super::registry::InstalledAddon;
 use super::{security, AddonError};
 use crate::env::{Env, HttpRequest};
+use std::net::SocketAddr;
+use url::Url;
 use serde::{Deserialize, Serialize};
 
 /// How long an addon has to answer before we move on to the next one in the chain.
@@ -88,16 +90,46 @@ pub struct StreamAnswer {
     pub expires_at_ms: Option<i64>,
 }
 
+
+/// Resolves the host of `url`, refuses anything private, and returns what to pin the connection to.
+///
+/// This is the whole of the DNS-rebinding defence, and the reason it is a separate step rather than
+/// something the HTTP client does: between "the name looked fine" and "the socket connected" there
+/// used to be a second lookup nobody checked. Now there is one lookup, it is checked, and the
+/// connection goes to what was checked.
+async fn approved_addresses<E: Env>(url: &Url) -> Result<Vec<SocketAddr>, AddonError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| AddonError::Refused("no host".into()))?;
+    let port = url.port_or_known_default().unwrap_or(443);
+
+    // A literal address in the URL was already judged by `check_host`; there is nothing to resolve
+    // and nothing a resolver could change afterwards.
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    let addrs = E::resolve_host(host, port)
+        .await
+        .map_err(|e| AddonError::Unreachable(e.to_string()))?;
+    security::check_addresses(host, &addrs)?;
+    Ok(addrs)
+}
+
 /// Fetches and validates an addon's manifest. This is what "install by URL" runs.
 pub async fn fetch_manifest<E: Env>(base_url: &str) -> Result<(Manifest, String), AddonError> {
     let base = security::validate_addon_url(base_url)?;
     let normalised = normalise_base(base.as_str());
     let manifest_url = format!("{normalised}/manifest.json");
 
+    // Resolved and judged before anything connects, then pinned to what was judged.
+    let pinned = approved_addresses::<E>(&base).await?;
+
     let response = E::fetch(
         HttpRequest::get(manifest_url.as_str())
             .header("Accept", "application/json")
-            .timeout_ms(ADDON_TIMEOUT_MS),
+            .timeout_ms(ADDON_TIMEOUT_MS)
+            .pinned_to(pinned),
     )
     .await?;
 
@@ -133,10 +165,16 @@ pub async fn resolve_stream<E: Env>(
     }
 
     let url = format!("{}/stream?{}", addon.base_url, query.to_query_string());
+    // Re-checked on every call, not just at install: an add-on installed a month ago can have its
+    // name pointed somewhere else since, and this is the request that carries the query.
+    let base = security::validate_addon_url(&addon.base_url)?;
+    let pinned = approved_addresses::<E>(&base).await?;
+
     let response = E::fetch(
         HttpRequest::get(url.as_str())
             .header("Accept", "application/json")
-            .timeout_ms(ADDON_TIMEOUT_MS),
+            .timeout_ms(ADDON_TIMEOUT_MS)
+            .pinned_to(pinned),
     )
     .await?;
 
@@ -186,6 +224,80 @@ mod tests {
         }
     }
 
+    /// Every existing test resolves its host somewhere harmless; without this they would all fail
+    /// on "no canned DNS answer", which is the mock being loud rather than anything being wrong.
+    fn public_dns() {
+        mock::on_dns(
+            "addons.example.org",
+            vec![std::net::IpAddr::from([93, 184, 216, 34])],
+        );
+    }
+
+    #[tokio::test]
+    async fn a_name_that_resolves_to_a_private_address_is_refused_before_anything_connects() {
+        // DNS rebinding: the name passes every check that looks at the name, and then points at
+        // the router. Until 3.3 this was a documented hole; the answer is to resolve once, judge
+        // what came back, and connect only to that.
+        let _guard = mock::lock_and_reset();
+        mock::on_dns(
+            "addons.example.org",
+            vec![std::net::IpAddr::from([192, 168, 1, 1])],
+        );
+        mock::on_prefix("https://addons.example.org", HttpResponse::ok(MANIFEST));
+
+        let result = fetch_manifest::<MockEnv>("https://addons.example.org/b/").await;
+        assert!(matches!(result, Err(AddonError::Refused(_))), "{result:?}");
+        // And nothing was asked for: the refusal happens before the request, not after it.
+        assert!(mock::state().requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn one_private_address_among_public_ones_is_still_a_refusal() {
+        // Answering with a good address and a bad one is the attack, not a coincidence: which one
+        // gets used would be the client's choice rather than ours.
+        let _guard = mock::lock_and_reset();
+        mock::on_dns(
+            "addons.example.org",
+            vec![
+                std::net::IpAddr::from([93, 184, 216, 34]),
+                std::net::IpAddr::from([10, 0, 0, 5]),
+            ],
+        );
+        mock::on_prefix("https://addons.example.org", HttpResponse::ok(MANIFEST));
+
+        let result = fetch_manifest::<MockEnv>("https://addons.example.org/b/").await;
+        assert!(matches!(result, Err(AddonError::Refused(_))), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn an_approved_address_is_pinned_onto_the_request() {
+        // The other half: having judged an address, the connection has to go *there*, or a second
+        // lookup could still send it somewhere else.
+        let _guard = mock::lock_and_reset();
+        public_dns();
+        mock::on_prefix("https://addons.example.org", HttpResponse::ok(MANIFEST));
+
+        let _ = fetch_manifest::<MockEnv>("https://addons.example.org/b/").await;
+        let sent = mock::state().requests.first().cloned().expect("a request");
+        assert_eq!(
+            sent.pin_to,
+            vec![std::net::SocketAddr::from(([93, 184, 216, 34], 443))]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_host_that_does_not_resolve_is_unreachable_rather_than_unpinned() {
+        // Falling back to an unpinned connection when the lookup says nothing would hand the
+        // decision straight back to the resolver, which is what this whole path avoids.
+        let _guard = mock::lock_and_reset();
+        mock::on_dns("addons.example.org", vec![]);
+        mock::on_prefix("https://addons.example.org", HttpResponse::ok(MANIFEST));
+
+        let result = fetch_manifest::<MockEnv>("https://addons.example.org/b/").await;
+        assert!(matches!(result, Err(AddonError::Unreachable(_))), "{result:?}");
+        assert!(mock::state().requests.is_empty());
+    }
+
     fn installed() -> InstalledAddon {
         InstalledAddon {
             manifest: Manifest::parse(MANIFEST.as_bytes()).unwrap(),
@@ -197,6 +309,7 @@ mod tests {
     #[tokio::test]
     async fn installing_fetches_and_validates_the_manifest() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         mock::on_url(
             "https://addons.example.org/b/manifest.json",
             HttpResponse::ok(MANIFEST),
@@ -222,6 +335,7 @@ mod tests {
     #[tokio::test]
     async fn a_resolved_url_is_validated_every_time_not_just_at_install() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         mock::on_prefix(
             "https://addons.example.org/b/stream",
             HttpResponse::ok(r#"{"url":"file:///data/data/com.varuna.rustify/x.db"}"#),
@@ -233,6 +347,7 @@ mod tests {
     #[tokio::test]
     async fn a_loopback_stream_url_is_refused() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         // Would aim the player at this device's own services, the local streaming server included.
         mock::on_prefix(
             "https://addons.example.org/b/stream",
@@ -246,6 +361,7 @@ mod tests {
     #[tokio::test]
     async fn a_good_answer_comes_back_whole() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         mock::on_prefix(
             "https://addons.example.org/b/stream",
             HttpResponse::ok(
@@ -264,6 +380,7 @@ mod tests {
     #[tokio::test]
     async fn not_having_the_track_is_not_an_error() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         mock::on_prefix(
             "https://addons.example.org/b/stream",
             HttpResponse::with_status(404, ""),
@@ -279,6 +396,7 @@ mod tests {
     #[tokio::test]
     async fn a_local_track_is_never_sent_to_a_third_party() {
         let _guard = mock::lock_and_reset();
+        public_dns();
         let local = TrackQuery {
             kind: "local".into(),
             id: "content://media/external/audio/media/1234".into(),

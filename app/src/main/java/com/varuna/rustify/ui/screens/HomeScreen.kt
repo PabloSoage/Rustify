@@ -1,5 +1,7 @@
 package com.varuna.rustify.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -29,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -40,11 +46,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
@@ -65,7 +76,11 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onDjClick: () -> Unit = {},
     onTravelClick: () -> Unit = {},
-    onWebPlayerClick: () -> Unit = {}
+    onWebPlayerClick: () -> Unit = {},
+    /** What you were in the middle of, newest first. Empty is the normal state on a fresh install. */
+    continueListening: List<com.varuna.rustify.bridge.ListeningSession> = emptyList(),
+    onResumeListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
+    onForgetListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {}
 ) {
     val darkBackground = Color(0xFF121212)
     val gradientColor = Color(0xFF2E2E2E)
@@ -228,6 +243,18 @@ fun HomeScreen(
                     }
                 }
 
+                // "Continue listening" — before the browse sections, because it is the only row
+                // that is about what *you* were doing rather than what Spotify suggests.
+                if (continueListening.isNotEmpty()) {
+                    item {
+                        ContinueListeningRow(
+                            sessions = continueListening,
+                            onResume = onResumeListening,
+                            onForget = onForgetListening
+                        )
+                    }
+                }
+
                 browseSections?.let { sections ->
                     items(sections) { section ->
                         BrowseSectionView(
@@ -285,6 +312,90 @@ fun BrowseSectionView(
                         isCircle = true,
                         onClick = { onItemClick(item) }
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The "continue listening" row.
+ *
+ * Everything it draws comes from the stored session — label, subtitle, artwork, progress — so it
+ * appears with the screen rather than a moment after it. That was the point of storing them: a row
+ * about what you were doing is worth nothing if it arrives once you have scrolled past.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ContinueListeningRow(
+    sessions: List<com.varuna.rustify.bridge.ListeningSession>,
+    onResume: (com.varuna.rustify.bridge.ListeningSession) -> Unit,
+    onForget: (com.varuna.rustify.bridge.ListeningSession) -> Unit
+) {
+    if (sessions.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = stringResource(R.string.home_continue_listening),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(sessions, key = { it.id }) { session ->
+                Column(
+                    modifier = Modifier
+                        .width(140.dp)
+                        .combinedClickable(
+                            onClick = { onResume(session) },
+                            // Long-press to remove: a row about your own listening should be
+                            // dismissible without a menu, and a menu on a 140dp card is worse.
+                            onLongClick = { onForget(session) }
+                        )
+                ) {
+                    AsyncImage(
+                        model = session.imageUrl.takeIf { it.isNotBlank() },
+                        contentDescription = session.label,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(140.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF2A2A2A))
+                    )
+                    // The progress line is the whole reason this row is not just "recently played":
+                    // it says how far in you were.
+                    LinearProgressIndicator(
+                        progress = { session.progress },
+                        color = Color(0xFF1DB954),
+                        trackColor = Color(0xFF404040),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .height(3.dp)
+                    )
+                    Text(
+                        text = session.label,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    if (session.subtitle.isNotBlank()) {
+                        Text(
+                            text = session.subtitle,
+                            color = Color(0xFF9E9E9E),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

@@ -94,6 +94,134 @@ pub fn start<E: Env>(url: String, cache_path: String, kind: Kind, sweep_root: Op
     true
 }
 
+/// Reads the first few bytes of `path` and asks [`deezer::looks_like_audio`] about them.
+async fn head_looks_like_audio(path: &str) -> bool {
+    use tokio::io::AsyncReadExt;
+    let mut head = [0u8; 4];
+    match tokio::fs::File::open(path).await {
+        Ok(mut file) => {
+            let read = file.read(&mut head).await.unwrap_or(0);
+            deezer::looks_like_audio(&head[..read])
+        }
+        // Cannot read it: not this check's job to complain, the rename will fail next anyway.
+        Err(_) => true,
+    }
+}
+
+/// Starts a task that writes a track into the cache **as it is being played**.
+///
+/// This is how a Deezer track stops being downloaded twice. Before 3.3 the first play opened the
+/// proxy *and* started a background download of the same track: the bytes crossed the network twice,
+/// which on mobile data is not a rounding error. Now the proxy hands what it has already decrypted
+/// to this, and the second play is a file read for the price of the first.
+///
+/// Returns `None` when a fill for this path is already running, which is also what stops two
+/// concurrent plays of the same track from writing over each other.
+pub fn spawn_writer<E: Env>(
+    cache_path: String,
+    sweep_root: Option<String>,
+) -> Option<tokio::sync::mpsc::Sender<super::proxy::WritePart>> {
+    if !claim(&cache_path) {
+        return None;
+    }
+    // Deep enough that a burst of 64 KiB frames does not make the body give up on caching, shallow
+    // enough that it cannot hold a meaningful part of a track in memory.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+
+    E::exec_concurrent(async move {
+        let outcome = write_stream::<E>(&cache_path, &mut rx).await;
+        match outcome {
+            Ok(true) => {
+                E::log(
+                    LogLevel::Info,
+                    "StreamCache",
+                    &format!("cached {cache_path} while it played"),
+                );
+                if let Some(root) = sweep_root {
+                    super::cache::sweep(&root, super::cache::DEFAULT_BUDGET_BYTES).await;
+                }
+            }
+            // Not an error: a track the user skipped through is simply not cached.
+            Ok(false) => E::log(
+                LogLevel::Debug,
+                "StreamCache",
+                &format!("{cache_path} was not played to the end; nothing cached"),
+            ),
+            Err(e) => E::log(
+                LogLevel::Warn,
+                "StreamCache",
+                &format!("write-through failed for {cache_path}: {e}"),
+            ),
+        }
+        release(&cache_path);
+    });
+
+    Some(tx)
+}
+
+/// Drains `rx` into `{cache_path}.part`, and renames it into place only on [`WritePart::Complete`].
+///
+/// Returns whether a complete file was produced.
+async fn write_stream<E: Env>(
+    cache_path: &str,
+    rx: &mut tokio::sync::mpsc::Receiver<super::proxy::WritePart>,
+) -> Result<bool, EnvError> {
+    use tokio::io::AsyncWriteExt;
+
+    if let Some(parent) = std::path::Path::new(cache_path).parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| EnvError::Storage(e.to_string()))?;
+    }
+    let partial = format!("{cache_path}.part");
+    let mut file = tokio::io::BufWriter::new(
+        tokio::fs::File::create(&partial)
+            .await
+            .map_err(|e| EnvError::Storage(e.to_string()))?,
+    );
+
+    let mut head = Vec::new();
+    let mut complete = false;
+    while let Some(part) = rx.recv().await {
+        match part {
+            super::proxy::WritePart::Data(bytes) => {
+                if head.len() < 4 {
+                    head.extend_from_slice(&bytes[..bytes.len().min(4)]);
+                }
+                file.write_all(&bytes)
+                    .await
+                    .map_err(|e| EnvError::Storage(e.to_string()))?;
+            }
+            super::proxy::WritePart::Complete => {
+                complete = true;
+                break;
+            }
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|e| EnvError::Storage(e.to_string()))?;
+    drop(file);
+
+    // A partial file left under the real name would be served forever as if it were the track.
+    if !complete || !deezer::looks_like_audio(&head) {
+        let _ = tokio::fs::remove_file(&partial).await;
+        if complete {
+            // Complete but not audio means the key was wrong, and a wrong key does not fail — it
+            // decrypts to noise that plays. Worth a warning rather than a silent discard.
+            return Err(EnvError::Storage(
+                "decrypted bytes do not look like audio; refusing to cache them".into(),
+            ));
+        }
+        return Ok(false);
+    }
+
+    tokio::fs::rename(&partial, cache_path)
+        .await
+        .map_err(|e| EnvError::Storage(e.to_string()))?;
+    Ok(true)
+}
+
 async fn run<E: Env>(url: &str, cache_path: &str, kind: &Kind) -> Result<u64, EnvError> {
     match kind {
         // `fetch_to_file` already writes beside the destination and renames, so a reader never sees
@@ -111,6 +239,15 @@ async fn run<E: Env>(url: &str, cache_path: &str, kind: &Kind) -> Result<u64, En
             // double what this cache costs on disk for no benefit at all.
             let _ = tokio::fs::remove_file(&encrypted).await;
             let bytes = outcome.map_err(|e| EnvError::Storage(e.to_string()))?;
+
+            // A wrong key does not fail — it decrypts to noise that plays. Caching that would serve
+            // the same noise on every later play, with nothing to tell anyone why.
+            if !head_looks_like_audio(&decrypted).await {
+                let _ = tokio::fs::remove_file(&decrypted).await;
+                return Err(EnvError::Storage(
+                    "decrypted bytes do not look like audio; refusing to cache them".into(),
+                ));
+            }
 
             // Renamed last: `cache_path` appearing means the file is complete *and* decrypted. Any
             // other order leaves a window where a registration could hand out a URL to ciphertext.

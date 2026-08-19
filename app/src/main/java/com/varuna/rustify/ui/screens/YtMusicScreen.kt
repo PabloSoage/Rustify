@@ -98,7 +98,7 @@ fun YtMusicLibraryContent(
     onFilterChanged: (String) -> Unit = {},
     useScraper: Boolean = false,
     onToggleScraper: () -> Unit = {},
-    currentTrackId: String? = null
+    currentTrackId: String?
 ) {
     var section by rememberSaveable { mutableStateOf(YtmLibSection.EXPLORE) }
 
