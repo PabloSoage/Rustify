@@ -394,6 +394,11 @@
     <string name="settings_addons_url_label">アドオンのURL（https）</string>
     <string name="settings_addons_install">インストール</string>
     <string name="settings_addons_privacy">アドオンに渡されるのは、解決中の曲のタイトル・アーティスト・長さ・識別子だけです。Spotifyのセッションが渡されることはなく、この端末に保存された曲が送信されることもありません。</string>
+    <string name="settings_stream_cache">保存した曲</string>
+    <string name="settings_stream_cache_enabled">この端末に曲を保存する</string>
+    <string name="settings_stream_cache_desc">一度再生した曲はここに残るので、次からはすぐに再生でき、通信も使わず、オフラインでも聴けます。最大512MBで、古いものから消えます。端末にすでにある曲がコピーされることはありません。オフにすると端末内のプレイヤー用サーバーも起動しなくなり、3.1で追加された処理は一切動きません。</string>
+    <string name="settings_stream_cache_using">%1$s を使用中</string>
+    <string name="settings_stream_cache_clear">消去</string>
     <string name="egg_found_title">🦀 見つけたね！</string>
     <string name="egg_found_msg">RustとKotlin、そして大量のコーヒーで作りました。カニをつついてみて…</string>
     <string name="egg_jojo_msg">時が止まる。物語は別の場所で続く…</string>

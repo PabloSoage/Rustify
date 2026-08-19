@@ -33,7 +33,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         runCatching {
             val trackId = track.id ?: error("track has no id")
             val videoId = (if (!hint.isNullOrBlank()) hint
-                           else NativeEngine.resolveYouTubeIdNative(trackId, "")).trim()
+                           else NativeEngine.resolveYouTubeId(trackId, "")).trim()
             require(videoId.isNotBlank()) { "no YouTube id" }
             val instances = InvidiousInstances.selected(appContext)
             require(instances.isNotEmpty()) { "no Invidious instances configured" }
@@ -44,7 +44,9 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
                     return@runCatching StreamInfo(
                         uri = url,
                         expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L,
-                        mimeType = null
+                        mimeType = null,
+                        // Worth caching: the URL dies in six hours, the audio does not.
+                        cache = CacheHint(upstreamUrl = url)
                     )
                 }
             }

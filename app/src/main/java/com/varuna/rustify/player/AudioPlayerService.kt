@@ -405,12 +405,23 @@ class AudioPlayerService private constructor(private val context: Context) {
         // confirmed YouTube alternatives and Settings/export read it from filesDir. Using cacheDir made
         // the confirmed matchings invisible ("0 matchings") and wiped when the OS cleared the cache.
         val cachePath = context.filesDir.absolutePath
-        NativeEngine.initCacheDirNative(cachePath)
 
-        // The loopback streaming server (3.2). Started off the main thread because starting it
-        // crosses JNI, and nothing here should ever wait on a JNI call from the UI thread.
-        // Nothing is routed through it yet — see LocalStreamServer.
-        mainScope.launch(Dispatchers.IO) { LocalStreamServer.ensureStarted() }
+        // Both of these cross JNI, and a JNI call blocks the thread that makes it. This runs in a
+        // service constructor, i.e. on the main thread, so both belong off it — `initCacheDir`
+        // reads the match file and used to do that on the UI thread at every start-up (point N).
+        mainScope.launch(Dispatchers.IO) {
+            NativeEngine.initCacheDir(cachePath)
+            // The loopback streaming server. From 3.1 tracks really are served through it — see
+            // StreamRouting — so it wants to be up before the first play rather than eventually.
+            //
+            // But only if the user has the stream cache on. With it off nothing would ever ask the
+            // server anything, and a listener nobody talks to is still a listener: the switch turns
+            // the whole thing off rather than merely stopping it being used. Turning it back on does
+            // not need a restart — StreamRouting starts it on the next play.
+            if (com.varuna.rustify.audio.StreamRouting.isEnabled(context)) {
+                LocalStreamServer.ensureStarted()
+            }
+        }
 
         loadUrlCache()
         loadState()
@@ -517,6 +528,19 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Clear cached URL if we get 403 Forbidden or 410 Gone (URL expired)
                 val cause = error.cause
                 if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    // 404 from the loopback server means the stream cache was swept between being
+                    // handed out and being read. Same recovery as an expired URL — re-resolve and
+                    // play — and it has to be listed here or that case retries with a backoff and
+                    // then gives up, on a track that plays perfectly well from its backend.
+                    if (cause.responseCode == 404 &&
+                        cause.dataSpec.uri.toString().startsWith("http://127.0.0.1:")
+                    ) {
+                        isExpiredUrl = true
+                        currentTrackId?.let {
+                            com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it)
+                        }
+                        android.util.Log.d("AudioPlayerService", "Stream cache entry gone for $currentTrackId; re-resolving")
+                    }
                     if (cause.responseCode == 403 || cause.responseCode == 410) {
                         isExpiredUrl = true
                         if (currentTrackId != null) {
@@ -781,6 +805,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                     .build()
 
                 var streamUrl: String? = null
+                // Set when the track plays through the local streaming server instead of from its
+                // upstream URL. Kept apart from `streamUrl` on purpose: `streamUrl` is what the
+                // *backend* produced and is what gets persisted and expiry-checked, while this is a
+                // loopback URL good only for this process. Persisting one would hand a later
+                // session a dead port.
+                var routedUrl: String? = null
 
                 if (TrackRef.isLocal(trackId)) {
                     streamUrl = TrackRef.localUriOf(trackId) ?: trackId
@@ -813,16 +843,30 @@ class AudioPlayerService private constructor(private val context: Context) {
                             preResolvedUrls.remove(trackId)
                             resolvedStreamUrls.remove(trackId)
                             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
+                            // The stored audio too. A user alternative is the user saying "not that
+                            // recording"; serving the old bytes from disk would make the choice look
+                            // as if it had done nothing. An expiry does not mean that, but the URL is
+                            // gone either way and the file will simply be refetched.
+                            if (hasUserMapping) com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
                         } else {
-                            // Persisted URL cache — avoids an unnecessary yt-dlp resolution.
-                            val cachedUrl = getCachedStreamUrl(trackId)
-                            if (!cachedUrl.isNullOrBlank()) {
-                                streamUrl = cachedUrl
-                                android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                            // The stream cache. Asked before anything else because it is the only
+                            // path that costs nothing: the audio is already on disk, so there is no
+                            // backend to choose, no yt-dlp to run and nothing to download. It comes
+                            // back as an ordinary http://127.0.0.1 URL that Media3 can seek in.
+                            routedUrl = com.varuna.rustify.audio.StreamRouting.cachedUrlFor(context, trackId)
+                            if (routedUrl != null) {
+                                android.util.Log.d("AudioPlayerService", "Playing $trackId from the stream cache")
+                            } else {
+                                // Persisted URL cache — avoids an unnecessary yt-dlp resolution.
+                                val cachedUrl = getCachedStreamUrl(trackId)
+                                if (!cachedUrl.isNullOrBlank()) {
+                                    streamUrl = cachedUrl
+                                    android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                                }
                             }
                         }
                     }
-                    if (streamUrl == null) {
+                    if (streamUrl == null && routedUrl == null) {
                         if (effectiveYoutubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
                         if (streamUrl.isNullOrBlank()) {
                             // Network resolution now lives in the backend chain
@@ -844,6 +888,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                                 // Remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
                                 info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
                                 android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
+                                // Start filling the stream cache in the background, so the *next*
+                                // play of this track skips everything above. It does not delay this
+                                // one: the answer is null unless the bytes happen to be there
+                                // already, and then playing them is strictly better anyway.
+                                routedUrl = com.varuna.rustify.audio.StreamRouting
+                                    .rememberAfterResolving(context, trackId, info)
                             }
                             res.onFailure { e ->
                                 // Surface the real per-provider reason so the banner isn't just "not playable".
@@ -860,32 +910,43 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                 }
 
-                if (streamUrl.isNullOrBlank()) {
+                if (streamUrl.isNullOrBlank() && routedUrl.isNullOrBlank()) {
                     // Auto-retry the extraction failure instead of leaving the user stuck.
                     scheduleExtractionRetry(track, effectiveYoutubeId)
                     return@launch
                 }
 
+                // What actually goes to Media3. The loopback URL wins when there is one, because
+                // the bytes behind it are already on this device: no expiry, no re-resolve, and a
+                // real `Range` over a real file instead of a custom DataSource.
+                val playbackUrl = routedUrl ?: streamUrl!!
 
                 val mediaItem = MediaItem.Builder()
-                    .setUri(streamUrl)
+                    .setUri(playbackUrl)
                     .setMediaMetadata(metadata)
                     .apply { setCustomCacheKey(if (effectiveYoutubeId.isNullOrBlank()) trackId else "${trackId}_${effectiveYoutubeId}") }
                     .build()
 
-                resolvedStreamUrls[trackId] = streamUrl
+                resolvedStreamUrls[trackId] = playbackUrl
                 // Persist URL for next session (skip yt-dlp), but NOT for local files
-                val isLocalStream = TrackRef.isLocal(trackId) || streamUrl.startsWith("content://") || streamUrl.startsWith("file://")
+                val isLocalStream = TrackRef.isLocal(trackId) || playbackUrl.startsWith("content://") || playbackUrl.startsWith("file://")
                 // Deezer serves a deezer://<sngId>?u=<b64> URI decrypted on the fly by a custom
                 // DataSource. It is not cacheable (the CDN URL expires and carries a per-track key) and
-                // does not go through the HTTP cache.
-                val isDeezerStream = streamUrl.startsWith("deezer://")
+                // does not go through the HTTP cache. Once the track is in the stream cache this stops
+                // being true — the decryption happened on the way in and `playbackUrl` is loopback.
+                val isDeezerStream = playbackUrl.startsWith("deezer://")
                 // Expose to the UI whether the current track plays from a local file (for the green button).
                 if (_state.value.currentTrack?.id == track.id) {
                     _state.value = _state.value.copy(isLocalSource = isLocalStream)
                 }
-                if (!TrackRef.isLocal(trackId) && !isLocalStream && !isDeezerStream) {
-                    putCachedStreamUrl(trackId, streamUrl)
+                // Only ever the upstream URL, never the loopback one: the port and the token are
+                // good for this process only, so persisting one would hand the next session a URL
+                // that cannot connect to anything.
+                val persistable = streamUrl
+                if (!TrackRef.isLocal(trackId) && !isLocalStream && !isDeezerStream &&
+                    !persistable.isNullOrBlank() && !persistable.startsWith("deezer://")
+                ) {
+                    putCachedStreamUrl(trackId, persistable)
                 }
 
                 val mediaSource = when {
@@ -899,8 +960,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                         DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context))
                             .createMediaSource(mediaItem)
                     }
+                    routedUrl != null -> {
+                        // Straight off the loopback server. Deliberately not through
+                        // `cacheDataSourceFactory`: these bytes are already on disk, and putting
+                        // Media3's own cache in front of them would store a second copy of a file
+                        // this device already has.
+                        android.util.Log.d("AudioPlayerService", "Serving $trackId from the local server")
+                        DefaultMediaSourceFactory(androidx.media3.datasource.DefaultHttpDataSource.Factory())
+                            .createMediaSource(mediaItem)
+                    }
                     else -> {
-                        android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${streamUrl.take(80)}...")
+                        android.util.Log.d("AudioPlayerService", "yt-dlp Extracted direct stream: ${playbackUrl.take(80)}...")
                         DefaultMediaSourceFactory(cacheDataSourceFactory)
                             .createMediaSource(mediaItem)
                     }
@@ -1113,6 +1183,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                         preResolvedUrls[nextTrackId] = info.uri
                         resolvedStreamUrls[nextTrackId] = info.uri
                         info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
+                        // And put it in the stream cache while we are here. Pre-buffering already
+                        // decided this track is worth resolving ahead of time; downloading it is
+                        // the same bet, and it is the one that survives the URL expiring.
+                        com.varuna.rustify.audio.StreamRouting
+                            .rememberAfterResolving(context, nextTrackId, info)
                         android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
                     }
                     res.onFailure { e ->
@@ -1670,7 +1745,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 try {
                     val currentTrackId = st.currentTrack.id ?: return@launch
                     if (TrackRef.isLocal(currentTrackId)) return@launch
-                    val radioJson = NativeEngine.getSpotifyTrackRadioNative(currentTrackId)
+                    val radioJson = NativeEngine.getSpotifyTrackRadio(currentTrackId)
                     val array = org.json.JSONArray(radioJson)
                     val newTracks = mutableListOf<FullTrack>()
                     val existingIds = st.queue.mapNotNull { it.id }.toSet()
@@ -1750,6 +1825,12 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         // Force full re-resolution: clear ALL cached URLs for this track (incl. the persisted one).
         track.id?.let {
+            // If it was playing from the stream cache, that file is what just failed — drop it, or
+            // a corrupt entry would be served again on every retry and nothing short of emptying the
+            // whole cache could clear it. A retry of a network stream leaves the cache alone.
+            if (resolvedStreamUrls[it]?.startsWith("http://127.0.0.1:") == true) {
+                com.varuna.rustify.audio.StreamRouting.forget(context, it)
+            }
             resolvedStreamUrls.remove(it)
             preResolvedUrls.remove(it)
             removeCachedStreamUrl(it)

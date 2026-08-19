@@ -9,6 +9,7 @@
 
 pub mod adblock_engine;
 pub mod addon;
+pub mod audio;
 pub mod env;
 pub mod matcher;
 pub mod server;
@@ -303,48 +304,139 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_startLocalSer
     })
 }
 
-/// JNI Bridge: Register something for the local server to serve, and get back its URL.
+/// What Kotlin sends to [`Java_com_varuna_rustify_bridge_NativeEngine_registerLocalStreamNative`].
 ///
-/// `source` is either a path on this device or an `http(s)` URL; `cachePath` is where an upstream
-/// should be stored (empty for "do not cache", in which case an upstream registration is refused —
-/// there is nowhere to put the bytes). `expiresAtMs` of 0 means the registration does not expire.
+/// JSON rather than six positional JNI arguments: this grew from four fields to six in one release,
+/// and each of those would otherwise have been a signature change on both sides of the bridge —
+/// exactly the kind of edit that compiles happily and then throws `NoSuchMethodError` at run time.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterStreamRequest {
+    /// Where the bytes come from. Must be `http(s)`: local music is deliberately not routed.
+    upstream_url: String,
+    /// Stable per track, per backend and per format.
+    cache_key: String,
+    #[serde(default)]
+    cache_root: String,
+    #[serde(default)]
+    mime: String,
+    /// Set when the bytes are Deezer-encrypted, so the fill knows to decrypt them on the way in.
+    #[serde(default)]
+    deezer_sng_id: String,
+    #[serde(default)]
+    ttl_ms: i64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterStreamAnswer {
+    /// `"ready"`, `"notCached"` or `"refused"`.
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
+}
+
+/// JNI Bridge: register a track with the local server and get back the URL to play — or a plain
+/// "not cached", which means **play the upstream URL yourself**, exactly as before this server
+/// existed.
+///
+/// Never touches the network. A track that is not on disk yet starts a background fill and this
+/// returns immediately; that fill is what makes a later play a file read.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocalStreamNative<'local>(
     mut env_unowned: EnvUnowned<'local>,
     _class: JClass<'local>,
-    source: JString<'local>,
-    mime: JString<'local>,
-    cache_path: JString<'local>,
-    expires_at_ms: jlong,
+    request_json: JString<'local>,
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
-        let source_str = source.mutf8_chars(env)?.to_string();
-        let mime_str = mime.mutf8_chars(env)?.to_string();
-        let cache_str = cache_path.mutf8_chars(env)?.to_string();
-
-        // An empty answer means "the server is not running", which the caller handles by playing
-        // the upstream URL directly — the behaviour it had before this server existed.
-        match server::current() {
-            None => String::new(),
-            Some(handle) => {
-                let is_remote =
-                    source_str.starts_with("http://") || source_str.starts_with("https://");
-                let entry = server::handles::StreamEntry {
-                    source: if is_remote {
-                        server::handles::Source::Upstream {
-                            url: source_str,
-                            cache: if cache_str.is_empty() { None } else { Some(cache_str) },
-                        }
+        let raw = request_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<RegisterStreamRequest>(&raw) {
+            Err(_) => r#"{"status":"refused","reason":"bad request"}"#.to_string(),
+            Ok(request) => {
+                let cache_root = request.cache_root;
+                let registration = server::Registration {
+                    upstream_url: request.upstream_url,
+                    cache_key: request.cache_key,
+                    mime: if request.mime.is_empty() {
+                        None
                     } else {
-                        server::handles::Source::File(source_str)
+                        Some(request.mime)
                     },
-                    mime: if mime_str.is_empty() { None } else { Some(mime_str) },
-                    expires_at_ms: if expires_at_ms == 0 { None } else { Some(expires_at_ms) },
+                    deezer_sng_id: if request.deezer_sng_id.is_empty() {
+                        None
+                    } else {
+                        Some(request.deezer_sng_id)
+                    },
+                    ttl_ms: if request.ttl_ms > 0 {
+                        Some(request.ttl_ms)
+                    } else {
+                        None
+                    },
                 };
-                handle.stream_url(&server::handles::register(entry))
+
+                let answer =
+                    match server::register::<env::android::AndroidEnv>(registration, &cache_root) {
+                        server::Registered::Ready(url) => RegisterStreamAnswer {
+                            status: "ready",
+                            url: Some(url),
+                            reason: None,
+                        },
+                        server::Registered::NotCached => RegisterStreamAnswer {
+                            status: "notCached",
+                            url: None,
+                            reason: None,
+                        },
+                        server::Registered::Refused(reason) => RegisterStreamAnswer {
+                            status: "refused",
+                            url: None,
+                            reason: Some(reason),
+                        },
+                    };
+                // The fallback is `notCached` and not an error object: whatever went wrong here,
+                // the caller's correct move is to play the upstream URL.
+                serde_json::to_string(&answer)
+                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
             }
         }
     })
+}
+
+/// JNI Bridge: how many bytes the stream cache is using. For the Settings screen.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_streamCacheSizeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    cache_root: JString<'local>,
+) -> jlong {
+    // An atomic rather than a captured `let mut`: it works whether `with_env` wants the closure by
+    // value or by reference, and the difference is not worth a compile error to find out.
+    let size = std::sync::atomic::AtomicI64::new(0);
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let root = cache_root.mutf8_chars(env)?.to_string();
+        let bytes = get_runtime().block_on(server::cache::size(&root)) as jlong;
+        size.store(bytes, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    });
+    size.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// JNI Bridge: empty the stream cache. Returns the number of bytes freed.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_clearStreamCacheNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    cache_root: JString<'local>,
+) -> jlong {
+    let freed = std::sync::atomic::AtomicI64::new(0);
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let root = cache_root.mutf8_chars(env)?.to_string();
+        let bytes = get_runtime().block_on(server::cache::clear(&root)) as jlong;
+        freed.store(bytes, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    });
+    freed.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// JNI Bridge: Drop a registration once the player is done with it.
@@ -370,7 +462,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setLanguageNa
 ) {
     let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
         let lang_str = lang.mutf8_chars(env)?.to_string();
-        let client = spotify::client::get_spotify_client().read().unwrap();
+        let client = spotify::client::get_spotify_client();
         client.set_accept_language(&lang_str);
         Ok(())
     });
@@ -585,7 +677,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_loginSpotifyN
         let mutf8 = sp_dc_cookie.mutf8_chars(env)?;
         let cookie_str = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let mut client = spotify::client::get_spotify_client().write().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.login_with_sp_dc(&cookie_str).await
         });
         serialize_result(async_result)
@@ -598,9 +690,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_logoutSpotify
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    if let Ok(mut client) = spotify::client::get_spotify_client().write() {
-        client.logout();
-    }
+    spotify::client::get_spotify_client().logout();
 }
 
 /// JNI Bridge: Refresh access token
@@ -611,7 +701,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_refreshSpotif
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let mut client = spotify::client::get_spotify_client().write().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.refresh_token().await
         });
         let result = spotify::models::OperationResult {
@@ -628,8 +718,10 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_isSpotifyAuth
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) -> jboolean {
-    if let Ok(client) = spotify::client::get_spotify_client().read() {
-        if client.is_authenticated() { JNI_TRUE } else { JNI_FALSE }
+    // No lock to acquire since 3.1, which is the point: this is called from the main thread at
+    // start-up and used to be able to sit behind a token refresh that was waiting on a socket.
+    if spotify::client::get_spotify_client().is_authenticated() {
+        JNI_TRUE
     } else {
         JNI_FALSE
     }
@@ -655,7 +747,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_restoreSpotif
         let exp_opt = if expiration <= 0 { None } else { Some(expiration as u64) };
 
         let async_result = get_runtime().block_on(async {
-            let mut client = spotify::client::get_spotify_client().write().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.restore_session(&cookie_str, token_opt, exp_opt).await
         });
         serialize_result(async_result)
@@ -674,7 +766,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyMeN
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_me().await
         });
         serialize_result(async_result)
@@ -691,7 +783,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifySav
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_saved_tracks(limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -708,7 +800,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifySav
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_saved_albums(limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -725,7 +817,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifySav
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_saved_playlists(limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -742,7 +834,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyFol
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_followed_artists(limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -764,7 +856,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyAlb
         let mutf8 = album_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_album(&id).await
         });
         serialize_result(async_result)
@@ -784,7 +876,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyAlb
         let mutf8 = album_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_album_tracks(&id, limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -801,7 +893,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyNew
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_new_releases(limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -820,7 +912,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_saveSpotifyAl
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.save_albums(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -843,7 +935,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_unsaveSpotify
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.unsave_albums(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -869,7 +961,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyArt
         let mutf8 = artist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_artist(&id).await
         });
         serialize_result(async_result)
@@ -889,7 +981,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyArt
         let mutf8 = artist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_artist_top_tracks(&id, limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -909,7 +1001,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyArt
         let mutf8 = artist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_artist_albums(&id, limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -929,7 +1021,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyRel
         let mutf8 = artist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_related_artists(&id, limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -948,7 +1040,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_followSpotify
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.follow_artists(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -971,7 +1063,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_unfollowSpoti
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.unfollow_artists(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -997,7 +1089,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyPla
         let mutf8 = playlist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_playlist(&id).await
         });
         serialize_result(async_result)
@@ -1017,7 +1109,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyPla
         let mutf8 = playlist_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_playlist_tracks(&id, limit as u32, offset as u32).await
         });
         serialize_result(async_result)
@@ -1041,7 +1133,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_createSpotify
         let is_public = public != JNI_FALSE;
 
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.create_playlist(&uid, &n, &d, is_public).await
         });
         serialize_result(async_result)
@@ -1065,7 +1157,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_updateSpotify
         let desc_opt = if d.is_empty() { None } else { Some(d.as_str()) };
 
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.update_playlist(&id, name_opt, desc_opt, None).await
         });
         let result = spotify::models::OperationResult {
@@ -1092,7 +1184,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_addTracksToPl
         let pos = if position < 0 { None } else { Some(position as u32) };
 
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.add_tracks_to_playlist(&id, &track_ids, pos).await
         });
         let result = spotify::models::OperationResult {
@@ -1117,7 +1209,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_removeTracksF
         let track_ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
 
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.remove_tracks_from_playlist(&id, &track_ids).await
         });
         let result = spotify::models::OperationResult {
@@ -1138,7 +1230,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_followPlaylis
     jni_bridge!(env_unowned, |env| {
         let id = playlist_id.mutf8_chars(env)?.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.follow_playlist(&id).await
         });
         let result = spotify::models::OperationResult {
@@ -1159,7 +1251,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_unfollowPlayl
     jni_bridge!(env_unowned, |env| {
         let id = playlist_id.mutf8_chars(env)?.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.unfollow_playlist(&id).await
         });
         let result = spotify::models::OperationResult {
@@ -1185,7 +1277,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyTra
         let mutf8 = track_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_track(&id).await
         });
         serialize_result(async_result)
@@ -1204,7 +1296,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_saveSpotifyTr
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.save_tracks(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -1227,7 +1319,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_unsaveSpotify
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.unsave_tracks(&ids).await
         });
         let result = spotify::models::OperationResult {
@@ -1249,7 +1341,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyTra
         let mutf8 = track_id.mutf8_chars(env)?;
         let id = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_track_radio(&id).await
         });
         serialize_result(async_result)
@@ -1271,7 +1363,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyCan
         let mutf8 = track_uri.mutf8_chars(env)?;
         let uri = mutf8.to_string();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_track_canvas(&uri).await
         });
         match async_result {
@@ -1299,7 +1391,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_initSpotifyCa
         if let Ok(mutf8) = cache_dir.mutf8_chars(env) {
             let path = mutf8.to_string();
             let client = spotify::client::get_spotify_client();
-            client.write().unwrap().set_cache_dir(&path);
+            client.set_cache_dir(&path);
         }
         "".to_string()
     });
@@ -1318,7 +1410,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
             // type parameter, so nothing has to be cloned out of the lock to make the call.
             match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
                 Ok(new_hashes) => {
-                    let client = spotify::client::get_spotify_client().read().unwrap();
+                    let client = spotify::client::get_spotify_client();
                     client.update_gql_hashes(new_hashes);
                     eprintln!("[Spotify] Background hash warmup completed successfully.");
                 }
@@ -1339,7 +1431,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyHas
     _class: JClass<'local>,
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
-        let client = spotify::client::get_spotify_client().read().unwrap();
+        let client = spotify::client::get_spotify_client();
         let snapshot = client.get_gql_hashes_snapshot();
         serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string())
     })
@@ -1361,7 +1453,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_checkSpotifyS
         let ids_str = mutf8.to_string();
         let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.check_saved_tracks(&ids).await
         });
         serialize_result(async_result)
@@ -1389,7 +1481,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchSpotify
         let s_type = search_type.mutf8_chars(env)?.to_string();
 
         let result_json = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
 
             match s_type.as_str() {
                 "all" => {
@@ -1436,7 +1528,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyBro
 ) -> jstring {
     jni_bridge!(env_unowned, |env| {
         let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client().read().unwrap();
+            let client = spotify::client::get_spotify_client();
             client.get_browse_sections(limit as u32).await
         });
         serialize_result(async_result)

@@ -54,10 +54,14 @@ class AddonAudioSource(
             runCatching {
                 val query = queryFor(track) ?: error("this addon is not asked about ${track.id}")
                 val answer = ask(query) ?: error("${addon.id} does not have this track")
+                val url = answer.optString("url")
                 StreamInfo(
-                    uri = answer.optString("url"),
+                    uri = url,
                     expiresAtMs = answer.optLong("expiresAtMs", 0L).takeIf { it > 0L },
-                    mimeType = answer.optString("mime").takeIf { it.isNotBlank() }
+                    mimeType = answer.optString("mime").takeIf { it.isNotBlank() },
+                    // An add-on stream is cacheable like any other: the security checks already ran
+                    // on this URL when the answer arrived, and what is stored is only bytes.
+                    cache = if (url.startsWith("https://")) CacheHint(upstreamUrl = url) else null
                 )
             }
         }
@@ -102,8 +106,8 @@ class AddonAudioSource(
     }
 
     /** Returns the answer object, or null when the addon simply does not have the track. */
-    private fun ask(query: JSONObject): JSONObject? {
-        val raw = NativeEngine.resolveViaAddonNative(addon.id, query.toString())
+    private suspend fun ask(query: JSONObject): JSONObject? {
+        val raw = NativeEngine.resolveViaAddon(addon.id, query.toString())
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (json.has("success") && !json.optBoolean("success")) {
             Log.w(TAG, "addon ${addon.id} failed: ${json.optString("error")}")

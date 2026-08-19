@@ -466,9 +466,39 @@ class MainActivity : ComponentActivity() {
         extractDeepLink(intent)?.let { intentFlow.tryEmit(it) }
     }
 
+    /**
+     * Turns on `StrictMode`'s thread policy in debug builds (point N4).
+     *
+     * The whole of point N was one class of mistake — network or disk work on the thread that draws
+     * the screen — and the fix so far has been to make it hard to write. This is the other half: it
+     * makes the next one announce itself in the log the moment it runs, instead of being discovered
+     * as "the app freezes on a bad connection" some releases later.
+     *
+     * Deliberately `penaltyLog` and not `penaltyDeath`: a crash here would be a debug-only crash on
+     * code paths that are merely slow, and a tool that cries wolf gets turned off.
+     *
+     * Debuggability is read from the manifest flag rather than `BuildConfig.DEBUG`, which this
+     * module does not generate.
+     */
+    private fun enableStrictModeOnDebugBuilds() {
+        val debuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable) return
+        android.os.StrictMode.setThreadPolicy(
+            android.os.StrictMode.ThreadPolicy.Builder()
+                .detectNetwork()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectCustomSlowCalls()
+                .penaltyLog()
+                .build()
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableStrictModeOnDebugBuilds()
         super.onCreate(savedInstanceState)
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }

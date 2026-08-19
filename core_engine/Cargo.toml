@@ -1,6 +1,6 @@
 [package]
 name = "core_engine"
-version = "1.10.0"
+version = "2.0.0"
 edition = "2021"
 
 [lib]
@@ -55,6 +55,13 @@ urlencoding = "2.1.3"
 # plain data; a hand-rolled encoder is 15 lines nobody would test as hard as this crate is.
 base64 = "0.22"
 
+# Deezer stream decryption (3.1). Deezer serves tracks Blowfish/CBC-encrypted in 2048-byte stripes;
+# this used to be Kotlin-only (`DeezerCrypto.kt`), which meant the Windows and iOS ports would each
+# have had to write it again. Nobody should hand-roll a block cipher — the S-boxes alone are 4 KiB
+# of constants — so the primitive comes from RustCrypto and the stripe scheme is ours.
+blowfish = "0.9"
+md-5 = "0.10"
+
 # Fast regular expressions (used in spotify/client.rs for metadata cleaning)
 regex = "1.10.6"
 
@@ -76,3 +83,9 @@ opt-level = "z"     # Optimize for size
 lto = true          # Link Time Optimization: removes dead code
 codegen-units = 1   # Slower compilation, but smaller/faster binary
 strip = true        # Strips debugging symbols
+
+[dev-dependencies]
+# One test needs to set a file's modification time, and `std` has no setter. Writing three files in
+# a row and hoping the filesystem can tell them apart is how a cache-eviction test becomes flaky on
+# whichever machine has one-second timestamp resolution.
+filetime = "0.2"

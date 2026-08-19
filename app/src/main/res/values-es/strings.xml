@@ -33,6 +33,11 @@
     <string name="settings_addons_url_label">URL del complemento (https)</string>
     <string name="settings_addons_install">Instalar</string>
     <string name="settings_addons_privacy">A un complemento se le dice el título, los artistas, la duración y los identificadores de la canción que se está resolviendo, y nada más. Nunca recibe tu sesión de Spotify, y las canciones guardadas en este dispositivo no se envían nunca.</string>
+    <string name="settings_stream_cache">Canciones guardadas</string>
+    <string name="settings_stream_cache_enabled">Guardar canciones en este dispositivo</string>
+    <string name="settings_stream_cache_desc">Una canción que ya has escuchado se queda aquí, así que volver a ponerla empieza al instante, no gasta datos y funciona sin conexión. Hasta 512 MB; primero se van las más antiguas. Las canciones que ya están en tu móvil no se copian nunca. Desactivarlo detiene también el servidor local del reproductor, así que no se ejecuta nada de lo que añadió la 3.1.</string>
+    <string name="settings_stream_cache_using">Ocupando %1$s</string>
+    <string name="settings_stream_cache_clear">Vaciar</string>
     <string name="egg_found_title">🦀 ¡Lo encontraste!</string>
     <string name="egg_found_msg">Hecho con Rust, Kotlin y demasiado café. Pícale al cangrejo…</string>
     <string name="egg_jojo_msg">El tiempo se detiene. La historia continúa en otra parte…</string>

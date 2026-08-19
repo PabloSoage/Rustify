@@ -2,486 +2,528 @@
 
 package com.varuna.rustify.bridge
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 /**
- * JNI bridge to the Rust core_engine library.
- * All functions delegate to native Rust implementations for maximum performance.
- * Strings are passed as JSON for complex data structures.
+ * JNI bridge to the Rust `core_engine`.
+ *
+ * ## Why half of this file is `suspend`
+ *
+ * **A JNI call blocks the thread that makes it.** Every bridge in `lib.rs` that talks to the
+ * network runs `get_runtime().block_on(...)`, so the calling thread sits there until the request
+ * comes back. On the main thread, on a slow connection, that is an ANR — the dialog that says
+ * Rustify is not responding while the app is, in fact, perfectly alive.
+ *
+ * Before 3.1 the discipline for that lived at the call sites: forty-two plain `external fun`s and
+ * eighty-odd places that were each individually expected to remember `Dispatchers.IO`. That is not
+ * a discipline, it is an invitation, and one forgetful call site is enough.
+ *
+ * So the rule is now in the API, where the compiler enforces it:
+ *
+ * - **Anything that can touch the network or the filesystem is `suspend`** and wraps itself in
+ *   `Dispatchers.IO`. Calling one from the main thread is not something you can do by accident.
+ * - **Anything that only reads or writes memory stays plain**, and says so.
+ * - The blocking `external fun` underneath is **private**. It keeps its name, because the JNI
+ *   symbol is derived from it; what changes is that nothing outside this file can reach it.
+ *
+ * Same philosophy as `TrackRef`: make the mistake unrepresentable rather than documented. See
+ * `docs/stremio-core/PLAN-3.x.md` §7.
  */
 object NativeEngine {
     init {
         System.loadLibrary("core_engine")
     }
 
+    /** Every blocking bridge goes through here, so there is exactly one place that names the pool. */
+    private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+
     // =====================================================================
     // YOUTUBE ENGINE
     // =====================================================================
 
+    private external fun searchYouTubeNative(query: String): String
+
     /**
-     * Searches for tracks in YouTube Music using the InnerTube API via Rust.
+     * Searches YouTube Music through the InnerTube API.
      * @param query Example: "USUM71700966" or "Bohemian Rhapsody Queen".
-     * @return A JSON string containing a list of YouTubeTrack objects.
+     * @return JSON: a list of YouTubeTrack objects.
      */
-    external fun searchYouTubeNative(query: String): String
+    suspend fun searchYouTube(query: String): String = io { searchYouTubeNative(query) }
+
+    private external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
+
+    /** Resolves a Spotify track id to a YouTube video id. Network. */
+    suspend fun resolveYouTubeId(spotifyId: String, youtubeId: String): String =
+        io { resolveYouTubeIdNative(spotifyId, youtubeId) }
+
+    private external fun initCacheDirNative(cacheDir: String)
 
     /**
-     * Resolves a Spotify track ID to a YouTube video ID.
+     * Points the resolver at its cache directory and loads the persisted
+     * spotify-id to youtube-id matches. Reads a file, so it is not free.
+     *
+     * @param cacheDir absolute path; must be `filesDir`, not `cacheDir` — the matches are the
+     *   user's own choices and the OS may clear the cache directory at any time.
      */
-    external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
+    suspend fun initCacheDir(cacheDir: String) = io { initCacheDirNative(cacheDir) }
 
-    /**
-     * Initializes the YouTube resolver cache directory and loads persisted
-     * spotify-id -> youtube-id mappings.
-     * @param cacheDir Absolute path of the application cache directory.
-     */
-    external fun initCacheDirNative(cacheDir: String)
+    /** In memory. Makes a Spotify track matchable by the YouTube resolver. */
+    external fun registerTrackMetadataNative(
+        id: String,
+        name: String,
+        artistsJson: String,
+        durationMs: Int,
+        isrc: String
+    )
 
-    /**
-     * Registers a Spotify track's metadata to memory to enable automatic YouTube Music matching.
-     */
-    external fun registerTrackMetadataNative(id: String, name: String, artistsJson: String, durationMs: Int, isrc: String)
-
-    /**
-     * Manually overrides the YouTube video ID mapping for a given Spotify track ID.
-     */
+    /** In memory, with the write to disk handed to a background task in Rust. */
     external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
 
-    /**
-     * Returns the user-confirmed alternative YouTube ID for a Spotify track,
-     * or an empty string if no mapping exists.
-     */
+    /** In memory: reads the live match map. Empty string when there is no match. */
     external fun getAlternativeTrackNative(spotifyId: String): String
 
-
-
-    /**
-     * Notifies the Rust engine of the current playback queue to schedule pre-buffering.
-     * @param trackIdsJson JSON array of Spotify track IDs.
-     */
+    /** In memory. Tells the engine what is queued so it can pre-buffer. */
     external fun updateQueueNative(trackIdsJson: String)
 
-    // ── Addons: installable audio backends (3.3) ────────────────────────────────────────────
+    // ── Add-ons: installable audio backends ─────────────────────────────────────────────────
     //
-    // A backend stops being "code plus a release" and becomes a URL. What an addon is told about a
+    // A backend stops being "code plus a release" and becomes a URL. What an add-on is told about a
     // track is the whole of `AddonTrackQuery` and nothing else: no Spotify token, no cookie, no
     // account id ever reaches one.
 
+    private external fun installAddonNative(url: String): String
+
     /**
-     * Installs an addon served at [url]. Fetches and validates its manifest first, so one that is
-     * unreachable, served over plain http, pointing at a private address, or badly described never
+     * Installs the add-on served at [url]. Fetches and validates its manifest first, so one that is
+     * unreachable, served over plain http, pointing at a private address or badly described never
      * reaches the installed list.
      *
-     * @return the addon as JSON, or `{"success":false,"error":"..."}`.
+     * @return the add-on as JSON, or `{"success":false,"error":"..."}`.
      */
-    external fun installAddonNative(url: String): String
+    suspend fun installAddon(url: String): String = io { installAddonNative(url) }
 
-    /** The installed addons as a JSON array, in the order they are tried. */
-    external fun listAddonsNative(): String
+    private external fun listAddonsNative(): String
 
-    external fun uninstallAddonNative(id: String): String
+    /** The installed add-ons as a JSON array, in the order they are tried. Reads storage. */
+    suspend fun listAddons(): String = io { listAddonsNative() }
 
-    /** Turns an addon off without losing the installation. */
-    external fun setAddonEnabledNative(id: String, enabled: Boolean): String
+    private external fun uninstallAddonNative(id: String): String
 
-    /** Reorders the fallback chain. [idsJson] is a JSON array of addon ids. */
-    external fun reorderAddonsNative(idsJson: String): String
+    suspend fun uninstallAddon(id: String): String = io { uninstallAddonNative(id) }
+
+    private external fun setAddonEnabledNative(id: String, enabled: Boolean): String
+
+    /** Turns an add-on off without losing the installation. */
+    suspend fun setAddonEnabled(id: String, enabled: Boolean): String =
+        io { setAddonEnabledNative(id, enabled) }
+
+    private external fun reorderAddonsNative(idsJson: String): String
+
+    /** Reorders the fallback chain. [idsJson] is a JSON array of add-on ids. */
+    suspend fun reorderAddons(idsJson: String): String = io { reorderAddonsNative(idsJson) }
+
+    private external fun resolveViaAddonNative(addonId: String, queryJson: String): String
 
     /**
-     * Asks one addon to resolve a track.
+     * Asks one add-on to resolve a track.
      *
-     * @return the answer as JSON, `{}` when the addon does not have this track — a normal outcome
+     * @return the answer as JSON, `{}` when the add-on does not have this track — a normal outcome
      *   meaning "move on to the next provider" — or `{"success":false,...}` on failure.
      */
-    external fun resolveViaAddonNative(addonId: String, queryJson: String): String
+    suspend fun resolveViaAddon(addonId: String, queryJson: String): String =
+        io { resolveViaAddonNative(addonId, queryJson) }
 
-    // ── Local streaming server (3.2) ────────────────────────────────────────────────────────
+    // ── Local streaming server and the stream cache ─────────────────────────────────────────
     //
     // Lets Media3 play an ordinary http:// URL instead of needing a custom DataSource for the disk
     // cache and for decryption. The server binds 127.0.0.1 only, on an ephemeral port, and every
     // request carries a per-process token: on Android any installed app can reach localhost, so
     // binding to loopback is necessary and nowhere near sufficient.
 
+    private external fun startLocalServerNative(): String
+
     /**
      * Starts the loopback streaming server, or returns the one already running.
      * @return `{"port":N,"token":"..."}`, or `{"success":false,"error":"..."}` on failure.
      */
-    external fun startLocalServerNative(): String
+    suspend fun startLocalServer(): String = io { startLocalServerNative() }
+
+    private external fun registerLocalStreamNative(requestJson: String): String
 
     /**
-     * Registers something for the local server to serve.
+     * Registers a track with the local server and asks for the URL to play.
      *
-     * @param source a path on this device, or an `http(s)` URL to fetch on first request.
-     * @param mime advisory content type; empty for `application/octet-stream`.
-     * @param cachePath where an upstream is stored. Empty means "do not cache", and an upstream
-     *   registration with no cache path is refused — there would be nowhere to put the bytes.
-     * @param expiresAtMs epoch millis after which the registration is dropped; 0 never expires.
-     *   Upstream URLs do expire (a googlevideo URL lasts about six hours) and serving a dead one is
-     *   worse than refusing.
-     * @return the URL to hand to the player, or an empty string if the server is not running — in
-     *   which case the caller plays the upstream URL directly, exactly as it did before.
+     * [requestJson] carries `upstreamUrl`, `cacheKey`, `cacheRoot`, and optionally `mime`,
+     * `deezerSngId` and `ttlMs`. JSON rather than positional arguments because this signature has
+     * already changed twice, and a changed JNI signature is a `NoSuchMethodError` at run time
+     * rather than an error at build time.
+     *
+     * @return `{"status":"ready","url":"http://127.0.0.1:…"}` when the bytes are already on disk,
+     *   `{"status":"notCached"}` when they are not — in which case **play the upstream URL**, which
+     *   is what the app did before this server existed, while a background fill runs — or
+     *   `{"status":"refused","reason":"…"}`.
      */
-    external fun registerLocalStreamNative(
-        source: String,
-        mime: String,
-        cachePath: String,
-        expiresAtMs: Long
-    ): String
+    suspend fun registerLocalStream(requestJson: String): String =
+        io { registerLocalStreamNative(requestJson) }
 
-    /** Drops a registration once the player is done with it. */
+    /** In memory. Drops a registration once the player is done with it. */
     external fun forgetLocalStreamNative(handle: String)
 
-    /**
-     * Sets the Accept-Language header for the Spotify Client
-     */
+    private external fun streamCacheSizeNative(cacheRoot: String): Long
+
+    /** Bytes the stream cache is currently using. Walks a directory. */
+    suspend fun streamCacheSize(cacheRoot: String): Long = io { streamCacheSizeNative(cacheRoot) }
+
+    private external fun clearStreamCacheNative(cacheRoot: String): Long
+
+    /** Empties the stream cache and returns the bytes freed. */
+    suspend fun clearStreamCache(cacheRoot: String): Long = io { clearStreamCacheNative(cacheRoot) }
+
+    /** In memory. Sets the Accept-Language header the Spotify client presents. */
     external fun setLanguageNative(langCode: String)
 
     // =====================================================================
     // SPOTIFY — AUTHENTICATION
     // =====================================================================
 
-    /**
-     * Authenticates the user in the Spotify API using the intercepted session cookie.
-     * Performs the full TOTP-based token acquisition flow.
-     * @param spDcCookie The raw value of the 'sp_dc' cookie obtained from the WebView.
-     * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
-     */
-    external fun loginSpotifyNative(spDcCookie: String): String
+    private external fun loginSpotifyNative(spDcCookie: String): String
 
     /**
-     * Logs out the user by clearing the Rust session state and in-memory credentials.
+     * Authenticates with the intercepted session cookie, running the full TOTP token flow.
+     * @return `{"success":true,"user":{...}}` or `{"success":false,"error":"..."}`.
      */
+    suspend fun loginSpotify(spDcCookie: String): String = io { loginSpotifyNative(spDcCookie) }
+
+    /** In memory. Clears the session, both the token and the cookie behind it. */
     external fun logoutSpotifyNative()
 
-    /**
-     * Refreshes the Spotify access token using the stored sp_dc cookie.
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun refreshSpotifyTokenNative(): String
+    private external fun refreshSpotifyTokenNative(): String
+
+    /** Refreshes the access token from the stored cookie. */
+    suspend fun refreshSpotifyToken(): String = io { refreshSpotifyTokenNative() }
 
     /**
-     * Checks if the user is currently authenticated with a valid (non-expired) token.
-     * @return true if authenticated and token is valid, false otherwise.
+     * In memory: one `Option` read behind a lock held for the length of a comparison.
+     *
+     * This one is worth a note. It used to be able to block for as long as a token refresh took,
+     * because the engine held a process-wide write lock across the network call — and it is called
+     * from the main thread at start-up. That is fixed on the Rust side (see `SPOTIFY_CLIENT`), not
+     * by moving this call, which is why it is still allowed to be plain.
      */
     external fun isSpotifyAuthenticatedNative(): Boolean
 
+    private external fun restoreSpotifySessionNative(
+        spDcCookie: String,
+        accessToken: String,
+        expirationMs: Long
+    ): String
+
     /**
-     * Restores a previous session from a saved sp_dc cookie or OAuth refresh token (called on app start).
-     * @param spDcCookie The saved sp_dc cookie value.
-     * @param accessToken The saved access token.
-     * @param expirationMs The expiration timestamp in milliseconds.
-     * @return A JSON string: {"success": true, "user": {...}} or {"success": false, "error": "..."}.
+     * Restores a previous session from a saved cookie and cached token.
+     *
+     * Free when the cached token is still live — no request at all — and a full login when it is
+     * not, which is why it is `suspend` either way.
      */
-    external fun restoreSpotifySessionNative(spDcCookie: String, accessToken: String, expirationMs: Long): String
-
-
+    suspend fun restoreSpotifySession(
+        spDcCookie: String,
+        accessToken: String,
+        expirationMs: Long
+    ): String = io { restoreSpotifySessionNative(spDcCookie, accessToken, expirationMs) }
 
     // =====================================================================
     // SPOTIFY — USER / LIBRARY
     // =====================================================================
 
-    /**
-     * Fetches the current authenticated user's profile.
-     * @return A JSON string with user details (id, display_name, images, etc.).
-     */
-    external fun getSpotifyMeNative(): String
+    private external fun getSpotifyMeNative(): String
 
-    /**
-     * Fetches the user's liked songs (saved tracks) from their personal library.
-     * @param limit Number of tracks to retrieve (maximum 50).
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<SavedTrackItem>.
-     */
-    external fun getSpotifySavedTracksNative(limit: Int, offset: Int): String
+    suspend fun getSpotifyMe(): String = io { getSpotifyMeNative() }
 
-    /**
-     * Fetches the user's saved albums from their personal library.
-     * @param limit Number of albums to retrieve (maximum 50).
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<SavedAlbumItem>.
-     */
-    external fun getSpotifySavedAlbumsNative(limit: Int, offset: Int): String
+    private external fun getSpotifySavedTracksNative(limit: Int, offset: Int): String
 
-    /**
-     * Fetches the user's saved/created playlists.
-     * @param limit Number of playlists to retrieve (maximum 50).
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<SimplePlaylist>.
-     */
-    external fun getSpotifySavedPlaylistsNative(limit: Int, offset: Int): String
+    /** The user's liked songs. `limit` maxes out at 50. */
+    suspend fun getSpotifySavedTracks(limit: Int, offset: Int): String =
+        io { getSpotifySavedTracksNative(limit, offset) }
 
-    /**
-     * Fetches the artists the user follows.
-     * Uses offset-based pagination via GraphQL libraryV3.
-     * @param limit Number of artists to retrieve (maximum 50).
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<FullArtist>.
-     */
-    external fun getSpotifyFollowedArtistsNative(limit: Int, offset: Int): String
+    private external fun getSpotifySavedAlbumsNative(limit: Int, offset: Int): String
+
+    suspend fun getSpotifySavedAlbums(limit: Int, offset: Int): String =
+        io { getSpotifySavedAlbumsNative(limit, offset) }
+
+    private external fun getSpotifySavedPlaylistsNative(limit: Int, offset: Int): String
+
+    suspend fun getSpotifySavedPlaylists(limit: Int, offset: Int): String =
+        io { getSpotifySavedPlaylistsNative(limit, offset) }
+
+    private external fun getSpotifyFollowedArtistsNative(limit: Int, offset: Int): String
+
+    suspend fun getSpotifyFollowedArtists(limit: Int, offset: Int): String =
+        io { getSpotifyFollowedArtistsNative(limit, offset) }
 
     // =====================================================================
     // SPOTIFY — ALBUMS
     // =====================================================================
 
-    /**
-     * Fetches full details for a specific album.
-     * @param albumId The Spotify album ID.
-     * @return A JSON string representing FullAlbum.
-     */
-    external fun getSpotifyAlbumNative(albumId: String): String
+    private external fun getSpotifyAlbumNative(albumId: String): String
 
-    /**
-     * Fetches the tracks within a specific album.
-     * @param albumId The Spotify album ID.
-     * @param limit Number of tracks to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<FullTrack>.
-     */
-    external fun getSpotifyAlbumTracksNative(albumId: String, limit: Int, offset: Int): String
+    suspend fun getSpotifyAlbum(albumId: String): String = io { getSpotifyAlbumNative(albumId) }
 
-    /**
-     * Fetches newly released albums.
-     * @param limit Number of albums to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<SimpleAlbum>.
-     */
-    external fun getSpotifyNewReleasesNative(limit: Int, offset: Int): String
+    private external fun getSpotifyAlbumTracksNative(
+        albumId: String,
+        limit: Int,
+        offset: Int
+    ): String
 
-    /**
-     * Saves albums to the user's library.
-     * @param idsJson JSON array of album IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun saveSpotifyAlbumsNative(idsJson: String): String
+    suspend fun getSpotifyAlbumTracks(albumId: String, limit: Int, offset: Int): String =
+        io { getSpotifyAlbumTracksNative(albumId, limit, offset) }
 
-    /**
-     * Removes albums from the user's library.
-     * @param idsJson JSON array of album IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun unsaveSpotifyAlbumsNative(idsJson: String): String
+    private external fun getSpotifyNewReleasesNative(limit: Int, offset: Int): String
+
+    suspend fun getSpotifyNewReleases(limit: Int, offset: Int): String =
+        io { getSpotifyNewReleasesNative(limit, offset) }
+
+    private external fun saveSpotifyAlbumsNative(idsJson: String): String
+
+    suspend fun saveSpotifyAlbums(idsJson: String): String = io { saveSpotifyAlbumsNative(idsJson) }
+
+    private external fun unsaveSpotifyAlbumsNative(idsJson: String): String
+
+    suspend fun unsaveSpotifyAlbums(idsJson: String): String =
+        io { unsaveSpotifyAlbumsNative(idsJson) }
 
     // =====================================================================
     // SPOTIFY — ARTISTS
     // =====================================================================
 
-    /**
-     * Fetches full details for a specific artist.
-     * @param artistId The Spotify artist ID.
-     * @return A JSON string representing FullArtist.
-     */
-    external fun getSpotifyArtistNative(artistId: String): String
+    private external fun getSpotifyArtistNative(artistId: String): String
 
-    /**
-     * Fetches an artist's top tracks.
-     * @param artistId The Spotify artist ID.
-     * @param limit Number of tracks to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<FullTrack>.
-     */
-    external fun getSpotifyArtistTopTracksNative(artistId: String, limit: Int, offset: Int): String
+    suspend fun getSpotifyArtist(artistId: String): String = io { getSpotifyArtistNative(artistId) }
 
-    /**
-     * Fetches albums by a specific artist.
-     * @param artistId The Spotify artist ID.
-     * @param limit Number of albums to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<SimpleAlbum>.
-     */
-    external fun getSpotifyArtistAlbumsNative(artistId: String, limit: Int, offset: Int): String
+    private external fun getSpotifyArtistTopTracksNative(
+        artistId: String,
+        limit: Int,
+        offset: Int
+    ): String
 
-    /**
-     * Fetches artists related to a given artist.
-     * @param artistId The Spotify artist ID.
-     * @param limit Number of artists to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<FullArtist>.
-     */
-    external fun getSpotifyRelatedArtistsNative(artistId: String, limit: Int, offset: Int): String
+    suspend fun getSpotifyArtistTopTracks(artistId: String, limit: Int, offset: Int): String =
+        io { getSpotifyArtistTopTracksNative(artistId, limit, offset) }
 
-    /**
-     * Follows artists.
-     * @param idsJson JSON array of artist IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun followSpotifyArtistsNative(idsJson: String): String
+    private external fun getSpotifyArtistAlbumsNative(
+        artistId: String,
+        limit: Int,
+        offset: Int
+    ): String
 
-    /**
-     * Unfollows artists.
-     * @param idsJson JSON array of artist IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun unfollowSpotifyArtistsNative(idsJson: String): String
+    suspend fun getSpotifyArtistAlbums(artistId: String, limit: Int, offset: Int): String =
+        io { getSpotifyArtistAlbumsNative(artistId, limit, offset) }
+
+    private external fun getSpotifyRelatedArtistsNative(
+        artistId: String,
+        limit: Int,
+        offset: Int
+    ): String
+
+    suspend fun getSpotifyRelatedArtists(artistId: String, limit: Int, offset: Int): String =
+        io { getSpotifyRelatedArtistsNative(artistId, limit, offset) }
+
+    private external fun followSpotifyArtistsNative(idsJson: String): String
+
+    suspend fun followSpotifyArtists(idsJson: String): String =
+        io { followSpotifyArtistsNative(idsJson) }
+
+    private external fun unfollowSpotifyArtistsNative(idsJson: String): String
+
+    suspend fun unfollowSpotifyArtists(idsJson: String): String =
+        io { unfollowSpotifyArtistsNative(idsJson) }
 
     // =====================================================================
     // SPOTIFY — PLAYLISTS
     // =====================================================================
 
-    /**
-     * Fetches full details for a specific playlist.
-     * @param playlistId The Spotify playlist ID.
-     * @return A JSON string representing FullPlaylist.
-     */
-    external fun getSpotifyPlaylistNative(playlistId: String): String
+    private external fun getSpotifyPlaylistNative(playlistId: String): String
 
-    /**
-     * Fetches tracks within a specific playlist.
-     * @param playlistId The Spotify playlist ID.
-     * @param limit Number of tracks to retrieve.
-     * @param offset Pagination index.
-     * @return A JSON string representing PaginatedResponse<FullTrack>.
-     */
-    external fun getSpotifyPlaylistTracksNative(playlistId: String, limit: Int, offset: Int): String
+    suspend fun getSpotifyPlaylist(playlistId: String): String =
+        io { getSpotifyPlaylistNative(playlistId) }
 
-    /**
-     * Creates a new playlist for the authenticated user.
-     * @param userId The user's Spotify ID.
-     * @param name Playlist name.
-     * @param description Playlist description.
-     * @param isPublic Whether the playlist should be public.
-     * @return A JSON string representing the created FullPlaylist.
-     */
-    external fun createSpotifyPlaylistNative(userId: String, name: String, description: String, isPublic: Boolean): String
+    private external fun getSpotifyPlaylistTracksNative(
+        playlistId: String,
+        limit: Int,
+        offset: Int
+    ): String
 
-    /**
-     * Updates an existing playlist's details.
-     * @param playlistId The Spotify playlist ID.
-     * @param name New name (empty string to skip).
-     * @param description New description (empty string to skip).
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun updateSpotifyPlaylistNative(playlistId: String, name: String, description: String): String
+    suspend fun getSpotifyPlaylistTracks(playlistId: String, limit: Int, offset: Int): String =
+        io { getSpotifyPlaylistTracksNative(playlistId, limit, offset) }
 
-    /**
-     * Adds tracks to a playlist.
-     * @param playlistId The Spotify playlist ID.
-     * @param trackIdsJson JSON array of track IDs: ["id1", "id2"].
-     * @param position Position to insert at (-1 to append).
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun addTracksToPlaylistNative(playlistId: String, trackIdsJson: String, position: Int): String
+    private external fun createSpotifyPlaylistNative(
+        userId: String,
+        name: String,
+        description: String,
+        isPublic: Boolean
+    ): String
 
-    /**
-     * Removes tracks from a playlist.
-     * @param playlistId The Spotify playlist ID.
-     * @param trackIdsJson JSON array of track IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun removeTracksFromPlaylistNative(playlistId: String, trackIdsJson: String): String
+    suspend fun createSpotifyPlaylist(
+        userId: String,
+        name: String,
+        description: String,
+        isPublic: Boolean
+    ): String = io { createSpotifyPlaylistNative(userId, name, description, isPublic) }
 
-    /**
-     * Follows/saves a playlist to the user's library.
-     * @param playlistId The Spotify playlist ID.
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun followPlaylistNative(playlistId: String): String
+    private external fun updateSpotifyPlaylistNative(
+        playlistId: String,
+        name: String,
+        description: String
+    ): String
 
-    /**
-     * Unfollows/removes a playlist from the user's library.
-     * @param playlistId The Spotify playlist ID.
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun unfollowPlaylistNative(playlistId: String): String
+    /** Empty [name] or [description] means "leave that one alone". */
+    suspend fun updateSpotifyPlaylist(
+        playlistId: String,
+        name: String,
+        description: String
+    ): String = io { updateSpotifyPlaylistNative(playlistId, name, description) }
+
+    private external fun addTracksToPlaylistNative(
+        playlistId: String,
+        trackIdsJson: String,
+        position: Int
+    ): String
+
+    /** [position] of -1 appends. */
+    suspend fun addTracksToPlaylist(
+        playlistId: String,
+        trackIdsJson: String,
+        position: Int
+    ): String = io { addTracksToPlaylistNative(playlistId, trackIdsJson, position) }
+
+    private external fun removeTracksFromPlaylistNative(
+        playlistId: String,
+        trackIdsJson: String
+    ): String
+
+    suspend fun removeTracksFromPlaylist(playlistId: String, trackIdsJson: String): String =
+        io { removeTracksFromPlaylistNative(playlistId, trackIdsJson) }
+
+    private external fun followPlaylistNative(playlistId: String): String
+
+    suspend fun followPlaylist(playlistId: String): String = io { followPlaylistNative(playlistId) }
+
+    private external fun unfollowPlaylistNative(playlistId: String): String
+
+    suspend fun unfollowPlaylist(playlistId: String): String =
+        io { unfollowPlaylistNative(playlistId) }
 
     // =====================================================================
     // SPOTIFY — TRACKS
     // =====================================================================
 
-    /**
-     * Fetches full details for a specific track.
-     * @param trackId The Spotify track ID.
-     * @return A JSON string representing FullTrack.
-     */
-    external fun getSpotifyTrackNative(trackId: String): String
+    private external fun getSpotifyTrackNative(trackId: String): String
+
+    suspend fun getSpotifyTrack(trackId: String): String = io { getSpotifyTrackNative(trackId) }
+
+    private external fun saveSpotifyTracksNative(idsJson: String): String
+
+    suspend fun saveSpotifyTracks(idsJson: String): String = io { saveSpotifyTracksNative(idsJson) }
+
+    private external fun unsaveSpotifyTracksNative(idsJson: String): String
+
+    suspend fun unsaveSpotifyTracks(idsJson: String): String =
+        io { unsaveSpotifyTracksNative(idsJson) }
+
+    private external fun getSpotifyTrackRadioNative(trackId: String): String
+
+    /** Builds a "radio" for a track by finding a matching radio playlist. */
+    suspend fun getSpotifyTrackRadio(trackId: String): String =
+        io { getSpotifyTrackRadioNative(trackId) }
+
+    private external fun getSpotifyCanvasNative(trackUri: String): String
 
     /**
-     * Saves tracks to the user's library (liked songs).
-     * @param idsJson JSON array of track IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
+     * The Spotify Canvas — the short looping mp4 behind the cover art. Accepts a track id or a
+     * full `spotify:track:<id>` URI.
+     *
+     * @return `{"url":"<mp4>"}`, `{"url":null}` when the track has no canvas, or
+     *   `{"success":false,"error":"..."}`.
      */
-    external fun saveSpotifyTracksNative(idsJson: String): String
-
-    /**
-     * Removes tracks from the user's library.
-     * @param idsJson JSON array of track IDs: ["id1", "id2"].
-     * @return A JSON string: {"success": true} or {"success": false, "error": "..."}.
-     */
-    external fun unsaveSpotifyTracksNative(idsJson: String): String
-
-    /**
-     * Generates a "radio" for a track by finding a matching radio playlist.
-     * @param trackId The Spotify track ID.
-     * @return A JSON string representing a list of FullTrack.
-     */
-    external fun getSpotifyTrackRadioNative(trackId: String): String
-
-    /**
-     * Fetches the Spotify Canvas (short looping mp4 shown behind the cover art)
-     * for a track. Accepts a track ID or a full `spotify:track:<id>` URI.
-     * @return A JSON string: {"url":"<mp4>"} when a canvas exists, {"url":null}
-     *         when the track has no canvas, or {"success":false,"error":"..."}.
-     */
-    external fun getSpotifyCanvasNative(trackUri: String): String
+    suspend fun getSpotifyCanvas(trackUri: String): String = io { getSpotifyCanvasNative(trackUri) }
 
     // =====================================================================
     // SPOTIFY — SEARCH
     // =====================================================================
 
+    private external fun searchSpotifyNative(
+        query: String,
+        searchType: String,
+        limit: Int,
+        offset: Int
+    ): String
+
     /**
-     * Searches Spotify for content matching the query.
-     * @param query The search query string.
-     * @param searchType One of: "all", "tracks", "albums", "artists", "playlists".
-     * @param limit Number of results per type.
-     * @param offset Pagination index (not used for "all").
-     * @return A JSON string - NormalizedSearchResults for "all", or PaginatedResponse for specific types.
+     * @param searchType one of "all", "tracks", "albums", "artists", "playlists".
+     * @return NormalizedSearchResults for "all", a PaginatedResponse otherwise.
      */
-    external fun searchSpotifyNative(query: String, searchType: String, limit: Int, offset: Int): String
+    suspend fun searchSpotify(query: String, searchType: String, limit: Int, offset: Int): String =
+        io { searchSpotifyNative(query, searchType, limit, offset) }
 
     // =====================================================================
     // SPOTIFY — BROWSE
     // =====================================================================
 
-    /**
-     * Fetches browse/home sections with featured playlists and new releases.
-     * @param limit Number of items per section.
-     * @return A JSON string representing a list of BrowseSection.
-     */
-    external fun getSpotifyBrowseNative(limit: Int): String
+    private external fun getSpotifyBrowseNative(limit: Int): String
 
-    /**
-     * Initializes the cache directory for the Spotify client in Rust.
-     */
-    external fun initSpotifyCacheDirNative(cacheDir: String)
+    suspend fun getSpotifyBrowse(limit: Int): String = io { getSpotifyBrowseNative(limit) }
 
-    /**
-     * Triggers the background scrape/warmup of Spotify GraphQL hashes in Rust.
-     */
+    private external fun initSpotifyCacheDirNative(cacheDir: String)
+
+    /** Points the Spotify client at its cache directory and reads the cached GQL hashes off disk. */
+    suspend fun initSpotifyCacheDir(cacheDir: String) = io { initSpotifyCacheDirNative(cacheDir) }
+
+    /** Returns immediately: the scrape itself runs on the Rust runtime. */
     external fun warmupSpotifyHashesNative()
 
     /**
-     * Returns a JSON object mapping GQL operation names to their current sha256 hashes.
-     * Example: `{"libraryV3":"2de10199b244...","fetchLibraryTracks":"087278b20b74..."}`
-     * Returns `{}` if no hashes are cached yet.
+     * In memory: a snapshot of the GQL operation-name to sha256 map.
+     * Example: `{"libraryV3":"2de10199b244...","fetchLibraryTracks":"087278b20b74..."}`, or `{}`.
      */
     external fun getSpotifyHashesNative(): String
 
-
+    // =====================================================================
     // YOUTUBE MUSIC
     // =====================================================================
 
-    external fun searchYtMusicNative(query: String): String
-    external fun getYtmAlbumNative(browseId: String): String
-    external fun getYtmArtistNative(channelId: String): String
-    external fun getYtmPlaylistNative(playlistId: String): String
+    private external fun searchYtMusicNative(query: String): String
+
+    suspend fun searchYtMusic(query: String): String = io { searchYtMusicNative(query) }
+
+    private external fun getYtmAlbumNative(browseId: String): String
+
+    suspend fun getYtmAlbum(browseId: String): String = io { getYtmAlbumNative(browseId) }
+
+    private external fun getYtmArtistNative(channelId: String): String
+
+    suspend fun getYtmArtist(channelId: String): String = io { getYtmArtistNative(channelId) }
+
+    private external fun getYtmPlaylistNative(playlistId: String): String
+
+    suspend fun getYtmPlaylist(playlistId: String): String = io { getYtmPlaylistNative(playlistId) }
 
     // =====================================================================
     // ADBLOCK — network filtering for the in-app Spotify Web Player
     // =====================================================================
 
-    /** Compiles filter lists (uBlock Origin / EasyList syntax) into the blocking engine. */
+    /**
+     * Compiles filter lists (uBlock Origin / EasyList syntax) into the blocking engine.
+     *
+     * Plain rather than `suspend` because it touches nothing outside memory — but it is CPU-heavy
+     * enough to matter, and its one caller already runs it on `Dispatchers.IO`.
+     */
     external fun adblockLoadRulesNative(rules: String): Boolean
 
     /**
-     * Should this request be blocked? Called once per WebView request, so it is kept cheap; every
-     * failure path answers false so a filtering problem can never break the page.
+     * Should this request be blocked?
+     *
+     * Called once per WebView request from the WebView's own thread, so it is deliberately **not**
+     * `suspend`: it has to answer synchronously or the page waits. Every failure path answers false,
+     * so a filtering problem can never break the page.
+     *
      * @param resourceType adblock-rust vocabulary: "script", "image", "xmlhttprequest", "media"…
      */
     external fun adblockMatchesNative(url: String, sourceUrl: String, resourceType: String): Boolean
@@ -491,5 +533,4 @@ object NativeEngine {
 
     /** Releases the compiled engine (frees its memory when the web player closes). */
     external fun adblockClearNative()
-
 }

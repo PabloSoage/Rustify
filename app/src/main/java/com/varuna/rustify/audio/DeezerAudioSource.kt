@@ -41,7 +41,12 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
             StreamInfo(
                 uri = "deezer://${media.sngId}?u=$b64",
                 mimeType = if (media.format.contains("FLAC", true)) "audio/flac" else "audio/mpeg",
-                requiresProxy = true
+                requiresProxy = true,
+                // The reason the local server exists. The bytes go into the cache **decrypted**, by
+                // the Rust side, so the second play is an ordinary file behind an ordinary URL and
+                // needs no custom `DataSource` at all — no ARL, no re-resolve, and seeking works
+                // because it is a real HTTP `Range` over a real file.
+                cache = CacheHint(upstreamUrl = media.url, deezerSngId = media.sngId)
             )
         }
     }

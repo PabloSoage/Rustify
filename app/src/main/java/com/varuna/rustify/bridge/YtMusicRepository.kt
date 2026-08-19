@@ -140,14 +140,14 @@ class YtMusicRepository(private val appContext: Context) {
 
     suspend fun search(query: String): YtmSearchResults = withContext(Dispatchers.IO) {
         runCatching {
-            YtmSearchResults.fromJson(JSONObject(NativeEngine.searchYtMusicNative(query)))
+            YtmSearchResults.fromJson(JSONObject(NativeEngine.searchYtMusic(query)))
         }.getOrDefault(emptyResults)
     }
 
     /** Search via the YouTube scraper (general YouTube, includes unofficial/covers). */
     suspend fun searchScraper(query: String): YtmSearchResults = withContext(Dispatchers.IO) {
         runCatching {
-            val raw = NativeEngine.searchYouTubeNative(query)
+            val raw = NativeEngine.searchYouTube(query)
             // The scraper returns a plain JSON array: [{id, title, author, duration_sec, thumbnail_url}]
             val data = JSONArray(raw)
             val tracks = (0 until data.length()).map { i ->
@@ -167,21 +167,21 @@ class YtMusicRepository(private val appContext: Context) {
 
     suspend fun getAlbum(browseId: String): YtmAlbum? = withContext(Dispatchers.IO) {
         runCatching {
-            val json = NativeEngine.getYtmAlbumNative(browseId)
+            val json = NativeEngine.getYtmAlbum(browseId)
             if (json == "null" || json.isBlank()) null else YtmAlbum.fromJson(JSONObject(json))
         }.getOrNull()
     }
 
     suspend fun getArtist(channelId: String): YtmArtist? = withContext(Dispatchers.IO) {
         runCatching {
-            val json = NativeEngine.getYtmArtistNative(channelId)
+            val json = NativeEngine.getYtmArtist(channelId)
             if (json == "null" || json.isBlank()) null else YtmArtist.fromJson(JSONObject(json))
         }.getOrNull()
     }
 
     suspend fun getPlaylist(playlistId: String): YtmPlaylist? = withContext(Dispatchers.IO) {
         runCatching {
-            val json = NativeEngine.getYtmPlaylistNative(playlistId)
+            val json = NativeEngine.getYtmPlaylist(playlistId)
             if (json == "null" || json.isBlank()) null else YtmPlaylist.fromJson(JSONObject(json))
         }.getOrNull()
     }

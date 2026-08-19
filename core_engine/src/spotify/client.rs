@@ -11,7 +11,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::{OnceLock, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::env::android::AndroidEnv;
@@ -22,10 +21,29 @@ use crate::spotify::models::*;
 // GLOBAL SINGLETON
 // =============================================================================
 
-pub static SPOTIFY_CLIENT: OnceLock<RwLock<SpotifyClient>> = OnceLock::new();
+/// The process-wide Spotify client.
+///
+/// **There is no lock around it, and that is the point.** Until 3.1 this was an
+/// `OnceLock<RwLock<SpotifyClient>>`, and `login`, `refresh_token` and `restore_session` each took
+/// the *write* guard and then `.await`ed a network round-trip while holding it. Every other bridge
+/// takes a read guard, so for the whole duration of a slow token restore — ten seconds on a bad
+/// connection — every other call into the engine was parked on that lock. Including
+/// `isSpotifyAuthenticatedNative`, which reads one `Option` and is called from the main thread at
+/// startup, and `setLanguageNative`, and `getSpotifyHashesNative`.
+///
+/// That is the app not responding while the app still works: the UI thread is stuck on a mutex
+/// behind a socket, but every coroutine already dispatched keeps running. It matches the report in
+/// §7.1 of the plan exactly — "you can use the app but the home screen does not load".
+///
+/// The fix is not "be careful not to hold the guard across an await". It is to have no guard to
+/// hold: the mutable session lives behind its own small `RwLock` *inside* the client (as the token
+/// cache, the hashes and the cache dir already did), every method takes `&self`, and the guards are
+/// held for the few instructions it takes to read or replace an `Option`. Nothing here can block on
+/// anything that touches the network, because nothing here holds a lock while it does.
+pub static SPOTIFY_CLIENT: OnceLock<SpotifyClient> = OnceLock::new();
 
-pub fn get_spotify_client() -> &'static RwLock<SpotifyClient> {
-    SPOTIFY_CLIENT.get_or_init(|| RwLock::new(SpotifyClient::new()))
+pub fn get_spotify_client() -> &'static SpotifyClient {
+    SPOTIFY_CLIENT.get_or_init(SpotifyClient::new)
 }
 
 // =============================================================================
@@ -153,8 +171,9 @@ const REQUEST_TIMEOUT_MS: u64 = 15_000;
 /// `PhantomData<fn() -> E>` rather than `PhantomData<E>`: the function-pointer form is `Send + Sync`
 /// whatever `E` is, and this struct lives inside a `RwLock` in a `static`.
 pub struct SpotifyClient<E: Env = AndroidEnv> {
-    credentials: Option<SpotifyCredentials>,
-    sp_dc: Option<String>,
+    /// The signed-in user, behind its own lock so that changing it never means locking the client.
+    /// See [`SPOTIFY_CLIENT`] for what that used to cost.
+    session: RwLock<Session>,
     client_credentials: RwLock<Option<String>>,
     client_credentials_expiration: RwLock<u64>,
     gql_hashes: RwLock<HashMap<String, String>>,
@@ -163,11 +182,21 @@ pub struct SpotifyClient<E: Env = AndroidEnv> {
     _env: PhantomData<fn() -> E>,
 }
 
+/// The mutable half of a signed-in session.
+///
+/// One struct rather than two fields so that the rule about it can be stated once: **the guard on
+/// this is never held across an `await`.** Read what you need, drop the guard, do the network, take
+/// the guard again to store the result.
+#[derive(Debug, Default, Clone)]
+struct Session {
+    credentials: Option<SpotifyCredentials>,
+    sp_dc: Option<String>,
+}
+
 impl<E: Env> SpotifyClient<E> {
     pub fn new() -> Self {
         Self {
-            credentials: None,
-            sp_dc: None,
+            session: RwLock::new(Session::default()),
             client_credentials: RwLock::new(None),
             client_credentials_expiration: RwLock::new(0),
             gql_hashes: RwLock::new(HashMap::new()),
@@ -200,13 +229,22 @@ impl<E: Env> SpotifyClient<E> {
     // =========================================================================
     // AUTHENTICATION
     // =========================================================================
+    //
+    // Every method here takes `&self`. That is not a style choice — see [`SPOTIFY_CLIENT`]. The
+    // rule these all obey: **the session guard is never held across an `await`.** Take what is
+    // needed, drop the guard, do the network, take the guard again to store the answer.
 
-    pub async fn login_with_sp_dc(&mut self, sp_dc: &str) -> SpotifyResult<LoginResult> {
-        self.sp_dc = Some(sp_dc.to_string());
+    pub async fn login_with_sp_dc(&self, sp_dc: &str) -> SpotifyResult<LoginResult> {
+        // Stored before the request so a `refresh_token` racing this one has something to work
+        // with, and dropped immediately: the fetch below is the ten-second part.
+        {
+            let mut session = self.session.write().unwrap();
+            session.sp_dc = Some(sp_dc.to_string());
+        }
 
         match self.fetch_access_token(sp_dc).await {
             Ok(creds) => {
-                self.credentials = Some(creds.clone());
+                self.session.write().unwrap().credentials = Some(creds.clone());
                 Ok(LoginResult {
                     success: true,
                     user: None,
@@ -216,8 +254,7 @@ impl<E: Env> SpotifyClient<E> {
                 })
             }
             Err(e) => {
-                self.credentials = None;
-                self.sp_dc = None;
+                *self.session.write().unwrap() = Session::default();
                 Ok(LoginResult {
                     success: false,
                     user: None,
@@ -229,59 +266,62 @@ impl<E: Env> SpotifyClient<E> {
         }
     }
 
-    pub async fn refresh_token(&mut self) -> SpotifyResult<()> {
-        let sp_dc = self.sp_dc.clone()
+    pub async fn refresh_token(&self) -> SpotifyResult<()> {
+        let sp_dc = self
+            .session
+            .read()
+            .unwrap()
+            .sp_dc
+            .clone()
             .ok_or(SpotifyError::NotAuthenticated)?;
 
         let creds = self.fetch_access_token(&sp_dc).await?;
-        self.credentials = Some(creds);
+        self.session.write().unwrap().credentials = Some(creds);
         Ok(())
     }
 
     pub fn is_authenticated(&self) -> bool {
-        self.credentials.is_some() && !self.is_expired()
-    }
-
-    pub fn is_expired(&self) -> bool {
-        match &self.credentials {
-            Some(creds) => {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                now >= creds.expiration
-            }
-            None => true,
+        let session = self.session.read().unwrap();
+        match &session.credentials {
+            Some(creds) => self.now_ms() < creds.expiration,
+            None => false,
         }
     }
 
-    pub fn logout(&mut self) {
-        self.credentials = None;
-        self.sp_dc = None;
+    pub fn is_expired(&self) -> bool {
+        !self.is_authenticated()
+    }
+
+    pub fn logout(&self) {
+        *self.session.write().unwrap() = Session::default();
     }
 
     pub async fn restore_session(
-        &mut self,
+        &self,
         sp_dc: &str,
         access_token: Option<&str>,
         expiration: Option<u64>,
     ) -> SpotifyResult<LoginResult> {
-        self.sp_dc = if sp_dc.is_empty() { None } else { Some(sp_dc.to_string()) };
+        {
+            let mut session = self.session.write().unwrap();
+            session.sp_dc = if sp_dc.is_empty() {
+                None
+            } else {
+                Some(sp_dc.to_string())
+            };
+        }
 
         if let (Some(token), Some(exp)) = (access_token, expiration) {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-            if now + 60000 < exp {
-                let client_id = String::new();
+            // A cached token with a minute to live is the whole reason this path exists: it makes
+            // start-up free instead of a network round-trip on every launch.
+            if self.now_ms() + 60_000 < exp {
                 let creds = SpotifyCredentials {
-                    client_id,
+                    client_id: String::new(),
                     access_token: token.to_string(),
                     expiration: exp,
                     is_anonymous: false,
                 };
-                self.credentials = Some(creds);
+                self.session.write().unwrap().credentials = Some(creds);
                 return Ok(LoginResult {
                     success: true,
                     user: None,
@@ -293,6 +333,15 @@ impl<E: Env> SpotifyClient<E> {
         }
 
         self.login_with_sp_dc(sp_dc).await
+    }
+
+    /// The clock, through [`Env`] rather than `SystemTime`.
+    ///
+    /// The point of the abstraction: a test can wind this forward and watch a token expire without
+    /// waiting an hour. `max(0)` because the trait speaks `i64` (a clock can be set before the
+    /// epoch) and every comparison here is against a `u64` timestamp from Spotify.
+    fn now_ms(&self) -> u64 {
+        E::now_ms().max(0) as u64
     }
 
     // =========================================================================
@@ -466,10 +515,8 @@ impl<E: Env> SpotifyClient<E> {
     }
 
     pub async fn fetch_client_credentials_token(&self) -> SpotifyResult<String> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        // Seconds, not millis: this cache is keyed on `expires_in`, which Spotify gives in seconds.
+        let now = self.now_ms() / 1000;
 
         // Read from cache
         {
@@ -528,16 +575,19 @@ impl<E: Env> SpotifyClient<E> {
     ///
     /// The margin is for the request that is fine when it is built and expired by the time it
     /// arrives.
-    pub fn access_token(&self) -> SpotifyResult<&str> {
-        let creds = self.credentials.as_ref().ok_or(SpotifyError::NotAuthenticated)?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        if now + ACCESS_TOKEN_MARGIN_MS >= creds.expiration {
+    /// Returns an owned `String` rather than a `&str` since 3.1: the token lives behind the session
+    /// lock now, and handing out a reference into it would mean handing out the guard's lifetime.
+    /// Every caller already wrote `.to_string()` anyway.
+    pub fn access_token(&self) -> SpotifyResult<String> {
+        let session = self.session.read().unwrap();
+        let creds = session
+            .credentials
+            .as_ref()
+            .ok_or(SpotifyError::NotAuthenticated)?;
+        if self.now_ms() + ACCESS_TOKEN_MARGIN_MS >= creds.expiration {
             return Err(SpotifyError::TokenExpired);
         }
-        Ok(creds.access_token.as_str())
+        Ok(creds.access_token.clone())
     }
 
     /// Check if response was successful, extract error body if not.
@@ -612,7 +662,7 @@ impl<E: Env> SpotifyClient<E> {
 
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> SpotifyResult<T> {
         let token = if let Ok(user_token) = self.access_token() {
-            user_token.to_string()
+            user_token
         } else {
             self.fetch_client_credentials_token().await?
         };
@@ -632,7 +682,7 @@ impl<E: Env> SpotifyClient<E> {
     /// with a 400". Propagating `TokenExpired` instead classifies as AUTH, which refreshes the
     /// session and retries, and that is the outcome the caller actually wants.
     pub async fn api_post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> SpotifyResult<T> {
-        let token = self.access_token()?.to_string();
+        let token = self.access_token()?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let req = self
@@ -646,7 +696,7 @@ impl<E: Env> SpotifyClient<E> {
 
     /// User-scoped write. No client-credentials fallback — see [`api_post`].
     pub async fn api_put(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = self.access_token()?.to_string();
+        let token = self.access_token()?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let req = self
@@ -659,7 +709,7 @@ impl<E: Env> SpotifyClient<E> {
 
     /// User-scoped write. No client-credentials fallback — see [`api_post`].
     pub async fn api_delete(&self, path: &str, body: &Value) -> SpotifyResult<()> {
-        let token = self.access_token()?.to_string();
+        let token = self.access_token()?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let req = self
@@ -1296,5 +1346,90 @@ mod tests {
             .headers
             .iter()
             .any(|(k, v)| k == "Accept-Language" && v == "ja"));
+    }
+
+    // =========================================================================
+    // POINT N — the start-up block
+    // =========================================================================
+
+    #[tokio::test]
+    async fn a_login_in_flight_does_not_block_a_reader() {
+        // This is the ANR, reproduced without a device. Before 3.1 `login_with_sp_dc` took
+        // `&mut self`, so the JNI bridge held the *write* guard of the process-wide `RwLock` for
+        // the whole network round-trip, and `isSpotifyAuthenticatedNative` — one `Option` read,
+        // called from the main thread at start-up — parked behind it.
+        //
+        // The reason this test cannot regress is that it does not test timing: it takes a shared
+        // reference and calls both. If anyone reintroduces `&mut self`, this stops compiling.
+        let _guard = mock::lock_and_reset();
+        mock::state().now_ms = 1_000;
+        mock::on_prefix(
+            "https://open.spotify.com",
+            HttpResponse::ok(r#"{"serverTime":1}"#),
+        );
+        mock::on_prefix("https://api.github.com", HttpResponse::ok("{}"));
+
+        let client = client();
+        let login = client.login_with_sp_dc("cookie");
+        assert!(!client.is_authenticated());
+        let _ = login.await;
+    }
+
+    #[tokio::test]
+    async fn a_restored_session_with_a_live_token_never_touches_the_network() {
+        // The start-up path. If this ever makes a request, every cold start pays a round-trip
+        // before the home screen can ask whether it is signed in.
+        let _guard = mock::lock_and_reset();
+        mock::state().now_ms = 1_000_000;
+
+        let client = client();
+        let result = client
+            .restore_session("cookie", Some("cached-token"), Some(1_000_000 + 600_000))
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert!(client.is_authenticated());
+        assert_eq!(client.access_token().unwrap(), "cached-token");
+        assert!(mock::state().requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_token_that_expires_while_the_app_is_open_stops_being_handed_out() {
+        let _guard = mock::lock_and_reset();
+        mock::state().now_ms = 1_000_000;
+        let client = client();
+        let _ = client
+            .restore_session("cookie", Some("cached-token"), Some(1_000_000 + 600_000))
+            .await;
+        assert!(client.is_authenticated());
+
+        // Ten minutes later, past the expiry.
+        mock::state().now_ms = 1_000_000 + 600_001;
+        assert!(!client.is_authenticated());
+        assert!(matches!(
+            client.access_token(),
+            Err(SpotifyError::TokenExpired)
+        ));
+    }
+
+    #[tokio::test]
+    async fn logging_out_clears_the_cookie_as_well_as_the_token() {
+        // Leaving `sp_dc` behind would let a later `refresh_token` sign the user back in.
+        let _guard = mock::lock_and_reset();
+        mock::state().now_ms = 1_000;
+        let client = client();
+        let _ = client
+            .restore_session("cookie", Some("t"), Some(1_000 + 600_000))
+            .await;
+        assert!(client.is_authenticated());
+
+        client.logout();
+        assert!(!client.is_authenticated());
+        assert!(matches!(
+            client.refresh_token().await,
+            Err(SpotifyError::NotAuthenticated)
+        ));
+        assert!(mock::state().requests.is_empty());
     }
 }

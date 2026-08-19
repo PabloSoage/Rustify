@@ -88,7 +88,10 @@ fun MatchEditorScreen(
     val context = LocalContext.current
     val green = Color(0xFF1DB954)
 
-    var mappings by remember { mutableStateOf(MatchStore.readAll(context).toList()) }
+    // Loaded in a `LaunchedEffect` rather than in the `remember` initialiser: reading it is disk
+    // I/O, and a `remember` initialiser runs on the thread that composes, which is the main one.
+    val editorScope = rememberCoroutineScope()
+    var mappings by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val names = remember { mutableStateMapOf<String, FullTrack?>() }
     var editTrack by remember { mutableStateOf<FullTrack?>(null) }  // opens the alternatives dialog
     var showAdd by remember { mutableStateOf(false) }
@@ -109,7 +112,8 @@ fun MatchEditorScreen(
         }
     }
 
-    fun refresh() { mappings = MatchStore.readAll(context).toList() }
+
+    LaunchedEffect(Unit) { mappings = MatchStore.readAll(context).toList() }
 
     // Which matches are user-chosen, for filtering. Recomputed only when the list changes.
     val userSet = remember(mappings) {
@@ -257,7 +261,7 @@ fun MatchEditorScreen(
                         Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
                     }
                     // Delete.
-                    IconButton(onClick = { MatchStore.remove(context, tid); refresh() }) {
+                    IconButton(onClick = { editorScope.launch { MatchStore.remove(context, tid); mappings = MatchStore.readAll(context).toList() } }) {
                         Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFCC3333))
                     }
                 }
@@ -282,9 +286,11 @@ fun MatchEditorScreen(
             audioPlayerService = audioPlayerService,
             onDismiss = { editTrack = null },
             onMappingSelected = { yt ->
-                t.id?.let { MatchStore.put(context, it, yt) }
+                editorScope.launch {
+                    t.id?.let { MatchStore.put(context, it, yt) }
+                    mappings = MatchStore.readAll(context).toList()
+                }
                 editTrack = null
-                refresh()
             }
         )
     }

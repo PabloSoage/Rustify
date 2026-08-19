@@ -7,12 +7,13 @@ import org.json.JSONObject
  * Kotlin face of the loopback streaming server in `core_engine/src/server/`.
  *
  * The point of the server is that Media3 can play a plain `http://127.0.0.1:…` URL, so the disk
- * cache and any decryption live behind an ordinary HTTP response instead of a custom `DataSource`.
+ * cache and Deezer's decryption live behind an ordinary HTTP response instead of a custom
+ * `DataSource`. What decides *when* that happens is [com.varuna.rustify.audio.StreamRouting].
  *
- * **Nothing is routed through it yet.** It starts, answers `/health`, and holds an empty handle
- * table. Moving the Deezer path and the stream cache onto it is a change to how audio actually
- * reaches the player, and that is not something to land in the same build as the server itself —
- * see `docs/stremio-core/PLAN-3.x.md` §4.3 (C6).
+ * The one rule worth keeping in mind: **this server only ever serves files that already exist.**
+ * [registerReady] hands back a URL when the bytes are on disk and says "not cached" when they are
+ * not, so nothing can arrive at the socket and have to wait for a download. A player that is told
+ * "not cached" plays the upstream URL, which is exactly what it did before this server existed.
  *
  * Safety, because a local server is a real attack surface: it binds `127.0.0.1` and only that (the
  * server this replaces was deleted in E11 precisely because its `0.0.0.0` fallback put an endpoint
@@ -27,26 +28,29 @@ object LocalStreamServer {
     @Volatile private var port: Int = 0
     @Volatile private var running: Boolean = false
 
-    /** Whether the server came up. When false, callers fall back to playing upstream URLs directly. */
+    /** Whether the server came up. When false, callers play upstream URLs directly. */
     val isRunning: Boolean get() = running
 
     /** The bound loopback port, or 0 if the server is not running. Diagnostics only. */
     val boundPort: Int get() = port
 
     /**
-     * Starts the server if it is not already up. Idempotent, and safe to call from any thread —
-     * but note it crosses JNI, so it blocks the caller; do not call it from the main thread.
+     * Starts the server if it is not already up. Idempotent.
+     *
+     * `suspend` rather than `@Synchronized`: it crosses JNI, and the whole of point N is that
+     * crossing JNI on the main thread is how this app produces an ANR. Concurrent callers may both
+     * reach the bridge, which is harmless — `server::start` is itself idempotent and the loser
+     * drops its listener.
      */
-    @Synchronized
-    fun ensureStarted(): Boolean {
+    suspend fun ensureStarted(): Boolean {
         if (running) return true
-        val answer = runCatching { NativeEngine.startLocalServerNative() }
-            .onFailure { Log.e(TAG, "startLocalServerNative threw", it) }
+        val answer = runCatching { NativeEngine.startLocalServer() }
+            .onFailure { Log.e(TAG, "startLocalServer threw", it) }
             .getOrNull() ?: return false
 
         return runCatching {
             val json = JSONObject(answer)
-            if (json.optBoolean("success", true).not()) {
+            if (!json.optBoolean("success", true)) {
                 Log.w(TAG, "server refused to start: ${json.optString("error")}")
                 return false
             }
@@ -61,31 +65,58 @@ object LocalStreamServer {
     }
 
     /**
-     * Registers [source] and returns the URL to hand to the player.
+     * Asks the server for a URL to play, and starts a background download when there is nothing to
+     * play yet.
      *
-     * Returns null when the server is not running or refused the registration, which callers should
-     * treat as "play [source] directly" rather than as an error: that is what happened before this
-     * server existed and it still works.
+     * @param cacheKey stable per track. Sanitised on the Rust side before it touches the filesystem.
+     * @param cacheRoot where the stream cache lives.
+     * @param upstreamUrl where to fetch the bytes from if they are not cached. **Empty asks without
+     *   fetching**: answer if it is on disk, say nothing if it is not, start nothing either way.
+     * @param deezerSngId set when the bytes are Deezer-encrypted, so the download decrypts them.
      *
-     * @param source a path on this device, or an `http(s)` URL fetched on first request.
-     * @param cachePath where an upstream is stored. An upstream with no cache path is refused —
-     *   there would be nowhere to put the bytes.
-     * @param expiresAtMs epoch millis after which the registration is dropped; 0 never expires.
+     * @return the loopback URL when the track is on disk, or null — which means *play what you
+     *   already had*, not that anything went wrong.
      */
-    fun urlFor(
-        source: String,
+    suspend fun registerReady(
+        cacheKey: String,
+        cacheRoot: String,
+        upstreamUrl: String = "",
         mime: String? = null,
-        cachePath: String? = null,
-        expiresAtMs: Long = 0L
+        deezerSngId: String? = null
     ): String? {
-        if (!running) return null
-        val url = runCatching {
-            NativeEngine.registerLocalStreamNative(source, mime ?: "", cachePath ?: "", expiresAtMs)
-        }.getOrNull()
-        return url?.takeIf { it.isNotBlank() }
+        if (cacheKey.isBlank() || cacheRoot.isBlank()) return null
+
+        val request = JSONObject().apply {
+            put("upstreamUrl", upstreamUrl)
+            put("cacheKey", cacheKey)
+            put("cacheRoot", cacheRoot)
+            mime?.let { put("mime", it) }
+            deezerSngId?.let { put("deezerSngId", it) }
+        }
+
+        val raw = runCatching { NativeEngine.registerLocalStream(request.toString()) }
+            .onFailure { Log.w(TAG, "registerLocalStream threw", it) }
+            .getOrNull() ?: return null
+
+        return runCatching {
+            val json = JSONObject(raw)
+            when (json.optString("status")) {
+                "ready" -> json.optString("url").takeIf { it.isNotBlank() }
+                "refused" -> {
+                    // A refusal is a programming error, not a user-facing one: the only ways to get
+                    // here are a local URI (deliberately never routed) or a missing cache key.
+                    Log.d(TAG, "not routed: ${json.optString("reason")}")
+                    null
+                }
+                else -> null
+            }
+        }.getOrElse {
+            Log.w(TAG, "could not read the registration answer: $raw", it)
+            null
+        }
     }
 
-    /** Drops a registration. The handle is the last path segment of the URL [urlFor] returned. */
+    /** Drops a registration. The handle is the last path segment of the URL [registerReady] gave. */
     fun forget(streamUrl: String) {
         val handle = streamUrl.substringAfterLast("/stream/", "").substringBefore('?')
         if (handle.isBlank()) return

@@ -14,7 +14,26 @@ data class StreamInfo(
     val uri: String,                  // http(s):// | file:// | content://
     val expiresAtMs: Long? = null,    // googlevideo ~6h; null = unknown
     val mimeType: String? = null,     // "audio/webm", "audio/mp4"... optional
-    val requiresProxy: Boolean = false // e.g. encrypted Deezer -> custom datasource
+    val requiresProxy: Boolean = false, // e.g. encrypted Deezer -> custom datasource
+    /** What to put in the stream cache, if anything. See [CacheHint]. */
+    val cache: CacheHint? = null
+)
+
+/**
+ * What the local streaming server should store for this track, so the next play is a file read.
+ *
+ * Separate from [StreamInfo.uri] because they are genuinely different things and guessing one from
+ * the other is how this goes wrong: Deezer's `uri` is a `deezer://` URI that no HTTP client can
+ * fetch, and yt-dlp's `uri` is a googlevideo URL that dies in six hours. A provider that wants its
+ * audio cached says so on purpose; one that says nothing is not cached, which is the safe default.
+ *
+ * @param upstreamUrl the plain `http(s)` URL the bytes actually come from.
+ * @param deezerSngId set only by Deezer: the bytes arrive Blowfish-striped and are decrypted on the
+ *   way into the cache, so what is stored — and what the server later serves — is ordinary audio.
+ */
+data class CacheHint(
+    val upstreamUrl: String,
+    val deezerSngId: String? = null
 )
 
 /**
@@ -38,7 +57,7 @@ data class AudioSourceCapabilities(
  *
  * The [hint] of [resolveStreamUrl] is an explicit `youtubeId` (a manually chosen
  * alternative): when provided, the YouTube provider uses it directly without re-resolving
- * from metadata (parity with `NativeEngine.resolveYouTubeIdNative(id, hint)`).
+ * from metadata (parity with `NativeEngine.resolveYouTubeId(id, hint)`).
  */
 interface AudioSourceProvider {
     val capabilities: AudioSourceCapabilities

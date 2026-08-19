@@ -78,6 +78,43 @@ impl Env for MockEnv {
         })
     }
 
+    fn fetch_to_file(req: HttpRequest, path: &str) -> TryEnvFuture<u64> {
+        let path = path.to_owned();
+        let url = req.url.clone();
+        let found = {
+            let mut state = state();
+            state.requests.push(req);
+            state.responses.get(&url).cloned().or_else(|| {
+                state
+                    .response_prefixes
+                    .iter()
+                    .find(|(prefix, _)| url.starts_with(prefix.as_str()))
+                    .map(|(_, response)| response.clone())
+            })
+        };
+        Box::pin(async move {
+            let response =
+                found.ok_or_else(|| EnvError::Fetch(format!("no canned response for {url}")))?;
+            if !response.is_success() {
+                return Err(EnvError::Fetch(format!(
+                    "upstream answered {}",
+                    response.status
+                )));
+            }
+            // A real file, because the callers being tested go on to read it back: the stream cache
+            // decrypts what this wrote, and asserting on that is the point of the test.
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| EnvError::Storage(e.to_string()))?;
+            }
+            tokio::fs::write(&path, &response.body)
+                .await
+                .map_err(|e| EnvError::Storage(e.to_string()))?;
+            Ok(response.body.len() as u64)
+        })
+    }
+
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>> {
         let value = state().storage.get(key).cloned();
         Box::pin(async move { Ok(value) })

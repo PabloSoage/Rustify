@@ -258,6 +258,21 @@ pub trait Env: 'static {
     /// Performs the request. Only transport failures are `Err`; an HTTP 500 is `Ok` with `status`.
     fn fetch(req: HttpRequest) -> TryEnvFuture<HttpResponse>;
 
+    /// Downloads `req` straight to `path`, returning how many bytes were written.
+    ///
+    /// Separate from [`Env::fetch`] because [`HttpResponse::body`] is a `Vec<u8>`: fetching a
+    /// 40 MB FLAC through it means holding 40 MB of it in RAM, which is why the stream cache used
+    /// to carry a `MAX_CACHE_BYTES` ceiling that a lossless track can genuinely exceed. This writes
+    /// as the bytes arrive and never holds more than one chunk.
+    ///
+    /// The write must be atomic from a reader's point of view: a half-downloaded file that looks
+    /// complete is worse than no file, because nothing will ever go back and fix it. Implementors
+    /// write to a temporary beside `path` and rename.
+    ///
+    /// A non-2xx status is an `Err`, unlike in `fetch` — there is no useful "response object" to
+    /// hand back when the destination is a file.
+    fn fetch_to_file(req: HttpRequest, path: &str) -> TryEnvFuture<u64>;
+
     /// `Ok(None)` means "no such key", which is not an error.
     fn get_storage(key: &str) -> TryEnvFuture<Option<String>>;
 

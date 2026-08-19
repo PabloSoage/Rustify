@@ -79,14 +79,17 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
                 // Resolve Spotify id -> YouTube id (a non-empty hint is returned as-is,
                 // parity with server.rs::resolve_youtube_id_direct youtube_id_opt branch).
                 // A "ytm:" id already carries its YouTube video id, so skip the Spotify resolver.
-                val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeIdNative(trackId, hint ?: "")
+                val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeId(trackId, hint ?: "")
                 require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
                 val url = extractStreamUrlWithRetry(ytId)
                     ?: error("yt-dlp returned no url")
                 StreamInfo(
                     uri = url,
                     // googlevideo URLs expire in ~6h; advisory value for invalidations.
-                    expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L
+                    expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L,
+                    // The URL expires; the audio behind it does not. Cache the bytes and the next
+                    // play needs neither yt-dlp nor the network.
+                    cache = CacheHint(upstreamUrl = url)
                 )
             }
         }
@@ -101,7 +104,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             // Make the track resolvable in the Rust resolver.
             registerMetadata(track)
             // A "ytm:" id already carries its YouTube video id, so skip the Spotify resolver.
-            val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeIdNative(trackId, "")
+            val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeId(trackId, "")
             require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
 
             if (dst.exists()) dst.delete()

@@ -17,13 +17,20 @@
 // track must not make this process hold that track in memory, and it must start receiving bytes
 // immediately rather than after the last one is ready.
 //
-// And nothing is ever fetched from the network while a request is waiting: see [`serve_stream`].
+// **Nothing is ever downloaded while a request is waiting.** Since 3.1 that is structural rather
+// than careful: [`register`] hands back a loopback URL only when the file is already on disk, and
+// otherwise says so, so the caller keeps playing the upstream URL exactly as it did before this
+// server existed. Everything this serves is therefore a local file that already exists — which is
+// what let the `503 Retry-After` path, the `Source` enum and the fallback dance in the player all
+// go away at once.
 
+pub mod cache;
+pub mod fill;
 pub mod handles;
 pub mod range;
 
-use crate::env::{Env, EnvError, HttpRequest, LogLevel};
-use handles::{Source, StreamEntry};
+use crate::env::{Env, EnvError, LogLevel};
+use handles::StreamEntry;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Bytes, Frame, SizeHint};
@@ -31,11 +38,10 @@ use hyper::header;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use std::collections::HashSet;
 use std::convert::Infallible;
 use std::io::SeekFrom;
 use std::pin::Pin;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
 use tokio::net::TcpListener;
@@ -48,12 +54,12 @@ type ResBody = BoxBody<Bytes, std::io::Error>;
 /// enough that a paused download is not holding megabytes.
 const CHUNK_BYTES: usize = 64 * 1024;
 
-/// Largest upstream this server will pull into memory to write into the cache.
+/// How long a registration stays valid by default.
 ///
-/// Only the **cache fill** is bounded by this, never serving: serving streams off disk a chunk at a
-/// time and has no size limit. The fill still buffers, because `Env::fetch` hands back a complete
-/// response — this is what stops a mistaken registration from trying to hold a video in RAM.
-pub const MAX_CACHE_BYTES: u64 = 64 * 1024 * 1024;
+/// The handle table is not a cache: it maps an opaque name to a path, and the path can be swept out
+/// from under it. A day is long enough that no listening session outlives it, and short enough that
+/// the table cannot grow without bound across weeks of use.
+const DEFAULT_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// What the app needs to build URLs for this server.
 #[derive(Debug, Clone)]
@@ -155,6 +161,113 @@ pub async fn start<E: Env>() -> Result<ServerHandle, EnvError> {
 }
 
 // =============================================================================
+// REGISTRATION
+// =============================================================================
+
+/// What the app asks for when it wants a track served from the cache.
+#[derive(Debug, Clone)]
+pub struct Registration {
+    /// Where the bytes come from if they are not cached yet. Must be `http(s)`.
+    ///
+    /// **Empty means "look, do not fetch"**: answer `Ready` if the track is already on disk and
+    /// `NotCached` otherwise, without starting anything. That is the question the player asks
+    /// *before* resolving — a track played before needs no backend, no yt-dlp and no network at
+    /// all, and finding that out has to be cheaper than the thing it avoids.
+    pub upstream_url: String,
+    /// Stable per track, per backend and per format. Sanitised before it touches the filesystem.
+    pub cache_key: String,
+    pub mime: Option<String>,
+    /// Present when the bytes are Deezer-encrypted and have to be decrypted on the way in.
+    pub deezer_sng_id: Option<String>,
+    /// How long the resulting handle stays valid. `None` for [`DEFAULT_TTL_MS`].
+    pub ttl_ms: Option<i64>,
+}
+
+/// What came of a [`register`] call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Registered {
+    /// The bytes are on disk. Play this URL.
+    Ready(String),
+    /// Not cached. **Play the upstream URL** — that is what the app did before this server existed
+    /// and it still works. A background fill has been started, so a later play will be `Ready`.
+    NotCached,
+    /// Nothing was registered, and the reason is for the log rather than for the user.
+    Refused(&'static str),
+}
+
+/// Why this registration will not be accepted, if it will not be.
+///
+/// Pure, so the rules are testable on their own. The important one is the second: local music is
+/// **not** routed through this server. `content://` already plays through Media3, and putting it
+/// behind HTTP would add a hop, a port and a token to something that has no problem — routing for
+/// the sake of routing is how what already worked stops working.
+fn refusal_for(request: &Registration, cache_root: &str) -> Option<&'static str> {
+    if cache_root.is_empty() {
+        return Some("no cache directory");
+    }
+    if request.cache_key.is_empty() {
+        return Some("no cache key");
+    }
+    // An empty upstream is the lookup-only question and is allowed. Anything else has to be remote.
+    if !request.upstream_url.is_empty()
+        && !(request.upstream_url.starts_with("http://")
+            || request.upstream_url.starts_with("https://"))
+    {
+        return Some("only remote streams are routed");
+    }
+    None
+}
+
+/// Registers a track for serving, and starts a background fill if it is not cached yet.
+///
+/// Synchronous, and does no I/O beyond one `exists` check: this runs on the path that is about to
+/// start playback, and the only decision it makes is "is the file there".
+pub fn register<E: Env>(request: Registration, cache_root: &str) -> Registered {
+    // Validated before the server is consulted, so what a request is *allowed* to be does not
+    // depend on whether the server happened to come up — and so it can be tested without one.
+    if let Some(reason) = refusal_for(&request, cache_root) {
+        return Registered::Refused(reason);
+    }
+    let server = match current() {
+        Some(server) => server,
+        // Indistinguishable from "not cached" on purpose: either way the caller plays the upstream
+        // URL, and a caller that has to branch on *why* will eventually get the branch wrong.
+        None => return Registered::NotCached,
+    };
+
+    let path = cache::path_for(cache_root, &request.cache_key);
+    let path_str = path.to_string_lossy().into_owned();
+
+    // `std::fs` and not `tokio::fs`: this is one stat on a local path, and making it async would
+    // put an await between "is it there" and "hand out its URL".
+    if path.is_file() {
+        let entry = StreamEntry {
+            path: path_str,
+            mime: request.mime,
+            expires_at_ms: Some(E::now_ms() + request.ttl_ms.unwrap_or(DEFAULT_TTL_MS)),
+        };
+        return Registered::Ready(server.stream_url(&handles::register::<E>(entry)));
+    }
+
+    // Lookup-only: the caller wanted to know, not to start anything.
+    if request.upstream_url.is_empty() {
+        return Registered::NotCached;
+    }
+
+    let kind = match request.deezer_sng_id {
+        Some(sng_id) if !sng_id.is_empty() => fill::Kind::Deezer { sng_id },
+        _ => fill::Kind::Plain,
+    };
+    fill::start::<E>(
+        request.upstream_url,
+        path_str,
+        kind,
+        Some(cache_root.to_owned()),
+    );
+    Registered::NotCached
+}
+
+// =============================================================================
 // ROUTING
 // =============================================================================
 
@@ -225,35 +338,15 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
         None => return text(StatusCode::NOT_FOUND, "unknown handle"),
     };
 
-    let path = match local_path_for::<E>(&entry) {
-        LocalPath::Ready(path) => path,
-        LocalPath::NotCachedYet { url, cache } => {
-            // **Nothing is fetched while a request is waiting.** Downloading the whole track before
-            // answering would mean the player sat silent until the last byte arrived — worse than
-            // what it replaced. The fill runs in the background and this request says "not yet", so
-            // the caller falls back to the upstream URL exactly as it does when the server is off.
-            // The next play finds it on disk.
-            start_cache_fill::<E>(url, cache);
-            return Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .header(header::RETRY_AFTER, "1")
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                .body(full_body("not cached yet"))
-                .unwrap_or_else(|_| text(StatusCode::SERVICE_UNAVAILABLE, ""));
-        }
-        LocalPath::Unusable(reason) => {
-            E::log(LogLevel::Warn, "LocalServer", &format!("{handle}: {reason}"));
-            return text(StatusCode::INTERNAL_SERVER_ERROR, "not servable");
-        }
-    };
-
-    let metadata = match tokio::fs::metadata(&path).await {
+    let metadata = match tokio::fs::metadata(&entry.path).await {
         Ok(m) => m,
+        // The cache was swept between registration and this request. `404` rather than `500`: the
+        // player treats it as a dead source and re-resolves, which is the outcome that recovers.
         Err(e) => {
             E::log(
                 LogLevel::Warn,
                 "LocalServer",
-                &format!("cannot stat {path}: {e}"),
+                &format!("cannot stat {}: {e}", entry.path),
             );
             return text(StatusCode::NOT_FOUND, "gone");
         }
@@ -279,13 +372,13 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
         ),
     };
 
-    let body = match file_body(&path, start, len).await {
+    let body = match file_body(&entry.path, start, len).await {
         Ok(body) => body,
         Err(e) => {
             E::log(
                 LogLevel::Warn,
                 "LocalServer",
-                &format!("cannot open {path}: {e}"),
+                &format!("cannot open {}: {e}", entry.path),
             );
             return text(StatusCode::INTERNAL_SERVER_ERROR, "read failed");
         }
@@ -303,110 +396,6 @@ async fn serve_stream<E: Env>(handle: &str, range_header: Option<&str>) -> Respo
         .body(body)
         .unwrap_or_else(|_| text(StatusCode::INTERNAL_SERVER_ERROR, ""))
 }
-
-/// What [`local_path_for`] found. Synchronous on purpose: deciding must not involve the network.
-enum LocalPath {
-    Ready(String),
-    NotCachedYet { url: String, cache: String },
-    Unusable(String),
-}
-
-fn local_path_for<E: Env>(entry: &StreamEntry) -> LocalPath {
-    match &entry.source {
-        Source::File(path) => LocalPath::Ready(path.clone()),
-        Source::Upstream { url, cache } => match cache {
-            // Refused rather than fetched into a temporary: a cache the caller did not ask for is
-            // still a cache, and it would be one nothing ever cleans up.
-            None => LocalPath::Unusable("upstream registered without a cache path".into()),
-            Some(cache) => {
-                // `std::fs` and not `tokio::fs`: this is a stat on a local path, and making the
-                // decision async would mean an await between "is it there" and "serve it".
-                if std::path::Path::new(cache).exists() {
-                    LocalPath::Ready(cache.clone())
-                } else {
-                    LocalPath::NotCachedYet {
-                        url: url.clone(),
-                        cache: cache.clone(),
-                    }
-                }
-            }
-        },
-    }
-}
-
-/// Cache paths currently being filled, so a player retrying every second does not start a download
-/// per attempt.
-static FILLING: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-
-fn start_cache_fill<E: Env>(url: String, cache: String) {
-    {
-        let filling = FILLING.get_or_init(|| Mutex::new(HashSet::new()));
-        match filling.lock() {
-            Ok(mut set) => {
-                if !set.insert(cache.clone()) {
-                    return; // already downloading this one
-                }
-            }
-            Err(_) => return,
-        }
-    }
-
-    E::exec_concurrent(async move {
-        let outcome = fill_cache::<E>(&url, &cache).await;
-        if let Err(e) = &outcome {
-            E::log(
-                LogLevel::Warn,
-                "LocalServer",
-                &format!("cache fill failed for {cache}: {e}"),
-            );
-        }
-        if let Some(filling) = FILLING.get() {
-            if let Ok(mut set) = filling.lock() {
-                set.remove(&cache);
-            }
-        }
-    });
-}
-
-async fn fill_cache<E: Env>(url: &str, cache: &str) -> Result<(), EnvError> {
-    let response = E::fetch(HttpRequest::get(url)).await?;
-    if !response.is_success() {
-        // The status is carried in the message rather than swallowed: an expired upstream shows up
-        // as 403/410 here too, and a reader of the log should be able to tell that from a timeout.
-        return Err(EnvError::Fetch(format!(
-            "upstream answered {}",
-            response.status
-        )));
-    }
-    if response.body.len() as u64 > MAX_CACHE_BYTES {
-        return Err(EnvError::Storage(format!(
-            "refusing to cache {} bytes",
-            response.body.len()
-        )));
-    }
-    write_atomically(cache, &response.body).await
-}
-
-async fn write_atomically(path: &str, bytes: &[u8]) -> Result<(), EnvError> {
-    if let Some(parent) = std::path::Path::new(path).parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| EnvError::Storage(e.to_string()))?;
-    }
-    // Same reasoning as `AndroidEnv::set_storage`: a half-written cache entry that looks complete
-    // is worse than no cache entry, because nothing will ever go back and fix it.
-    let tmp = format!("{path}.part");
-    tokio::fs::write(&tmp, bytes)
-        .await
-        .map_err(|e| EnvError::Storage(e.to_string()))?;
-    tokio::fs::rename(&tmp, path)
-        .await
-        .map_err(|e| EnvError::Storage(e.to_string()))?;
-    Ok(())
-}
-
-// `read_slice` is gone: it read a whole range into a `Vec` before answering. `FileBody` streams the
-// same range off the file handle instead, which is what lets playback start on the first chunk.
 
 // =============================================================================
 // HELPERS
@@ -526,6 +515,7 @@ pub(crate) fn random_hex(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::mock::{self, MockEnv};
 
     #[test]
     fn a_wrong_token_is_refused_and_a_right_one_is_not() {
@@ -546,40 +536,6 @@ mod tests {
     }
 
     #[test]
-    fn an_uncached_upstream_is_never_fetched_while_a_request_waits() {
-        // The whole point of `LocalPath`: deciding what to serve is synchronous, so there is no way
-        // to accidentally reintroduce "download the track, then answer".
-        let entry = StreamEntry {
-            source: Source::Upstream {
-                url: "https://example.test/a.mp3".into(),
-                cache: Some("/definitely/not/here/a.mp3".into()),
-            },
-            mime: None,
-            expires_at_ms: None,
-        };
-        assert!(matches!(
-            local_path_for::<crate::env::mock::MockEnv>(&entry),
-            LocalPath::NotCachedYet { .. }
-        ));
-    }
-
-    #[test]
-    fn an_upstream_without_a_cache_path_is_unusable_rather_than_fetched() {
-        let entry = StreamEntry {
-            source: Source::Upstream {
-                url: "https://example.test/a.mp3".into(),
-                cache: None,
-            },
-            mime: None,
-            expires_at_ms: None,
-        };
-        assert!(matches!(
-            local_path_for::<crate::env::mock::MockEnv>(&entry),
-            LocalPath::Unusable(_)
-        ));
-    }
-
-    #[test]
     fn a_stream_url_carries_the_token_and_stays_on_loopback() {
         let handle = ServerHandle {
             port: 41234,
@@ -589,5 +545,102 @@ mod tests {
             handle.stream_url("deadbeef"),
             "http://127.0.0.1:41234/stream/deadbeef?t=abc"
         );
+    }
+
+    fn registration(url: &str) -> Registration {
+        Registration {
+            upstream_url: url.into(),
+            cache_key: "spotify_abc123".into(),
+            mime: Some("audio/mpeg".into()),
+            deezer_sng_id: None,
+            ttl_ms: None,
+        }
+    }
+
+    #[test]
+    fn local_files_are_not_routed_through_the_server() {
+        // Not an oversight waiting to be "fixed": `content://` already plays, and putting it behind
+        // HTTP would add a hop, a port and a token to something that has no problem. This test is
+        // what keeps that a decision rather than a thing nobody got round to.
+        assert_eq!(
+            refusal_for(
+                &registration("content://media/external/audio/12"),
+                "/tmp/cache"
+            ),
+            Some("only remote streams are routed")
+        );
+        assert_eq!(
+            refusal_for(&registration("/storage/emulated/0/Music/a.mp3"), "/tmp/cache"),
+            Some("only remote streams are routed")
+        );
+        assert_eq!(
+            refusal_for(&registration("file:///storage/a.mp3"), "/tmp/cache"),
+            Some("only remote streams are routed")
+        );
+        // And a remote one is not refused, so the rule above is not simply "refuse everything".
+        assert_eq!(
+            refusal_for(&registration("https://cdn.test/a.mp3"), "/tmp/cache"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_lookup_only_registration_is_allowed_to_have_no_upstream() {
+        // The question the player asks before it resolves anything: "have I got this already?".
+        // Refusing it would mean every play went through a backend even when the bytes were on disk.
+        let mut lookup = registration("https://cdn.test/a.mp3");
+        lookup.upstream_url = String::new();
+        assert_eq!(refusal_for(&lookup, "/tmp/cache"), None);
+    }
+
+    #[test]
+    fn a_registration_with_nowhere_to_put_the_bytes_is_refused() {
+        assert_eq!(
+            refusal_for(&registration("https://cdn.test/a.mp3"), ""),
+            Some("no cache directory")
+        );
+        let mut keyless = registration("https://cdn.test/a.mp3");
+        keyless.cache_key = String::new();
+        assert_eq!(refusal_for(&keyless, "/tmp/cache"), Some("no cache key"));
+    }
+
+    #[test]
+    fn an_uncached_track_is_never_given_a_loopback_url() {
+        // The rule the whole design rests on: the player learns about this server only once the
+        // bytes are on disk, so no request can arrive and have to wait for a download.
+        let _guard = mock::lock_and_reset();
+        let root = std::env::temp_dir().join(format!("rustify-reg-{}", random_hex(8)));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let outcome = register::<MockEnv>(
+            registration("https://cdn.test/not-here.mp3"),
+            root.to_str().unwrap(),
+        );
+        assert_eq!(outcome, Registered::NotCached);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cached_track_is_served_from_the_path_the_key_maps_to() {
+        let _guard = mock::lock_and_reset();
+        let root = std::env::temp_dir().join(format!("rustify-reg-{}", random_hex(8)));
+        std::fs::create_dir_all(&root).unwrap();
+        let root_str = root.to_str().unwrap();
+        std::fs::write(cache::path_for(root_str, "spotify_abc123"), b"audio").unwrap();
+
+        match register::<MockEnv>(registration("https://cdn.test/a.mp3"), root_str) {
+            // With no server running the answer is `NotCached`, which is correct and not what this
+            // test is about; when one is up the URL must be a loopback one carrying the token.
+            Registered::Ready(url) => {
+                assert!(url.starts_with("http://127.0.0.1:"));
+                assert!(url.contains("/stream/"));
+                assert!(url.contains("?t="));
+            }
+            Registered::NotCached => assert!(current().is_none()),
+            other => panic!("unexpected registration outcome: {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

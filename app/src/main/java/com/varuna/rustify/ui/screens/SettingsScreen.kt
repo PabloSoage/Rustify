@@ -2990,6 +2990,92 @@ private fun AudioBackendsSection(context: Context) {
     }
 
     AddonsSection(context, onAddonsChanged = { backendsRevision++ })
+    StreamCacheSection(context)
+}
+
+/**
+ * The stream cache: songs kept on the device after they have been played once.
+ *
+ * Placed with the backends because it is what makes them cheap — a track already here needs no
+ * backend at all. The size and the clear button are here because a cache the user cannot see or
+ * empty is just disk that went missing.
+ */
+@Composable
+private fun StreamCacheSection(context: Context) {
+    val scope = rememberCoroutineScope()
+    var enabled by remember {
+        mutableStateOf(com.varuna.rustify.audio.StreamRouting.isEnabled(context))
+    }
+    var bytes by remember { mutableStateOf(0L) }
+
+    suspend fun refreshSize() {
+        bytes = com.varuna.rustify.audio.StreamRouting.size(context)
+    }
+
+    LaunchedEffect(Unit) { refreshSize() }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        stringResource(R.string.settings_stream_cache),
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_stream_cache_enabled),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { on ->
+                        enabled = on
+                        com.varuna.rustify.audio.StreamRouting.setEnabled(context, on)
+                    }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.settings_stream_cache_desc),
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_stream_cache_using, formatBytes(bytes)),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = {
+                    scope.launch {
+                        com.varuna.rustify.audio.StreamRouting.clear(context)
+                        refreshSize()
+                    }
+                }) {
+                    Text(stringResource(R.string.settings_stream_cache_clear), color = Color(0xFF1DB954))
+                }
+            }
+        }
+    }
+}
+
+/** Bytes as something a person reads, without pulling in a formatting library for four branches. */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_073_741_824L -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1_073_741_824.0)
+    bytes >= 1_048_576L -> String.format(java.util.Locale.US, "%.0f MB", bytes / 1_048_576.0)
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 /**

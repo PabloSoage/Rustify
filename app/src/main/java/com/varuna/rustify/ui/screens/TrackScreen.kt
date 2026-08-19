@@ -179,7 +179,7 @@ fun YouTubeMappingDialog(
     LaunchedEffect(Unit) {
         isSearching = true
         coroutineScope.launch(Dispatchers.IO) {
-            val json = NativeEngine.searchYouTubeNative(query)
+            val json = NativeEngine.searchYouTube(query)
             results = YouTubeTrack.listFromJsonArray(json)
             isSearching = false
         }
@@ -212,7 +212,7 @@ fun YouTubeMappingDialog(
                     onClick = {
                         isSearching = true
                         coroutineScope.launch(Dispatchers.IO) {
-                            val json = NativeEngine.searchYouTubeNative(query)
+                            val json = NativeEngine.searchYouTube(query)
                             results = YouTubeTrack.listFromJsonArray(json)
                             isSearching = false
                         }
@@ -436,7 +436,7 @@ fun TrackScreen(
                 ?: runCatching {
                     kotlinx.coroutines.withContext(Dispatchers.IO) {
                         Regex("[A-Za-z0-9_-]{11}")
-                            .find(NativeEngine.resolveYouTubeIdNative(trackId, ""))?.value
+                            .find(NativeEngine.resolveYouTubeId(trackId, ""))?.value
                     }
                 }.getOrNull()
             if (!ytId.isNullOrBlank()) {
@@ -451,7 +451,7 @@ fun TrackScreen(
         canvasUrl = null
         try {
             val json = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                NativeEngine.getSpotifyCanvasNative(trackId)
+                NativeEngine.getSpotifyCanvas(trackId)
             }
             val obj = JSONObject(json)
             canvasUrl = if (obj.has("url") && !obj.isNull("url")) obj.optString("url") else null
@@ -802,6 +802,10 @@ fun TrackScreen(
                         // Clear cached stream URL so the new mapping takes effect immediately
                         audioPlayerService.removeCachedStreamUrl(tid)
                         com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(tid)
+                        // And the stored audio, for the same reason: the user has just said this
+                        // recording was the wrong one, and the stream cache would otherwise keep
+                        // serving it — which would look exactly like the choice doing nothing.
+                        com.varuna.rustify.audio.StreamRouting.forget(context, tid)
                         
                         android.widget.Toast.makeText(
                             context.applicationContext,

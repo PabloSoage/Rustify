@@ -180,7 +180,7 @@ impl<E: Env> SpotifyClient<E> {
         };
 
         // Canvas requires the user Bearer token obtained via sp_dc login.
-        let token = self.access_token()?.to_string();
+        let token = self.access_token()?;
 
         let body = build_request(&uri);
 

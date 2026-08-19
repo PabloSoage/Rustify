@@ -68,7 +68,7 @@ object AddonRepository {
     /** Installed backends, in the order they are tried. */
     suspend fun list(): List<InstalledAddon> = withContext(Dispatchers.IO) {
         runCatching {
-            val array = JSONArray(NativeEngine.listAddonsNative())
+            val array = JSONArray(NativeEngine.listAddons())
             (0 until array.length()).mapNotNull { i ->
                 array.optJSONObject(i)?.let(InstalledAddon::fromJson)
             }
@@ -87,7 +87,7 @@ object AddonRepository {
      */
     suspend fun install(url: String): Result<InstalledAddon> = withContext(Dispatchers.IO) {
         runCatching {
-            val json = JSONObject(NativeEngine.installAddonNative(url.trim()))
+            val json = JSONObject(NativeEngine.installAddon(url.trim()))
             if (json.has("success") && !json.optBoolean("success")) {
                 error(json.optString("error", "the addon was refused"))
             }
@@ -96,18 +96,18 @@ object AddonRepository {
     }
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching { checkOk(NativeEngine.uninstallAddonNative(id)) }
+        runCatching { checkOk(NativeEngine.uninstallAddon(id)) }
     }
 
     suspend fun setEnabled(id: String, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching { checkOk(NativeEngine.setAddonEnabledNative(id, enabled)) }
+        runCatching { checkOk(NativeEngine.setAddonEnabled(id, enabled)) }
     }
 
     /** Reorders the fallback chain. Ids not named keep their relative order at the end. */
     suspend fun reorder(ids: List<String>): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val array = JSONArray().also { a -> ids.forEach { a.put(it) } }
-            checkOk(NativeEngine.reorderAddonsNative(array.toString()))
+            checkOk(NativeEngine.reorderAddons(array.toString()))
         }
     }
 

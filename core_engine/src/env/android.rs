@@ -7,6 +7,7 @@ use super::{Env, EnvError, HttpRequest, HttpResponse, LogLevel, Method, TryEnvFu
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncWriteExt;
 
 /// Where persisted keys live. Set from JNI at startup; falls back to the resolver cache directory,
 /// which the app already initialises, so there is one less thing to forget to wire up.
@@ -30,6 +31,11 @@ pub fn init_storage_dir(dir: &str) {
 /// with a connect timeout and **nothing bounding the read**. On a slow connection that is a request
 /// that never returns, which is precisely the failure this app already has a name for (point N).
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Ceiling for a whole download in [`Env::fetch_to_file`]. Ten minutes is not a latency budget, it
+/// is a "this will never finish" detector: a FLAC on a bad connection can genuinely take minutes,
+/// and the 30 s request ceiling would kill every one of them.
+const DOWNLOAD_TIMEOUT_MS: u64 = 10 * 60 * 1000;
 
 fn http_client() -> &'static reqwest::Client {
     HTTP.get_or_init(|| {
@@ -106,6 +112,81 @@ impl Env for AndroidEnv {
                 headers,
                 body,
             })
+        })
+    }
+
+    fn fetch_to_file(req: HttpRequest, path: &str) -> TryEnvFuture<u64> {
+        let path = PathBuf::from(path);
+        Box::pin(async move {
+            let mut builder = http_client().request(to_reqwest_method(req.method), &req.url);
+            for (name, value) in &req.headers {
+                builder = builder.header(name.as_str(), value.as_str());
+            }
+            // A download is not a request: a 40 MB track over a slow connection legitimately takes
+            // longer than `DEFAULT_REQUEST_TIMEOUT`, which is why this one is stated per call and
+            // is generous. It is still bounded — an unbounded read is what point N is about.
+            builder = builder.timeout(Duration::from_millis(
+                req.timeout_ms.unwrap_or(DOWNLOAD_TIMEOUT_MS),
+            ));
+            if let Some(body) = req.body {
+                builder = builder.body(body);
+            }
+
+            let mut response = builder
+                .send()
+                .await
+                .map_err(|e| EnvError::Fetch(e.to_string()))?;
+            let status = response.status().as_u16();
+            if !(200..300).contains(&status) {
+                return Err(EnvError::Fetch(format!("upstream answered {status}")));
+            }
+
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| EnvError::Storage(e.to_string()))?;
+            }
+            // Same reasoning as `set_storage`: write beside the destination and rename, so a
+            // reader never sees a partial file under the name that means "complete".
+            let mut tmp = path.clone().into_os_string();
+            tmp.push(".part");
+            let tmp = PathBuf::from(tmp);
+
+            let mut written: u64 = 0;
+            {
+                let file = tokio::fs::File::create(&tmp)
+                    .await
+                    .map_err(|e| EnvError::Storage(e.to_string()))?;
+                let mut file = tokio::io::BufWriter::new(file);
+                // `chunk()` rather than `bytes()`: this is the whole point of the method. It needs
+                // no `stream` feature and never materialises the body.
+                loop {
+                    let chunk = match response.chunk().await {
+                        Ok(Some(chunk)) => chunk,
+                        Ok(None) => break,
+                        Err(e) => {
+                            // The temporary is removed rather than left behind: it is indistinguishable
+                            // from a complete download except by size, and nothing knows the size.
+                            let _ = tokio::fs::remove_file(&tmp).await;
+                            return Err(EnvError::Fetch(e.to_string()));
+                        }
+                    };
+                    written += chunk.len() as u64;
+                    if let Err(e) = file.write_all(&chunk).await {
+                        let _ = tokio::fs::remove_file(&tmp).await;
+                        return Err(EnvError::Storage(e.to_string()));
+                    }
+                }
+                if let Err(e) = file.flush().await {
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                    return Err(EnvError::Storage(e.to_string()));
+                }
+            }
+
+            tokio::fs::rename(&tmp, &path)
+                .await
+                .map_err(|e| EnvError::Storage(e.to_string()))?;
+            Ok(written)
         })
     }
 
