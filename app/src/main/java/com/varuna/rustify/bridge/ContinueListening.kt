@@ -22,6 +22,15 @@ data class ListeningSession(
     val label: String,
     val subtitle: String,
     val imageUrl: String,
+    /**
+     * The title of the track that was playing.
+     *
+     * The row is labelled with the *album*, and the bar under it is progress through the **track**.
+     * Without the track's name on the row that bar reads as progress through the album, which is
+     * what it looked like the first time this was used on a phone. Empty for sessions stored before
+     * this field existed.
+     */
+    val trackTitle: String,
     /** Track ids in play order. */
     val queue: List<String>,
     val index: Int,
@@ -36,11 +45,25 @@ data class ListeningSession(
     val progress: Float
         get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
 
+    /**
+     * What to put under the label: which track, and where it sits in the context.
+     *
+     * Falls back to the stored subtitle for sessions written before [trackTitle] existed, so an
+     * upgrade does not blank the rows already on the home screen.
+     */
+    val positionLabel: String
+        get() = when {
+            trackTitle.isBlank() -> subtitle
+            queue.size <= 1 -> trackTitle
+            else -> "${index + 1}/${queue.size} · $trackTitle"
+        }
+
     internal fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("label", label)
         put("subtitle", subtitle)
         put("image_url", imageUrl)
+        put("track_title", trackTitle)
         put("duration_ms", durationMs)
         put("updated_at_ms", updatedAtMs)
         put("state", JSONObject().apply {
@@ -61,6 +84,7 @@ data class ListeningSession(
                 label = json.optString("label"),
                 subtitle = json.optString("subtitle"),
                 imageUrl = json.optString("image_url"),
+                trackTitle = json.optString("track_title"),
                 queue = queue,
                 index = state.optInt("index"),
                 positionMs = state.optLong("position_ms"),

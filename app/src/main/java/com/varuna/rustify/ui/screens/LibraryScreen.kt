@@ -536,12 +536,11 @@ fun LibraryPlaylists(
         },
         emptyMessage = "No playlists found.",
         searchQuery = searchQuery,
-        filterPredicate = { playlist, query ->
-            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
-            if (combinedQuery.isBlank()) true
-            else playlist.name.contains(combinedQuery, ignoreCase = true) || 
-            (playlist.owner?.name?.contains(combinedQuery, ignoreCase = true) == true)
-        }
+        search = LibrarySearch(
+            name = com.varuna.rustify.util.LocalSearch.PLAYLISTS,
+            id = { it.id },
+            fields = { listOf(it.name, it.owner?.name.orEmpty()) }
+        )
     )
 }
 
@@ -580,12 +579,11 @@ fun LibraryAlbums(
         },
         emptyMessage = "No albums found.",
         searchQuery = searchQuery,
-        filterPredicate = { album, query ->
-            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
-            if (combinedQuery.isBlank()) true
-            else album.name.contains(combinedQuery, ignoreCase = true) || 
-            album.artists.any { it.name.contains(combinedQuery, ignoreCase = true) }
-        }
+        search = LibrarySearch(
+            name = com.varuna.rustify.util.LocalSearch.ALBUMS,
+            id = { it.id },
+            fields = { listOf(it.name) + it.artists.map { artist -> artist.name } }
+        )
     )
 }
 
@@ -625,11 +623,11 @@ fun LibraryArtists(
         },
         emptyMessage = "No artists found.",
         searchQuery = searchQuery,
-        filterPredicate = { artist, query ->
-            val combinedQuery = if (query.isBlank() && searchQuery.isNotBlank()) searchQuery else query
-            if (combinedQuery.isBlank()) true
-            else artist.name.contains(combinedQuery, ignoreCase = true)
-        }
+        search = LibrarySearch(
+            name = com.varuna.rustify.util.LocalSearch.ARTISTS,
+            id = { it.id },
+            fields = { listOf(it.name) }
+        )
     )
 }
 
@@ -656,12 +654,22 @@ fun LibraryTracks(
     val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
+    // Folded once when the list changes; each keystroke only sends the query. The album is in the
+    // fields as well as the title and the artists — remembering "that song from Kid A" and not its
+    // name is exactly how people look for a song, and the old `contains` could not answer it.
+    remember(tracks) {
+        com.varuna.rustify.util.LocalSearch.index(
+            com.varuna.rustify.util.LocalSearch.TRACKS,
+            tracks,
+            { it.id },
+            { listOf(it.name) + it.artists.map { a -> a.name } + listOf(it.album?.name.orEmpty()) }
+        )
+        tracks
+    }
     val filteredTracks = remember(tracks, searchQuery) {
-        if (searchQuery.isBlank()) tracks
-        else tracks.filter { 
-            it.name.contains(searchQuery, ignoreCase = true) || 
-            it.artists.any { artist -> artist.name.contains(searchQuery, ignoreCase = true) }
-        }
+        com.varuna.rustify.util.LocalSearch.filter(
+            com.varuna.rustify.util.LocalSearch.TRACKS, tracks, searchQuery
+        ) { it.id }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -842,11 +850,23 @@ fun LibraryLocalMusic(
 
     val sortedTracks: List<FullTrack> = tracks.sortedBy { it.name.lowercase().trim() }
 
-    val filteredTracks: List<FullTrack> = if (searchQuery.isBlank()) sortedTracks
-        else sortedTracks.filter { track ->
-            track.name.contains(searchQuery, ignoreCase = true) ||
-            track.artists.any { artist -> artist.name.contains(searchQuery, ignoreCase = true) }
-        }
+    // The sixth and last of the `contains` predicates this screen used to carry. Local files are
+    // where accent-folding earns its keep most: the tags come from whatever ripped or tagged them,
+    // so `Bjork` and `Björk` are both in there and neither used to find the other.
+    remember(sortedTracks) {
+        com.varuna.rustify.util.LocalSearch.index(
+            com.varuna.rustify.util.LocalSearch.LOCAL,
+            sortedTracks,
+            { it.id },
+            { listOf(it.name) + it.artists.map { a -> a.name } + listOf(it.album?.name.orEmpty()) }
+        )
+        sortedTracks
+    }
+    val filteredTracks: List<FullTrack> = remember(sortedTracks, searchQuery) {
+        com.varuna.rustify.util.LocalSearch.filter(
+            com.varuna.rustify.util.LocalSearch.LOCAL, sortedTracks, searchQuery
+        ) { it.id }
+    }
 
     val albumGroups: List<Pair<String, List<FullTrack>>> = filteredTracks.groupBy { it.album?.name ?: "Unknown Album" }
         .toList().sortedBy { it.first.lowercase().trim() }
@@ -1201,6 +1221,20 @@ fun LibraryLocalMusic(
     }
 }
 
+/**
+ * How a list is searched, when it is searched in the core — point J.
+ *
+ * Supplying one of these replaces the old per-tab `contains` predicate: the list is folded once when
+ * it changes, and each keystroke asks the core for ids in ranked order. [fields] are in importance
+ * order, `fields[0]` being what the thing is called.
+ */
+data class LibrarySearch<T>(
+    /** Which index to keep it under — one of the constants on [com.varuna.rustify.util.LocalSearch]. */
+    val name: String,
+    val id: (T) -> String?,
+    val fields: (T) -> List<String>
+)
+
 @Composable
 fun <T> LibraryContentList(
     isLoading: Boolean,
@@ -1210,12 +1244,26 @@ fun <T> LibraryContentList(
     itemContent: @Composable (Int, T) -> Unit,
     emptyMessage: String,
     filterPredicate: ((T, String) -> Boolean)? = null,
+    search: LibrarySearch<T>? = null,
     searchQuery: String = ""
 ) {
-    val filteredItems = remember(items, searchQuery) {
-        if (items == null) null
-        else if (searchQuery.isBlank() || filterPredicate == null) items
-        else items.filter { filterPredicate(it, searchQuery) }
+    // Folding happens when the list changes, not when the query does. That split is the whole point
+    // of the index: the expensive half is paid once per load rather than once per keystroke.
+    remember(items, search?.name) {
+        if (items != null && search != null) {
+            com.varuna.rustify.util.LocalSearch.index(search.name, items, search.id, search.fields)
+        }
+        items
+    }
+    val filteredItems = remember(items, searchQuery, search?.name) {
+        when {
+            items == null -> null
+            searchQuery.isBlank() -> items
+            search != null ->
+                com.varuna.rustify.util.LocalSearch.filter(search.name, items, searchQuery, search.id)
+            filterPredicate != null -> items.filter { filterPredicate(it, searchQuery) }
+            else -> items
+        }
     }
 
     val config = LocalConfiguration.current

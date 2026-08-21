@@ -104,6 +104,17 @@ fun PlaylistScreen(
     var localTracksState by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     val spotifyTracks = if (!isLocal) spotifyRepo.playlistTracksLive(playlistId) else null
     val tracks: List<FullTrack> = if (isLocal) localTracksState else spotifyTracks!!
+
+    // Which of these have been heard through — point I. A row with no id gets a positional stand-in
+    // rather than being dropped: dropping it would shift every tick after it onto the wrong song.
+    // This is the list where the bitfield's realignment earns its keep, because playlists are the
+    // ones that get edited.
+    val listened = com.varuna.rustify.bridge.rememberListened(
+        contextId = "playlist:$playlistId",
+        trackIds = tracks.mapIndexed { position, t -> t.id?.takeIf { it.isNotBlank() } ?: "#$position" },
+        refreshKey = currentTrackId
+    )
+
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -505,6 +516,7 @@ fun PlaylistScreen(
                                         onClick = { onTrackClick(tracks, index) },
                                         isLiked = isLiked,
                                         isCurrentTrack = track.id == currentTrackId,
+                                        isListened = listened.getOrElse(index) { false },
                                         onLikeToggle = {
                                             if (isLocal) {
                                                 spotifyRepo.toggleLocalFavorite(trackId)

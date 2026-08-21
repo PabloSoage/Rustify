@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.components.TrackRowItem
 
@@ -58,6 +59,19 @@ fun RadioScreen(
 ) {
     var tracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    // A radio is a context like any other, so it leaves a "continue listening" row. It was left out
+    // of 3.3 and the omission was correct-but-incomplete: a radio has a name, a cover and a place
+    // you got to, which is everything the row needs. It resumes by regenerating from the same seed
+    // track rather than by refetching a list that never existed as a list.
+    val radioContext = remember(trackId, trackName, tracks) {
+        com.varuna.rustify.player.PlaybackContext(
+            id = "radio:$trackId",
+            label = trackName,
+            subtitle = "",
+            imageUrl = tracks.firstOrNull()?.effectiveCoverUrl().orEmpty()
+        )
+    }
 
     LaunchedEffect(trackId) {
         isLoading = true
@@ -122,7 +136,7 @@ fun RadioScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { audioPlayerService.loadPlaylist(tracks, 0) },
+                        onClick = { audioPlayerService.loadPlaylist(tracks, 0, context = radioContext) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -146,7 +160,7 @@ fun RadioScreen(
                             index = index + 1,
                             track = track,
                             fallbackCoverUrl = null,
-                            onClick = { audioPlayerService.loadPlaylist(tracks, index) },
+                            onClick = { audioPlayerService.loadPlaylist(tracks, index, context = radioContext) },
                             onMoreClick = { track.id?.let(onOpenTrack) }
                         )
                     }

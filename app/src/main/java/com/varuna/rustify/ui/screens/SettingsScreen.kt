@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -2991,6 +2992,7 @@ private fun AudioBackendsSection(context: Context) {
 
     AddonsSection(context, onAddonsChanged = { backendsRevision++ })
     StreamCacheSection(context)
+    DataExportSection(context)
 }
 
 /**
@@ -3064,6 +3066,108 @@ private fun StreamCacheSection(context: Context) {
                     }
                 }) {
                     Text(stringResource(R.string.settings_stream_cache_clear), color = Color(0xFF1DB954))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Export and restore everything the engine keeps — point L.
+ *
+ * Next to the stream cache because both answer "what is this app holding, and can I get it back".
+ * The Drive backup that already exists is a *restore* mechanism — it answers "my phone died". This
+ * answers "I want to read what this knows about me" and "I am leaving", which a cloud backup does
+ * not.
+ *
+ * **No credential is ever in the file.** Not the Spotify session, not the ARL. An export is a thing
+ * that gets mailed to a laptop or handed to someone for help, and the one thing it must never be is
+ * a way to hand over an account. That is enforced in the core, with a test.
+ */
+@Composable
+private fun DataExportSection(context: Context) {
+    val scope = rememberCoroutineScope()
+    val okMsg = stringResource(R.string.settings_data_export_ok)
+    val failMsg = stringResource(R.string.settings_data_export_failed)
+    val restoredMsg = stringResource(R.string.settings_data_restore_ok)
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(Dispatchers.IO) {
+            val message = runCatching {
+                val json = com.varuna.rustify.bridge.NativeEngine.exportData("Rustify")
+                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+                    ?: error("could not open the file for writing")
+                okMsg
+            }.getOrElse { failMsg }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(Dispatchers.IO) {
+            val message = runCatching {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+                    ?: error("could not read the file")
+                val answer = org.json.JSONObject(
+                    com.varuna.rustify.bridge.NativeEngine.restoreData(text)
+                )
+                // The core's own message when it refuses — an export from a newer version, or a file
+                // that is not one at all. Shown rather than flattened into "failed", because those
+                // two need different things from the user.
+                if (answer.optBoolean("success", false)) restoredMsg
+                else answer.optString("error").ifBlank { failMsg }
+            }.getOrElse { failMsg }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        stringResource(R.string.settings_data_export),
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.settings_data_export_desc),
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Button(
+                    onClick = { exportLauncher.launch("rustify-data.json") },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.settings_data_export_button), color = Color.Black)
+                }
+                OutlinedButton(
+                    onClick = { restoreLauncher.launch(arrayOf("application/json", "*/*")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.settings_data_restore_button), color = Color.White)
                 }
             }
         }

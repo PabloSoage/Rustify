@@ -91,6 +91,7 @@ import coil.compose.AsyncImage
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.PaginatedResponse
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.TrackFavorites
@@ -1745,6 +1746,31 @@ fun MiniPlayer(
  * the user asked for this album, and giving them the album is closer to right than giving them
  * nothing.
  */
+/**
+ * Every page of a paginated endpoint, not just the first.
+ *
+ * Resuming used to ask for fifty tracks, which is fine for an album and quietly wrong for a playlist
+ * of two hundred: the tail was simply missing, so a session left off at track 120 resumed at track 1
+ * because the track it wanted was never in the list. Bounded so that a pathological playlist cannot
+ * turn "tap to resume" into fifty round trips.
+ */
+private suspend fun allPages(
+    page: suspend (limit: Int, offset: Int) -> PaginatedResponse<FullTrack>
+): List<FullTrack> {
+    val pageSize = 50
+    val maxPages = 20 // 1 000 tracks; beyond that a queue is not what anyone is resuming.
+    val all = mutableListOf<FullTrack>()
+    var offset = 0
+    repeat(maxPages) {
+        val response = page(pageSize, offset)
+        all.addAll(response.items)
+        val next = response.nextOffset
+        if (!response.hasMore || next == null || response.items.isEmpty()) return all
+        offset = next
+    }
+    return all
+}
+
 private suspend fun resumeListening(
     session: com.varuna.rustify.bridge.ListeningSession,
     spotifyRepo: SpotifyRepository,
@@ -1755,8 +1781,13 @@ private suspend fun resumeListening(
     }
     val tracks = runCatching {
         when (kind) {
-            "album" -> spotifyRepo.getAlbumTracks(id, limit = 50).items
-            "playlist" -> spotifyRepo.getPlaylistTracks(id, limit = 50).items
+            "album" -> allPages { limit, offset -> spotifyRepo.getAlbumTracks(id, limit, offset) }
+            "playlist" ->
+                allPages { limit, offset -> spotifyRepo.getPlaylistTracks(id, limit, offset) }
+            // A radio is a generated list, so there is nothing to re-fetch by id: it is regenerated
+            // from the track it was seeded on. Resuming it means the same seed, which gives a list
+            // that starts where you were even when its tail differs.
+            "radio" -> spotifyRepo.getTrackRadio(id)
             else -> emptyList()
         }
     }.getOrElse { emptyList() }

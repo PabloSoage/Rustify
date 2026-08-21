@@ -90,6 +90,17 @@ fun AlbumScreen(
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
     // Seed from the in-memory cache so returning from the miniplayer does not trigger a reload.
     var tracks by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] ?: emptyList()) }
+
+    // Which of these have been heard through — point I. Keyed on the track that is playing as well
+    // as on the list, because a track finishing while this screen is open is written by the player
+    // service and nothing else here would notice.
+    // A row with no id gets a positional stand-in rather than being dropped: dropping it would
+    // shift every tick after it onto the wrong song, and a stand-in is simply never marked.
+    val listened = com.varuna.rustify.bridge.rememberListened(
+        contextId = "album:$albumId",
+        trackIds = tracks.mapIndexed { position, t -> t.id?.takeIf { it.isNotBlank() } ?: "#$position" },
+        refreshKey = currentTrackId
+    )
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
     var isLoading by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] == null && !albumId.startsWith("local_album:")) }
@@ -496,6 +507,7 @@ fun AlbumScreen(
                                         onClick = { onTrackClick(tracks, index) },
                                         isLiked = if (albumId.startsWith("local_album:")) false else isLiked,
                                         isCurrentTrack = track.id == currentTrackId,
+                                        isListened = listened.getOrElse(index) { false },
                                         onLikeToggle = if (albumId.startsWith("local_album:")) null else { {
                                             coroutineScope.launch {
                                                 spotifyRepo.toggleLikeTrack(track)

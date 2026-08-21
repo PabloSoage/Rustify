@@ -69,6 +69,139 @@ object NativeEngine {
     suspend fun forgetListening(id: String): String = io { forgetListeningNative(id) }
 
     // =====================================================================
+    // LOCAL SEARCH (point J)
+    // =====================================================================
+    //
+    // Pure and in-memory on the Rust side, so these are plain — no `suspend`, no `Dispatchers.IO`,
+    // safe from the composition. That is the point: a search that hopped to another thread per
+    // keystroke would arrive after the next keystroke.
+    //
+    // The split exists because sending a library across JNI on every character would be slower than
+    // the `contains` this replaces. [searchIndex] pays the folding cost once, when a screen loads
+    // its list; [searchQuery] then sends only the query.
+
+    /**
+     * Hands a list over to be folded and kept under [name].
+     *
+     * [itemsJson] is `[{"id":"…","fields":["name","artist",…]}]` with the fields in **importance
+     * order** — `fields[0]` outranks `fields[1]` in the results.
+     */
+    external fun searchIndexNative(name: String, itemsJson: String): String
+
+    /**
+     * Matching ids from a named index, best first, as a JSON array.
+     *
+     * [limit] of 0 means all of them. An empty [query] returns the list in its original order: an
+     * empty search box is not a filter. An unknown [name] returns `[]`.
+     */
+    external fun searchQueryNative(name: String, query: String, limit: Int): String
+
+    /** Drops a named index, for a screen that is going away. */
+    external fun searchForgetNative(name: String): String
+
+    // =====================================================================
+    // ALREADY LISTENED (point I)
+    // =====================================================================
+    //
+    // Reads and writes stored state, so all three are `suspend`.
+
+    private external fun markListenedNative(
+        contextId: String,
+        queueJson: String,
+        trackId: String
+    ): String
+
+    /**
+     * Marks a track as listened within a context.
+     *
+     * [queueJson] is the context's current track ids in order, and it is passed **every time** on
+     * purpose: the marks are stored as a bitfield indexed by position, and handing over the current
+     * order is what lets it realign when a playlist has been edited underneath.
+     */
+    suspend fun markListened(contextId: String, queueJson: String, trackId: String): String =
+        io { markListenedNative(contextId, queueJson, trackId) }
+
+    private external fun listenedStateNative(contextId: String, queueJson: String): String
+
+    /** One boolean per position in the queue, as a JSON array. */
+    suspend fun listenedState(contextId: String, queueJson: String): String =
+        io { listenedStateNative(contextId, queueJson) }
+
+    private external fun forgetListenedNative(contextId: String): String
+
+    /** Drops one context's marks, or every one when [contextId] is empty. */
+    suspend fun forgetListened(contextId: String): String = io { forgetListenedNative(contextId) }
+
+    // =====================================================================
+    // DATA EXPORT (point L)
+    // =====================================================================
+
+    private external fun exportDataNative(producedBy: String): String
+
+    /**
+     * The whole export document as pretty-printed JSON text.
+     *
+     * Never carries a credential — no Spotify session, no ARL. That is a decision with a test
+     * behind it in `export::redacted`, not a side effect of what happens to be stored.
+     */
+    suspend fun exportData(producedBy: String): String = io { exportDataNative(producedBy) }
+
+    private external fun restoreDataNative(json: String): String
+
+    /**
+     * Restores a document produced by [exportData]. **Replaces rather than merges.**
+     *
+     * @return `{"success":true,"restored":[…],"skipped":[…]}` or `{"success":false,"error":"…"}`.
+     *   `skipped` names keys the file carried that this build does not know — which is how someone
+     *   finds out they restored an export from a newer version.
+     */
+    suspend fun restoreData(json: String): String = io { restoreDataNative(json) }
+
+    // =====================================================================
+    // RELEASE CALENDAR (point K)
+    // =====================================================================
+
+    /**
+     * Places releases on the calendar and sorts them newest first, undated last.
+     *
+     * [entriesJson] is `[{"id":"…","release_date":"…","release_date_precision":"…"}]`.
+     * Pure and in-memory, so plain rather than `suspend`.
+     *
+     * The clock is passed in rather than read inside, which is what makes the bucketing testable —
+     * and the reason this is in the core at all is that Spotify dates come in three precisions and
+     * treating `"1975"` as the 1st of January is exactly the bug nobody notices.
+     *
+     * @return `[{"id":"…","bucket":"this_week","day":19889}]`
+     */
+    external fun arrangeReleasesNative(entriesJson: String, nowMs: Long): String
+
+    // =====================================================================
+    // THE PLAYER REDUCER (point H)
+    // =====================================================================
+
+    /**
+     * Applies one action to the player state and says what follows from it.
+     *
+     * Pure and in-memory — no storage, no network — so it is plain and safe from the main thread,
+     * which it has to be: this runs on a button press.
+     *
+     * What crosses is ids and a verb. The `FullTrack` objects, ExoPlayer, the notification and the
+     * queue the user built by hand all stay on this side; what moves is the *decision* — what
+     * "next" means with repeat on, what "previous" means twenty seconds in, and where the index
+     * lands. Those had two implementations that were free to disagree, and now have one.
+     *
+     * @param stateJson a `PlayerState`: `{"queue":[…],"index":0,"position_ms":0,"repeat":"off","shuffle":false}`
+     * @param actionJson `{"type":"next"}`, `{"type":"previous"}`, `{"type":"track_ended"}`,
+     *   `{"type":"seek","ms":…}`, `{"type":"tick","ms":…}`, `{"type":"set_repeat","repeat":"one"}`,
+     *   `{"type":"set_shuffle","on":true,"order":[…]}`, `{"type":"set_queue","tracks":[…],"start":0}`
+     *   or `{"type":"clear"}`
+     * @return `{"state":{…},"effects":[{"type":"play","track":"…","positionMs":0}, …]}`.
+     *   An unreadable action returns the state untouched and no effects.
+     */
+    external fun playerReduceNative(stateJson: String, actionJson: String): String
+
+
+    // =====================================================================
     // YOUTUBE ENGINE
     // =====================================================================
 

@@ -18,9 +18,6 @@ keystore/
 Inspection/
 .aider*
 .claude/
-# Project conventions for the coding agent. Kept here on disk so it is picked up, but versioned in
-# the docs repo instead: it describes in plain prose what the code only implies.
-CLAUDE.md
 
 # APK builds (too large for GitHub)
 app/release/*.apk

@@ -50,6 +50,14 @@ pub struct Session {
     pub subtitle: String,
     #[serde(default)]
     pub image_url: String,
+    /// The title of the track that was playing.
+    ///
+    /// Stored rather than derived because the row draws with no network, and because without it the
+    /// row lies: the progress bar under an album's name is progress through the *track*, and every
+    /// reader takes it for progress through the album. Naming the track is what makes the bar mean
+    /// what it shows. Empty for sessions written before this field existed.
+    #[serde(default)]
+    pub track_title: String,
     pub state: PlayerState,
     /// Duration of the track that was playing, when it is known. Used to tell "left off" from
     /// "finished"; zero means "not known", which is treated as not finished.
@@ -137,6 +145,7 @@ mod tests {
             label: format!("Label for {id}"),
             subtitle: String::new(),
             image_url: String::new(),
+            track_title: format!("Track for {id}"),
             state: PlayerState {
                 queue: vec!["t0".into(), "t1".into(), "t2".into()],
                 index: 1,

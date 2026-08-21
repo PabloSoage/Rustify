@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +67,12 @@ fun NewReleasesScreen(
     var nextOffset by remember { mutableStateOf<Int?>(0) }
     var hasMore by remember { mutableStateOf(true) }
     val gridState = rememberLazyGridState()
+
+    // Recomputed when the list grows, not on a clock: "today" only changes at midnight, and a grid
+    // that regroups itself while you scroll is worse than one that is a few hours stale.
+    val groups = remember(albums.size) {
+        com.varuna.rustify.util.ReleaseCalendar.group(albums.toList(), System.currentTimeMillis())
+    }
 
     suspend fun fetch(offset: Int) {
         val page = spotifyRepo.getNewReleases(limit = 20, offset = offset)
@@ -126,8 +133,20 @@ fun NewReleasesScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(albums) { album ->
-                    NewReleaseCard(album = album, onClick = { onAlbumClick(album.id, album.name, album.images) })
+                // Grouped by when they came out — point K. The dates come in three precisions and
+                // the core is what knows the difference; this only draws the headings.
+                for (group in groups) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            text = stringResource(group.titleRes),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFF1DB954),
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(group.albums) { album ->
+                        NewReleaseCard(album = album, onClick = { onAlbumClick(album.id, album.name, album.images) })
+                    }
                 }
             }
         }

@@ -92,8 +92,10 @@ class AudioPlayerService private constructor(private val context: Context) {
         private set
 
     companion object {
-        /** Past this point into a track, "previous" restarts it instead of going back a track. */
-        private const val PREVIOUS_RESTART_THRESHOLD_MS = 10_000L
+        // "Past ten seconds, previous restarts the track" used to live here. It is now
+        // `PREVIOUS_RESTART_THRESHOLD_MS` in `core_engine/src/player/mod.rs`, with the rest of the
+        // queue rules, and deleting the copy rather than leaving it is the point: two constants
+        // agreeing today is what F was about.
 
         /**
          * How a URL served by our own loopback server is recognised.
@@ -145,6 +147,18 @@ class AudioPlayerService private constructor(private val context: Context) {
     // Last human-readable reason the audio chain failed to resolve, shown to the user on give-up.
     @Volatile private var lastResolveError: String? = null
     private var preBufferingJob: kotlinx.coroutines.Job? = null
+
+    /** The in-flight autoplay-radio fetch, so two of them cannot append the same tracks twice. */
+    private var radioJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * The seed the radio was last fetched for.
+     *
+     * `preBufferNextTrack` runs on every track change and on retries, so without this the prefetch
+     * would fire again each time the last track re-entered it — a round trip per pass for a queue
+     * that already has its radio.
+     */
+    private var radioSeedInFlight: String? = null
     private var playJob: kotlinx.coroutines.Job? = null
     @Volatile private var isResolving = false
     // Id of the track whose media is actually loaded into ExoPlayer (set right after prepare()).
@@ -532,12 +546,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     Player.STATE_ENDED -> {
                         _state.value = _state.value.copy(isBuffering = false)
                         listenerTracker.onEnded()
-                        if (_state.value.isRepeat) {
-                            seekTo(0L)
-                            play()
-                        } else {
-                            skipToNext()
-                        }
+                        onTrackEnded()
                     }
                     Player.STATE_IDLE -> {
                         if (!_state.value.isError && !isResolving) {
@@ -1200,6 +1209,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             label = context.label,
             subtitle = context.subtitle,
             imageUrl = context.imageUrl,
+            trackTitle = st.currentTrack?.name.orEmpty(),
             queue = st.queue.mapNotNull { it.id },
             index = index,
             positionMs = st.positionMs,
@@ -1215,9 +1225,42 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Records that the current track was heard through, within whatever context is playing —
+     * point I.
+     *
+     * No context, no mark: a song reached from search is not part of any list, and there is nothing
+     * for a tick to appear next to. The queue goes with it on every call because the marks are a
+     * bitfield indexed by position, and handing over the current order is what lets it realign when
+     * a playlist has been edited since.
+     */
+    private fun markCurrentAsListened(st: AudioPlayerState) {
+        val context = playbackContext ?: return
+        val trackId = st.currentTrack?.id ?: return
+        val ids = st.queue.mapNotNull { it.id }
+        // A queue with an idless track in it would shift every position after it, so the marks
+        // would land on the wrong songs. Dropped rather than stored wrong — the same rule the
+        // listening sessions already follow.
+        if (ids.size != st.queue.size) return
+        val queueJson =
+            org.json.JSONArray().also { array -> ids.forEach { array.put(it) } }.toString()
+        mainScope.launch(Dispatchers.IO) {
+            runCatching { NativeEngine.markListened(context.id, queueJson, trackId) }
+                .onFailure { android.util.Log.w("AudioPlayerService", "could not mark $trackId", it) }
+        }
+    }
+
     private fun preBufferNextTrack() {
         val st = _state.value
         val idx = currentIndexIn(st)
+        // On the last track there is nothing to pre-buffer, and that is exactly where the longest
+        // silence in the app used to be: the radio was only fetched once the track had *ended*, so
+        // the gap was a network round trip for the radio plus a whole resolution for its first song,
+        // with nothing playing through either. Fetching it now — while the last track is still
+        // playing — turns that into an ordinary track change.
+        if (idx != -1 && idx == st.queue.lastIndex) {
+            prefetchRadioForEndOfQueue(st)
+        }
         if (idx != -1 && idx < st.queue.lastIndex) {
             val nextTrack = st.queue[idx + 1]
             val nextTrackId = nextTrack.id ?: return
@@ -1796,6 +1839,69 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
+    /**
+     * Moves the queue to [decision] and starts playing there.
+     *
+     * The one place a decision from [PlayerQueue] becomes playback, so the mapping from effects to
+     * ExoPlayer exists once rather than in each of the three callers.
+     */
+    private fun applyQueueDecision(st: AudioPlayerState, decision: PlayerQueue.Decision) {
+        decision.seekTo?.let {
+            seekTo(it)
+            return
+        }
+        if (!decision.play) return
+        val target = st.queue.getOrNull(decision.index) ?: return
+        currentQueueIndex = decision.index
+        _state.value = _state.value.copy(
+            currentTrack = target,
+            isPlaying = false,
+            positionMs = decision.positionMs,
+            durationMs = target.durationMs.toLong()
+        )
+        startTrack(target)
+        if (decision.persist) requestSave()
+    }
+
+    /**
+     * A track finished on its own.
+     *
+     * Deliberately **not** `skipToNext()`. The two look the same and are not: repeat-one means "play
+     * this again when it ends", so ending replays and a person pressing next still moves on. That
+     * distinction is why the core has two separate actions, and reading it off one boolean here is
+     * what let the two implementations drift.
+     */
+    private fun onTrackEnded() {
+        val st = _state.value
+        val idx = currentIndexIn(st)
+        if (idx < 0 || st.queue.isEmpty()) return
+        // Reaching the end of a track is what "listened" means, and it is the only moment that can
+        // say so honestly — a skip at forty seconds is not having heard it. Recorded here rather
+        // than on a timer for exactly that reason.
+        markCurrentAsListened(st)
+        val decision = PlayerQueue.decide(
+            ids = PlayerQueue.idsFor(st.queue.map { it.id }),
+            index = idx,
+            positionMs = st.positionMs,
+            repeatOne = st.isRepeat,
+            shuffle = st.isShuffle,
+            action = PlayerQueue.TRACK_ENDED
+        )
+        // Repeat-one on the track that just ended: the core answers "play this one, from zero", and
+        // the same track reloading is not what anyone wants when it is already loaded.
+        if (decision.play && decision.index == idx && decision.positionMs == 0L) {
+            seekTo(0L)
+            play()
+            return
+        }
+        if (decision.exhausted) {
+            // Same end-of-queue answer as the next button: on Android this is the radio, not a stop.
+            skipToNext()
+            return
+        }
+        applyQueueDecision(st, decision)
+    }
+
     fun skipToNext() {
         // Not delegated to the page: opening a track URL leaves Spotify's own context holding that
         // single track, so its next button has nowhere to go. Rustify's queue is the one that
@@ -1809,7 +1915,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         val idx = currentIndexIn(st)
         if (idx == -1 && st.queue.isNotEmpty()) {
             // The current track isn't in the queue (e.g. a restored/truncated originalQueue).
-            // Don't get stuck — advance to the first queued track instead of doing nothing.
+            // Don't get stuck — advance to the first queued track instead of doing nothing. This
+            // one stays here rather than going through the core: the core's queue and this one have
+            // already diverged, so there is no shared state to reason from.
             val next = st.queue.first()
             currentQueueIndex = 0
             _state.value = _state.value.copy(
@@ -1820,50 +1928,96 @@ class AudioPlayerService private constructor(private val context: Context) {
             requestSave()
             return
         }
-        if (idx != -1 && idx < st.queue.lastIndex) {
-            val next = st.queue[idx + 1]
-            currentQueueIndex = idx + 1
-            _state.value = _state.value.copy(
-                currentTrack = next, isPlaying = false,
-                positionMs = 0L, durationMs = next.durationMs.toLong()
-            )
-            startTrack(next)
-            requestSave()
-        } else if (idx == st.queue.lastIndex && st.currentTrack != null) {
-            // Autoplay radio
-            mainScope.launch(Dispatchers.IO) {
-                try {
-                    val currentTrackId = st.currentTrack.id ?: return@launch
-                    if (TrackRef.isLocal(currentTrackId)) return@launch
-                    val radioJson = NativeEngine.getSpotifyTrackRadio(currentTrackId)
-                    val array = org.json.JSONArray(radioJson)
-                    val newTracks = mutableListOf<FullTrack>()
-                    val existingIds = st.queue.mapNotNull { it.id }.toSet()
-                    for (i in 0 until array.length()) {
-                        val track = FullTrack.fromJson(array.getJSONObject(i))
-                        if (track.id != null && !existingIds.contains(track.id)) {
-                            newTracks.add(track)
-                        }
-                    }
-                    if (newTracks.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            // Re-read the state here: fetching the radio is a network round-trip, and
-                            // appending to the snapshot taken before it would silently discard anything
-                            // queued (or removed) while it was in flight.
-                            val live = _state.value
-                            val liveIds = live.queue.mapNotNull { it.id }.toSet()
-                            val fresh = newTracks.filter { it.id !in liveIds }
-                            if (fresh.isEmpty()) return@withContext
-                            val newQueue = live.queue + fresh
-                            _state.value = live.copy(queue = newQueue, originalQueue = live.originalQueue + fresh)
-                            notifyQueueChanged(newQueue)
-                            requestSave()
-                            skipToNext()
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("AudioPlayerService", "Error loading radio tracks", e)
-                }
+        // What "next" means — with repeat on, and at the end of the queue — is decided in the core.
+        val decision = PlayerQueue.decide(
+            ids = PlayerQueue.idsFor(st.queue.map { it.id }),
+            index = idx,
+            positionMs = _state.value.positionMs,
+            repeatOne = st.isRepeat,
+            shuffle = st.isShuffle,
+            action = PlayerQueue.NEXT
+        )
+        if (!decision.exhausted) {
+            applyQueueDecision(st, decision)
+            return
+        }
+        if (st.currentTrack != null) {
+            // Autoplay radio. This is what `QueueExhausted` exists to name: the core says "there is
+            // nothing after this", and on Android that is not a stop — it is where the radio starts.
+            //
+            // Reaching here at all means the prefetch below did not land in time (no network while
+            // the last track played, or the user skipped straight to the end). It still works; it is
+            // just the slow path, because the round trip happens with nothing playing.
+            radioJob?.cancel()
+            radioJob = mainScope.launch {
+                if (appendRadioTracks(st.currentTrack.id)) skipToNext()
+            }
+        }
+    }
+
+    /**
+     * Fetches the autoplay radio for [seedTrackId] and appends what is new to the queue.
+     *
+     * @return whether anything was actually added.
+     */
+    private suspend fun appendRadioTracks(seedTrackId: String?): Boolean {
+        val seed = seedTrackId ?: return false
+        if (TrackRef.isLocal(seed)) return false
+        val fetched = runCatching {
+            withContext(Dispatchers.IO) {
+                val array = org.json.JSONArray(NativeEngine.getSpotifyTrackRadio(seed))
+                (0 until array.length()).map { FullTrack.fromJson(array.getJSONObject(it)) }
+            }
+        }.getOrElse {
+            android.util.Log.e("AudioPlayerService", "Error loading radio tracks", it)
+            return false
+        }
+        if (fetched.isEmpty()) return false
+
+        // Re-read the state here: fetching the radio is a network round trip, and appending to a
+        // snapshot taken before it would silently discard anything queued (or removed) while it was
+        // in flight.
+        val live = _state.value
+        val liveIds = live.queue.mapNotNull { it.id }.toSet()
+        val fresh = fetched.filter { it.id != null && it.id !in liveIds }
+        if (fresh.isEmpty()) return false
+
+        val newQueue = live.queue + fresh
+        _state.value = live.copy(queue = newQueue, originalQueue = live.originalQueue + fresh)
+        notifyQueueChanged(newQueue)
+        requestSave()
+        return true
+    }
+
+    /**
+     * Extends the queue with the radio **while the last track is still playing**.
+     *
+     * The gap this closes was the longest silence in the app: the radio used to be fetched only once
+     * the queue had already run out, so the wait was a network round trip *plus* a full resolution of
+     * its first song, with nothing playing through either. Doing it here turns the end of a queue
+     * into an ordinary track change — by the time the last song ends there is a next one, already
+     * pre-buffered by the same pass that would have pre-buffered any other.
+     *
+     * Skipped when repeat-one is on: there the last track does not end the queue, it replays.
+     */
+    private fun prefetchRadioForEndOfQueue(st: AudioPlayerState) {
+        if (st.isRepeat) return
+        val seed = st.currentTrack?.id ?: return
+        if (TrackRef.isLocal(seed)) return
+        if (radioSeedInFlight == seed) return
+        radioSeedInFlight = seed
+        radioJob?.cancel()
+        radioJob = mainScope.launch {
+            val added = appendRadioTracks(seed)
+            // Pre-buffer the first radio track the same way any next track is pre-buffered. Without
+            // this the queue no longer stalls but the first radio song still resolves from cold.
+            if (added) {
+                preBufferNextTrack()
+            } else {
+                // Nothing was added — no network, or the radio had nothing new. Forget the seed so
+                // the next pass can try again; leaving it set would mean one failed fetch costs the
+                // radio for the rest of that track.
+                radioSeedInFlight = null
             }
         }
     }
@@ -1873,30 +2027,26 @@ class AudioPlayerService private constructor(private val context: Context) {
         // open. seekTo(0) below is already routed to whichever engine is playing.
         val st = _state.value
         val idx = currentIndexIn(st)
-        // Spotify-style "previous": once past the first few seconds it restarts the current track;
-        // only within that opening window (or when nothing precedes it) does it go back a track. So a
-        // double tap always reaches the previous song, and a single tap right after one starts still
-        // goes back. Live position is only trusted when the player really holds this track.
+        if (idx < 0 || st.queue.isEmpty()) return
+        // Spotify-style "previous" — restart once you are past the opening seconds, go back a track
+        // within it — is decided in the core, along with the threshold itself. What stays here is the
+        // one thing the core cannot know: which clock is live. Only trust the player's own position
+        // when the player really holds this track; after a failed resolution it still reports the
+        // previous one's, and in web mode it holds nothing at all.
         val livePos = when {
-            // In web mode ExoPlayer holds nothing; the mirrored page position is the live clock.
             isWebServing -> st.positionMs.coerceAtLeast(0L)
             preparedTrackId == st.currentTrack?.id -> exoPlayer.currentPosition.coerceAtLeast(0L)
             else -> 0L
         }
-        if (st.currentTrack != null && (livePos > PREVIOUS_RESTART_THRESHOLD_MS || idx <= 0)) {
-            seekTo(0L)
-            return
-        }
-        if (idx > 0) {
-            val prev = st.queue[idx - 1]
-            currentQueueIndex = idx - 1
-            _state.value = st.copy(
-                currentTrack = prev, isPlaying = false,
-                positionMs = 0L, durationMs = prev.durationMs.toLong()
-            )
-            startTrack(prev)
-            requestSave()
-        }
+        val decision = PlayerQueue.decide(
+            ids = PlayerQueue.idsFor(st.queue.map { it.id }),
+            index = idx,
+            positionMs = livePos,
+            repeatOne = st.isRepeat,
+            shuffle = st.isShuffle,
+            action = PlayerQueue.PREVIOUS
+        )
+        applyQueueDecision(st, decision)
     }
 
     fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null, isAutoRetry: Boolean = false) {

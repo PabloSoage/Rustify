@@ -387,9 +387,12 @@ fun ContinueListeningRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 6.dp)
                     )
-                    if (session.subtitle.isNotBlank()) {
+                    // The track, and where it sits — not the album's subtitle. The bar above is
+                    // progress through this track, and without naming it the bar reads as progress
+                    // through the album.
+                    if (session.positionLabel.isNotBlank()) {
                         Text(
-                            text = session.subtitle,
+                            text = session.positionLabel,
                             color = Color(0xFF9E9E9E),
                             fontSize = 11.sp,
                             maxLines = 1,

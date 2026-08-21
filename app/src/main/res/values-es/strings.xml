@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -586,4 +586,21 @@
     <string name="settings_drive_sync_ok">Sincronización completada</string>
     <string name="settings_drive_sync_error">Error de sync: %1$s</string>
     <string name="settings_drive_not_configured">La copia en Google Drive necesita una configuración única en Google Cloud: crea tus OAuth clients y rellena default_web_client_id (guía en el README).</string>
-</resources>
+    <!-- Ya escuchada (punto I) -->
+    <string name="track_already_listened">Ya escuchada</string>
+    <!-- Exportar datos (punto L) -->
+    <string name="settings_data_export">Tus datos</string>
+    <string name="settings_data_export_desc">Guarda todo lo que Rustify conserva —las coincidencias de YouTube que elegiste, lo que dejaste a medias, lo que ya has escuchado y tus add-ons instalados— en un solo fichero que puedes leer, guardar o llevarte a otro móvil. Nunca incluye tu sesión de Spotify ni ninguna contraseña. Restaurar sustituye lo que hay aquí por lo que haya en el fichero.</string>
+    <string name="settings_data_export_button">Exportar</string>
+    <string name="settings_data_restore_button">Restaurar</string>
+    <string name="settings_data_export_ok">Exportado</string>
+    <string name="settings_data_restore_ok">Restaurado</string>
+    <string name="settings_data_export_failed">No se pudo</string>
+    <!-- Calendario de lanzamientos (punto K) -->
+    <string name="calendar_upcoming">Próximamente</string>
+    <string name="calendar_today">Hoy</string>
+    <string name="calendar_this_week">Esta semana</string>
+    <string name="calendar_this_month">Este mes</string>
+    <string name="calendar_this_year">Este año</string>
+    <string name="calendar_older">Antes</string>
+    <string name="calendar_undated">Sin fecha</string></resources>

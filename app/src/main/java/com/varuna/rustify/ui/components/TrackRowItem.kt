@@ -32,12 +32,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 
 @Composable
@@ -49,6 +51,14 @@ fun TrackRowItem(
     modifier: Modifier = Modifier,
     isLiked: Boolean = false,
     isCurrentTrack: Boolean = false,
+    /**
+     * Heard all the way through, within this context — point I.
+     *
+     * Shown in place of the track number, which is the one slot on the row that is already a fixed
+     * width and already about position. The number goes back the moment the track is the one
+     * playing: "where am I" beats "have I heard this" when both want to say something.
+     */
+    isListened: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     isScrollbarDragging: Boolean = false,
     onMoreClick: (() -> Unit)? = null
@@ -60,15 +70,29 @@ fun TrackRowItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Track Index Number
-        Text(
-            text = index.toString(),
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-            color = Color.Gray,
-            modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
-            maxLines = 1,
-            softWrap = false
-        )
+        // Track index — or a tick, once it has been heard through.
+        if (isListened && !isCurrentTrack) {
+            Box(
+                modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = stringResource(R.string.track_already_listened),
+                    tint = Color(0xFF1DB954),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        } else {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = Color.Gray,
+                modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
+                maxLines = 1,
+                softWrap = false
+            )
+        }
 
         // Track Cover art thumbnail
         val trackImageUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url ?: fallbackCoverUrl

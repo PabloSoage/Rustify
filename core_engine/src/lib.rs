@@ -10,10 +10,14 @@
 pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
+pub mod calendar;
 pub mod env;
+pub mod export;
 pub mod links;
+pub mod listened;
 pub mod matcher;
 pub mod player;
+pub mod search;
 pub mod server;
 pub mod spotify;
 pub mod types;
@@ -1729,4 +1733,340 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyBro
         });
         serialize_result(async_result)
     })
+}
+
+// =============================================================================
+// LOCAL SEARCH (point J)
+//
+// Index once, query per keystroke. The whole reason for the split is that sending a library across
+// JNI on every character would be slower than the `contains` this replaces.
+// =============================================================================
+
+/// JNI Bridge: hand a list over to be folded and kept.
+///
+/// `items_json` is `[{"id":"…","fields":["name","artist",…]}]`, fields in importance order.
+/// Pure and in-memory: no `block_on`, no storage, safe from any thread.
+///
+/// @return `{"success":true,"count":N}`
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchIndexNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    name: JString<'local>,
+    items_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let name_str = name.mutf8_chars(env)?.to_string();
+        let raw = items_json.mutf8_chars(env)?.to_string();
+
+        #[derive(serde::Deserialize)]
+        struct Item {
+            id: String,
+            #[serde(default)]
+            fields: Vec<String>,
+        }
+
+        match serde_json::from_str::<Vec<Item>>(&raw) {
+            Err(e) => serde_json::json!({ "success": false, "error": e.to_string() }).to_string(),
+            Ok(items) => {
+                let count = items.len();
+                let index =
+                    search::Index::build(items.into_iter().map(|i| (i.id, i.fields)).collect());
+                search::put(&name_str, index);
+                serde_json::json!({ "success": true, "count": count }).to_string()
+            }
+        }
+    })
+}
+
+/// JNI Bridge: matching ids from a named index, best first, as a JSON array.
+///
+/// `limit` of 0 means all of them. An empty query returns the list in its original order — an empty
+/// search box is not a filter. Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchQueryNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    name: JString<'local>,
+    query: JString<'local>,
+    limit: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let name_str = name.mutf8_chars(env)?.to_string();
+        let query_str = query.mutf8_chars(env)?.to_string();
+        let ids = search::query(&name_str, &query_str, limit.max(0) as usize);
+        serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// JNI Bridge: drop a named index, for a screen that is going away. Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchForgetNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    name: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let name_str = name.mutf8_chars(env)?.to_string();
+        search::forget(&name_str);
+        "{\"success\":true}".to_string()
+    })
+}
+
+// =============================================================================
+// ALREADY LISTENED (point I)
+// =============================================================================
+
+/// JNI Bridge: mark a track listened within a context.
+///
+/// `queue_json` is the context's current track ids in order — passed every time so the field can
+/// realign when a playlist has been edited underneath it. Touches storage: **blocking**.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_markListenedNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    context_id: JString<'local>,
+    queue_json: JString<'local>,
+    track_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let context = context_id.mutf8_chars(env)?.to_string();
+        let raw_queue = queue_json.mutf8_chars(env)?.to_string();
+        let track = track_id.mutf8_chars(env)?.to_string();
+        let queue: Vec<String> = serde_json::from_str(&raw_queue).unwrap_or_default();
+        let outcome = get_runtime().block_on(listened::mark::<env::android::AndroidEnv>(
+            &context, &queue, &track,
+        ));
+        serialize_result(outcome.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: one boolean per position in the queue, as a JSON array.
+///
+/// Touches storage: **blocking**.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenedStateNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    context_id: JString<'local>,
+    queue_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let context = context_id.mutf8_chars(env)?.to_string();
+        let raw_queue = queue_json.mutf8_chars(env)?.to_string();
+        let queue: Vec<String> = serde_json::from_str(&raw_queue).unwrap_or_default();
+        let marks =
+            get_runtime().block_on(listened::state::<env::android::AndroidEnv>(&context, &queue));
+        serde_json::to_string(&marks).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// JNI Bridge: drop one context's marks, or every one when `context_id` is empty.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetListenedNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    context_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let context = context_id.mutf8_chars(env)?.to_string();
+        let outcome = get_runtime().block_on(async {
+            if context.is_empty() {
+                listened::clear::<env::android::AndroidEnv>().await
+            } else {
+                listened::forget::<env::android::AndroidEnv>(&context).await
+            }
+        });
+        serialize_result(outcome.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+// =============================================================================
+// DATA EXPORT (point L)
+// =============================================================================
+
+/// JNI Bridge: the whole export document as pretty-printed JSON text.
+///
+/// Never carries a credential — see `export::redacted`. Touches storage: **blocking**.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_exportDataNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    produced_by: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let by = produced_by.mutf8_chars(env)?.to_string();
+        match get_runtime().block_on(export::to_json::<env::android::AndroidEnv>(&by)) {
+            Ok(text) => text,
+            Err(e) => serde_json::json!({ "error": e.message() }).to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: restore a document produced by `exportDataNative`.
+///
+/// Replaces rather than merges. Touches storage: **blocking**.
+///
+/// @return `{"success":true,"restored":[…],"skipped":[…]}` or `{"success":false,"error":"…"}`
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_restoreDataNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = json.mutf8_chars(env)?.to_string();
+        match get_runtime().block_on(export::restore::<env::android::AndroidEnv>(&raw)) {
+            Ok(done) => serde_json::json!({
+                "success": true,
+                "restored": done.keys,
+                "skipped": done.skipped,
+            })
+            .to_string(),
+            Err(e) => serde_json::json!({ "success": false, "error": e.message() }).to_string(),
+        }
+    })
+}
+
+// =============================================================================
+// RELEASE CALENDAR (point K)
+// =============================================================================
+
+/// JNI Bridge: place releases on the calendar and sort them newest first.
+///
+/// `entries_json` is `[{"id":"…","release_date":"…","release_date_precision":"…"}]`.
+/// Pure and in-memory: the clock is passed in rather than read, which is what makes it testable.
+///
+/// @return `[{"id":"…","bucket":"this_week","day":19889}]`, newest first, undated last.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_arrangeReleasesNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    entries_json: JString<'local>,
+    now_ms: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = entries_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<Vec<calendar::Entry>>(&raw) {
+            Err(_) => "[]".to_string(),
+            Ok(entries) => {
+                let placed = calendar::arrange(&entries, now_ms);
+                serde_json::to_string(&placed).unwrap_or_else(|_| "[]".to_string())
+            }
+        }
+    })
+}
+
+// =============================================================================
+// THE PLAYER REDUCER (point H)
+//
+// The decisions live here; the objects stay in Kotlin. What crosses is ids and a verb — what
+// "next" means with repeat on, what "previous" means twenty seconds in, and where the index lands.
+// Pure and in-memory: no `block_on`, no storage, safe to call from the main thread.
+// =============================================================================
+
+/// JNI Bridge: apply one action to the player state.
+///
+/// `state_json` is a `PlayerState`; `action_json` is `{"type":"next"}`, `{"type":"seek","ms":1000}`,
+/// `{"type":"set_queue","tracks":[…],"start":0}`, `{"type":"set_repeat","repeat":"one"}`,
+/// `{"type":"set_shuffle","on":true,"order":[…]}`, `{"type":"tick","ms":…}`, `{"type":"clear"}`,
+/// `{"type":"previous"}` or `{"type":"track_ended"}`.
+///
+/// @return `{"state":{…},"effects":[…]}`. An unreadable action returns the state untouched and no
+///   effects, which is the only answer that cannot make the player do something nobody asked for.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_playerReduceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    state_json: JString<'local>,
+    action_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw_state = state_json.mutf8_chars(env)?.to_string();
+        let raw_action = action_json.mutf8_chars(env)?.to_string();
+
+        let mut state: player::PlayerState = serde_json::from_str(&raw_state).unwrap_or_default();
+
+        let action = serde_json::from_str::<serde_json::Value>(&raw_action)
+            .ok()
+            .and_then(|v| player_action_from_json(&v));
+
+        let effects = match action {
+            Some(action) => player::reduce(&mut state, action),
+            None => Vec::new(),
+        };
+
+        serde_json::json!({
+            "state": state,
+            "effects": effects.iter().map(player_effect_to_json).collect::<Vec<_>>(),
+        })
+        .to_string()
+    })
+}
+
+/// Reads the wire form of a [`player::Action`]. `None` for anything unrecognised.
+fn player_action_from_json(v: &serde_json::Value) -> Option<player::Action> {
+    let ms = v.get("ms").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let list = |key: &str| -> Vec<String> {
+        v.get(key)
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    match v.get("type").and_then(serde_json::Value::as_str)? {
+        "set_queue" => Some(player::Action::SetQueue {
+            tracks: list("tracks"),
+            start: v
+                .get("start")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as usize,
+        }),
+        "next" => Some(player::Action::Next),
+        "previous" => Some(player::Action::Previous),
+        "seek" => Some(player::Action::Seek(ms)),
+        "tick" => Some(player::Action::Tick(ms)),
+        "track_ended" => Some(player::Action::TrackEnded),
+        "set_repeat" => {
+            let repeat = match v.get("repeat").and_then(serde_json::Value::as_str) {
+                Some("all") => player::Repeat::All,
+                Some("one") => player::Repeat::One,
+                _ => player::Repeat::Off,
+            };
+            Some(player::Action::SetRepeat(repeat))
+        }
+        "set_shuffle" => Some(player::Action::SetShuffle {
+            on: v
+                .get("on")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            order: list("order"),
+        }),
+        "clear" => Some(player::Action::Clear),
+        _ => None,
+    }
+}
+
+/// The wire form of a [`player::Effect`].
+fn player_effect_to_json(effect: &player::Effect) -> serde_json::Value {
+    match effect {
+        player::Effect::Play { track, position_ms } => serde_json::json!({
+            "type": "play", "track": track, "positionMs": position_ms,
+        }),
+        player::Effect::SeekTo(ms) => serde_json::json!({ "type": "seek", "positionMs": ms }),
+        player::Effect::Stop => serde_json::json!({ "type": "stop" }),
+        player::Effect::Persist => serde_json::json!({ "type": "persist" }),
+        player::Effect::QueueExhausted { last } => {
+            serde_json::json!({ "type": "queue_exhausted", "last": last })
+        }
+    }
 }

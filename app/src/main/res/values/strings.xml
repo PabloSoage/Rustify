@@ -588,4 +588,21 @@
     <string name="settings_drive_sync_ok">Sync complete</string>
     <string name="settings_drive_sync_error">Sync error: %1$s</string>
     <string name="settings_drive_not_configured">Google Drive backup needs a one-time Google Cloud setup: create your own OAuth clients and set default_web_client_id (see the setup guide in the README).</string>
-</resources>
+    <!-- Already listened (point I) -->
+    <string name="track_already_listened">Already listened</string>
+    <!-- Data export (point L) -->
+    <string name="settings_data_export">Your data</string>
+    <string name="settings_data_export_desc">Save everything Rustify keeps — your chosen YouTube matches, what you were in the middle of, what you have already listened to and your installed add-ons — as a single file you can read, keep or move to another phone. It never contains your Spotify session or any password. Restoring replaces what is here with what is in the file.</string>
+    <string name="settings_data_export_button">Export</string>
+    <string name="settings_data_restore_button">Restore</string>
+    <string name="settings_data_export_ok">Exported</string>
+    <string name="settings_data_restore_ok">Restored</string>
+    <string name="settings_data_export_failed">That did not work</string>
+    <!-- Release calendar (point K) -->
+    <string name="calendar_upcoming">Coming soon</string>
+    <string name="calendar_today">Today</string>
+    <string name="calendar_this_week">This week</string>
+    <string name="calendar_this_month">This month</string>
+    <string name="calendar_this_year">This year</string>
+    <string name="calendar_older">Earlier</string>
+    <string name="calendar_undated">No date</string></resources>

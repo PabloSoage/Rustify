@@ -96,6 +96,16 @@ pub enum Effect {
     SeekTo(u64),
     /// Nothing more to play.
     Stop,
+    /// The queue ran out going forwards, and repeat did not save it.
+    ///
+    /// Distinct from [`Effect::Stop`] because on Android it is not a stop at all: Rustify answers it
+    /// by fetching a radio from the last track and continuing. Collapsing the two would force the
+    /// platform to guess *why* it was told to stop — and guessing wrong means either a queue that
+    /// dead-ends where it used to keep playing, or a `Clear` that starts a radio.
+    ///
+    /// Always accompanied by [`Effect::Stop`], in that order: a platform with nothing to extend the
+    /// queue with can ignore this one entirely and still behave correctly.
+    QueueExhausted { last: String },
     /// The state changed in a way worth remembering across a restart.
     Persist,
 }
@@ -160,8 +170,13 @@ pub fn reduce(state: &mut PlayerState, action: Action) -> Vec<Effect> {
             let next_index = match (state.index, state.repeat) {
                 (0, Repeat::All) => state.queue.len() - 1,
                 // At the start with no wrapping: restart rather than refuse, which is less
-                // surprising than a button that does nothing.
-                (0, _) => 0,
+                // surprising than a button that does nothing. A **seek**, not a reload — staying on
+                // the same track and re-resolving it would throw away a stream that is playing
+                // perfectly well, and on a slow connection that reads as the button breaking it.
+                (0, _) => {
+                    state.position_ms = 0;
+                    return vec![Effect::SeekTo(0), Effect::Persist];
+                }
                 (i, _) => i - 1,
             };
             state.index = next_index;
@@ -236,7 +251,12 @@ fn advance(state: &mut PlayerState, by_hand: bool) -> Vec<Effect> {
             Repeat::One if by_hand => {}
             _ => {
                 state.position_ms = 0;
-                return vec![Effect::Stop, Effect::Persist];
+                let last = state.queue[state.index].clone();
+                return vec![
+                    Effect::QueueExhausted { last },
+                    Effect::Stop,
+                    Effect::Persist,
+                ];
             }
         }
     }
@@ -267,6 +287,34 @@ mod tests {
             Effect::Play { track, .. } => Some(track.as_str()),
             _ => None,
         })
+    }
+
+    #[test]
+    fn running_out_says_so_before_it_says_stop() {
+        // The order is the contract: a platform that can extend the queue reads the first effect,
+        // and one that cannot ignores it and still stops correctly.
+        let mut state = queue_of(2);
+        reduce(&mut state, Action::Next);
+        let end = reduce(&mut state, Action::Next);
+        assert_eq!(
+            end.first(),
+            Some(&Effect::QueueExhausted {
+                last: "t1".to_string()
+            })
+        );
+        assert!(end.contains(&Effect::Stop));
+    }
+
+    #[test]
+    fn clearing_stops_without_claiming_the_queue_ran_out() {
+        // Otherwise emptying the queue would start a radio, which is the opposite of what the user
+        // just asked for.
+        let mut state = queue_of(3);
+        let effects = reduce(&mut state, Action::Clear);
+        assert!(effects.contains(&Effect::Stop));
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::QueueExhausted { .. })));
     }
 
     #[test]
@@ -343,9 +391,14 @@ mod tests {
     }
 
     #[test]
-    fn previous_at_the_start_restarts_rather_than_doing_nothing() {
+    fn previous_at_the_start_rewinds_rather_than_reloading() {
+        // Staying on the same track must be a seek. Answering `Play` would re-resolve a stream that
+        // is already playing, which on a slow connection reads as the button having broken it —
+        // and it is what the Android player had always done correctly while the core did not.
         let mut state = queue_of(3);
-        assert_eq!(played(&reduce(&mut state, Action::Previous)), Some("t0"));
+        let effects = reduce(&mut state, Action::Previous);
+        assert_eq!(effects.first(), Some(&Effect::SeekTo(0)));
+        assert_eq!(played(&effects), None);
         assert_eq!(state.index, 0);
 
         state.repeat = Repeat::All;

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Rustify</string>
 
@@ -585,4 +585,21 @@
     <string name="ytm_playlist_created">プレイリストを作成しました</string>
     <string name="ytm_load_error">読み込めませんでした。接続を確認して再試行してください。</string>
     <string name="ytm_retry">再試行</string>
-</resources>
+    <!-- 再生済み (point I) -->
+    <string name="track_already_listened">再生済み</string>
+    <!-- データのエクスポート (point L) -->
+    <string name="settings_data_export">あなたのデータ</string>
+    <string name="settings_data_export_desc">Rustify が保持しているもの—選んだ YouTube の対応付け、途中まで聴いていたもの、再生済みの曲、インストール済みのアドオン—をひとつのファイルに保存します。読むことも、保管することも、別の端末へ移すこともできます。Spotify のセッションやパスワードは決して含まれません。復元すると、ここにあるものはファイルの内容で置き換わります。</string>
+    <string name="settings_data_export_button">エクスポート</string>
+    <string name="settings_data_restore_button">復元</string>
+    <string name="settings_data_export_ok">エクスポートしました</string>
+    <string name="settings_data_restore_ok">復元しました</string>
+    <string name="settings_data_export_failed">できませんでした</string>
+    <!-- リリースカレンダー (point K) -->
+    <string name="calendar_upcoming">近日公開</string>
+    <string name="calendar_today">今日</string>
+    <string name="calendar_this_week">今週</string>
+    <string name="calendar_this_month">今月</string>
+    <string name="calendar_this_year">今年</string>
+    <string name="calendar_older">それ以前</string>
+    <string name="calendar_undated">日付なし</string></resources>
