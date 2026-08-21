@@ -683,3 +683,202 @@ impl OperationResult {
         Self { success: false, error: Some(msg.into()) }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================================
+    // Why these exist
+    //
+    // This file was at 0 % coverage, and it is the worst place in the crate for that to be true. It
+    // is the seam between Spotify's JSON and every type the app holds, and a break here **does not
+    // fail to compile**: `serde` is asked for a field that is no longer there, a `#[serde(default)]`
+    // hands back an empty string, and a track quietly arrives with no artist and no cover. Nothing
+    // errors. The screen just looks wrong.
+    //
+    // So the tests are about the translation and not about the structs: real-shaped payloads in,
+    // assertions on what came out.
+    // ============================================================================================
+
+    fn track_json() -> serde_json::Value {
+        // The shape of `GET /v1/tracks/{id}`, trimmed to the fields we read.
+        serde_json::json!({
+            "id": "4cOdK2wGLETKBW3PvgPWqT",
+            "name": "Never Gonna Give You Up",
+            "external_urls": { "spotify": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT" },
+            "explicit": false,
+            "duration_ms": 213573,
+            "external_ids": { "isrc": "GBARL9300135" },
+            "artists": [{
+                "id": "0gxyHStUsqpMadRV0Di1Qt",
+                "name": "Rick Astley",
+                "external_urls": { "spotify": "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt" }
+            }],
+            "album": {
+                "id": "6eUW0wxWtzkFdaEFsTJto6",
+                "name": "Whenever You Need Somebody",
+                "external_urls": { "spotify": "https://open.spotify.com/album/6eUW0wxWtzkFdaEFsTJto6" },
+                "release_date": "1987-11-12",
+                "release_date_precision": "day",
+                "album_type": "album",
+                "images": [{ "url": "https://i.scdn.co/image/abc", "height": 640, "width": 640 }],
+                "artists": []
+            }
+        })
+    }
+
+    #[test]
+    fn a_rest_track_becomes_the_track_the_app_holds() {
+        let rest: RestFullTrack = serde_json::from_value(track_json()).expect("shape must parse");
+        let track = FullTrack::from(rest);
+
+        assert_eq!(track.id.as_deref(), Some("4cOdK2wGLETKBW3PvgPWqT"));
+        assert_eq!(track.name, "Never Gonna Give You Up");
+        assert_eq!(track.duration_ms, 213_573);
+        assert!(!track.explicit);
+        // The ISRC lives one level down, under `external_ids`. Reading it from the wrong place gives
+        // an empty string rather than an error, and an empty ISRC is what makes the YouTube matcher
+        // fall back to guessing by title.
+        assert_eq!(track.isrc, "GBARL9300135");
+        assert_eq!(track.artists.len(), 1);
+        assert_eq!(track.artists[0].name, "Rick Astley");
+        let album = track.album.expect("the album must survive the conversion");
+        assert_eq!(album.name, "Whenever You Need Somebody");
+        assert_eq!(album.release_date.as_deref(), Some("1987-11-12"));
+        assert_eq!(album.release_date_precision.as_deref(), Some("day"));
+        assert_eq!(album.images.len(), 1);
+        assert_eq!(album.images[0].width, Some(640));
+    }
+
+    #[test]
+    fn a_track_with_everything_optional_missing_still_parses() {
+        // Spotify omits fields rather than sending nulls, and a local track omits most of them. The
+        // failure this guards against is the whole response being discarded because one optional
+        // field was declared required.
+        let minimal = serde_json::json!({
+            "id": null,
+            "name": "A local file",
+            "external_urls": {},
+            "duration_ms": 1000
+        });
+        let rest: RestFullTrack = serde_json::from_value(minimal).expect("must parse");
+        let track = FullTrack::from(rest);
+
+        assert!(track.id.is_none());
+        assert_eq!(track.isrc, "", "no isrc is an empty one, not a failure");
+        assert!(track.artists.is_empty());
+        assert!(track.album.is_none());
+        // With no id and no url there is nothing to build a link from, and inventing one would
+        // produce a url that 404s.
+        assert_eq!(track.external_uri, "");
+    }
+
+    #[test]
+    fn a_missing_url_is_rebuilt_from_the_id_rather_than_left_empty() {
+        let mut value = track_json();
+        value["external_urls"] = serde_json::json!({});
+        let rest: RestFullTrack = serde_json::from_value(value).unwrap();
+        let track = FullTrack::from(rest);
+        assert_eq!(
+            track.external_uri,
+            "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+        );
+    }
+
+    #[test]
+    fn an_artist_carries_its_genres_and_follower_count() {
+        let value = serde_json::json!({
+            "id": "0gxyHStUsqpMadRV0Di1Qt",
+            "name": "Rick Astley",
+            "external_urls": { "spotify": "https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt" },
+            "genres": ["dance pop", "new wave pop"],
+            "followers": { "total": 3_500_000 },
+            "images": [{ "url": "https://i.scdn.co/image/xyz", "height": 320, "width": 320 }]
+        });
+        let rest: RestFullArtist = serde_json::from_value(value).unwrap();
+        let artist = FullArtist::from(rest);
+
+        assert_eq!(artist.genres, vec!["dance pop", "new wave pop"]);
+        // `followers` is an object on the wire and an integer in our type. Reading it as a number
+        // straight off the wire silently yields none.
+        assert_eq!(artist.followers, Some(3_500_000));
+        assert_eq!(artist.images.len(), 1);
+    }
+
+    #[test]
+    fn an_artist_with_no_followers_block_is_unknown_rather_than_zero() {
+        // None and zero are different claims, and the UI shows one of them.
+        let value = serde_json::json!({
+            "id": "x", "name": "Someone", "external_urls": { "spotify": "" }
+        });
+        let rest: RestFullArtist = serde_json::from_value(value).unwrap();
+        assert_eq!(FullArtist::from(rest).followers, None);
+    }
+
+    #[test]
+    fn an_album_keeps_the_date_precision_it_was_given() {
+        // The three precisions are the reason `calendar` exists. Losing the precision here would
+        // put every year-only release on the 1st of January before the calendar ever saw it.
+        for (date, precision) in [("1987-11-12", "day"), ("1987-11", "month"), ("1987", "year")] {
+            let value = serde_json::json!({
+                "id": "a", "name": "n",
+                "external_urls": { "spotify": "" },
+                "release_date": date,
+                "release_date_precision": precision
+            });
+            let rest: RestSimpleAlbum = serde_json::from_value(value).unwrap();
+            let album = SimpleAlbum::from(rest);
+            assert_eq!(album.release_date.as_deref(), Some(date));
+            assert_eq!(album.release_date_precision.as_deref(), Some(precision));
+        }
+    }
+
+    #[test]
+    fn a_user_profile_survives_a_free_account_with_no_pictures() {
+        let value = serde_json::json!({
+            "id": "someuser",
+            "display_name": null,
+            "external_urls": { "spotify": "https://open.spotify.com/user/someuser" },
+            "product": "free"
+        });
+        let rest: RestUser = serde_json::from_value(value).unwrap();
+        let user = SpotifyUser::from(rest);
+
+        assert_eq!(user.id, "someuser");
+        assert!(user.name.is_none());
+        assert!(user.images.is_empty());
+        assert_eq!(user.product.as_deref(), Some("free"));
+        assert_eq!(user.followers, None);
+    }
+
+    #[test]
+    fn what_we_serialise_is_what_the_kotlin_side_reads() {
+        // The names crossing JNI are `camelCase`, and they are renames rather than the field names.
+        // A rename dropped here compiles perfectly and arrives on the other side as a missing field,
+        // which Kotlin reads as a default. This is the assertion that keeps the two in step.
+        let rest: RestFullTrack = serde_json::from_value(track_json()).unwrap();
+        let json = serde_json::to_value(FullTrack::from(rest)).unwrap();
+
+        assert!(json.get("externalUri").is_some(), "externalUri");
+        assert!(json.get("durationMs").is_some(), "durationMs");
+        assert!(json.get("isrc").is_some(), "isrc");
+        // `added_at` is absent rather than null when there is none: the Kotlin parser treats a
+        // present-but-null field differently from a missing one.
+        assert!(json.get("addedAt").is_none(), "addedAt must be omitted, not null");
+
+        let album = json.get("album").unwrap();
+        assert!(album.get("releaseDate").is_some(), "releaseDate");
+        assert!(album.get("releaseDatePrecision").is_some(), "releaseDatePrecision");
+        assert!(album.get("albumType").is_some(), "albumType");
+    }
+
+    #[test]
+    fn an_operation_result_says_which_way_it_went() {
+        let ok = serde_json::to_value(OperationResult { success: true, error: None }).unwrap();
+        assert_eq!(ok["success"], serde_json::json!(true));
+
+        let bad = serde_json::to_value(OperationResult::err("nope")).unwrap();
+        assert_eq!(bad["success"], serde_json::json!(false));
+        assert_eq!(bad["error"], serde_json::json!("nope"));
+    }
+}

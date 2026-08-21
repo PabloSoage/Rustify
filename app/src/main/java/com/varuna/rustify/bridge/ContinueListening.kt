@@ -31,6 +31,13 @@ data class ListeningSession(
      * this field existed.
      */
     val trackTitle: String,
+    /**
+     * The artist of that track.
+     *
+     * With [trackTitle] and [imageUrl] this is enough to rebuild a playable stand-in for the track
+     * with **no network at all** — see [stub]. Empty for sessions stored before this field existed.
+     */
+    val trackArtist: String,
     /** Track ids in play order. */
     val queue: List<String>,
     val index: Int,
@@ -58,12 +65,53 @@ data class ListeningSession(
             else -> "${index + 1}/${queue.size} · $trackTitle"
         }
 
+    /**
+     * A playable stand-in for the track this session left off on, built **with no network at all**.
+     *
+     * This is what makes resuming feel instant. Resuming used to refetch the whole context first —
+     * up to twenty round trips for a long playlist — and only then start playing, so a track sitting
+     * in the cache or on the device still took seconds to begin. Everything the player needs to
+     * start is already stored here: the id to resolve, the title and artist for the notification,
+     * and the artwork.
+     *
+     * It is a *stand-in*: the real list replaces it a moment later, without interrupting playback.
+     * Null when the session predates these fields or its index no longer points anywhere, in which
+     * case the caller falls back to fetching first.
+     */
+    fun stub(): FullTrack? {
+        val trackId = currentTrackId ?: return null
+        if (trackTitle.isBlank()) return null
+        return FullTrack(
+            id = trackId,
+            name = trackTitle,
+            externalUri = "",
+            explicit = false,
+            durationMs = durationMs.toInt(),
+            isrc = "",
+            artists = if (trackArtist.isBlank()) emptyList()
+                      else listOf(
+                          SimpleArtist(id = "", name = trackArtist, externalUri = "", images = null)
+                      ),
+            album = if (imageUrl.isBlank()) null else SimpleAlbum(
+                id = "",
+                name = label,
+                externalUri = "",
+                releaseDate = null,
+                releaseDatePrecision = null,
+                images = listOf(SpotifyImage(url = imageUrl, height = null, width = null)),
+                artists = emptyList(),
+                albumType = null
+            )
+        )
+    }
+
     internal fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("label", label)
         put("subtitle", subtitle)
         put("image_url", imageUrl)
         put("track_title", trackTitle)
+        put("track_artist", trackArtist)
         put("duration_ms", durationMs)
         put("updated_at_ms", updatedAtMs)
         put("state", JSONObject().apply {
@@ -85,6 +133,7 @@ data class ListeningSession(
                 subtitle = json.optString("subtitle"),
                 imageUrl = json.optString("image_url"),
                 trackTitle = json.optString("track_title"),
+                trackArtist = json.optString("track_artist"),
                 queue = queue,
                 index = state.optInt("index"),
                 positionMs = state.optLong("position_ms"),

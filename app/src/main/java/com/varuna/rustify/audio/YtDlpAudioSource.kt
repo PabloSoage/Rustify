@@ -30,7 +30,17 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         canStream = true,
         canDownload = true,
         requiresToken = false,
-        maxQualityKbps = 256
+        maxQualityKbps = 256,
+        // The generic 15 s ceiling never fitted what happens inside here, and the arithmetic says
+        // so: matching the song is a network round trip, and then `extractStreamUrlWithRetry` runs
+        // up to three yt-dlp invocations with 0.5 s + 1 s of backoff between them. That is 1.5 s of
+        // the budget spent asleep before a single extraction has finished, leaving roughly four
+        // seconds each — less than one cold Python start.
+        //
+        // So the retry loop and the timeout were fighting: instead of one attempt that would have
+        // worked, you got three that were all killed. The loop is now deadline-aware as well (see
+        // `extractStreamUrlWithRetry`), and this is the budget it is aware of.
+        resolveTimeoutMs = 40_000
     )
 
     override fun initialize() {
@@ -157,9 +167,29 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         )
     }
 
+    /**
+     * Runs yt-dlp, retrying, **within the budget the chain gave this provider**.
+     *
+     * The deadline is the point. Without it the loop spends the budget on backoff and on starting
+     * attempts it has no time to finish, so a track that would have resolved on a slow first try
+     * comes back as "timed out" — which reads as the song being unavailable rather than as the
+     * stopwatch being wrong.
+     *
+     * `coroutineContext.isActive` is checked rather than trusted to throw: the work inside is a
+     * blocking process call, and a blocking call does not notice cancellation until it returns.
+     */
     private suspend fun extractStreamUrlWithRetry(youtubeId: String, maxAttempts: Int = 3): String? {
         var lastError: Exception? = null
+        val deadline = System.currentTimeMillis() +
+            (capabilities.resolveTimeoutMs ?: AudioSourceChain.DEFAULT_TIMEOUT_MS)
         for (attempt in 0 until maxAttempts) {
+            // Starting an attempt there is no time to finish wastes the little budget that is left
+            // and turns a clean failure into a cancellation.
+            val remaining = deadline - System.currentTimeMillis()
+            if (attempt > 0 && remaining < MIN_ATTEMPT_MS) {
+                Log.w(TAG, "not retrying $youtubeId: ${remaining} ms left, an attempt needs more")
+                break
+            }
             try {
                 val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$youtubeId").apply {
                     addOption("-g")
@@ -176,7 +206,11 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             }
             if (attempt < maxAttempts - 1) {
                 try {
-                    delay((500L shl attempt).coerceAtMost(4000L))
+                    // Backoff, but never more than the budget can afford: sleeping through the
+                    // deadline is the worst possible use of it.
+                    val left = deadline - System.currentTimeMillis() - MIN_ATTEMPT_MS
+                    val backoff = (500L shl attempt).coerceAtMost(4000L).coerceAtMost(left)
+                    if (backoff > 0) delay(backoff)
                 } catch (_: kotlinx.coroutines.CancellationException) {
                     throw kotlinx.coroutines.CancellationException()
                 }
@@ -191,5 +225,14 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
     companion object {
         const val ID = "ytdlp"
         private const val TAG = "YtDlpAudioSource"
+
+        /**
+         * Below this much budget left, another attempt is not worth starting.
+         *
+         * A yt-dlp extraction is a Python process that fetches the watch page and runs the player's
+         * JavaScript. Six seconds is optimistic for a cold one and generous for a warm one, which is
+         * what makes it a reasonable floor rather than a guess.
+         */
+        private const val MIN_ATTEMPT_MS = 6_000L
     }
 }

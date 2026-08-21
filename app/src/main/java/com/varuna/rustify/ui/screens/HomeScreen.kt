@@ -79,6 +79,8 @@ fun HomeScreen(
     onWebPlayerClick: () -> Unit = {},
     /** What you were in the middle of, newest first. Empty is the normal state on a fresh install. */
     continueListening: List<com.varuna.rustify.bridge.ListeningSession> = emptyList(),
+    /** The row being resumed, if any: refetching a long playlist is several round trips. */
+    resumingId: String? = null,
     onResumeListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
     onForgetListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {}
 ) {
@@ -249,6 +251,7 @@ fun HomeScreen(
                     item {
                         ContinueListeningRow(
                             sessions = continueListening,
+                            resumingId = resumingId,
                             onResume = onResumeListening,
                             onForget = onForgetListening
                         )
@@ -330,7 +333,9 @@ fun BrowseSectionView(
 fun ContinueListeningRow(
     sessions: List<com.varuna.rustify.bridge.ListeningSession>,
     onResume: (com.varuna.rustify.bridge.ListeningSession) -> Unit,
-    onForget: (com.varuna.rustify.bridge.ListeningSession) -> Unit
+    onForget: (com.varuna.rustify.bridge.ListeningSession) -> Unit,
+    /** Which row is being resumed. Nothing between the tap and the music is worse than a spinner. */
+    resumingId: String? = null
 ) {
     if (sessions.isEmpty()) return
 
@@ -359,15 +364,35 @@ fun ContinueListeningRow(
                             onLongClick = { onForget(session) }
                         )
                 ) {
-                    AsyncImage(
-                        model = session.imageUrl.takeIf { it.isNotBlank() },
-                        contentDescription = session.label,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(140.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF2A2A2A))
-                    )
+                    // Resuming refetches the whole context, and on a long playlist that is several
+                    // round trips. A spinner over the artwork is the difference between "it is
+                    // loading" and "the row did nothing", which is what it looked like without one.
+                    Box(
+                        modifier = Modifier.size(140.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = session.imageUrl.takeIf { it.isNotBlank() },
+                            contentDescription = session.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(140.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF2A2A2A))
+                        )
+                        if (resumingId == session.id) {
+                            Box(
+                                modifier = Modifier
+                                    .size(140.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0x99000000))
+                            )
+                            CircularProgressIndicator(
+                                color = Color(0xFF1DB954),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
                     // The progress line is the whole reason this row is not just "recently played":
                     // it says how far in you were.
                     LinearProgressIndicator(

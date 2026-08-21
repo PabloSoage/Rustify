@@ -70,28 +70,34 @@ fun TrackRowItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Track index — or a tick, once it has been heard through.
-        if (isListened && !isCurrentTrack) {
-            Box(
-                modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
+        // Track index, plus a tick once it has been heard through.
+        //
+        // The number stays. An earlier version replaced it with the tick, which read cleanly and
+        // threw away the one thing the column is for — you could no longer tell track 3 from track
+        // 11 on the rows you had listened to, which is exactly where you are looking when you come
+        // back to an album. So the tick is added rather than substituted, and the number goes green
+        // with it so the row still reads at a glance.
+        Row(
+            modifier = Modifier.widthIn(min = 32.dp, max = 56.dp).padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val heard = isListened && !isCurrentTrack
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = if (heard) Color(0xFF1DB954) else Color.Gray,
+                maxLines = 1,
+                softWrap = false
+            )
+            if (heard) {
+                Spacer(modifier = Modifier.width(3.dp))
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = stringResource(R.string.track_already_listened),
                     tint = Color(0xFF1DB954),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
-        } else {
-            Text(
-                text = index.toString(),
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = Color.Gray,
-                modifier = Modifier.widthIn(min = 32.dp, max = 48.dp).padding(end = 8.dp),
-                maxLines = 1,
-                softWrap = false
-            )
         }
 
         // Track Cover art thumbnail

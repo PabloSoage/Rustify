@@ -143,6 +143,15 @@ mod tests {
             format!("{host_path}/manifest.json"),
             HttpResponse::ok(manifest_json(id)),
         );
+        // Since 3.3 an install resolves the host, judges every address it got, and pins the
+        // connection to what it approved — so a test that only cans the HTTP answer now stops one
+        // step earlier, at "no canned DNS answer". Seeded here rather than in each test because it
+        // is a property of the transport, not of what any of these four is checking.
+        if let Some(host) = url::Url::parse(host_path).ok().and_then(|u| {
+            u.host_str().map(str::to_owned)
+        }) {
+            mock::on_dns(host, vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34))]);
+        }
         install::<MockEnv>(host_path).await
     }
 

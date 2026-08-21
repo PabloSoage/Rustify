@@ -631,6 +631,8 @@ fun EngineTester(
     var continueListening by remember {
         mutableStateOf<List<com.varuna.rustify.bridge.ListeningSession>>(emptyList())
     }
+    /** The row being resumed, if any — it refetches the context, which is not instant. */
+    var resumingSessionId by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // In-app updater: the startup check leaves the new release here (if any) and the
     // changelog+download dialog is rendered as an overlay (visible both in the app and on the
@@ -857,7 +859,11 @@ fun EngineTester(
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
                     val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack!!.id }
-                    val hasPrevious = queueIndex > 0
+// "Previous" is never disabled: on the first track it rewinds, which is what the notification has
+// always done and what the core answers with (`Effect::SeekTo(0)`). Greying it out here was the UI
+// disagreeing with the engine about what the button does -- and the notification button proved which
+// of the two was right.
+                    val hasPrevious = queueIndex >= 0
                     val hasNext = queueIndex != -1 && queueIndex < playerState.queue.lastIndex
 
                     MiniPlayer(
@@ -1053,11 +1059,35 @@ fun EngineTester(
                                 navigationStack.add(Screen.WebPlayer)
                             },
                             continueListening = continueListening,
+                            resumingId = resumingSessionId,
                             onResumeListening = { session ->
-                                coroutineScope.launch {
-                                    resumeListening(session, spotifyRepo, audioPlayerService)
-                                    continueListening =
-                                        com.varuna.rustify.bridge.ContinueListening.list()
+                                // Resuming refetches the whole context, which on a long playlist is
+                                // several round trips — long enough that without a spinner the row
+                                // looks like it did nothing, and long enough to be tapped again
+                                // while the first one is still in flight. Guarding on the id rather
+                                // than on a plain boolean so a *different* row can still be tapped.
+                                if (resumingSessionId == null) {
+                                    resumingSessionId = session.id
+                                    coroutineScope.launch {
+                                        try {
+                                            resumeListening(
+                                                session,
+                                                spotifyRepo,
+                                                audioPlayerService,
+                                                // The spinner ends when the music starts, not when
+                                                // the rest of the playlist finishes arriving —
+                                                // which now happens afterwards, in the background.
+                                                onPlaying = { resumingSessionId = null }
+                                            )
+                                            continueListening =
+                                                com.varuna.rustify.bridge.ContinueListening.list()
+                                        } finally {
+                                            // Also here, because a resume that failed before playing
+                                            // anything would otherwise leave the row permanently
+                                            // dead. Setting it twice costs nothing.
+                                            resumingSessionId = null
+                                        }
+                                    }
                                 }
                             },
                             onForgetListening = { session ->
@@ -1774,11 +1804,47 @@ private suspend fun allPages(
 private suspend fun resumeListening(
     session: com.varuna.rustify.bridge.ListeningSession,
     spotifyRepo: SpotifyRepository,
-    audioPlayerService: AudioPlayerService
+    audioPlayerService: AudioPlayerService,
+    /**
+     * Called the moment something is actually playing — which is now well before this function
+     * returns, because the rest of the context is fetched afterwards. The spinner on the row keys on
+     * this rather than on completion; leaving it spinning while music plays would say the opposite
+     * of what is happening.
+     */
+    onPlaying: () -> Unit = {}
 ) {
     val (kind, id) = session.id.split(':', limit = 2).let {
         if (it.size == 2) it[0] to it[1] else return
     }
+    val context = com.varuna.rustify.player.PlaybackContext(
+        id = session.id,
+        label = session.label,
+        subtitle = session.subtitle,
+        imageUrl = session.imageUrl
+    )
+    val target = session.currentTrackId
+
+    // Play FIRST, fetch the list after.
+    //
+    // This used to be the other way round, and it is why resuming took several seconds even for a
+    // track already sitting in the cache: the whole context was refetched before anything played,
+    // which since T8 means up to twenty round trips for a long playlist. Nothing about that was
+    // needed to start — the session already knows which track, at which second, with which title and
+    // artwork, and `StreamRouting.cachedUrlFor` is asked before any backend is chosen, so a cached or
+    // on-device track needs no network at all.
+    //
+    // The stand-in queue holds one track. The real one replaces it below, without interrupting it.
+    val stub = session.stub()
+    if (stub != null) {
+        audioPlayerService.loadPlaylist(
+            listOf(stub),
+            0,
+            context = context,
+            startPositionMs = session.positionMs.coerceAtLeast(0L)
+        )
+        onPlaying()
+    }
+
     val tracks = runCatching {
         when (kind) {
             "album" -> allPages { limit, offset -> spotifyRepo.getAlbumTracks(id, limit, offset) }
@@ -1791,9 +1857,20 @@ private suspend fun resumeListening(
             else -> emptyList()
         }
     }.getOrElse { emptyList() }
-    if (tracks.isEmpty()) return
 
-    val target = session.currentTrackId
+    if (tracks.isEmpty()) {
+        // No network, or the context is gone. With a stand-in playing, that is a single track rather
+        // than nothing — which is the whole point of starting before fetching.
+        return
+    }
+
+    if (stub != null) {
+        audioPlayerService.replaceQueuePreservingCurrent(tracks, target)
+        return
+    }
+
+    // No stand-in: a session stored before the title and artist were kept. The old path, which is
+    // slower but still correct.
     val index = tracks.indexOfFirst { it.id == target }.takeIf { it >= 0 } ?: 0
     // Only start mid-track when we landed on the track that was actually left off on -- dropping two
     // minutes into a different song is worse than starting it. The position goes IN, rather than a
@@ -1801,15 +1878,6 @@ private suspend fun resumeListening(
     // player is not holding it yet and the start position has already been read as zero. That is why
     // resuming always began at the top of the song.
     val startAt = if (tracks[index].id == target) session.positionMs.coerceAtLeast(0L) else 0L
-    audioPlayerService.loadPlaylist(
-        tracks,
-        index,
-        context = com.varuna.rustify.player.PlaybackContext(
-            id = session.id,
-            label = session.label,
-            subtitle = session.subtitle,
-            imageUrl = session.imageUrl
-        ),
-        startPositionMs = startAt
-    )
+    audioPlayerService.loadPlaylist(tracks, index, context = context, startPositionMs = startAt)
+    onPlaying()
 }

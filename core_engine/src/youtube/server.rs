@@ -337,3 +337,132 @@ fn clean_text(text: &str) -> String {
 // `load_mappings_from_disk` / `save_mappings_to_disk` were removed in 3.0. Mappings now live under
 // `env::schema::MAPPINGS_KEY` in versioned storage, with atomic writes; the one remaining read of
 // the old loose file is the v0 → v1 migration in `env::schema`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::mock::{self, MockEnv};
+    use crate::youtube::models::YouTubeTrack;
+
+    // ============================================================================================
+    // This file was at 0 %, and it holds the decision that picks WHICH VIDEO PLAYS. When the matcher
+    // is wrong the app does not fail — it plays the wrong recording, or a live version, or a
+    // fourteen-minute "extended mix" of a three-minute song. That is the least visible way for a
+    // music player to be broken, and the only way to hold it still is a test.
+    //
+    // The mappings use process-wide statics, so every test here uses ids of its own rather than
+    // relying on an order the test runner does not promise.
+    // ============================================================================================
+
+    fn yt(id: &str, title: &str, author: &str, seconds: u32) -> YouTubeTrack {
+        YouTubeTrack {
+            id: id.into(),
+            title: title.into(),
+            author: author.into(),
+            duration_sec: seconds,
+            thumbnail_url: String::new(),
+        }
+    }
+
+    fn meta(name: &str, artists: &[&str], seconds: u32) -> SpotifyTrackMeta {
+        SpotifyTrackMeta {
+            name: name.into(),
+            artists: artists.iter().map(|a| a.to_string()).collect(),
+            duration_ms: seconds * 1000,
+            isrc: String::new(),
+        }
+    }
+
+    #[test]
+    fn cleaning_keeps_the_words_and_drops_everything_else() {
+        // Punctuation is what differs between "Song (Remastered)" and "Song - Remastered", and
+        // comparing raw titles makes those two look like different songs.
+        assert_eq!(clean_text("Don't Stop Me Now!"), "dont stop me now");
+        assert_eq!(clean_text("Song — Remastered (2011)"), "song  remastered 2011");
+        assert_eq!(clean_text("ABBA"), "abba");
+    }
+
+    #[test]
+    fn nothing_to_choose_from_is_no_choice_rather_than_a_panic() {
+        assert!(match_best_track(&meta("Whatever", &["Someone"], 200), &[]).is_none());
+    }
+
+    #[test]
+    fn the_right_song_by_the_right_artist_wins_over_a_title_that_merely_contains_it() {
+        let wanted = meta("Smooth", &["Santana"], 300);
+        let results = vec![
+            yt("wrong", "Smooth Criminal", "Michael Jackson", 250),
+            yt("right", "Smooth", "Santana", 298),
+        ];
+        let picked = match_best_track(&wanted, &results).expect("something must be picked");
+        assert_eq!(picked.id, "right");
+    }
+
+    #[test]
+    fn a_duration_that_is_nowhere_near_loses_to_one_that_matches() {
+        // The failure a person notices immediately: an hour-long "full album" upload that happens to
+        // have the song's name in its title.
+        let wanted = meta("Clocks", &["Coldplay"], 307);
+        let results = vec![
+            yt("album", "Coldplay - Clocks (Full Album)", "Coldplay", 3_100),
+            yt("song", "Coldplay - Clocks", "Coldplay", 305),
+        ];
+        let picked = match_best_track(&wanted, &results).unwrap();
+        assert_eq!(picked.id, "song");
+    }
+
+    #[test]
+    fn a_choice_is_still_made_when_nothing_matches_well() {
+        // Returning nothing means the track cannot play at all. A poor match that plays beats a
+        // perfect match that does not exist, so the matcher must always answer with something when
+        // it was given something.
+        let wanted = meta("Something Very Specific", &["An Artist"], 200);
+        let results = vec![yt("only", "Completely Unrelated", "Nobody", 999)];
+        assert!(match_best_track(&wanted, &results).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_hint_beats_everything_because_the_caller_already_knows() {
+        let _guard = mock::lock_and_reset();
+        let answer =
+            resolve_youtube_id_direct::<MockEnv>("spotify-hint", Some("HINTED_ID"), "/tmp").await;
+        assert_eq!(answer.as_deref(), Some("HINTED_ID"));
+    }
+
+    #[tokio::test]
+    async fn a_mapping_the_user_chose_by_hand_beats_the_automatic_match() {
+        // The whole point of "pick a different version": if the resolver could override it, the
+        // choice would look like it did nothing.
+        let _guard = mock::lock_and_reset();
+        set_alternative_track::<MockEnv>("spotify-manual".into(), "CHOSEN_BY_HAND".into());
+
+        assert_eq!(
+            get_alternative_track("spotify-manual").as_deref(),
+            Some("CHOSEN_BY_HAND")
+        );
+        let answer = resolve_youtube_id_direct::<MockEnv>("spotify-manual", None, "/tmp").await;
+        assert_eq!(answer.as_deref(), Some("CHOSEN_BY_HAND"));
+    }
+
+    #[test]
+    fn a_track_nobody_mapped_has_no_mapping() {
+        assert!(get_alternative_track("spotify-never-mapped").is_none());
+    }
+
+    #[test]
+    fn registering_metadata_makes_a_track_resolvable_later() {
+        register_track_meta(
+            "spotify-meta".into(),
+            "A Song".into(),
+            vec!["An Artist".into()],
+            210_000,
+            "ISRC123".into(),
+        );
+        let store = TRACK_METADATA.get().expect("registering must create the store");
+        let held = store.lock().unwrap();
+        let entry = held.get("spotify-meta").expect("the track must be there");
+        assert_eq!(entry.name, "A Song");
+        assert_eq!(entry.duration_ms, 210_000);
+        assert_eq!(entry.isrc, "ISRC123");
+    }
+}

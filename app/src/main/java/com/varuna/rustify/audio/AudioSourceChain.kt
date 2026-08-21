@@ -33,12 +33,22 @@ class AudioSourceChain(
             // fetching its instance directory); if it ran outside, a stalled directory fetch would hang
             // the whole resolution with no upper bound, a prime cause of play-time ANRs. A null result
             // means "not available for this track" -> skip quietly (no error).
+            val budget = p.capabilities.resolveTimeoutMs ?: perProviderTimeoutMs
+            val startedAt = System.currentTimeMillis()
             val r = runCatching {
-                withTimeout(perProviderTimeoutMs) {
+                withTimeout(budget) {
                     if (!p.isAvailableFor(track)) null
                     else p.resolveStreamUrl(track, hint).getOrThrow()
                 }
             }
+            // Logged whatever happens, because "it timed out" on its own says nothing about whether
+            // the ceiling was too low or the provider was hung — and that is the difference between
+            // raising a number and fixing a bug.
+            android.util.Log.d(
+                TAG,
+                "${p.capabilities.id}: ${System.currentTimeMillis() - startedAt} ms of $budget " +
+                    (if (r.isSuccess) "ok" else "-> ${r.exceptionOrNull()?.message}")
+            )
             val info = r.getOrNull()
             if (r.isSuccess && info != null) {
                 lastGood[trackId] = p.capabilities.id
@@ -108,6 +118,7 @@ class AudioSourceChain(
     }
 
     companion object {
+        private const val TAG = "AudioSourceChain"
         const val DEFAULT_TIMEOUT_MS = 15_000L
         /** Downloads are full file transfers (can take minutes); resolve-sized timeouts would abort them. */
         const val DOWNLOAD_TIMEOUT_MS = 20 * 60_000L

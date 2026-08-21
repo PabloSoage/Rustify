@@ -4,6 +4,12 @@
     tools:ignore="ForegroundServicePermission">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Casting (E16): finding a speaker or TV is an SSDP multicast question, and without this
+         permission the socket never sees the answers — which looks exactly like "no devices on this
+         network" rather than like a missing permission. Normal permission: not prompted, and it
+         grants nothing beyond receiving multicast. Nothing here is used unless the user turns
+         casting on in Settings, which is off by default. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:ignore="all" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

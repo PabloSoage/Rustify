@@ -341,7 +341,11 @@ fun TrackScreen(
 
     val currentQueue = playerState.queue
     val currentTrackIdx = currentQueue.indexOfFirst { it.id == (trackToShow?.id ?: trackId) }
-    val hasPrevious = currentTrackIdx > 0
+// "Previous" is never disabled: on the first track it rewinds, which is what the notification has
+// always done and what the core answers with (`Effect::SeekTo(0)`). Greying it out here was the UI
+// disagreeing with the engine about what the button does -- and the notification button proved which
+// of the two was right.
+    val hasPrevious = currentTrackIdx >= 0
     val hasNext = currentTrackIdx != -1 && currentTrackIdx < currentQueue.size - 1
 
     // An auth failure that survived the retry means the saved session is gone for good, and the raw

@@ -1,6 +1,6 @@
 [package]
 name = "core_engine"
-version = "3.4.0"
+version = "3.5.0"
 edition = "2021"
 
 [lib]
@@ -80,12 +80,27 @@ regex = "1.10.6"
 # stream URL extraction, search, and caching automatically.
 # rustls-tls: avoid native system TLS (not reliably available on Android)
 rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
-rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 
 # Brave's adblock-rust (MPL-2.0): parses EasyList / uBlock Origin filter syntax and answers network
 # blocking queries. Used by the in-app Spotify Web Player, since Android's WebView cannot run
 # browser extensions — we reuse uBO's filter LISTS instead of its runtime.
 adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+
+# --- Android only ---
+[target.'cfg(target_os = "android")'.dependencies]
+# Not used by a single line of our code, and not removable either: `rustypipe` pulls
+# `rquickjs-sys` in transitively (for YouTube's n-parameter deobfuscation), and this declaration
+# exists purely to turn its `bindgen` feature ON. Cargo unifies features across the graph, so that
+# switch reaches rustypipe's copy and makes it GENERATE bindings for whichever Android ABI is being
+# built rather than looking for pre-generated ones that do not exist for those targets.
+#
+# It is scoped to Android because the switch is only right there. On the host, bindgen wants
+# libclang plus a full C toolchain, and pointing it at the NDK's clang does not work — that clang
+# targets Android and cannot find the MSVC headers, which shows up as `stdio.h not found` in the
+# middle of what looks like a test run. Left unscoped, `cargo test` on a developer machine could not
+# build at all. Scoped, the host quietly uses the pre-generated bindings and never needs a C
+# toolchain. See docs/17-testing-and-coverage.md.
+rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 
 
 # --- Optimizations for Android NDK (Reduces .so file size) ---

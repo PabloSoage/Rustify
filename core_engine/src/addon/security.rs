@@ -29,7 +29,9 @@ pub fn validate_addon_url(raw: &str) -> Result<Url, AddonError> {
     let url = Url::parse(raw).map_err(|e| AddonError::InvalidUrl(e.to_string()))?;
     check_scheme(&url)?;
     check_no_credentials(&url)?;
-    check_host(&url)?;
+    // `allow_loopback: true` here and only here: this is the addon's own base url, typed by the
+    // user in an install dialog, and pointing it at a laptop is how an addon gets developed.
+    check_host(&url, true)?;
     Ok(url)
 }
 
@@ -47,7 +49,15 @@ pub fn validate_stream_url(raw: &str) -> Result<Url, AddonError> {
         )));
     }
     check_no_credentials(&url)?;
-    check_host(&url)?;
+    // `allow_loopback: false`, and this is the whole point of the parameter existing.
+    //
+    // The loopback exception is for *installing* an addon against a laptop while developing it. It
+    // must not extend to the URLs that addon then hands back: a stream url is a place this app will
+    // go and fetch from, so allowing loopback there lets third-party code aim us at whatever is
+    // listening on the phone — starting with our own local server, which holds a token and serves
+    // audio. That is the request-forgery this module exists to refuse, and a debug build is exactly
+    // where someone would be running an addon they do not fully trust.
+    check_host(&url, false)?;
     // `file:`, `content:` and `data:` are already excluded by the https check above; this catches
     // the case where a future edit relaxes it.
     if url.cannot_be_a_base() {
@@ -77,7 +87,7 @@ fn check_no_credentials(url: &Url) -> Result<(), AddonError> {
     Ok(())
 }
 
-fn check_host(url: &Url) -> Result<(), AddonError> {
+fn check_host(url: &Url, allow_loopback: bool) -> Result<(), AddonError> {
     let host = url.host().ok_or_else(|| AddonError::Refused("no host".into()))?;
     let private = match &host {
         Host::Ipv4(ip) => {
@@ -107,7 +117,7 @@ fn check_host(url: &Url) -> Result<(), AddonError> {
                 || name.ends_with(".home.arpa")
         }
     };
-    if private && !(ALLOW_INSECURE_LOOPBACK && is_loopback(url)) {
+    if private && !(allow_loopback && ALLOW_INSECURE_LOOPBACK && is_loopback(url)) {
         return Err(AddonError::Refused(format!(
             "refusing a private or local address: {host}"
         )));

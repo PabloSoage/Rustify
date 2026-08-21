@@ -30,6 +30,7 @@
 // file that turned out to be missing, which is the distinction that keeps the 503 buried.
 
 pub mod cache;
+pub mod lan;
 pub mod fill;
 pub mod handles;
 pub mod proxy;
@@ -326,7 +327,7 @@ pub fn register_proxy<E: Env>(
 // ROUTING
 // =============================================================================
 
-async fn route<E: Env>(
+pub(crate) async fn route<E: Env>(
     req: Request<hyper::body::Incoming>,
     token: String,
 ) -> Result<Response<ResBody>, Infallible> {

@@ -48,7 +48,18 @@ data class AudioSourceCapabilities(
     val canStream: Boolean,
     val canDownload: Boolean,
     val requiresToken: Boolean = false,
-    val maxQualityKbps: Int? = null
+    val maxQualityKbps: Int? = null,
+    /**
+     * How long this provider may take to resolve, when the generic ceiling is wrong for it.
+     *
+     * Null means "use the chain's default". It exists because the default has to be short enough
+     * that a dead provider does not hold up the fallback, and yt-dlp is genuinely not that fast: it
+     * runs a Python extractor whose first invocation after a cold start is slow on its own, and it
+     * does so **after** a network round trip that matched the song. Judging it by the same stopwatch
+     * as "did this HTTP endpoint answer" is what produced a timeout on tracks that would have
+     * resolved.
+     */
+    val resolveTimeoutMs: Long? = null
 )
 
 /**

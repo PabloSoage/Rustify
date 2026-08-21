@@ -308,7 +308,13 @@ mod tests {
 
         let sng_id = "3135556";
         let key = deezer::blowfish_key(sng_id);
-        let plain: Vec<u8> = (0..(deezer::STRIPE * 2)).map(|i| (i % 251) as u8).collect();
+        // Starts with a real `fLaC` signature, and it has to: since 3.3 a fill refuses to store
+        // bytes that do not look like audio, because a wrong Deezer key does not fail — it produces
+        // sound, and without the check a bad key writes an entry that plays noise forever. This test
+        // was written before that check existed and its "audio" was a counter, so the first time it
+        // was ever run it failed on its own fixture.
+        let mut plain: Vec<u8> = b"fLaC".to_vec();
+        plain.extend((0..(deezer::STRIPE * 2 - 4)).map(|i| (i % 251) as u8));
 
         // Encrypt stripe 0 only, which is what the CDN does.
         let mut wire = plain.clone();

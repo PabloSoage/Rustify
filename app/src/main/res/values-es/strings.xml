@@ -603,4 +603,17 @@
     <string name="calendar_this_month">Este mes</string>
     <string name="calendar_this_year">Este año</string>
     <string name="calendar_older">Antes</string>
-    <string name="calendar_undated">Sin fecha</string></resources>
+    <string name="calendar_undated">Sin fecha</string>    <!-- Casting (E16) -->
+    <string name="settings_casting">Reproducir en otro dispositivo</string>
+    <string name="settings_casting_enabled">Permitir casting</string>
+    <string name="settings_casting_desc">Manda la música a un altavoz, una tele o un receptor de tu wifi. Mientras casteas, ese aparato le pide el audio a este móvil — así que Rustify abre una puerta en tu red, solo hacia ese aparato y hacia ningún otro, y la cierra cuando paras. Buscar no abre nada. Apagado salvo que lo enciendas. Ten en cuenta que el móvil tiene que seguir despierto y en la misma wifi: esto no es Spotify Connect, y si el móvil se va, la música para.</string>
+    <string name="settings_casting_search">Buscar</string>
+    <string name="settings_casting_searching">Buscando…</string>
+    <string name="settings_casting_none">No se encontró nada. Algunas wifis —hoteles, cafeterías— impiden que los aparatos se hablen entre sí, y ahí el casting no puede funcionar.</string>
+    <string name="settings_casting_idle">Sin castear</string>
+    <string name="settings_casting_to">Sonando en %1$s</string>
+    <string name="settings_casting_stop">Parar</string>    <!-- Radio automatica al acabar la cola -->
+    <string name="settings_autoplay_radio">Cuando se acaba la cola</string>
+    <string name="settings_autoplay_radio_enabled">Seguir con música parecida</string>
+    <string name="settings_autoplay_radio_desc">Cuando termina la última canción de un álbum, una lista o la cola, Rustify sigue con una radio hecha a partir de ella. Desactívalo si prefieres que la música pare donde tú dijiste.</string>
+</resources>

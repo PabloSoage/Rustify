@@ -19,7 +19,10 @@ class StreamRoutingTest {
     @Test
     fun `cache keys survive the trip through the filesystem unchanged in meaning`() {
         assertEquals("k.._.._etc_passwd", StreamRouting.sanitise("../../etc/passwd"))
-        assertEquals("a_b_c", StreamRouting.sanitise("a/b\c"))
+        // `\\c` is one backslash followed by a `c`. Written `\c` this file did not compile at all,
+        // which is how these tests came to have never run: nothing asks Gradle to build the test
+        // source unless you ask it for the test task, and `assembleRelease` does not.
+        assertEquals("a_b_c", StreamRouting.sanitise("a/b\\c"))
         assertEquals("k", StreamRouting.sanitise(""))
         assertEquals("k.", StreamRouting.sanitise("."))
         assertEquals("k..", StreamRouting.sanitise(".."))

@@ -103,9 +103,41 @@ mod tests {
 
     #[test]
     fn a_key_cannot_climb_out_of_the_cache_directory() {
-        let path = path_for("/data/cache", "../../etc/passwd");
-        assert_eq!(path.parent().unwrap(), Path::new("/data/cache"));
-        assert!(!path.to_string_lossy().contains(".."));
+        // The property is **one path component, directly under the root** — not "the string has no
+        // dots in it". `../../etc/passwd` sanitises to `k.._.._etc_passwd`, which still reads as
+        // dots but cannot traverse anywhere, because every separator became an underscore. An
+        // earlier version of this test asserted the absence of `..` in the text and failed on a
+        // path that was perfectly safe; asserting the shape says what actually matters.
+        for hostile in [
+            "../../etc/passwd",
+            "..",
+            ".",
+            "/etc/shadow",
+            "..\\..\\windows\\system32",
+            "",
+        ] {
+            let path = path_for("/data/cache", hostile);
+            assert_eq!(
+                path.parent().unwrap(),
+                Path::new("/data/cache"),
+                "{hostile} escaped the cache directory"
+            );
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            assert!(!name.is_empty(), "{hostile} produced no file name");
+            assert_ne!(name, ".", "{hostile} named the directory itself");
+            assert_ne!(name, "..", "{hostile} named the parent directory");
+            assert!(
+                !name.contains('/') && !name.contains('\\'),
+                "{hostile} kept a separator: {name}"
+            );
+            // One component and no more: `components()` over the whole path must be exactly the
+            // root plus this name.
+            assert_eq!(
+                Path::new("/data/cache").join(&name),
+                path,
+                "{hostile} did not stay a single component"
+            );
+        }
     }
 
     #[tokio::test]

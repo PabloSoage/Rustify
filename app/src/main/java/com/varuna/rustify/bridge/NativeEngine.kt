@@ -200,6 +200,48 @@ object NativeEngine {
      */
     external fun playerReduceNative(stateJson: String, actionJson: String): String
 
+    // =====================================================================
+    // CASTING (E16)
+    // =====================================================================
+    //
+    // The only place the local server stops being loopback-only. Why, and the four layers that make
+    // it defensible, are in `core_engine/src/server/lan.rs` and `docs/16-casting.md`.
+
+    /**
+     * Opens the local server to one interface, answering one device.
+     *
+     * [bindTo] is this phone's address on the wifi. It must **never** be `0.0.0.0` — the core
+     * refuses it, and that refusal exists so the mistake E11 was about cannot be made twice.
+     * [device] is the only peer that gets an answer; anything else is dropped before a byte of its
+     * request is read.
+     *
+     * Binds a socket, so this is blocking — call it off the main thread.
+     *
+     * @return `{"success":true,"port":41234}` or `{"success":false,"error":"…"}`
+     */
+    external fun openCastListenerNative(bindTo: String, device: String): String
+
+    /**
+     * Ends the cast session.
+     *
+     * Takes effect immediately: the allow-check reads the same state, so even a connection accepted
+     * a moment earlier stops being answered. Pure and in-memory.
+     */
+    external fun closeCastListenerNative(): String
+
+    /**
+     * The URL to hand the cast device for an already-registered handle, or `{}` when no session is
+     * open. Same handle and same token as the loopback URL; only the host differs.
+     */
+    external fun castUrlForNative(handle: String): String
+
+    /**
+     * The session as the **core** sees it — which is the only version that counts.
+     *
+     * @return `{"active":true,"boundTo":"…","port":N,"device":"…"}` or `{"active":false}`
+     */
+    external fun castSessionNative(): String
+
 
     // =====================================================================
     // YOUTUBE ENGINE

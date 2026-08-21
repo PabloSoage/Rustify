@@ -58,6 +58,14 @@ pub struct Session {
     /// what it shows. Empty for sessions written before this field existed.
     #[serde(default)]
     pub track_title: String,
+    /// The artist of that track.
+    ///
+    /// Stored for the same reason as the title, plus one more: together they are enough to rebuild a
+    /// playable stand-in for the track **without any network at all**, which is what lets a resume
+    /// start instantly when the audio is already on the device. Empty for sessions written before
+    /// this field existed.
+    #[serde(default)]
+    pub track_artist: String,
     pub state: PlayerState,
     /// Duration of the track that was playing, when it is known. Used to tell "left off" from
     /// "finished"; zero means "not known", which is treated as not finished.
@@ -146,6 +154,7 @@ mod tests {
             subtitle: String::new(),
             image_url: String::new(),
             track_title: format!("Track for {id}"),
+            track_artist: "An Artist".to_string(),
             state: PlayerState {
                 queue: vec!["t0".into(), "t1".into(), "t2".into()],
                 index: 1,
@@ -261,7 +270,12 @@ mod tests {
         // The rules can change between the release that wrote an entry and the one that reads it,
         // so the filter runs on both sides rather than trusting what is on disk.
         let _guard = mock::lock_and_reset();
-        let stored = vec![session("album:a", 1_000, 100)];
+        // A second into the FIRST track, which is what "barely started" means since 3.4 — the rule
+        // used to read the position of whatever track was playing, and that made the row vanish at
+        // every track change. The fixture moved with the rule.
+        let mut barely = session("album:a", 1_000, 100);
+        barely.state.index = 0;
+        let stored = vec![barely];
         storage::set_json::<MockEnv, _>(STORAGE_KEY, Some(&stored))
             .await
             .unwrap();

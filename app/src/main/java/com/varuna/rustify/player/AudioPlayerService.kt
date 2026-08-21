@@ -92,6 +92,14 @@ class AudioPlayerService private constructor(private val context: Context) {
         private set
 
     companion object {
+        /**
+         * Whether the end of a queue starts an autoplay radio.
+         *
+         * **On by default**: that is what the app has always done, so nobody's playback changes by
+         * upgrading. Off is for the person who queued exactly what they wanted to hear.
+         */
+        const val AUTOPLAY_RADIO_KEY = "settings_autoplay_radio"
+
         // "Past ten seconds, previous restarts the track" used to live here. It is now
         // `PREVIOUS_RESTART_THRESHOLD_MS` in `core_engine/src/player/mod.rs`, with the rest of the
         // queue rules, and deleting the copy rather than leaving it is the point: two constants
@@ -159,6 +167,21 @@ class AudioPlayerService private constructor(private val context: Context) {
      * that already has its radio.
      */
     private var radioSeedInFlight: String? = null
+
+    /**
+     * Should the end of a queue turn into a radio?
+     *
+     * **On by default**, which is what the app has always done. Off means a queue that ends, ends —
+     * which is what someone who lined up exactly what they wanted to hear is asking for, and until
+     * now there was no way to say it.
+     *
+     * Read when it is needed rather than cached, so flipping the switch takes effect on the album
+     * that is already playing rather than on the next one.
+     */
+    private fun autoplayRadioEnabled(): Boolean =
+        context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+            .getBoolean(AUTOPLAY_RADIO_KEY, true)
+
     private var playJob: kotlinx.coroutines.Job? = null
     @Volatile private var isResolving = false
     // Id of the track whose media is actually loaded into ExoPlayer (set right after prepare()).
@@ -1210,6 +1233,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             subtitle = context.subtitle,
             imageUrl = context.imageUrl,
             trackTitle = st.currentTrack?.name.orEmpty(),
+            trackArtist = st.currentTrack?.artists?.firstOrNull()?.name.orEmpty(),
             queue = st.queue.mapNotNull { it.id },
             index = index,
             positionMs = st.positionMs,
@@ -1902,6 +1926,41 @@ class AudioPlayerService private constructor(private val context: Context) {
         applyQueueDecision(st, decision)
     }
 
+    /**
+     * Swaps the queue underneath whatever is playing, **without touching playback**.
+     *
+     * This is what lets "continue listening" start instantly. Resuming used to refetch the whole
+     * context and only then press play, so a track already sitting in the cache still took seconds
+     * to begin — up to twenty round trips for a long playlist. Now the stored track starts first and
+     * the real list arrives here a moment later.
+     *
+     * Refuses when the song playing is no longer [keepPlayingId]: the fetch takes seconds, and in
+     * those seconds the user may have skipped, or started something else entirely. Replacing the
+     * queue then would yank them back to a context they had left.
+     */
+    fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
+        if (tracks.isEmpty() || keepPlayingId == null) return
+        val st = _state.value
+        if (st.currentTrack?.id != keepPlayingId) return
+        val idx = tracks.indexOfFirst { it.id == keepPlayingId }
+        // Not in the list any more — the playlist was edited since. The single-track queue it is
+        // playing from stays, which is worse than a full queue and much better than a jump.
+        if (idx < 0) return
+
+        currentQueueIndex = idx
+        _state.value = st.copy(
+            queue = tracks,
+            originalQueue = tracks,
+            // The fetched copy carries the real artwork and duration; the stub had only what the row
+            // stored. Swapping it here is why the notification fills in a second after playback
+            // starts rather than being wrong for the whole track.
+            currentTrack = tracks[idx]
+        )
+        notifyQueueChanged(tracks)
+        requestSave()
+        preBufferNextTrack()
+    }
+
     fun skipToNext() {
         // Not delegated to the page: opening a track URL leaves Spotify's own context holding that
         // single track, so its next button has nowhere to go. Rustify's queue is the one that
@@ -1941,7 +2000,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             applyQueueDecision(st, decision)
             return
         }
-        if (st.currentTrack != null) {
+        if (st.currentTrack != null && autoplayRadioEnabled()) {
             // Autoplay radio. This is what `QueueExhausted` exists to name: the core says "there is
             // nothing after this", and on Android that is not a stop — it is where the radio starts.
             //
@@ -2001,6 +2060,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Skipped when repeat-one is on: there the last track does not end the queue, it replays.
      */
     private fun prefetchRadioForEndOfQueue(st: AudioPlayerState) {
+        if (!autoplayRadioEnabled()) return
         if (st.isRepeat) return
         val seed = st.currentTrack?.id ?: return
         if (TrackRef.isLocal(seed)) return

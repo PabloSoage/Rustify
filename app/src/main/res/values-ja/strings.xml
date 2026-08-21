@@ -602,4 +602,17 @@
     <string name="calendar_this_month">今月</string>
     <string name="calendar_this_year">今年</string>
     <string name="calendar_older">それ以前</string>
-    <string name="calendar_undated">日付なし</string></resources>
+    <string name="calendar_undated">日付なし</string>    <!-- キャスト (E16) -->
+    <string name="settings_casting">別の機器で再生</string>
+    <string name="settings_casting_enabled">キャストを許可</string>
+    <string name="settings_casting_desc">Wi-Fi 上のスピーカー、テレビ、レシーバーへ音楽を送ります。キャスト中はその機器がこの端末から音声を取得するため、Rustify はネットワークに入り口をひとつ開きます。開くのはその機器だけに対してで、停止すれば閉じます。検索だけでは何も開きません。既定ではオフです。なお端末はスリープせず同じ Wi-Fi にいる必要があります。Spotify Connect とは違い、端末が離れると再生は止まります。</string>
+    <string name="settings_casting_search">検索</string>
+    <string name="settings_casting_searching">検索中…</string>
+    <string name="settings_casting_none">見つかりませんでした。ホテルやカフェなど、機器どうしの通信を遮断する Wi-Fi ではキャストは動作しません。</string>
+    <string name="settings_casting_idle">キャストしていません</string>
+    <string name="settings_casting_to">%1$s で再生中</string>
+    <string name="settings_casting_stop">停止</string>    <!-- キュー終了時の自動ラジオ -->
+    <string name="settings_autoplay_radio">キューが終わったら</string>
+    <string name="settings_autoplay_radio_enabled">似た曲を続けて再生</string>
+    <string name="settings_autoplay_radio_desc">アルバム、プレイリスト、キューの最後の曲が終わると、それをもとにしたラジオを続けて再生します。指定したところで音楽を止めたい場合はオフにしてください。</string>
+</resources>

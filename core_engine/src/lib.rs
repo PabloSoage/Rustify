@@ -2070,3 +2070,118 @@ fn player_effect_to_json(effect: &player::Effect) -> serde_json::Value {
         }
     }
 }
+
+// =============================================================================
+// CASTING (E16)
+//
+// The one place the local server stops being loopback-only. Everything about why, and the four
+// layers that make it defensible, is in `server/lan.rs` and `docs/16-casting.md`.
+// =============================================================================
+
+/// JNI Bridge: open the local server to one interface, answering one device.
+///
+/// `bind_to` is the phone's own address on the wifi — **never** `0.0.0.0`, and the core refuses it.
+/// `device` is the address of the thing being cast to; nothing else gets an answer, checked before a
+/// byte of the request is read.
+///
+/// Binds a socket: **blocking**.
+///
+/// @return `{"success":true,"port":41234}` or `{"success":false,"error":"…"}`
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_openCastListenerNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    bind_to: JString<'local>,
+    device: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let bind_str = bind_to.mutf8_chars(env)?.to_string();
+        let device_str = device.mutf8_chars(env)?.to_string();
+
+        let parsed = bind_str
+            .parse::<std::net::IpAddr>()
+            .map_err(|e| format!("{bind_str} is not an address: {e}"))
+            .and_then(|b| {
+                device_str
+                    .parse::<std::net::IpAddr>()
+                    .map_err(|e| format!("{device_str} is not an address: {e}"))
+                    .map(|d| (b, d))
+            });
+
+        match parsed {
+            Err(message) => serde_json::json!({ "success": false, "error": message }).to_string(),
+            Ok((bind_ip, device_ip)) => {
+                let outcome = get_runtime().block_on(server::lan::open::<
+                    env::android::AndroidEnv,
+                >(bind_ip, device_ip));
+                match outcome {
+                    Ok(port) => serde_json::json!({ "success": true, "port": port }).to_string(),
+                    Err(e) => {
+                        serde_json::json!({ "success": false, "error": e.message() }).to_string()
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// JNI Bridge: end the cast session.
+///
+/// Takes effect immediately — the allow-check reads the same slot, so a connection accepted a
+/// microsecond earlier stops being answered too. Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_closeCastListenerNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        server::lan::close::<env::android::AndroidEnv>();
+        "{\"success\":true}".to_string()
+    })
+}
+
+/// JNI Bridge: the URL to hand a cast device for an already-registered handle.
+///
+/// `{}` when there is no session, which is the honest answer rather than a URL nobody can use.
+/// Pure and in-memory.
+///
+/// @return `{"url":"http://192.168.1.34:41234/stream/<handle>?t=<token>"}` or `{}`
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_castUrlForNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let handle_str = handle.mutf8_chars(env)?.to_string();
+        match server::lan::url_for(&handle_str) {
+            Some(url) => serde_json::json!({ "url": url }).to_string(),
+            None => "{}".to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: the active cast session, for showing it and for deciding whether to close it.
+///
+/// Pure and in-memory.
+///
+/// @return `{"active":true,"boundTo":"192.168.1.34","port":41234,"device":"192.168.1.90"}`
+///   or `{"active":false}`
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_castSessionNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        match server::lan::current() {
+            None => "{\"active\":false}".to_string(),
+            Some(session) => serde_json::json!({
+                "active": true,
+                "boundTo": session.bound_to.to_string(),
+                "port": session.port,
+                "device": session.device.to_string(),
+            })
+            .to_string(),
+        }
+    })
+}

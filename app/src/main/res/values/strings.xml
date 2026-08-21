@@ -605,4 +605,17 @@
     <string name="calendar_this_month">This month</string>
     <string name="calendar_this_year">This year</string>
     <string name="calendar_older">Earlier</string>
-    <string name="calendar_undated">No date</string></resources>
+    <string name="calendar_undated">No date</string>    <!-- Casting (E16) -->
+    <string name="settings_casting">Play on another device</string>
+    <string name="settings_casting_enabled">Allow casting</string>
+    <string name="settings_casting_desc">Send music to a speaker, TV or receiver on your wifi. While you are casting, that device fetches the audio from this phone — so Rustify opens a door on your network, to that one device and nobody else, and closes it when you stop. Searching opens nothing. Off unless you turn it on. Note that the phone has to stay awake and on the same wifi: this is not Spotify Connect, and if the phone leaves, the music stops.</string>
+    <string name="settings_casting_search">Search</string>
+    <string name="settings_casting_searching">Searching…</string>
+    <string name="settings_casting_none">Nothing found. Some wifi networks — hotels, cafés — stop devices talking to each other, and casting cannot work on those.</string>
+    <string name="settings_casting_idle">Not casting</string>
+    <string name="settings_casting_to">Playing on %1$s</string>
+    <string name="settings_casting_stop">Stop</string>    <!-- Autoplay radio at the end of a queue -->
+    <string name="settings_autoplay_radio">When a queue ends</string>
+    <string name="settings_autoplay_radio_enabled">Keep playing similar music</string>
+    <string name="settings_autoplay_radio_desc">When the last song of an album, playlist or queue finishes, Rustify carries on with a radio built from it. Turn this off if you would rather the music simply stopped where you told it to.</string>
+</resources>
