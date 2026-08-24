@@ -153,6 +153,50 @@ fun AlbumScreen(
                     offset = tracks.size
                     SpotifyRepository.albumTracksCache[albumId] = tracks
                 }
+                // The rest of a long album is fetched now rather than waiting to be scrolled into
+                // view. Paging by scroll is right for drawing rows and wrong for everything else on
+                // this screen: Play, Shuffle and the ✓ marks all read this list, and on a 142-track
+                // album they were reading the 50 that happened to be on screen. Playing "the album"
+                // and getting a third of it is the same bug as adding a third of it to a playlist,
+                // minus the part where you notice.
+                //
+                // It costs nothing for an ordinary album — the count already matches, no request —
+                // and it holds `isLoadingMore` for its whole run so the scroll loader below sees a
+                // load in progress and stays out of the way.
+                //
+                // The test is the album's own track count rather than `hasMore`, because `hasMore`
+                // only knows about pages this screen fetched. Coming back to an album seeded from
+                // `albumTracksCache` fetches nothing, so `hasMore` would still say `true` for an
+                // album that is complete — and, worse, say nothing at all about a cached list that
+                // was left short the first time round.
+                val expected = albumDetails?.totalTracks ?: 0
+                // `expected == 0` means Spotify did not say, in which case fetching is the only way
+                // to find out — the one thing not to do is assume completeness because a count was
+                // missing.
+                val complete = expected > 0 && tracks.size >= expected
+                if (!complete) {
+                    // The first page is on screen, so the screen is no longer "loading" in the sense
+                    // the spinner means. What is left runs behind the rows the user is already
+                    // reading, marked by the small bottom spinner instead.
+                    isLoading = false
+                    isLoadingMore = true
+                    try {
+                        val full = spotifyRepo.getAllAlbumTracks(albumId)
+                        if (full.size > tracks.size) {
+                            tracks = full
+                            SpotifyRepository.albumTracksCache[albumId] = full
+                        }
+                        offset = tracks.size
+                        hasMore = tracks.size < expected
+                    } catch (_: Exception) {
+                        // Whatever arrived stays; the scroll loader can still pick up the rest.
+                    } finally {
+                        isLoadingMore = false
+                    }
+                } else {
+                    hasMore = false
+                    offset = tracks.size
+                }
             }
 
         } catch (e: Exception) {
@@ -573,7 +617,12 @@ fun AlbumScreen(
             primaryArtistId = albumDetails?.artists?.firstOrNull()?.id,
             tracks = tracks,
             onDismiss = { showEntityMenu = false },
-            onGoToArtist = onArtistClick
+            onGoToArtist = onArtistClick,
+            // Only when there is more of the album than has been paged in. A local album is whole
+            // by construction, and so is a Spotify album whose last page has arrived.
+            loadAllTracks = if (!hasMore) null else {
+                { spotifyRepo.getAllAlbumTracks(albumId) }
+            }
         )
     }
 

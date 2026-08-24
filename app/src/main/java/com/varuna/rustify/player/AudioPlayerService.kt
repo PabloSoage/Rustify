@@ -54,7 +54,39 @@ data class PlaybackContext(
     val label: String,
     val subtitle: String = "",
     val imageUrl: String = ""
-)
+) {
+    internal fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("id", id)
+        put("label", label)
+        put("subtitle", subtitle)
+        put("imageUrl", imageUrl)
+    }
+
+    companion object {
+        /**
+         * Reads a context back out of the saved playback state.
+         *
+         * It is saved at all because it was not, and the queue was: after the process was killed the
+         * queue came back and the context did not, so playback carried on into a `null` context and
+         * both the things keyed on one went quiet — no ✓ on the tracks being finished, and no update
+         * to "pick up where you left off". Nothing looked broken, which is why it took a while to
+         * notice: the music played fine.
+         *
+         * Null for a state file written before this field existed, which is the behaviour that was
+         * there anyway.
+         */
+        internal fun fromJson(json: org.json.JSONObject?): PlaybackContext? {
+            val id = json?.optString("id").orEmpty()
+            if (id.isBlank()) return null
+            return PlaybackContext(
+                id = id,
+                label = json!!.optString("label"),
+                subtitle = json.optString("subtitle"),
+                imageUrl = json.optString("imageUrl")
+            )
+        }
+    }
+}
 
 data class AudioPlayerState(
     val currentTrack: FullTrack? = null,
@@ -2497,6 +2529,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 }
                 put("userQueue", uqArr)
 
+                // Saved alongside the queue because it is part of the same fact. Without it a
+                // restored queue is a list of songs from nowhere, and the two features that need to
+                // know where it came from — the ✓ marks and "pick up where you left off" — go
+                // silent rather than wrong, which is the harder kind to spot.
+                playbackContext?.let { put("context", it.toJson()) }
+
                 put("positionMs", st.positionMs)
                 put("durationMs", st.durationMs)
                 put("isShuffle", st.isShuffle)
@@ -2549,6 +2587,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
                 // Restored state has no live index; recompute it from the saved current track.
                 currentQueueIndex = queue.indexOfFirst { it.id == track?.id }
+
+                playbackContext = PlaybackContext.fromJson(json.optJSONObject("context"))
 
                 val positionMs = json.optLong("positionMs", 0L)
                 val durationMs = json.optLong("durationMs", 0L)

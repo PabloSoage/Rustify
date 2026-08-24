@@ -672,7 +672,15 @@ fun PlaylistScreen(
             primaryArtistId = null,
             tracks = tracks,
             onDismiss = { showEntityMenu = false },
-            onGoToArtist = onArtistClick
+            onGoToArtist = onArtistClick,
+            // `tracks` here is a list that fills in from the network while you look at it, so acting
+            // on it is acting on however far it got. Waiting for the background load would not fix
+            // it either: that load keeps whatever it managed on a network error, so a short list and
+            // a finished list are indistinguishable afterwards — which is the same silence that made
+            // this a bug. Fetched outright instead. A local playlist is whole by construction.
+            loadAllTracks = if (isLocal) null else {
+                { spotifyRepo.getAllPlaylistTracks(playlistId) }
+            }
         )
     }
 

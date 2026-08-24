@@ -68,9 +68,10 @@ import kotlinx.coroutines.launch
  * nested playlist selector). Items are enabled per entity type / available data:
  *  - Share (always) via [ShareUtils.shareSpotifyLink].
  *  - Go to artist (only when [primaryArtistId] != null).
- *  - Add all [tracks] to a playlist (only when tracks is not empty).
+ *  - Add all tracks to a playlist (only when tracks is not empty).
  *
- * Signature is a hard contract consumed by the detail/listing screens; do not change it.
+ * Signature is a hard contract consumed by the detail/listing screens; extend it with defaulted
+ * parameters rather than changing what is there.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,12 +80,30 @@ fun EntityOptionsMenuBottomSheet(
     entityId: String,
     entityName: String,
     primaryArtistId: String?,  // for "go to artist" from album/playlist; null on artist
-    tracks: List<FullTrack>,   // all album/playlist tracks (or artist top tracks); may be empty
+    /**
+     * What the calling screen currently has — which for a paged album or playlist is **the part
+     * that has been scrolled to**, not the whole thing. Used for the header, the share artwork and
+     * for deciding whether "add all" is offered at all. Never used as the list to add: see
+     * [loadAllTracks].
+     */
+    tracks: List<FullTrack>,
     onDismiss: () -> Unit,
     onGoToArtist: (String) -> Unit,
     // Artwork attached when sharing as a Rustify link. Defaults to the first track's album cover,
     // which is exact for an album and a reasonable stand-in for a playlist/artist.
-    coverUrl: String? = null
+    coverUrl: String? = null,
+    /**
+     * The complete track list, fetched at the moment "add all" is confirmed.
+     *
+     * This parameter exists because [tracks] cannot answer the question. Opening a 142-track
+     * playlist and hitting the menu before the rest had loaded added the 50 on screen and said
+     * "50 songs added" — a wrong answer delivered as a success, which had to be undone by deleting
+     * fifty songs one at a time. Waiting is the right trade here: this is a deliberate, rare action
+     * behind a spinner that already exists, and the alternative is being quietly wrong.
+     *
+     * Null means [tracks] really is everything — an artist's top tracks, a local playlist.
+     */
+    loadAllTracks: (suspend () -> List<FullTrack>)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -96,8 +115,14 @@ fun EntityOptionsMenuBottomSheet(
     var isAdding by remember { mutableStateOf(false) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
 
-    // The Spotify ids to add (album/playlist tracks). Filtered downstream by the repo helper too.
-    val trackIds = remember(tracks) { tracks.mapNotNull { it.id } }
+    // Whether there is anything to offer "add all" for. The ids themselves are resolved at the
+    // moment of adding, not here — see [loadAllTracks].
+    val hasAddableTracks = remember(tracks) { tracks.any { it.id != null } }
+
+    /** The ids to add: the whole entity when the caller can fetch it, otherwise what it handed over. */
+    val idsToAdd: suspend () -> List<String> = {
+        (loadAllTracks?.invoke() ?: tracks).mapNotNull { it.id }
+    }
 
     // Share label + link path derived from the entity type.
     val shareLabelRes = when (entityType) {
@@ -112,7 +137,7 @@ fun EntityOptionsMenuBottomSheet(
         coroutineScope.launch {
             isAdding = true
             try {
-                val n = spotifyRepoAddAll(context, playlistId, trackIds)
+                val n = spotifyRepoAddAll(context, playlistId, idsToAdd())
                 Toast.makeText(context, String.format(addedTemplate, n, playlistName), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(
@@ -139,7 +164,7 @@ fun EntityOptionsMenuBottomSheet(
                         val me = spotifyRepoGetMe(context)
                         val created = spotifyRepoCreatePlaylist(context, me, name)
                         // Reuse addAllTo for the freshly created playlist.
-                        val n = spotifyRepoAddAll(context, created.first, trackIds)
+                        val n = spotifyRepoAddAll(context, created.first, idsToAdd())
                         Toast.makeText(context, String.format(addedTemplate, n, created.second), Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(
@@ -312,7 +337,7 @@ fun EntityOptionsMenuBottomSheet(
                 }
 
                 // Add all tracks to a playlist (only when there are tracks).
-                if (trackIds.isNotEmpty()) {
+                if (hasAddableTracks) {
                     EntityMenuRow(
                         icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                         label = stringResource(R.string.entity_menu_add_all_playlist),

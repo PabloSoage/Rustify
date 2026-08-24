@@ -54,6 +54,13 @@ class SpotifyRepository(context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
 
+        /**
+         * How much life a stored token needs before [ensureSession] will trust it without
+         * refreshing. Deliberately longer than the engine's own 30 s refusal margin, so this side is
+         * never the more optimistic of the two.
+         */
+        private const val SESSION_MARGIN_MS = 60_000L
+
         @Volatile
         // internal (not private): the Android Auto MediaLibrarySession (RustifyForegroundService)
         // reads the live repo to build its browsable tree.
@@ -1080,9 +1087,20 @@ loadLocalTracksFromCache()
      * Recover a hot Spotify session in-memory (token expired mid-session).
      * Re-runs the native restore flow without wiping credentials on transient network errors.
      * Safe to call from any coroutine; returns true if the session is (now) valid.
+     *
+     * The margin is the point. [isAuthenticated] asks the engine whether the token has expired, but
+     * the engine refuses to *hand one out* for the last thirty seconds before it does — deliberately,
+     * so a request that is valid when it is built is still valid when it lands. Those two rules
+     * disagree for half a minute in every hour, and in that window the old short-circuit answered
+     * "already fine" to a call that had just been refused for being too old, so all three retries
+     * went back to the same wall. Checking a full minute of remaining life means this side is never
+     * more optimistic than the engine is.
      */
     suspend fun ensureSession(): Boolean = withContext(Dispatchers.IO) {
-        if (NativeEngine.isSpotifyAuthenticatedNative()) return@withContext true
+        val expiration = prefs.getLong(KEY_EXPIRATION, 0L)
+        if (NativeEngine.isSpotifyAuthenticatedNative() &&
+            System.currentTimeMillis() + SESSION_MARGIN_MS < expiration
+        ) return@withContext true
         val savedCookie = prefs.getString(KEY_SP_DC, "") ?: ""
         if (savedCookie.isEmpty()) return@withContext false
         val result = restoreSession() ?: return@withContext false
@@ -1337,6 +1355,44 @@ loadLocalTracksFromCache()
         }
     }
 
+    /** Every track on an album, however many pages that takes. See [allPages]. */
+    suspend fun getAllAlbumTracks(id: String): List<FullTrack> =
+        allPages { limit, offset -> getAlbumTracks(id, limit, offset) }
+
+    /** Every track in a playlist, however many pages that takes. See [allPages]. */
+    suspend fun getAllPlaylistTracks(id: String): List<FullTrack> =
+        allPages { limit, offset -> getPlaylistTracks(id, limit, offset) }
+
+    /**
+     * Every page of a paginated track endpoint, not just the first.
+     *
+     * This is the answer to a whole family of the same bug: a screen holds "the tracks it has
+     * scrolled to", and everything downstream reads that as "the album". Two of those shipped —
+     * resuming a long playlist landed on track 1 because the track it wanted was never fetched, and
+     * "add all to a playlist" on a 142-track list added the 50 that happened to be on screen and
+     * reported success. The second one is worse than it sounds: the other 92 are not missing, they
+     * are *silently* missing, and undoing it means deleting 50 songs by hand.
+     *
+     * Bounded at 1 000 tracks. That bound is a real limit and not a formality, so anything relying
+     * on it should say so rather than claim completeness.
+     */
+    private suspend fun allPages(
+        page: suspend (limit: Int, offset: Int) -> PaginatedResponse<FullTrack>
+    ): List<FullTrack> {
+        val pageSize = 50
+        val maxPages = 20
+        val all = mutableListOf<FullTrack>()
+        var offset = 0
+        repeat(maxPages) {
+            val response = page(pageSize, offset)
+            all.addAll(response.items)
+            val next = response.nextOffset
+            if (!response.hasMore || next == null || response.items.isEmpty()) return all
+            offset = next
+        }
+        return all
+    }
+
     /**
      * Get newly released albums.
      * @throws SpotifyEngineException on API errors
@@ -1352,16 +1408,14 @@ loadLocalTracksFromCache()
      * Save albums to the user's library.
      */
     suspend fun saveAlbums(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.saveSpotifyAlbums(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.saveSpotifyAlbums(JSONArray(ids).toString()) }
     }
 
     /**
      * Remove albums from the user's library.
      */
     suspend fun unsaveAlbums(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.unsaveSpotifyAlbums(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.unsaveSpotifyAlbums(JSONArray(ids).toString()) }
     }
 
     // =========================================================================
@@ -1416,16 +1470,14 @@ loadLocalTracksFromCache()
      * Follow artists.
      */
     suspend fun followArtists(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.followSpotifyArtists(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.followSpotifyArtists(JSONArray(ids).toString()) }
     }
 
     /**
      * Unfollow artists.
      */
     suspend fun unfollowArtists(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.unfollowSpotifyArtists(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.unfollowSpotifyArtists(JSONArray(ids).toString()) }
     }
 
     // =========================================================================
@@ -1474,6 +1526,17 @@ loadLocalTracksFromCache()
      * expired access token` and simply stay failed, with a session that one refresh would have
      * fixed. Turning the failed result into a throw puts it back under the same policy every read
      * already follows, and the result is rebuilt for the caller at the end.
+     *
+     * **Every write goes through here.** When this was written only three of the twelve were moved
+     * onto it, and the other nine — the heart button, saving an album, following an artist or a
+     * playlist — kept the exact bug it was built to fix. The symptom is specific and was reported
+     * from a phone: leave the app open for an hour and liking a song stops working *silently*,
+     * everywhere at once (notification, miniplayer, track screen), until the app is restarted. It
+     * silently is the operative word: a read that fails this way throws and something shows an
+     * error, whereas these answer `success = false` and the caller simply does nothing.
+     *
+     * The only write that must **not** come through here is [refreshToken], which is the recovery
+     * itself.
      */
     // `suspend () -> String` since 3.1: the native write calls are suspending now, which is the
     // point of point N — a JNI call blocks its thread, so reaching one has to be something the
@@ -1542,16 +1605,14 @@ loadLocalTracksFromCache()
      * Follow/save a playlist.
      */
     suspend fun followPlaylist(id: String): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.followPlaylist(id)
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.followPlaylist(id) }
     }
 
     /**
      * Unfollow/unsave a playlist.
      */
     suspend fun unfollowPlaylist(id: String): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.unfollowPlaylist(id)
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.unfollowPlaylist(id) }
     }
 
     // =========================================================================
@@ -1577,19 +1638,44 @@ loadLocalTracksFromCache()
     }
 
     /**
-     * Save tracks to the user's library.
+     * Save tracks to the user's library — the heart button.
      */
     suspend fun saveTracks(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.saveSpotifyTracks(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.saveSpotifyTracks(JSONArray(ids).toString()) }
     }
 
     /**
      * Remove tracks from the user's library.
      */
     suspend fun unsaveTracks(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        val json = NativeEngine.unsaveSpotifyTracks(JSONArray(ids).toString())
-        OperationResult.fromJson(JSONObject(json))
+        writeOperation { NativeEngine.unsaveSpotifyTracks(JSONArray(ids).toString()) }
+    }
+
+    /**
+     * The Spotify Canvas for a track — the short looping mp4 shown behind the cover art.
+     *
+     * `null` means "this track has no canvas", which is the common answer and not a problem. A
+     * failure is a different thing and is **not** flattened into `null` here: it throws, so a caller
+     * that cares can tell the two apart. The track screen still shows no tab either way — there is
+     * nothing useful to offer — but it now logs, because the two used to be indistinguishable and
+     * that is why "the canvas tab stopped appearing" had no evidence behind it.
+     *
+     * The retry is the point: the canvas endpoint needs the **user** token (an app token cannot ask
+     * for it), so it is one of the calls that simply stops working when the session ages out. It was
+     * reaching the engine raw.
+     *
+     * @throws SpotifyEngineException on API errors
+     */
+    suspend fun getTrackCanvas(trackId: String): String? = withContext(Dispatchers.IO) {
+        retrying(onAuthError = { ensureSession() }) {
+            val json = JSONObject(NativeEngine.getSpotifyCanvas(trackId))
+            // The bridge answers `{"url":…}` on success and an OperationResult on failure, so a
+            // missing "url" key is the failure shape rather than "no canvas".
+            if (!json.has("url")) {
+                throw SpotifyEngineException(json.optString("error", "canvas lookup failed"))
+            }
+            if (json.isNull("url")) null else json.optString("url").takeIf { it.isNotBlank() }
+        }
     }
 
     /**

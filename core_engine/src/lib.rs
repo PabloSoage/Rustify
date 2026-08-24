@@ -1571,7 +1571,13 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyCan
                 serde_json::json!({ "url": url_opt }).to_string()
             }
             Err(e) => {
-                eprintln!("Rust Engine Error (canvas): {}", e);
+                // `eprintln!` on Android goes to a stderr nobody reads, which is why a canvas that
+                // stopped appearing left no trace at all. Through `Env` it reaches logcat.
+                <env::android::AndroidEnv as env::Env>::log(
+                    env::LogLevel::Warn,
+                    "Canvas",
+                    &format!("{}: {}", uri, e),
+                );
                 let error_response = spotify::models::OperationResult::err(e.to_string());
                 serde_json::to_string(&error_response)
                     .unwrap_or_else(|_| r#"{"success":false,"error":"canvas error"}"#.to_string())

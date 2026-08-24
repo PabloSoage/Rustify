@@ -453,14 +453,16 @@ fun TrackScreen(
     }
     LaunchedEffect(trackId) {
         canvasUrl = null
-        try {
-            val json = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                NativeEngine.getSpotifyCanvas(trackId)
-            }
-            val obj = JSONObject(json)
-            canvasUrl = if (obj.has("url") && !obj.isNull("url")) obj.optString("url") else null
-        } catch (_: Exception) {
-            canvasUrl = null
+        // Through the repository rather than the bridge: the canvas endpoint needs the user token,
+        // so it is one of the calls that stops working once the session ages out, and going direct
+        // meant no session refresh and no retry. Silence was the second half of the problem — a
+        // failure and "this song has no canvas" both ended as `null`, so a canvas tab that stopped
+        // appearing left nothing behind to look at.
+        canvasUrl = try {
+            spotifyRepo.getTrackCanvas(trackId)
+        } catch (e: Exception) {
+            android.util.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
+            null
         }
     }
     val config = androidx.compose.ui.platform.LocalConfiguration.current
