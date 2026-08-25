@@ -29,7 +29,17 @@ import kotlin.time.Duration.Companion.milliseconds
  * Exception thrown when a Rust engine operation fails.
  * Contains the error message from the native engine.
  */
-class SpotifyEngineException(message: String) : Exception(message)
+/**
+ * A failure the Rust engine reported.
+ *
+ * [kind] is what the engine says the failure *was* — `auth`, `rateLimited`, `transient`,
+ * `permanent` — and it is what `classifyError` reads. Null means the engine did not say, which
+ * happens for the handful of refusals built by hand on that side; the message heuristic covers those.
+ */
+class SpotifyEngineException(
+    message: String,
+    val kind: String? = null
+) : Exception(message)
 
 /**
  * High-level abstraction layer over the Rust Spotify engine.
@@ -81,17 +91,9 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val localPlaylistTracksCache: MutableMap<String, List<FullTrack>> =
         java.util.Collections.synchronizedMap(mutableMapOf())
 
-        /**
-         * Normalize a name for comparison: trim, lowercase, strip featuring tags.
-         */
-        private fun normalizeName(name: String): String {
-            return name.trim().lowercase()
-                .replace(Regex("""\s*[(\[].*?feat\..*?[)\]]""", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("""\s*[(\[].*?featuring.*?[)\]]""", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("""\s*feat\..*$""", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("""\s*ft\..*$""", RegexOption.IGNORE_CASE), "")
-                .trim()
-        }
+        // `normalizeName` and `isLocalMatch` used to live here. They are now
+        // `core_engine/src/matcher/local.rs`, reached through [LocalMatcher] — one rule about what
+        // counts as the same recording, next to the accent fold it always needed and never had.
 
         fun findLocalMatch(context: Context, track: FullTrack): FullTrack? {
             // First try the in-memory localTracks from the repository instance
@@ -117,50 +119,10 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                     return null
                 }
             }
-            return memoryCacheLocalTracks?.find { isLocalMatch(track, it) }
-        }
-
-        /**
-         * Conservative local match: high certainty only.
-         */
-        private fun isLocalMatch(spotifyTrack: FullTrack, localTrack: FullTrack): Boolean {
-            // 1. ISRC match (maximum certainty)
-            val spotifyIsrc = spotifyTrack.isrc.trim()
-            val localIsrc = localTrack.isrc.trim()
-            if (spotifyIsrc.isNotBlank() && localIsrc.isNotBlank() && spotifyIsrc == localIsrc) {
-                return true
-            }
-
-            // 2. Name must match (after normalization)
-            val spotifyName = normalizeName(spotifyTrack.name)
-            val localName = normalizeName(localTrack.name)
-            if (spotifyName.isBlank() || localName.isBlank()) return false
-            if (spotifyName != localName) return false
-
-            // 3. Duration validation: if both have duration, they must be within ±5s
-            if (spotifyTrack.durationMs > 0 && localTrack.durationMs > 0) {
-                val diff = kotlin.math.abs(spotifyTrack.durationMs - localTrack.durationMs)
-                if (diff > 5000) return false
-            }
-
-            // 4. Artist matching: at least one artist must match across all artists
-            val spotifyArtists = spotifyTrack.artists.map { normalizeName(it.name) }.toSet()
-            val localArtists = localTrack.artists.map { normalizeName(it.name) }.toSet()
-
-            if (spotifyArtists.isEmpty() || localArtists.isEmpty()) return false
-
-            // Check intersection of all artists
-            val intersection = spotifyArtists.intersect(localArtists)
-            if (intersection.isNotEmpty()) return true
-
-            // Fallback: check if any spotify artist contains or is contained by any local artist
-            for (sa in spotifyArtists) {
-                for (la in localArtists) {
-                    if (sa.contains(la) || la.contains(sa)) return true
-                }
-            }
-
-            return false
+            val pool = memoryCacheLocalTracks ?: return null
+            LocalMatcher.ensureRegistered("disk", pool)
+            val id = LocalMatcher.matchId(track) ?: return null
+            return pool.firstOrNull { it.id == id }
         }
     }
 
@@ -1015,15 +977,18 @@ loadLocalTracksFromCache()
 
     /**
      * Parse a JSON response from the engine.
-     * If the response is an error object ({"success": false, "error": "..."}),
+     * If the response is an error object ({"success": false, "error": "...", "kind": "..."}),
      * throws SpotifyEngineException instead of trying to parse it as data.
+     *
+     * The `kind` travels with it. Dropping it here was the whole reason the retry policy had to
+     * reconstruct the shape of the failure by matching substrings of the message.
      */
     private fun checkForError(json: String): JSONObject {
         val obj = JSONObject(json)
         // Check if this is an error response from the engine
         if (obj.has("success") && !obj.optBoolean("success", true)) {
             val errorMsg = obj.optString("error", "Unknown engine error")
-            throw SpotifyEngineException(errorMsg)
+            throw SpotifyEngineException(errorMsg, obj.optString("kind").takeIf { it.isNotBlank() })
         }
         return obj
     }
@@ -1138,7 +1103,12 @@ loadLocalTracksFromCache()
         } else {
             // Only wipe credentials when the failure is NOT a transient network problem.
             // A network blip — or a rate limit — while restoring must not log the user out.
-            val errKind = classifyError(SpotifyEngineException(result.error ?: ""))
+            //
+            // This asks the engine what kind of failure it was rather than fabricating an exception
+            // in order to read its message back. Worth being exact about, because the answer decides
+            // whether the user's credentials are deleted: a reworded message used to be able to turn
+            // "the wifi dropped" into "log them out".
+            val errKind = com.varuna.rustify.util.errorKindOf(result.kind, result.error)
             if (errKind != com.varuna.rustify.util.ErrorKind.TRANSIENT &&
                 errKind != com.varuna.rustify.util.ErrorKind.RATE_LIMITED
             ) {
@@ -1545,7 +1515,9 @@ loadLocalTracksFromCache()
         runCatching {
             retrying(onAuthError = { ensureSession() }) {
                 val res = OperationResult.fromJson(JSONObject(call()))
-                if (!res.success) throw SpotifyEngineException(res.error ?: "operation failed")
+                if (!res.success) {
+                    throw SpotifyEngineException(res.error ?: "operation failed", res.kind)
+                }
                 res
             }
         }.getOrElse { OperationResult(success = false, error = it.message) }
@@ -1586,7 +1558,10 @@ loadLocalTracksFromCache()
                 added += chunk.size
             } else {
                 // Surface partial progress in the error so the UI can inform the user.
-                throw SpotifyEngineException(res.error ?: "add_tracks_to_playlist failed after $added tracks")
+                throw SpotifyEngineException(
+                    res.error ?: "add_tracks_to_playlist failed after $added tracks",
+                    res.kind
+                )
             }
         }
         added
@@ -1672,7 +1647,10 @@ loadLocalTracksFromCache()
             // The bridge answers `{"url":…}` on success and an OperationResult on failure, so a
             // missing "url" key is the failure shape rather than "no canvas".
             if (!json.has("url")) {
-                throw SpotifyEngineException(json.optString("error", "canvas lookup failed"))
+                throw SpotifyEngineException(
+                    json.optString("error", "canvas lookup failed"),
+                    json.optString("kind").takeIf { it.isNotBlank() }
+                )
             }
             if (json.isNull("url")) null else json.optString("url").takeIf { it.isNotBlank() }
         }
@@ -1765,11 +1743,15 @@ loadLocalTracksFromCache()
 
     /**
      * Find a local music track that matches the given Spotify track.
-     * Uses conservative matching: ISRC, normalized name + artist + duration.
+     *
+     * The rule — ISRC, then folded title, then duration, then artist — is
+     * `core_engine/src/matcher/local.rs`, and it is asked rather than repeated here. What comes back
+     * is an id, which is then located in the list this side already holds.
      */
     fun findLocalMatch(track: FullTrack): FullTrack? {
-        return localTracks.firstOrNull { localTrack ->
-            isLocalMatch(track, localTrack)
-        }
+        val pool = localTracks.toList()
+        LocalMatcher.ensureRegistered("repo", pool)
+        val id = LocalMatcher.matchId(track) ?: return null
+        return pool.firstOrNull { it.id == id }
     }
 }

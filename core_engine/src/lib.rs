@@ -12,6 +12,7 @@ pub mod addon;
 pub mod audio;
 pub mod calendar;
 pub mod env;
+pub mod errors;
 pub mod export;
 pub mod links;
 pub mod listened;
@@ -40,17 +41,50 @@ pub(crate) fn get_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("Failed to initialize Tokio Runtime"))
 }
 
+/// The failure half of the bridge's answer.
+///
+/// Its own struct rather than a field on `OperationResult` because seventeen call sites build that
+/// one as a literal, and because these two are genuinely different shapes: a hand-written refusal
+/// has no error *type* behind it to classify, while everything arriving here does.
+#[derive(serde::Serialize)]
+struct FailedOperation {
+    success: bool,
+    error: String,
+    /// What kind of failure — `auth`, `rateLimited`, `transient`, `permanent`. The caller decides
+    /// whether to retry from this and not from [`Self::error`]. See [`errors`].
+    kind: &'static str,
+}
+
 /// Generic helper to serialize results to JSON and handle errors.
-/// Uses serde_json for proper escaping of error messages (which may contain
-/// quotes, newlines, and nested JSON from API error responses).
-fn serialize_result<T: serde::Serialize, E: std::fmt::Display>(result: Result<T, E>) -> String {
+///
+/// Uses serde_json for proper escaping of error messages (which may contain quotes, newlines, and
+/// nested JSON from API error responses).
+///
+/// The error path also states the **kind** of failure. That used to be re-derived on the Kotlin side
+/// by matching substrings of this very message — `"401"`, `"expired"`, `"not authenticated"` — which
+/// meant the difference between "refresh the session and retry" and "give up" hung on the wording of
+/// a `Display` impl. The type knew all along; now it says so. See `errors::Classify`.
+fn serialize_result<T: serde::Serialize, E: std::fmt::Display + errors::Classify>(
+    result: Result<T, E>,
+) -> String {
     match result {
         Ok(data) => serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_string()),
         Err(e) => {
-            eprintln!("Rust Engine Error: {}", e);
-            let error_response = spotify::models::OperationResult::err(e.to_string());
-            serde_json::to_string(&error_response)
-                .unwrap_or_else(|_| r#"{"success":false,"error":"Unknown error"}"#.to_string())
+            // Through `Env` rather than `eprintln!`, which on Android goes nowhere: this is the one
+            // line printed for every failed bridge call, and it was invisible in logcat.
+            <env::android::AndroidEnv as env::Env>::log(
+                env::LogLevel::Warn,
+                "Engine",
+                &format!("{} ({})", e, e.kind()),
+            );
+            let error_response = FailedOperation {
+                success: false,
+                error: e.to_string(),
+                kind: e.kind().as_str(),
+            };
+            serde_json::to_string(&error_response).unwrap_or_else(|_| {
+                r#"{"success":false,"error":"Unknown error","kind":"permanent"}"#.to_string()
+            })
         }
     }
 }
@@ -1778,6 +1812,58 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_searchForgetN
         let name_str = name.mutf8_chars(env)?.to_string();
         search::forget(&name_str);
         "{\"success\":true}".to_string()
+    })
+}
+
+// =============================================================================
+// MATCHING A SPOTIFY TRACK TO A LOCAL FILE
+// =============================================================================
+//
+// Split into register-then-ask for the same reason the search index is: a lookup runs over the whole
+// local library, and a call across JNI per candidate would be slower than the Kotlin it replaces.
+// Both are pure and in-memory, so both are plain calls on the Kotlin side.
+
+/// JNI Bridge: hand the local library over to be folded once and kept.
+///
+/// `itemsJson` is `[{"id":…,"name":…,"artists":[…],"isrc":…,"durationMs":…}]`. Replaces whatever was
+/// registered. Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_indexLocalTracksNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    items_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = items_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<Vec<matcher::local::Candidate>>(&raw) {
+            Err(e) => serde_json::json!({ "success": false, "error": e.to_string() }).to_string(),
+            Ok(items) => {
+                let count = matcher::local::put(&items);
+                serde_json::json!({ "success": true, "count": count }).to_string()
+            }
+        }
+    })
+}
+
+/// JNI Bridge: the id of the local file that is this track, or `{}`.
+///
+/// `{}` covers both "nothing matches" and "no library registered", which are the same answer to the
+/// caller: play it the way you would have anyway. Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_findLocalMatchNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = track_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<matcher::local::Candidate>(&raw) {
+            Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+            Ok(track) => match matcher::local::find(&track) {
+                Some(id) => serde_json::json!({ "id": id }).to_string(),
+                None => "{}".to_string(),
+            },
+        }
     })
 }
 

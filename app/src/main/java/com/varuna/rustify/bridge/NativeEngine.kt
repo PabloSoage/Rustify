@@ -100,6 +100,31 @@ object NativeEngine {
     external fun searchForgetNative(name: String): String
 
     // =====================================================================
+    // MATCHING A SPOTIFY TRACK TO A LOCAL FILE
+    // =====================================================================
+    //
+    // Pure and in-memory on the Rust side, so both are plain — no `suspend`, no `Dispatchers.IO`.
+    //
+    // Split the same way local search is, and for the same reason: a lookup runs over the whole
+    // local library, so sending one track per candidate would be slower than the Kotlin this
+    // replaces. [indexLocalTracksNative] pays the folding cost once; [findLocalMatchNative] then
+    // sends only the track being looked up. Use [LocalMatcher], not these.
+
+    /**
+     * Hands the local library over to be folded and kept, replacing whatever was there.
+     *
+     * [itemsJson] is `[{"id":…,"name":…,"artists":[…],"isrc":…,"durationMs":…}]`.
+     */
+    external fun indexLocalTracksNative(itemsJson: String): String
+
+    /**
+     * The id of the local file that is this track, as `{"id":…}`, or `{}`.
+     *
+     * `{}` means both "nothing matches" and "nothing registered" — the same answer to the caller.
+     */
+    external fun findLocalMatchNative(trackJson: String): String
+
+    // =====================================================================
     // ALREADY LISTENED (point I)
     // =====================================================================
     //

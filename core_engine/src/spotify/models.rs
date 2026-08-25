@@ -679,6 +679,12 @@ impl OperationResult {
         Self { success: true, error: None }
     }
 
+    /// A failure with no stated kind.
+    ///
+    /// The failures that *do* state one are the ones `serialize_result` produces, which is every
+    /// bridge that returns a `Result` — see `crate::errors`. This constructor stays for the handful
+    /// of places that build a refusal by hand; Kotlin falls back to reading the message for those,
+    /// exactly as it did for everything before.
     pub fn err(msg: impl Into<String>) -> Self {
         Self { success: false, error: Some(msg.into()) }
     }

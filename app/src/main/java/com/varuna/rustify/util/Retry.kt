@@ -10,15 +10,44 @@ import kotlin.math.min
 enum class ErrorKind { TRANSIENT, PERMANENT, AUTH, RATE_LIMITED }
 
 /**
+ * The four names the engine uses on the wire, mapped to the four here.
+ *
+ * They are matched by name and not by ordinal on purpose: an enum's order is an implementation
+ * detail on both sides, and this is a contract across a JNI boundary. The strings are pinned by
+ * `errors.rs`'s own test, so a rename over there fails a test rather than silently classifying every
+ * auth failure as permanent — which is the failure where the heart button stops working and nothing
+ * says so.
+ */
+private fun kindFromEngine(name: String?): ErrorKind? = when (name) {
+    "auth" -> ErrorKind.AUTH
+    "rateLimited" -> ErrorKind.RATE_LIMITED
+    "transient" -> ErrorKind.TRANSIENT
+    "permanent" -> ErrorKind.PERMANENT
+    else -> null
+}
+
+/**
  * Classify an exception thrown by the engine or the network layer.
  *
- * Heuristics (conservative: unknown ⇒ PERMANENT so we never retry forever):
+ * **The engine says which kind it is, and that answer wins.** `SpotifyError` has held the shape of
+ * the failure all along — `TokenExpired` is a variant, `ApiError(401, …)` carries the status as a
+ * number — and every bridge now sends it across as a `kind` field. See `core_engine/src/errors.rs`.
+ *
+ * What follows is the fallback, kept for the two cases that have no stated kind: a refusal built by
+ * hand on the Rust side, and an exception raised on this side of the boundary (an `IOException` from
+ * the network layer, a timeout). It is the heuristic that used to do the whole job:
+ *
  * - AUTH: 401 / token expired — recoverable via session refresh.
  * - TRANSIENT: network IO, 5xx, timeouts — recoverable via backoff.
  * - RATE_LIMITED: 429. Transient in nature, but already retried where it belongs (see [retrying]).
  * - PERMANENT: everything else (e.g. "not found in YouTube Music") — do not insist.
+ *
+ * Conservative by construction: unknown ⇒ PERMANENT, so nothing retries forever.
  */
 fun classifyError(t: Throwable): ErrorKind {
+    (t as? SpotifyEngineException)?.let { engine ->
+        kindFromEngine(engine.kind)?.let { return it }
+    }
     val msg = (t.message ?: "").lowercase()
     return when {
         t is SpotifyEngineException && (msg.contains("401") || msg.contains("expired") || msg.contains("not authenticated")) -> ErrorKind.AUTH
@@ -29,6 +58,17 @@ fun classifyError(t: Throwable): ErrorKind {
         else -> ErrorKind.PERMANENT
     }
 }
+
+/**
+ * The kind of a failure the engine reported **as a value** rather than by throwing.
+ *
+ * The write bridges answer `{"success":false,…}` instead of raising, so there is no exception to
+ * classify at the point the decision is made. Rather than fabricate one just to ask — which is what
+ * `restoreSession` used to do, and it decides whether to wipe the user's credentials — this takes the
+ * two fields directly.
+ */
+fun errorKindOf(kind: String?, message: String?): ErrorKind =
+    kindFromEngine(kind) ?: classifyError(SpotifyEngineException(message ?: ""))
 
 /**
  * Run [block] with automatic retries, exponential backoff + jitter.

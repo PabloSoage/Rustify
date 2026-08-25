@@ -77,13 +77,16 @@ data class LoginResult(
     val user: SpotifyUser?,
     val error: String?,
     val accessToken: String?,
-    val expiration: Long?
+    val expiration: Long?,
+    /** What kind of failure, as stated by the engine. See [errorKindOf]. */
+    val kind: String? = null
 ) {
     companion object {
         fun fromJson(json: JSONObject): LoginResult = LoginResult(
             success = json.optBoolean("success", false),
             user = if (json.has("user") && !json.isNull("user")) SpotifyUser.fromJson(json.getJSONObject("user")) else null,
             error = json.optString("error", ""),
+            kind = json.optString("kind").takeIf { it.isNotBlank() },
             accessToken = if (json.has("accessToken") && !json.isNull("accessToken")) json.optString("accessToken") else null,
             expiration = if (json.has("accessTokenExpirationTimestampMs") && !json.isNull("accessTokenExpirationTimestampMs")) json.optLong("accessTokenExpirationTimestampMs") else null
         )
@@ -92,12 +95,21 @@ data class LoginResult(
 
 data class OperationResult(
     val success: Boolean,
-    val error: String?
+    val error: String?,
+    /**
+     * What kind of failure the engine says this was — `auth`, `rateLimited`, `transient`,
+     * `permanent` — or null when it did not say.
+     *
+     * Null is not an error: a handful of refusals are built by hand on the Rust side and have no
+     * error type behind them to classify, and [errorKindOf] falls back to reading [error] for those.
+     */
+    val kind: String? = null
 ) {
     companion object {
         fun fromJson(json: JSONObject): OperationResult = OperationResult(
             success = json.optBoolean("success", false),
-            error = if (json.has("error") && !json.isNull("error")) json.optString("error") else null
+            error = if (json.has("error") && !json.isNull("error")) json.optString("error") else null,
+            kind = json.optString("kind").takeIf { it.isNotBlank() }
         )
     }
 }
