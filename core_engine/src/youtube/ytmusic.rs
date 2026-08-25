@@ -10,7 +10,6 @@
 //   - RustyPipeQuery::music_album(id)           -> MusicAlbum   (tracks: Vec<TrackItem>)
 //   - RustyPipeQuery::music_artist(id, all_albums: bool) -> MusicArtist (header_image, tracks, albums)
 //   - RustyPipeQuery::music_playlist(id)        -> MusicPlaylist (tracks: Paginator<TrackItem>)
-//   - RustyPipeQuery::music_radio_track(video_id) -> Paginator<TrackItem>
 //
 // Field references (verified):
 //   TrackItem { id: String, name: String, duration: Option<u32>, cover: Vec<Thumbnail>,
@@ -201,17 +200,4 @@ pub async fn ytm_get_playlist(playlist_id: &str) -> Option<YtmPlaylist> {
         // MusicPlaylist::tracks is a Paginator<TrackItem>; `.items` is the first page.
         tracks: pl.tracks.items.iter().map(map_track).collect(),
     })
-}
-
-/// Radio / autoplay continuation for a given video id (related tracks).
-pub async fn ytm_radio(video_id: &str) -> Vec<YtmTrack> {
-    let rp = match get_client() {
-        Ok(rp) => rp,
-        Err(_) => return vec![],
-    };
-    match bounded("music_radio_track", rp.query().music_radio_track(video_id)).await {
-        // music_radio_track returns a Paginator<TrackItem>.
-        Some(Ok(radio)) => radio.items.iter().map(map_track).collect(),
-        _ => vec![],
-    }
 }

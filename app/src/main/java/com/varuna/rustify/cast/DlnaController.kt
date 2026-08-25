@@ -82,6 +82,19 @@ object DlnaController {
         return millis(rel)
     }
 
+    /**
+     * What the device says it is doing — `PLAYING`, `PAUSED_PLAYBACK`, `STOPPED`, `TRANSITIONING`,
+     * `NO_MEDIA_PRESENT` — or null if it will not say.
+     *
+     * Asked separately from [position] because the position alone cannot tell a finished track from
+     * a device that stopped answering: both look like a clock that stopped moving, and the two need
+     * opposite responses. One advances the queue; the other ends the session.
+     */
+    suspend fun transportState(controlUrl: String): String? {
+        val body = soapRaw(controlUrl, "GetTransportInfo", "<InstanceID>0</InstanceID>") ?: return null
+        return tag(body, "CurrentTransportState")?.trim()?.takeIf { it.isNotBlank() }
+    }
+
     // --------------------------------------------------------------------------------------------
 
     private suspend fun soap(controlUrl: String, action: String, body: String): Boolean =

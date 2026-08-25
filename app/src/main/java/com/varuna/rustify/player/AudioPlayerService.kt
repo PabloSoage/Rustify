@@ -388,10 +388,11 @@ class AudioPlayerService private constructor(private val context: Context) {
     /**
      * Pushes [track]'s metadata into ExoPlayer **without preparing it**, so the notification, the
      * lockscreen and Android Auto show the right title/artist/artwork while the audio actually comes
-     * from the web page. The MediaSession reads its metadata from the player, not from [_state], so
-     * without this it would keep displaying whatever was played last.
+     * from somewhere else — the web page, or a device being cast to. The MediaSession reads its
+     * metadata from the player, not from [_state], so without this it would keep displaying whatever
+     * was played last.
      */
-    private fun publishWebMetadata(
+    private fun publishExternalMetadata(
         mediaId: String,
         title: String,
         artist: String,
@@ -415,7 +416,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** Publishes a Rustify track's own (Spotify-sourced) metadata. */
-    private fun publishWebMetadata(track: FullTrack) = publishWebMetadata(
+    private fun publishExternalMetadata(track: FullTrack) = publishExternalMetadata(
         mediaId = track.id ?: "web",
         title = track.name,
         artist = track.artists.joinToString(", ") { it.name },
@@ -424,6 +425,264 @@ class AudioPlayerService private constructor(private val context: Context) {
         // than whichever one Spotify happened to list first.
         artworkUrl = track.album?.images?.largest()?.url
     )
+
+    // -------------------------------------------------------------------
+    // Casting to something else on the network — E16, step 4
+    //
+    // The same shape as web-player mode above, and for the same reason: something other than
+    // ExoPlayer makes the sound while Rustify keeps the queue, the notification and the controls.
+    // What differs is who holds the bytes. The page fetches its own; a cast device is served by
+    // *this phone* off the local server, which is why a track can only be cast when the server can
+    // already serve it.
+    //
+    // That is a constraint to state, not to route around. `server::register` hands out a URL only
+    // when the bytes are on disk — or when Deezer is being decrypted through the proxy — so a handle
+    // exists exactly when there is something to send. A track playing straight from a provider URL
+    // has none, and the honest answer is to say so rather than to open a port to the network for
+    // something that cannot go through it.
+    //
+    // What this deliberately does NOT do is reconnect. A device that stops answering ends the
+    // session and says so. Until this has run against a real device once, a retry loop would be a
+    // guess about a failure nobody has seen. → docs/16-casting.md §10
+    // -------------------------------------------------------------------
+
+    /** Mirrors the device's clock into [_state] while a session is open. */
+    private var castPollJob: kotlinx.coroutines.Job? = null
+
+    /** Set once the device has been seen actually playing the track it was handed. */
+    @Volatile private var castStartConfirmed = false
+
+    /** Last track whose end was already acted on, so the 1s poll advances the queue only once. */
+    @Volatile private var lastCastEndedTrackId: String? = null
+
+    /**
+     * Whether the error sitting in [_state] came from casting rather than from a track that would
+     * not load. The two need opposite responses when the network comes back — see
+     * [maybeRetryOnReconnect].
+     */
+    @Volatile private var lastErrorWasCast = false
+
+    /** Unanswered polls before the session is treated as over. Wifi drops packets; three is not a blip. */
+    private val castMissesBeforeGivingUp = 3
+
+    /** The device being cast to, or null. [com.varuna.rustify.cast.CastSession] owns this; here it is only read. */
+    val castingTo: com.varuna.rustify.cast.CastDiscovery.Device?
+        get() = com.varuna.rustify.cast.CastSession.device
+
+    /** True while a device on the network — not ExoPlayer, not the page — is producing the audio. */
+    val isCasting: Boolean get() = castingTo != null
+
+    /**
+     * The local server's handle for [trackId], or null when the server cannot serve it.
+     *
+     * Two questions in order, because they have different answers at different moments: first the
+     * URL the player was already given, which is what makes handing over **mid-track** possible, and
+     * failing that, whether the bytes are on disk now. Neither fetches anything and neither starts a
+     * download — a null here means "there is nothing to send", not "wait".
+     */
+    private suspend fun castHandleFor(trackId: String?): String? {
+        if (trackId.isNullOrBlank()) return null
+        val url = resolvedStreamUrls[trackId]?.takeIf { it.startsWith(LOOPBACK_PREFIX) }
+            ?: com.varuna.rustify.audio.StreamRouting.cachedUrlFor(context, trackId)
+            ?: return null
+        return url.substringAfterLast("/stream/", "").substringBefore('?').takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Hands [track] to [device], resuming at [positionMs] when it is not the start.
+     *
+     * @return null when the device took it, or a sentence saying why not. User-facing on purpose:
+     *   every way this fails is something the user can act on — a track that is not on the phone, a
+     *   device on another network, a switch that is off.
+     */
+    private suspend fun sendToCastDevice(
+        device: com.varuna.rustify.cast.CastDiscovery.Device,
+        track: FullTrack,
+        positionMs: Long
+    ): String? {
+        val handle = castHandleFor(track.id)
+            ?: return "\"${track.name}\" is not on this phone yet, so there is nothing to send"
+
+        val failure = com.varuna.rustify.cast.CastSession.start(
+            context = context,
+            target = device,
+            handle = handle,
+            title = track.name,
+            artist = track.artists.joinToString(", ") { it.name },
+            durationMs = track.durationMs.toLong()
+        )
+        if (failure != null) return failure
+
+        castStartConfirmed = false
+        lastCastEndedTrackId = null
+        lastErrorWasCast = false
+        // Best effort, and after Play rather than before it: a device that will not seek still plays
+        // the track from the beginning, which is a worse handover but not a failed one.
+        if (positionMs > 1_000L) runCatching { com.varuna.rustify.cast.CastSession.seekTo(positionMs) }
+
+        _state.value = _state.value.copy(
+            currentTrack = track,
+            isPlaying = true,
+            isBuffering = false,
+            isError = false,
+            errorMessage = "",
+            positionMs = positionMs,
+            durationMs = track.durationMs.toLong()
+        )
+        publishExternalMetadata(track)
+        return null
+    }
+
+    /**
+     * Starts casting whatever is playing right now to [device], and keeps the queue here.
+     *
+     * @return null on success, or the reason it did not start.
+     */
+    suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? {
+        val track = _state.value.currentTrack ?: return "nothing is playing"
+        val wasPlaying = _state.value.isPlaying
+        val at = withContext(Dispatchers.Main) {
+            // Silence the phone *first*. The same song coming out of two things a second apart is
+            // the failure people notice, and pausing after the device starts would still allow it.
+            val position = runCatching { exoPlayer.currentPosition }.getOrDefault(0L)
+            runCatching { exoPlayer.pause() }
+            position.coerceAtLeast(0L)
+        }
+
+        val failure = sendToCastDevice(device, track, at)
+        if (failure != null) {
+            if (wasPlaying) withContext(Dispatchers.Main) { runCatching { exoPlayer.play() } }
+            return failure
+        }
+        startCastPolling()
+        return null
+    }
+
+    /**
+     * Mirrors the device's state into [_state] once a second, and advances the queue when a track
+     * finishes over there.
+     *
+     * The device owns the clock once it is playing — a progress bar driven by the phone's idea of
+     * the position drifts within a minute — and it also owns the answer to "did that finish", which
+     * is why the transport state is asked for separately from the position.
+     */
+    private fun startCastPolling() {
+        castPollJob?.cancel()
+        castPollJob = mainScope.launch {
+            var unanswered = 0
+            while (isCasting) {
+                val device = castingTo ?: break
+                val transport =
+                    com.varuna.rustify.cast.DlnaController.transportState(device.controlUrl)
+
+                if (transport == null) {
+                    // A device that will not answer is not a device that is playing. A couple of
+                    // misses are tolerated; past that the session is over, because the alternative
+                    // is a UI that goes on claiming a session that ended.
+                    if (++unanswered >= castMissesBeforeGivingUp) {
+                        endCastSession("${device.friendlyName} stopped answering")
+                        return@launch
+                    }
+                    delay(1000.milliseconds)
+                    continue
+                }
+                unanswered = 0
+                if (transport == "PLAYING") castStartConfirmed = true
+
+                com.varuna.rustify.cast.CastSession.positionMs()?.let { position ->
+                    _state.value = _state.value.copy(
+                        isPlaying = transport == "PLAYING",
+                        isBuffering = transport == "TRANSITIONING",
+                        positionMs = position
+                    )
+                }
+
+                // End of track. The device was handed one song and not a queue, so nothing over
+                // there advances — the same role STATE_ENDED plays in normal mode. Guarded by id so
+                // the one-second poll fires it once per track, and by [castStartConfirmed] so the
+                // STOPPED a device reports *before* it has begun is not read as an ending.
+                val finished = castStartConfirmed &&
+                    (transport == "STOPPED" || transport == "NO_MEDIA_PRESENT")
+                val playingId = _state.value.currentTrack?.id
+                if (finished && playingId != null && playingId != lastCastEndedTrackId) {
+                    lastCastEndedTrackId = playingId
+                    skipToNext()
+                }
+                delay(1000.milliseconds)
+            }
+        }
+    }
+
+    /** Sends [track] to the device already being cast to. The queue-navigation half of the mode. */
+    private fun castTrack(track: FullTrack) {
+        val device = castingTo ?: return
+        // Synchronously, before the coroutine that actually sends it: the poll's end-of-track guard
+        // reads this flag, and leaving it true for even one poll after the queue has moved on lets
+        // the *previous* track's STOPPED be read as the new one's ending — which skips a song. It is
+        // cleared again inside [sendToCastDevice]; this is here so the guard never depends on which
+        // of the two runs first.
+        castStartConfirmed = false
+        mainScope.launch {
+            val failure = sendToCastDevice(device, track, 0L)
+            if (failure != null) endCastSession(failure)
+        }
+    }
+
+    /**
+     * Ends the session and says why — in the state, not only in the log.
+     *
+     * Playback does **not** carry on out of the handset. A track that suddenly comes out of the
+     * phone because the television stopped answering is worse than silence, and the message is what
+     * tells the user which of the two just happened.
+     */
+    private fun endCastSession(reason: String) {
+        clearCastSession()
+        lastErrorWasCast = true
+        mainScope.launch {
+            com.varuna.rustify.cast.CastSession.stop()
+            releaseExoPlayerFromCast()
+            _state.value = _state.value.copy(
+                isPlaying = false,
+                isBuffering = false,
+                isError = true,
+                errorMessage = reason
+            )
+        }
+        android.util.Log.i("AudioPlayerService", "cast session ended: $reason")
+    }
+
+    /** Ends the session because the user said so. Not an error, so nothing is reported as one. */
+    fun stopCasting() {
+        if (!isCasting) return
+        clearCastSession()
+        mainScope.launch {
+            com.varuna.rustify.cast.CastSession.stop()
+            releaseExoPlayerFromCast()
+            _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
+        }
+    }
+
+    /**
+     * Puts ExoPlayer back to idle when a cast session ends.
+     *
+     * Not tidiness. ExoPlayer still holds whichever track was playing when the session *started*,
+     * while the queue has since moved on over on the device — so leaving it prepared means the next
+     * press of play resumes a song from several tracks ago, at the position it was paused at. Idle
+     * is what makes [play] re-prepare the track the state actually says is current, at the position
+     * the device reported. Main thread, because [endCastSession] can be called from the network
+     * callback's thread.
+     */
+    private fun releaseExoPlayerFromCast() {
+        runCatching { exoPlayer.stop() }
+    }
+
+    /** Drops what this side remembers. The port is closed by [com.varuna.rustify.cast.CastSession]. */
+    private fun clearCastSession() {
+        castPollJob?.cancel()
+        castPollJob = null
+        castStartConfirmed = false
+        lastCastEndedTrackId = null
+    }
 
     /** Position of the current track in [st]'s queue: the cached index if still valid, else by id. */
     private fun currentIndexIn(st: AudioPlayerState): Int {
@@ -754,6 +1013,18 @@ class AudioPlayerService private constructor(private val context: Context) {
                         maybeRetryOnReconnect()
                     }
                 }
+
+                /**
+                 * Layer 4 of E16, the "when the network changes" half.
+                 *
+                 * The listener is bound to *one* interface address, so losing the default network
+                 * means the address it is bound to may no longer be this phone's — and the device
+                 * it is answering may no longer be the one at that IP. Neither of those is worth
+                 * being clever about: the session ends.
+                 */
+                override fun onLost(network: Network) {
+                    if (isCasting) endCastSession("the network changed, so casting stopped")
+                }
             }
             cm.registerDefaultNetworkCallback(cb)
             networkCallback = cb
@@ -765,6 +1036,11 @@ class AudioPlayerService private constructor(private val context: Context) {
     private fun maybeRetryOnReconnect() {
         val st = _state.value
         if (!st.isError || isRetrying) return
+        // A cast session that ended is not a track that failed to load. Retrying here would start
+        // the song again on the *handset* the moment the wifi came back — which is the one outcome
+        // the rest of this design goes out of its way to avoid. The user has to say what happens
+        // next, because only they know whether they are still in front of the television.
+        if (lastErrorWasCast) return
         val now = System.currentTimeMillis()
         if (now - lastRetryForNetwork < 2000) return // debounce
         lastRetryForNetwork = now
@@ -840,6 +1116,10 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         val trackId = track.id ?: return
+        // Whatever the last error was, it is not the one being described any more: this phone is
+        // about to play something. Cleared here rather than where the error is shown, because every
+        // path back into normal playback goes through this function.
+        lastErrorWasCast = false
         ensureAudioRouteWatcher()
         // A queued track is consumed once it actually starts playing.
         consumeFromUserQueue(trackId)
@@ -1460,7 +1740,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         webStartConfirmed = false
         lastWebEndedTrackId = null
         controller.playSpotifyUrl("https://open.spotify.com/track/$id")
-        publishWebMetadata(track)
+        publishExternalMetadata(track)
         // Buffering, not playing: the page needs a moment, and the 1s poll flips this to playing as
         // soon as it really is. Claiming isPlaying here made the UI lie for the first second.
         _state.value = _state.value.copy(
@@ -1510,9 +1790,16 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     /**
      * Starts [track] on whichever engine should serve it, for the queue-navigation paths that have
-     * already set the state. Web mode gets first refusal; everything else goes to ExoPlayer.
+     * already set the state. Casting wins outright, web mode gets first refusal, and everything else
+     * goes to ExoPlayer.
+     *
+     * Casting is checked first and takes the track unconditionally, unlike web mode: the whole point
+     * of a session is that the sound is coming out of something across the room, so "the device
+     * could not take this one" has to end the session rather than quietly move playback back into
+     * the phone.
      */
     private fun startTrack(track: FullTrack) {
+        if (isCasting) { castTrack(track); return }
         if (webPlayerMode && playInWebPlayer(track) { playWithLocalEngine(track) }) return
         playTrack(track)
     }
@@ -1752,6 +2039,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun play() {
+        if (isCasting) { resumeOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.play(); return }
         val currentTrack = _state.value.currentTrack
         if (currentTrack != null) {
@@ -1861,12 +2149,38 @@ class AudioPlayerService private constructor(private val context: Context) {
     }.getOrDefault(false)
 
     fun pause() {
+        if (isCasting) { pauseOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
         exoPlayer.pause()
         requestSave()
     }
 
+    /**
+     * Transport for a cast session.
+     *
+     * The state is set here rather than left to the poll: a button that takes up to a second to look
+     * as though it did anything reads as a button that did not work. The poll corrects it a moment
+     * later if the device disagrees, which is the right way round — optimistic, then authoritative.
+     */
+    private fun resumeOnCastDevice() {
+        _state.value = _state.value.copy(isPlaying = true)
+        mainScope.launch {
+            if (!com.varuna.rustify.cast.CastSession.resume()) {
+                _state.value = _state.value.copy(isPlaying = false)
+            }
+        }
+    }
+
+    private fun pauseOnCastDevice() {
+        _state.value = _state.value.copy(isPlaying = false)
+        mainScope.launch { com.varuna.rustify.cast.CastSession.pause() }
+    }
+
     fun togglePlayPause() {
+        if (isCasting) {
+            if (_state.value.isPlaying) pauseOnCastDevice() else resumeOnCastDevice()
+            return
+        }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.togglePlayPause(); return }
         val currentTrack = _state.value.currentTrack ?: return
         if (exoPlayer.isPlaying) {
@@ -1885,6 +2199,11 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
+        if (isCasting) {
+            _state.value = _state.value.copy(positionMs = positionMs)
+            mainScope.launch { com.varuna.rustify.cast.CastSession.seekTo(positionMs) }
+            return
+        }
         if (isWebServing) {
             com.varuna.rustify.webplayer.WebPlayerController.seekTo(positionMs)
             _state.value = _state.value.copy(positionMs = positionMs)
@@ -2399,6 +2718,13 @@ class AudioPlayerService private constructor(private val context: Context) {
         saveNow()
         listenerTracker.flush()
         unregisterNetworkCallback()
+        // Layer 4 of E16: the port closes when the app stops. Closing it is what makes the other
+        // three layers a design rather than a hope, so it does not wait on a coroutine that may not
+        // outlive this call.
+        if (isCasting) {
+            clearCastSession()
+            com.varuna.rustify.cast.CastSession.abandon()
+        }
         val stopIntent = Intent(context, RustifyForegroundService::class.java).apply {
             action = "STOP_SERVICE"
         }

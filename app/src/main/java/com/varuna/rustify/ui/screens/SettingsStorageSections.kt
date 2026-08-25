@@ -399,7 +399,11 @@ internal fun CastingSection(context: Context) {
         mutableStateOf<List<com.varuna.rustify.cast.CastDiscovery.Device>>(emptyList())
     }
     var active by remember { mutableStateOf(com.varuna.rustify.cast.CastSession.device) }
+    /** Why the last attempt did not start. Shown as-is: every reason is something the user can act on. */
+    var failure by remember { mutableStateOf<String?>(null) }
+    var starting by remember { mutableStateOf(false) }
     val noneFound = stringResource(R.string.settings_casting_none)
+    val player = remember { com.varuna.rustify.player.AudioPlayerService.getInstance(context) }
 
     Spacer(modifier = Modifier.height(24.dp))
     Text(
@@ -430,6 +434,7 @@ internal fun CastingSection(context: Context) {
                         if (!on) {
                             devices = emptyList()
                             active = null
+                            failure = null
                         }
                     }
                 )
@@ -456,10 +461,12 @@ internal fun CastingSection(context: Context) {
                     )
                     if (active != null) {
                         TextButton(onClick = {
-                            scope.launch {
-                                com.varuna.rustify.cast.CastSession.stop()
-                                active = null
-                            }
+                            // Through the player, not straight to the session: it is what owns the
+                            // poll that mirrors the device's clock, and stopping the session without
+                            // it would leave that loop asking a device nobody is listening to.
+                            player.stopCasting()
+                            active = null
+                            failure = null
                         }) {
                             Text(
                                 stringResource(R.string.settings_casting_stop),
@@ -491,12 +498,28 @@ internal fun CastingSection(context: Context) {
                 if (active == null && !searching && devices.isEmpty()) {
                     Text(noneFound, color = Color.Gray, fontSize = 12.sp)
                 }
+                failure?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = Color(0xFFE57373), fontSize = 12.sp)
+                }
                 for (found in devices) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { active = found }
+                            .clickable(enabled = !starting) {
+                                // Picking a device *casts*. Selecting one and calling that casting
+                                // is how this section spent a release looking finished: the list
+                                // worked, the switch worked, and nothing was ever sent.
+                                failure = null
+                                starting = true
+                                scope.launch {
+                                    val why = player.startCastingTo(found)
+                                    failure = why
+                                    active = if (why == null) found else null
+                                    starting = false
+                                }
+                            }
                             .padding(vertical = 8.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {

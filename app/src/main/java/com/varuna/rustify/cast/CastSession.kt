@@ -42,8 +42,11 @@ object CastSession {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(ENABLED_KEY, enabled).apply()
         if (!enabled) {
-            // Turning the switch off has to end whatever is running, or the switch is a label.
-            runCatching { NativeEngine.closeCastListenerNative() }
+            // Turning the switch off has to end whatever is running, or the switch is a label. Via
+            // [abandon] rather than the bridge alone: closing the port while [device] still held a
+            // device left everything that asks "am I casting?" answering yes to a session with no
+            // port behind it.
+            abandon()
         }
     }
 
@@ -126,6 +129,19 @@ object CastSession {
         if (current != null) runCatching { DlnaController.stop(current.controlUrl) }
         runCatching { NativeEngine.closeCastListenerNative() }
         Unit
+    }
+
+    /**
+     * Closes the port without telling the device — for teardown, where there is no time to wait on a
+     * SOAP round trip.
+     *
+     * The device is left holding a URL it can no longer reach, and that is the right way round: the
+     * port closes first and the device finds out by failing, rather than staying open while a polite
+     * `Stop` is in flight. Blocking and argument-free, so it can run on the way out.
+     */
+    fun abandon() {
+        device = null
+        runCatching { NativeEngine.closeCastListenerNative() }
     }
 
     suspend fun pause(): Boolean {

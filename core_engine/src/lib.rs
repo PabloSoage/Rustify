@@ -847,21 +847,6 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmPlaylis
     })
 }
 
-/// JNI Bridge: Get YouTube Music radio (related tracks)
-#[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getYtmRadioNative<'local>(
-    mut env_unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    video_id: JString<'local>,
-) -> jstring {
-    jni_bridge!(env_unowned, |env| {
-        let mutf8 = video_id.mutf8_chars(env)?;
-        let id = mutf8.to_string();
-        let tracks = get_runtime().block_on(youtube::ytmusic::ytm_radio(&id));
-        serde_json::to_string(&tracks).unwrap_or_else(|_| "[]".to_string())
-    })
-}
-
 // =============================================================================
 // SPOTIFY — AUTHENTICATION
 // =============================================================================
@@ -1640,29 +1625,6 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyHas
         let client = spotify::client::get_spotify_client();
         let snapshot = client.get_gql_hashes_snapshot();
         serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string())
-    })
-}
-
-
-
-
-
-/// JNI Bridge: Check if tracks are saved
-#[no_mangle]
-pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_checkSpotifySavedTracksNative<'local>(
-    mut env_unowned: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    ids_json: JString<'local>,
-) -> jstring {
-    jni_bridge!(env_unowned, |env| {
-        let mutf8 = ids_json.mutf8_chars(env)?;
-        let ids_str = mutf8.to_string();
-        let ids: Vec<String> = serde_json::from_str(&ids_str).unwrap_or_default();
-        let async_result = get_runtime().block_on(async {
-            let client = spotify::client::get_spotify_client();
-            client.check_saved_tracks(&ids).await
-        });
-        serialize_result(async_result)
     })
 }
 
