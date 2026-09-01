@@ -7,24 +7,24 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 lifecycleRuntimeCompose = "2.11.0"
 activityCompose = "1.13.0"
-kotlin = "2.2.10"
-composeBom = "2026.06.01"
+kotlin = "2.4.10"
+composeBom = "2026.08.00"
 coilCompose = "2.7.0"
-media3 = "1.10.1"
+media3 = "1.11.0"
 youtubedl = "0.18.1"
-appcompat = "1.7.1"
+appcompat = "1.8.0"
 documentfile = "1.1.0"
 profileinstaller = "1.4.1"
 # E50 — Google Drive sync (AppData). play-services-auth aporta AuthorizationClient
 # (Identity.getAuthorizationClient) para el access token con scope drive.appdata.
-playServicesAuth = "21.4.0"
+playServicesAuth = "22.0.0"
 # OkHttp para las llamadas REST a Drive v3. Coil ya lo trae transitivamente, pero
 # lo declaramos explícito para poder usar su API directamente sin depender del
 # grafo transitivo de Coil.
-okhttp = "4.12.0"
+okhttp = "5.5.0"
 # E99 — MapLibre GL (open-source, keyless map). Routing via OSRM + geocoding via Nominatim are
 # plain HTTP (no extra dependency). Verify this artifact resolves on your first Gradle sync.
-maplibre = "13.3.1"
+maplibre = "13.6.0"
 # E50 (B) — AppAuth (RFC 8252 + PKCE): browser-based Google OAuth with a single cert-independent
 # client, so Drive backup works on any build (including forks), like the paimon.moe web model.
 appauth = "0.11.1"
@@ -40,7 +40,7 @@ androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", versi
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest", version = "1.11.4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest", version = "1.12.0" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
