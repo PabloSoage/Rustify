@@ -512,7 +512,7 @@ fun PlaylistScreen(
                                     TrackRowItem(
                                         index = index + 1,
                                         track = track,
-                                        fallbackCoverUrl = playlistImages?.firstOrNull()?.url,
+                                        fallbackCoverUrl = playlistImages.firstOrNull()?.url,
                                         onClick = { onTrackClick(tracks, index) },
                                         isLiked = isLiked,
                                         isCurrentTrack = track.id == currentTrackId,

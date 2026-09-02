@@ -143,7 +143,7 @@ class GoogleDriveSync(private val appContext: Context) {
             .build()
         val req = Request.Builder().url(url).get().bearer(accessToken).build()
         http.newCall(req).execute().use { resp ->
-            val body = resp.assertOk().body?.string().orEmpty()
+            val body = resp.assertOk().body.string()
             val files = JSONObject(body).optJSONArray("files") ?: JSONArray()
             return if (files.length() > 0) files.getJSONObject(0).optString("id").ifBlank { null } else null
         }
@@ -156,7 +156,7 @@ class GoogleDriveSync(private val appContext: Context) {
         val url = "$DRIVE_FILES/$id".toUrlBuilder().addQueryParameter("alt", "media").build()
         val req = Request.Builder().url(url).get().bearer(accessToken).build()
         http.newCall(req).execute().use { resp ->
-            val body = resp.assertOk().body?.string().orEmpty()
+            val body = resp.assertOk().body.string()
             return runCatching { JSONObject(body) }.getOrNull()
         }
     }
@@ -182,7 +182,7 @@ class GoogleDriveSync(private val appContext: Context) {
                 .addQueryParameter("fields", "id").build()
             val req = Request.Builder().url(url).post(multipart).bearer(accessToken).build()
             http.newCall(req).execute().use { resp ->
-                JSONObject(resp.assertOk().body?.string().orEmpty()).optString("id")
+                JSONObject(resp.assertOk().body.string()).optString("id")
             }
         } else {
             // UPDATE — PATCH media
@@ -206,7 +206,7 @@ class GoogleDriveSync(private val appContext: Context) {
 
     private fun Response.assertOk(): Response {
         if (!isSuccessful) {
-            val err = body?.string().orEmpty()
+            val err = body.string()
             throw IOException("Drive HTTP $code: ${err.take(500)}")
         }
         return this

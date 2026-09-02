@@ -70,7 +70,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
         val body = InvidiousInstances.clientFor(appContext, inst).newCall(req).execute().use { r ->
             if (!r.isSuccessful) return null
-            r.body?.string() ?: return null
+            r.body.string()
         }
         val obj = JSONObject(body)
         val adaptive = obj.optJSONArray("adaptiveFormats")

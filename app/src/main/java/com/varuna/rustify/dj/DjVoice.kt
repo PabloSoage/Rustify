@@ -429,7 +429,7 @@ object DjVoice {
                 override fun onClosed(webSocket: okhttp3.WebSocket, code: Int, reason: String) { finish(audio.size() > 512) }
             }
             wsRef = edgeWsClient.newWebSocket(edgeRequest(), listener)
-            cont.invokeOnCancellation { runCatching { wsRef?.cancel() } }
+            cont.invokeOnCancellation { runCatching { wsRef.cancel() } }
         }
 
     /** Health ping for Edge TTS: opens the WebSocket (token accepted = 101). ms or null. Voice-independent. */

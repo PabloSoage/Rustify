@@ -356,12 +356,12 @@ object WebPlayerController {
                         // The shim has to beat the bundle's own feature detection, so it goes first
                         // and at the earliest hook there is.
                         if (view?.settings?.userAgentString?.contains("Windows") == true) {
-                            view?.evaluateJavascript(JS_DESKTOP_SHIM, null)
-                            view?.evaluateJavascript(JS_BUILD_PROBE, null)
-                            view?.evaluateJavascript(JS_VISIBLE_SHIM, null)
-                            view?.evaluateJavascript(JS_NET_HOOK, null)
-                            view?.evaluateJavascript(JS_DISMISS_CONSENT, null)
-                            view?.evaluateJavascript(JS_PROMISE_TRACE, null)
+                            view.evaluateJavascript(JS_DESKTOP_SHIM, null)
+                            view.evaluateJavascript(JS_BUILD_PROBE, null)
+                            view.evaluateJavascript(JS_VISIBLE_SHIM, null)
+                            view.evaluateJavascript(JS_NET_HOOK, null)
+                            view.evaluateJavascript(JS_DISMISS_CONSENT, null)
+                            view.evaluateJavascript(JS_PROMISE_TRACE, null)
                         }
                         view?.evaluateJavascript(JS_ERROR_HOOK, null)
                         view?.evaluateJavascript(JS_EME_RELAX, null)

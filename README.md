@@ -254,11 +254,15 @@ optimization. To force immediate AOT compilation, install the APK alongside its 
 
 ```bash
 # ARM64 devices
-adb install-multiple app/release/app-arm64-v8a-release.apk app/release/baselineProfiles/0/app-arm64-v8a-release.dm
+adb install-multiple app/build/outputs/apk/release/app-arm64-v8a-release.apk app/build/outputs/apk/release/baselineProfiles/0/app-arm64-v8a-release.dm
 
 # x86_64 emulators
-adb install-multiple app/release/app-x86_64-release.apk app/release/baselineProfiles/0/app-x86_64-release.dm
+adb install-multiple app/build/outputs/apk/release/app-x86_64-release.apk app/build/outputs/apk/release/baselineProfiles/0/app-x86_64-release.dm
 ```
+
+> `baselineProfiles/0/` holds the profile for API 31 and above, `1/` the one for API 28-30. These come
+> out of Gradle's output directory: Android Studio's signed-APK wizard writes to `app/release/` instead
+> and does not copy the `.dm` files there.
 
 ---
 

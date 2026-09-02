@@ -99,7 +99,7 @@ class ListeningTracker(private val appContext: Context) {
             // Rotation: keep the most recent ~5000 entries
             val trimmed = if (arr.length() > 5000) {
                 val fresh = JSONArray()
-                for (i in arr.length() - 5000 until arr.length()) fresh.put(arr.getJSONObject(i.toInt()))
+                for (i in arr.length() - 5000 until arr.length()) fresh.put(arr.getJSONObject(i))
                 fresh
             } else arr
             file.writeText(trimmed.toString())

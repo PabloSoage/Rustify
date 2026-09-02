@@ -155,7 +155,7 @@ object DjAutoController {
             // `first` starts the session from scratch. On advances (mood change or auto-advance) we
             // replace the pending block after the current track instead of stacking it on top of the
             // previous one; otherwise the old mood's songs would linger in the queue.
-            if (first) svc?.loadPlaylist(tracks, 0) else svc?.replaceAutoQueueAfterCurrent(tracks)
+            if (first) svc.loadPlaylist(tracks, 0) else svc.replaceAutoQueueAfterCurrent(tracks)
             recentTrackIds.addAll(tracks.mapNotNull { it.id })
             while (recentTrackIds.size > 60) recentTrackIds.removeFirst()
             _state.value = State(mood.id, mood.label(context), moodIndex + 1, preparing = false)

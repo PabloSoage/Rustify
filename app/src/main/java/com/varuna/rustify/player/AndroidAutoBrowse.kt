@@ -63,7 +63,7 @@ object AndroidAutoBrowse {
 
             // ── Local ──
             parentId == "cat_local" -> localSections(context)
-            parentId == "local_favs" -> repo.localTracks.filter { it.id != null && repo.isLocalFavorite(it.id!!) }.map { trackNode(it) }
+            parentId == "local_favs" -> repo.localTracks.filter { it.id != null && repo.isLocalFavorite(it.id) }.map { trackNode(it) }
             parentId == "local_tracks" -> repo.localTracks.map { trackNode(it) }
             parentId == "local_playlists" -> repo.localPlaylists.map {
                 Node("localfolder:${it.id}", it.name, "", true, null, repo.localPlaylistTracks(it.id).firstOrNull()?.album?.images?.firstOrNull()?.url)

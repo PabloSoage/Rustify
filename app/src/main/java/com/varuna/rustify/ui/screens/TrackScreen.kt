@@ -396,7 +396,7 @@ fun TrackScreen(
         try {
             lyricsResult = LyricsRepository.getLyrics(
                 context = context,
-                trackId = track.id!!,
+                trackId = track.id,
                 artist = artist,
                 title = track.name,
                 durationSec = durationSec
@@ -722,11 +722,11 @@ fun TrackScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         TextButton(onClick = {
-                                            val inQueue = playerState.queue.any { it.id == trackToShow?.id }
-                                            if (inQueue && trackToShow?.id != null) {
-                                                audioPlayerService.playSpecificTrackInQueue(trackToShow.id!!)
+                                            val inQueue = playerState.queue.any { it.id == trackToShow.id }
+                                            if (inQueue && trackToShow.id != null) {
+                                                audioPlayerService.playSpecificTrackInQueue(trackToShow.id)
                                             } else {
-                                                audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow?.id)
+                                                audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow.id)
                                             }
                                         }) {
                                             Text("Reintentar", color = Color.White, fontSize = 12.sp)
@@ -777,7 +777,7 @@ fun TrackScreen(
                                         }
                                     }
 
-                                    trackToShow?.let {
+                                    trackToShow.let {
                                         IconButton(onClick = { showOptionsMenu = true }) {
                                             Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
                                         }
@@ -1422,7 +1422,7 @@ fun TrackScreenControls(
                             } else {
                                 val inQueue = playerState.queue.any { it.id == track.id }
                                 if (inQueue && track.id != null) {
-                                    audioPlayerService.playSpecificTrackInQueue(track.id!!)
+                                    audioPlayerService.playSpecificTrackInQueue(track.id)
                                 } else {
                                     audioPlayerService.loadAndPlay(track)
                                 }

@@ -112,7 +112,7 @@ object AppUpdate {
             .build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) error("GitHub HTTP ${resp.code}")
-            return resp.body?.string().orEmpty()
+            return resp.body.string()
         }
     }
 
@@ -206,7 +206,7 @@ object AppUpdate {
             val req = Request.Builder().url(url).header("User-Agent", "Rustify-Updater").build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("Download HTTP ${resp.code}")
-                val body = resp.body ?: error("Empty response")
+                val body = resp.body
                 val total = body.contentLength().takeIf { it > 0 } ?: info.apkSize.takeIf { it > 0 } ?: -1L
                 body.byteStream().use { input ->
                     out.outputStream().use { output ->

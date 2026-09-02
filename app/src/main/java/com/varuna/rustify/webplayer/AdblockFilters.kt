@@ -65,7 +65,7 @@ object AdblockFilters {
             runCatching {
                 http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                     if (!resp.isSuccessful) return@use
-                    val body = resp.body?.string().orEmpty()
+                    val body = resp.body.string()
                     if (body.isNotBlank()) {
                         fileFor(context, url).writeText(body)
                         anyOk = true

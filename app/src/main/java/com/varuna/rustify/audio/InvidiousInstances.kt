@@ -104,7 +104,7 @@ object InvidiousInstances {
             val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
             val body = clientFor(ctx, inst).newCall(req).execute().use { r ->
                 if (!r.isSuccessful) return@runCatching false
-                r.body?.string() ?: return@runCatching false
+                r.body.string()
             }
             val adaptive = org.json.JSONObject(body).optJSONArray("adaptiveFormats") ?: return@runCatching false
             (0 until adaptive.length()).any { i ->
@@ -124,7 +124,7 @@ object InvidiousInstances {
         }
         val fetched = runCatching {
             val req = Request.Builder().url(LIST_URL).header("User-Agent", "Rustify/1.0").build()
-            plainClient.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
+            plainClient.newCall(req).execute().use { r -> if (r.isSuccessful) r.body.string() else null }
         }.getOrNull()
         if (fetched != null) {
             val parsed = parse(fetched)

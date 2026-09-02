@@ -251,7 +251,7 @@ class RustifyForegroundService : MediaLibraryService() {
                 .buildUpon()
                 .add(SessionCommand(ACTION_TOGGLE_SAVED, Bundle.EMPTY))
                 .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailableSessionCommands(commands)
                 .build()
         }

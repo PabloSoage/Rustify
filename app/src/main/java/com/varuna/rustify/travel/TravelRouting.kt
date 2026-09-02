@@ -213,11 +213,11 @@ object TravelRouting {
 
     // ── Geocoding helpers ────────────────────────────────────────────────────────────────
     private fun deviceCountry(context: Context): String = runCatching {
-        context.resources.configuration.locales[0].country?.takeIf { it.isNotBlank() }?.lowercase() ?: ""
+        context.resources.configuration.locales[0].country.takeIf { it.isNotBlank() }?.lowercase() ?: ""
     }.getOrDefault("")
 
     private fun deviceLang(context: Context): String = runCatching {
-        context.resources.configuration.locales[0].language?.takeIf { it.isNotBlank() } ?: "en"
+        context.resources.configuration.locales[0].language.takeIf { it.isNotBlank() } ?: "en"
     }.getOrDefault("en")
 
     /** viewbox = lonMin,latMin,lonMax,latMax with bounded=0 ⇒ **biases** toward the area without excluding. */

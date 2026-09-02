@@ -530,8 +530,8 @@ fun LibraryPlaylists(
             SearchResultRow(
                 title = playlist.name,
                 subtitle = playlist.owner?.name ?: "Unknown",
-                imageUrl = playlist.images?.firstOrNull()?.url,
-                onClick = { onPlaylistClick(playlist.id, playlist.name, playlist.images ?: emptyList()) }
+                imageUrl = playlist.images.firstOrNull()?.url,
+                onClick = { onPlaylistClick(playlist.id, playlist.name, playlist.images) }
             )
         },
         emptyMessage = "No playlists found.",
@@ -573,8 +573,8 @@ fun LibraryAlbums(
             SearchResultRow(
                 title = album.name,
                 subtitle = album.artists.joinToString(", ") { it.name },
-                imageUrl = album.images?.firstOrNull()?.url,
-                onClick = { onAlbumClick(album.id, album.name, album.images ?: emptyList()) }
+                imageUrl = album.images.firstOrNull()?.url,
+                onClick = { onAlbumClick(album.id, album.name, album.images) }
             )
         },
         emptyMessage = "No albums found.",
@@ -616,7 +616,7 @@ fun LibraryArtists(
             SearchResultRow(
                 title = artist.name,
                 subtitle = stringResource(R.string.search_subtitle_artist),
-                imageUrl = artist.images?.firstOrNull()?.url,
+                imageUrl = artist.images.firstOrNull()?.url,
                 isCircle = true,
                 onClick = { onArtistClick(artist.id) }
             )
@@ -940,7 +940,7 @@ fun LibraryLocalMusic(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(filteredTracks, key = { index, t -> t.id ?: "local_${index}_${t.name.hashCode()}" }) { index, track ->
-                            val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                            val cover = track.externalUri.takeIf { it.isNotBlank() }
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
@@ -1161,7 +1161,7 @@ fun LibraryLocalMusic(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(favs, key = { index, t -> t.id ?: "fav_${index}_${t.name.hashCode()}" }) { index, track ->
-                            val cover = track.externalUri.takeIf { it?.isNotBlank() == true }
+                            val cover = track.externalUri.takeIf { it.isNotBlank() }
                             TrackRowItem(
                                 index = index + 1,
                                 track = track,
@@ -1533,7 +1533,7 @@ private fun LocalPlaylistCoverGrid(tracks: List<FullTrack>) {
         tracks.asSequence()
             .mapNotNull { t ->
                 val imgUrl = t.album?.images?.firstOrNull()?.url?.takeIf { it.isNotBlank() }
-                    ?: t.externalUri?.takeIf { it.isNotBlank() }
+                    ?: t.externalUri.takeIf { it.isNotBlank() }
                 val key = t.album?.name?.takeIf { it.isNotBlank() } ?: imgUrl ?: t.id
                 if (imgUrl != null) key to imgUrl else null
             }

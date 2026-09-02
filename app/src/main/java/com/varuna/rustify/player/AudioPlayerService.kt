@@ -1186,7 +1186,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Do NOT set a dummy MediaItem / pause the player here. The notification keeps the
                 // previous item until the real one is prepared, instead of freezing on a fake
                 // "loading" item while paused. The UI spinner is driven by _state.isBuffering.
-                val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri ?: ""
+                val artworkUrl = track.album?.images?.firstOrNull()?.url ?: track.externalUri
                 val metadata = androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(track.name)
                     .setArtist(track.artists.joinToString(", ") { it.name })

@@ -655,7 +655,7 @@ fun YtmTrackListItem(
             if (track.albumId != null && onOpenAlbum != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.track_menu_go_album)) },
-                    onClick = { showMenu = false; onOpenAlbum(track.albumId!!, "") },
+                    onClick = { showMenu = false; onOpenAlbum(track.albumId, "") },
                     leadingIcon = { Icon(Icons.Default.Album, null) }
                 )
             }

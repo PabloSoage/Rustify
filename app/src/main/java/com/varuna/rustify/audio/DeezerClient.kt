@@ -43,7 +43,7 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
                 val sid = r.headers("Set-Cookie").firstNotNullOfOrNull { c ->
                     Regex("sid=([^;]+)").find(c)?.groupValues?.get(1)
                 } ?: ""
-                val res = JSONObject(r.body?.string() ?: return@runCatching null).optJSONObject("results")
+                val res = JSONObject(r.body.string()).optJSONObject("results")
                     ?: return@runCatching null
                 val apiToken = res.optString("checkForm")
                 if (apiToken.isBlank() || apiToken == "0") return@runCatching null // invalid/expired ARL
@@ -96,7 +96,7 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
             val q = (track.name + " " + track.artists.joinToString(" ") { it.name }).trim()
             val url = "https://api.deezer.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8") + "&limit=5"
             val body = http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute()
-                .use { if (it.isSuccessful) it.body?.string() else null } ?: return@runCatching null
+                .use { if (it.isSuccessful) it.body.string() else null } ?: return@runCatching null
             val arr = JSONObject(body).optJSONArray("data") ?: return@runCatching null
             val targetSec = track.durationMs / 1000
             var best: String? = null
@@ -113,7 +113,7 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
     private fun byIsrc(isrc: String): String? = runCatching {
         val url = "https://api.deezer.com/track/isrc:$isrc"
         val body = http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute()
-            .use { if (it.isSuccessful) it.body?.string() else null } ?: return null
+            .use { if (it.isSuccessful) it.body.string() else null } ?: return null
         val o = JSONObject(body)
         if (o.has("error")) null else o.optLong("id").takeIf { it > 0 }?.toString()
     }.getOrNull()
@@ -127,7 +127,7 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
                 .header("Cookie", "arl=${session.arl}; sid=${session.sid}").header("User-Agent", ua).build()
             val res = http.newCall(req).execute().use {
                 if (!it.isSuccessful) return@runCatching null
-                JSONObject(it.body?.string() ?: return@runCatching null).optJSONObject("results")
+                JSONObject(it.body.string()).optJSONObject("results")
             } ?: return@runCatching null
             res.optString("TRACK_TOKEN").takeIf { it.isNotBlank() }
         }.getOrNull()
@@ -148,7 +148,7 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
                 .header("User-Agent", ua).build()
             val res = http.newCall(req).execute().use {
                 if (!it.isSuccessful) return@runCatching null
-                JSONObject(it.body?.string() ?: return@runCatching null)
+                JSONObject(it.body.string())
             }
             val media = res.optJSONArray("data")?.optJSONObject(0)?.optJSONArray("media")?.optJSONObject(0)
                 ?: return@runCatching null

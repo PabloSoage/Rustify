@@ -344,6 +344,10 @@ fun TravelScreen(
             }
             override fun onProviderEnabled(provider: String) {}
             override fun onProviderDisabled(provider: String) {}
+            // Deprecated since API 29, but `LocationListener` only gained a default implementation in
+            // API 30 and minSdk here is 29 - dropping the override would be an AbstractMethodError on a
+            // device running 29.
+            @Suppress("OVERRIDE_DEPRECATION")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         }
         try {

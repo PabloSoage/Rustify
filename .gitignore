@@ -35,3 +35,10 @@ docs/
 
 # Kotlin compiler IDE session artifacts
 .kotlin/
+
+# Everything the signed-release build drops into app/release/, whatever it decides
+# to drop next: mapping.txt (the R8 deobfuscation map - not something to publish),
+# native-debug-symbols.zip, the APKs and the .dm sidecars. output-metadata.json is
+# the one file there that is tracked on purpose, so it is named back in.
+app/release/*
+!app/release/output-metadata.json

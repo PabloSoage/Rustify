@@ -57,8 +57,8 @@ object DeezerArl {
                 .build()
             AudioHttp.client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext FetchResult(emptyList(), "HTTP ${resp.code}")
-                val html = resp.body?.string()
-                if (html.isNullOrBlank()) return@withContext FetchResult(emptyList(), "empty body")
+                val html = resp.body.string()
+                if (html.isBlank()) return@withContext FetchResult(emptyList(), "empty body")
                 val entries = parse(html)
                 FetchResult(entries, if (entries.isEmpty()) "0 ARLs (${html.length} chars fetched)" else null)
             }

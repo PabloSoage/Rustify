@@ -135,7 +135,7 @@ object ShareUtils {
             val ok = runCatching {
                 http.newCall(Request.Builder().url(candidate).build()).execute().use { resp ->
                     if (!resp.isSuccessful) return@use false
-                    val body = resp.body ?: return@use false
+                    val body = resp.body
                     out.outputStream().use { dst -> body.byteStream().use { it.copyTo(dst) } }
                     true
                 }

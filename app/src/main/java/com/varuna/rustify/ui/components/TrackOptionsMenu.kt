@@ -629,7 +629,7 @@ fun TrackOptionsMenuBottomSheet(
                             }
                             
                             val trackId = track.id ?: return@MenuOptionItem
-                            val trackName = track.name ?: "Unknown"
+                            val trackName = track.name
                             val trackArtist = track.artists.joinToString(", ") { it.name }
                             
                             com.varuna.rustify.bridge.DownloadManager.enqueueDownload(
