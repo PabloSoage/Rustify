@@ -308,13 +308,6 @@ fun BrowseSectionView(
                         images = item.album.images,
                         onClick = { onItemClick(item) }
                     )
-                    is BrowseSectionItem.ArtistItem -> PlaylistItemCard(
-                        title = item.artist.name,
-                        subtitle = stringResource(R.string.search_subtitle_artist),
-                        images = item.artist.images,
-                        isCircle = true,
-                        onClick = { onItemClick(item) }
-                    )
                 }
             }
         }

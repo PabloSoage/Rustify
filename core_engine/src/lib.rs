@@ -24,6 +24,11 @@ pub mod spotify;
 pub mod types;
 pub mod youtube;
 
+/// The wire contract between this crate and `bridge/SpotifyModels.kt`, written down as checked-in
+/// JSON. Test-only: it produces nothing the app links against.
+#[cfg(test)]
+mod wire_fixtures;
+
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::{EnvUnowned, Outcome};

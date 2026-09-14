@@ -1,0 +1,52 @@
+{
+  "id": "track-id",
+  "name": "Jóga",
+  "externalUri": "spotify:track:track-id",
+  "explicit": true,
+  "durationMs": 303000,
+  "isrc": "GBAAA9700123",
+  "artists": [
+    {
+      "id": "artist-id",
+      "name": "Björk",
+      "externalUri": "spotify:artist:artist-id",
+      "images": [
+        {
+          "url": "https://i.scdn.co/image/cover-640",
+          "height": 640,
+          "width": 480
+        }
+      ]
+    }
+  ],
+  "album": {
+    "id": "album-id",
+    "name": "Homogenic",
+    "externalUri": "spotify:album:album-id",
+    "releaseDate": "1997-09-22",
+    "releaseDatePrecision": "day",
+    "images": [
+      {
+        "url": "https://i.scdn.co/image/cover-640",
+        "height": 640,
+        "width": 480
+      }
+    ],
+    "artists": [
+      {
+        "id": "artist-id",
+        "name": "Björk",
+        "externalUri": "spotify:artist:artist-id",
+        "images": [
+          {
+            "url": "https://i.scdn.co/image/cover-640",
+            "height": 640,
+            "width": 480
+          }
+        ]
+      }
+    ],
+    "albumType": "album"
+  },
+  "addedAt": "2024-03-01T10:11:12Z"
+}

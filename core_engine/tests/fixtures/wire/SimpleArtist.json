@@ -1,0 +1,12 @@
+{
+  "id": "artist-id",
+  "name": "Björk",
+  "externalUri": "spotify:artist:artist-id",
+  "images": [
+    {
+      "url": "https://i.scdn.co/image/cover-640",
+      "height": 640,
+      "width": 480
+    }
+  ]
+}

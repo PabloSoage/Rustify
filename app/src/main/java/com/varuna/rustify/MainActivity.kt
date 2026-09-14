@@ -1031,9 +1031,6 @@ fun EngineTester(
                                     is BrowseSectionItem.AlbumItem -> {
                                         navigationStack.add(Screen.AlbumDetail(item.album.id, item.album.name, item.album.images))
                                     }
-                                    is BrowseSectionItem.ArtistItem -> {
-                                        navigationStack.add(Screen.ArtistDetail(item.artist.id))
-                                    }
                                 }
                             },
                             onSettingsClick = {
@@ -1556,9 +1553,38 @@ fun EngineTester(
 }
 
 
+private const val SPOTIFY_LOGIN_URL =
+    "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+
+/**
+ * The Spotify login page, and the capture of `sp_dc` from its cookies.
+ *
+ * ## Why this now says something when it fails
+ *
+ * Reported on a Mi Pad 6S Pro: tapping login showed **nothing** — no Spotify page, no error, no way
+ * to tell whether the request had failed, been refused, or rendered blank. The web player's WebView
+ * on the same account was fine, and that asymmetry is what makes the difference worth naming: that
+ * one enables cookies explicitly, carries a [android.webkit.WebChromeClient] and reports what the
+ * page says. This one did none of the three, so every possible failure looked identical — an empty
+ * rectangle.
+ *
+ * The handlers below do not fix a cause; from here, none of them can. They turn a blank screen into
+ * a sentence, which is the difference between a bug that can be worked on and one that can only be
+ * reported again. The same detail goes to `adb logcat -s SpotifyLogin:W`.
+ *
+ * Two settings *were* simply missing, and either is a plausible cause on its own:
+ *
+ *  - **third-party cookies**, off by default since Lollipop. Login crosses `accounts.spotify.com`
+ *    to `open.spotify.com`, and `sp_dc` is the whole reason this screen exists.
+ *  - **multiple windows**, which the challenge step can open. Without support for it that tap does
+ *    nothing whatsoever, and the page reads as frozen rather than as failed.
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) {
+    var failure by remember { mutableStateOf<String?>(null) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -1567,15 +1593,65 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
             TextButton(onClick = onCancel) { Text("Cancel") }
         }
 
+        failure?.let { reason ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF3A1F1F))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "The Spotify login page did not load.",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(reason, color = Color(0xFFDDBBBB), fontSize = 12.sp)
+                TextButton(onClick = {
+                    failure = null
+                    webView?.loadUrl(SPOTIFY_LOGIN_URL)
+                }) { Text("Retry", color = Color(0xFF1DB954)) }
+            }
+        }
+
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    // The challenge step can open a second window; without this that tap is inert
+                    // and the page looks frozen rather than failed.
+                    settings.setSupportMultipleWindows(true)
+                    settings.javaScriptCanOpenWindowsAutomatically = true
                     settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+                    // `sp_dc` is the entire point of this screen, and the cross-site hop to
+                    // open.spotify.com is where it is set. Third-party cookies are off by default.
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onConsoleMessage(
+                            message: android.webkit.ConsoleMessage?
+                        ): Boolean {
+                            val m = message ?: return false
+                            if (m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) {
+                                android.util.Log.w(
+                                    "SpotifyLogin",
+                                    "page error: ${m.message()} (${m.sourceId()}:${m.lineNumber()})"
+                                )
+                            }
+                            return false
+                        }
+                    }
 
                     webViewClient = object : WebViewClient() {
                         private var loginAlreadyDone = false
+
+                        private fun report(reason: String) {
+                            android.util.Log.w("SpotifyLogin", reason)
+                            failure = reason
+                        }
 
                         private fun checkLoginAndFinish(url: String?) {
                             if (loginAlreadyDone) return
@@ -1605,9 +1681,53 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
                             super.onPageFinished(view, url)
                             checkLoginAndFinish(url)
                         }
+
+                        // Main frame only: a blocked tracker inside the page is not a failed login,
+                        // and reporting one would cry wolf on a page that loaded perfectly.
+                        override fun onReceivedError(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?,
+                            error: android.webkit.WebResourceError?
+                        ) {
+                            super.onReceivedError(view, request, error)
+                            if (request?.isForMainFrame != true) return
+                            report("${error?.description ?: "network error"} (${request.url})")
+                        }
+
+                        override fun onReceivedHttpError(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?,
+                            errorResponse: android.webkit.WebResourceResponse?
+                        ) {
+                            super.onReceivedHttpError(view, request, errorResponse)
+                            if (request?.isForMainFrame != true) return
+                            report("Spotify answered HTTP ${errorResponse?.statusCode} for ${request.url}")
+                        }
+
+                        // Reported rather than cancelled silently: a TLS error here is usually a
+                        // wrong device clock or a network that intercepts TLS, and both are things
+                        // the user can act on once told. Never proceeded with — this page is about
+                        // to carry a session cookie.
+                        override fun onReceivedSslError(
+                            view: WebView?,
+                            handler: android.webkit.SslErrorHandler?,
+                            error: android.net.http.SslError?
+                        ) {
+                            handler?.cancel()
+                            report("TLS refused (${error?.primaryError}). Check the device date and time.")
+                        }
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: android.webkit.RenderProcessGoneDetail?
+                        ): Boolean {
+                            report("The system WebView crashed. Updating Android System WebView usually fixes it.")
+                            return true // handled: do not take the app down with it
+                        }
                     }
 
-                    loadUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
+                    loadUrl(SPOTIFY_LOGIN_URL)
+                    webView = this
                 }
             },
             modifier = Modifier.fillMaxSize()

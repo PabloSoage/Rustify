@@ -22,10 +22,50 @@ class AudioSourceChain(
     private val lastGood: ConcurrentHashMap<String, String> = ConcurrentHashMap()
 ) {
 
-    /** Resolves a playable URL; returns (providerId, StreamInfo) or a failure with all the errors. */
+    /**
+     * Resolves a playable URL; returns (providerId, StreamInfo) or a failure with all the errors.
+     *
+     * ## When there is a [hint], the chain is a different chain
+     *
+     * A hint is a YouTube video id: the alternative the user picked, or previewed. Only a provider
+     * that fetches from YouTube can honour one — see
+     * [AudioSourceCapabilities.honoursYoutubeHint] — so the others are not asked at all, and
+     * [lastGood] is ignored.
+     *
+     * Both halves matter, and each on its own leaves the hole open:
+     *
+     *  - **Filtering**, because Deezer and an add-on resolve from the track's own metadata and
+     *    ignore the hint entirely. Asked, they answer *successfully* with the recording the user is
+     *    trying to replace, and a successful answer ends the chain — so with either of them first,
+     *    every alternative you pick plays the same thing.
+     *  - **Ignoring [lastGood]**, because it remembers who served this track *without* a hint. It is
+     *    the right answer to "play this track" and the wrong answer to "play this video", and it
+     *    would put the provider that cannot honour the hint back at the front.
+     *
+     * With nothing left to ask, this fails rather than falling back: playing the wrong recording is
+     * worse than not playing, because it is the failure that looks like success.
+     *
+     * Not to be confused with the 3.7.2 preview bug, which had the same symptom one layer up and a
+     * different cause — the chain resolved the right video and the track-keyed stream cache then
+     * overrode it. See `AudioPlayerService.playTrack`. This is the same mistake made about
+     * providers instead of about caches: a hint is about a recording, and everything keyed by the
+     * track is not.
+     */
     suspend fun resolveStreamUrl(track: FullTrack, hint: String? = null): Result<Pair<String, StreamInfo>> {
         val trackId = track.id ?: return Result.failure(IllegalStateException("track has no id"))
-        val ordered = reorderPreferred(providers, lastGood[trackId])
+        val hinted = !hint.isNullOrBlank()
+        val ordered = if (hinted) {
+            providers.filter { it.capabilities.honoursYoutubeHint }
+        } else {
+            reorderPreferred(providers, lastGood[trackId])
+        }
+        if (hinted && ordered.isEmpty()) {
+            return Result.failure(
+                AudioSourceChainException(
+                    listOf(IllegalStateException("no enabled backend can play a chosen YouTube alternative"))
+                )
+            )
+        }
         val errors = mutableListOf<Throwable>()
         for (p in ordered) {
             if (!p.capabilities.canStream) continue

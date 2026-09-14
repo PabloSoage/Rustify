@@ -271,7 +271,7 @@ fun YouTubeMappingDialog(
                                         playingPreviewId = null
                                     } else {
                                         playingPreviewId = yt.id
-                                        audioPlayerService.playPreview(track.id ?: "", yt.id)
+                                        audioPlayerService.playPreview(track, yt.id)
                                     }
                                 }) {
                                     Icon(

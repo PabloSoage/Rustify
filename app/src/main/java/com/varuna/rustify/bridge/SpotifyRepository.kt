@@ -21,6 +21,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
@@ -976,37 +981,27 @@ loadLocalTracksFromCache()
     // =========================================================================
 
     /**
-     * Parse a JSON response from the engine.
-     * If the response is an error object ({"success": false, "error": "...", "kind": "..."}),
-     * throws SpotifyEngineException instead of trying to parse it as data.
+     * Decode an engine answer into [T], refusing a failure envelope on the way.
      *
-     * The `kind` travels with it. Dropping it here was the whole reason the retry policy had to
-     * reconstruct the shape of the failure by matching substrings of the message.
+     * A failure is `{"success": false, "error": "...", "kind": "..."}` and becomes a
+     * [SpotifyEngineException] rather than a parse of nonsense. The `kind` travels with it: dropping
+     * it here was the whole reason the retry policy had to reconstruct the shape of the failure by
+     * matching substrings of the message.
+     *
+     * One parse, and the payload is then built by the generated decoder instead of being walked
+     * field by field — see `SpotifyModels.kt`. An array answer is not an envelope and never throws
+     * here, which is what the old `checkForErrorArray` existed to say.
      */
-    private fun checkForError(json: String): JSONObject {
-        val obj = JSONObject(json)
-        // Check if this is an error response from the engine
-        if (obj.has("success") && !obj.optBoolean("success", true)) {
-            val errorMsg = obj.optString("error", "Unknown engine error")
-            throw SpotifyEngineException(errorMsg, obj.optString("kind").takeIf { it.isNotBlank() })
+    private inline fun <reified T> decodeChecked(json: String): T {
+        val element = RustifyJson.parseToJsonElement(json)
+        val obj = element as? JsonObject
+        if (obj != null && obj["success"]?.jsonPrimitive?.booleanOrNull == false) {
+            throw SpotifyEngineException(
+                obj["error"]?.jsonPrimitive?.contentOrNull ?: "Unknown engine error",
+                obj["kind"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            )
         }
-        return obj
-    }
-
-    /**
-     * Parse a JSON response that should be a JSONArray.
-     * If it's actually an error object, throws SpotifyEngineException.
-     */
-    private fun checkForErrorArray(json: String): JSONArray {
-        // Try array first
-        val trimmed = json.trim()
-        if (trimmed.startsWith("[")) {
-            return JSONArray(trimmed)
-        }
-        // It's probably an error object
-        checkForError(json)
-        // If checkForError didn't throw, return empty array
-        return JSONArray()
+        return RustifyJson.decodeFromJsonElement(element)
     }
 
     // =========================================================================
@@ -1147,7 +1142,7 @@ loadLocalTracksFromCache()
     suspend fun getMe(): SpotifyUser = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyMe()
-            SpotifyUser.fromJson(checkForError(json))
+            decodeChecked<SpotifyUser>(json)
         }
     }
 
@@ -1159,7 +1154,7 @@ loadLocalTracksFromCache()
     suspend fun getSavedTracks(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifySavedTracks(limit, offset)
-            val paginated = PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            val paginated = decodeChecked<PaginatedResponse<FullTrack>>(json)
             withContext(Dispatchers.Main) {
                 paginated.items.forEach { track ->
                     track.id?.let { id ->
@@ -1272,7 +1267,7 @@ loadLocalTracksFromCache()
     suspend fun getSavedAlbums(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullAlbum> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifySavedAlbums(limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullAlbum.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullAlbum>>(json)
         }
     }
 
@@ -1283,7 +1278,7 @@ loadLocalTracksFromCache()
     suspend fun getSavedPlaylists(limit: Int = 20, offset: Int = 0): PaginatedResponse<SimplePlaylist> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifySavedPlaylists(limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+            decodeChecked<PaginatedResponse<SimplePlaylist>>(json)
         }
     }
 
@@ -1295,7 +1290,7 @@ loadLocalTracksFromCache()
     suspend fun getFollowedArtists(limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyFollowedArtists(limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullArtist>>(json)
         }
     }
 
@@ -1310,7 +1305,7 @@ loadLocalTracksFromCache()
     suspend fun getAlbum(id: String): FullAlbum = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyAlbum(id)
-            FullAlbum.fromJson(checkForError(json))
+            decodeChecked<FullAlbum>(json)
         }
     }
 
@@ -1321,7 +1316,7 @@ loadLocalTracksFromCache()
     suspend fun getAlbumTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyAlbumTracks(id, limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullTrack>>(json)
         }
     }
 
@@ -1370,7 +1365,7 @@ loadLocalTracksFromCache()
     suspend fun getNewReleases(limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyNewReleases(limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+            decodeChecked<PaginatedResponse<SimpleAlbum>>(json)
         }
     }
 
@@ -1399,7 +1394,7 @@ loadLocalTracksFromCache()
     suspend fun getArtist(id: String): FullArtist = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyArtist(id)
-            FullArtist.fromJson(checkForError(json))
+            decodeChecked<FullArtist>(json)
         }
     }
 
@@ -1410,7 +1405,7 @@ loadLocalTracksFromCache()
     suspend fun getArtistTopTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyArtistTopTracks(id, limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullTrack>>(json)
         }
     }
 
@@ -1421,7 +1416,7 @@ loadLocalTracksFromCache()
     suspend fun getArtistAlbums(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyArtistAlbums(id, limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+            decodeChecked<PaginatedResponse<SimpleAlbum>>(json)
         }
     }
 
@@ -1432,7 +1427,7 @@ loadLocalTracksFromCache()
     suspend fun getRelatedArtists(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyRelatedArtists(id, limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullArtist>>(json)
         }
     }
 
@@ -1461,7 +1456,7 @@ loadLocalTracksFromCache()
     suspend fun getPlaylist(id: String): FullPlaylist = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyPlaylist(id)
-            FullPlaylist.fromJson(checkForError(json))
+            decodeChecked<FullPlaylist>(json)
         }
     }
 
@@ -1472,7 +1467,7 @@ loadLocalTracksFromCache()
     suspend fun getPlaylistTracks(id: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyPlaylistTracks(id, limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullTrack>>(json)
         }
     }
 
@@ -1483,7 +1478,7 @@ loadLocalTracksFromCache()
     suspend fun createPlaylist(userId: String, name: String, description: String = "", public: Boolean = false): FullPlaylist = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.createSpotifyPlaylist(userId, name, description, public)
-            FullPlaylist.fromJson(checkForError(json))
+            decodeChecked<FullPlaylist>(json)
         }
     }
 
@@ -1608,7 +1603,7 @@ loadLocalTracksFromCache()
     suspend fun getTrack(id: String): FullTrack = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyTrack(id)
-            FullTrack.fromJson(checkForError(json))
+            decodeChecked<FullTrack>(json)
         }
     }
 
@@ -1663,7 +1658,7 @@ loadLocalTracksFromCache()
     suspend fun getTrackRadio(trackId: String): List<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyTrackRadio(trackId)
-            FullTrack.listFromJsonArray(checkForErrorArray(json))
+            decodeChecked<List<FullTrack>>(json)
         }
     }
 
@@ -1678,7 +1673,7 @@ loadLocalTracksFromCache()
     suspend fun searchAll(query: String, limit: Int = 20): NormalizedSearchResults = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.searchSpotify(query, "all", limit, 0)
-            NormalizedSearchResults.fromJson(checkForError(json))
+            decodeChecked<NormalizedSearchResults>(json)
         }
     }
 
@@ -1689,7 +1684,7 @@ loadLocalTracksFromCache()
     suspend fun searchTracks(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullTrack> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.searchSpotify(query, "tracks", limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullTrack.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullTrack>>(json)
         }
     }
 
@@ -1700,7 +1695,7 @@ loadLocalTracksFromCache()
     suspend fun searchAlbums(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimpleAlbum> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.searchSpotify(query, "albums", limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { SimpleAlbum.fromJson(it) }
+            decodeChecked<PaginatedResponse<SimpleAlbum>>(json)
         }
     }
 
@@ -1711,7 +1706,7 @@ loadLocalTracksFromCache()
     suspend fun searchArtists(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<FullArtist> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.searchSpotify(query, "artists", limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { FullArtist.fromJson(it) }
+            decodeChecked<PaginatedResponse<FullArtist>>(json)
         }
     }
 
@@ -1722,7 +1717,7 @@ loadLocalTracksFromCache()
     suspend fun searchPlaylists(query: String, limit: Int = 20, offset: Int = 0): PaginatedResponse<SimplePlaylist> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.searchSpotify(query, "playlists", limit, offset)
-            PaginatedResponse.fromJson(checkForError(json)) { SimplePlaylist.fromJson(it) }
+            decodeChecked<PaginatedResponse<SimplePlaylist>>(json)
         }
     }
 
@@ -1737,7 +1732,7 @@ loadLocalTracksFromCache()
     suspend fun getBrowseSections(limit: Int = 20): List<BrowseSection> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyBrowse(limit)
-            BrowseSection.listFromJsonArray(checkForErrorArray(json))
+            decodeChecked<List<BrowseSection>>(json)
         }
     }
 

@@ -1,116 +1,189 @@
 // app/src/main/java/com/varuna/rustify/bridge/SpotifyModels.kt
-@file:Suppress("unused")
 package com.varuna.rustify.bridge
 
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Kotlin data classes that mirror the Rust/Spotify JSON structures.
- * All classes include companion factory methods to parse from JSONObject.
+ * The Kotlin side of the engine's wire types.
+ *
+ * ## The shape is declared once, and it is declared in Rust
+ *
+ * Every type here mirrors one in `core_engine/src/spotify/models.rs` or
+ * `core_engine/src/youtube/models.rs`. What used to sit underneath each of them was a hand-written
+ * `fromJson` reading field by field out of a [JSONObject] — 500 lines whose only tie to the Rust it
+ * mirrored was that somebody remembered. It did not hold: **eight** fields declared `String?` here
+ * were read with `optString(name, "")` — `releaseDate`, `releaseDatePrecision`, `albumType`,
+ * `recordLabel`, `description`, `country`, `product` and `LoginResult.error` — so an absent one
+ * arrived as `""` and never as `null`. Three more were on `ExternalIds`, which nothing used and
+ * which went with them. And `BrowseSectionItem` carried an `artist` variant the core has never
+ * emitted.
+ *
+ * The decoder is now generated from the declaration below, and the declaration is pinned to the Rust
+ * one by `SpotifyModelsContractTest`, which parses fixtures that `core_engine` itself writes
+ * (`core_engine/tests/fixtures/wire/`). A field renamed on either side fails that test rather than
+ * arriving as an empty string a screen later.
+ *
+ * ## Tolerant here, strict in the test
+ *
+ * [RustifyJson] ignores unknown keys and falls back to defaults for missing ones, because a phone
+ * running an older APK against a newer `.so` must not crash. The contract test does the opposite —
+ * unknown keys are an error there — which is what keeps the tolerance from hiding a real rename.
  */
+internal val RustifyJson: Json = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+    encodeDefaults = false
+    coerceInputValues = false
+}
+
+// =============================================================================
+// CODEC HELPERS
+//
+// These carry no knowledge of any field. They exist so the call sites that already hold a
+// JSONObject — the playback-state reader, the library caches, the YT Music store — keep working
+// without each type growing a hand-written parser again.
+// =============================================================================
+
+internal inline fun <reified T> decodeWire(json: String): T = RustifyJson.decodeFromString(json)
+
+internal inline fun <reified T> decodeWire(json: JSONObject): T = decodeWire(json.toString())
+
+internal inline fun <reified T> decodeWireList(array: JSONArray?): List<T> =
+    if (array == null) emptyList() else decodeWire(array.toString())
+
+internal inline fun <reified T> encodeWire(value: T): JSONObject =
+    JSONObject(RustifyJson.encodeToString(value))
+
+internal inline fun <reified T> encodeWireArray(values: List<T>): JSONArray =
+    JSONArray(RustifyJson.encodeToString(values))
+
+// =============================================================================
+// FIELD SERIALIZERS
+//
+// Four transforms that used to live inside the hand-written parsers. They stay on the wire boundary
+// rather than becoming the caller's problem, because that is where they were.
+// =============================================================================
+
+/** Spotify puts markup in playlist descriptions. Strip it on the way in. */
+internal object CleanHtmlSerializer : KSerializer<String?> {
+    private val delegate = String.serializer().nullable
+    override val descriptor: SerialDescriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): String? = delegate.deserialize(decoder)?.cleanHtml()
+    override fun serialize(encoder: Encoder, value: String?) = delegate.serialize(encoder, value)
+}
+
+/**
+ * `""` means absent.
+ *
+ * Only for reading files this app wrote before P: the old `toJson` put `""` where the Rust type has
+ * `Option<String>`, so a stored favourite has `"album_id": ""` and must still come back as null.
+ * New writes omit the key, which is what `Option` deserializes from.
+ */
+internal object BlankAsNullSerializer : KSerializer<String?> {
+    private val delegate = String.serializer().nullable
+    override val descriptor: SerialDescriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): String? =
+        delegate.deserialize(decoder)?.takeIf { it.isNotBlank() }
+    override fun serialize(encoder: Encoder, value: String?) = delegate.serialize(encoder, value)
+}
+
+/** `0` means absent — the same legacy-file concession as [BlankAsNullSerializer], for `year`. */
+internal object ZeroAsNullSerializer : KSerializer<Int?> {
+    private val delegate = Int.serializer().nullable
+    override val descriptor: SerialDescriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): Int? =
+        delegate.deserialize(decoder)?.takeIf { it > 0 }
+    override fun serialize(encoder: Encoder, value: Int?) = delegate.serialize(encoder, value)
+}
+
+/** YouTube Music hands out thumbnails at whatever size it feels like. Ask for the big one. */
+internal object ThumbnailSerializer : KSerializer<String> {
+    private val delegate = String.serializer()
+    override val descriptor: SerialDescriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): String =
+        maximiseThumbnail(delegate.deserialize(decoder))
+    override fun serialize(encoder: Encoder, value: String) = delegate.serialize(encoder, value)
+}
 
 // =============================================================================
 // COMMON
 // =============================================================================
 
+@Serializable
 data class SpotifyImage(
-    val url: String,
-    val height: Int?,
-    val width: Int?
+    val url: String = "",
+    val height: Int? = null,
+    val width: Int? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("url", url)
-        json.put("height", height)
-        json.put("width", width)
-        return json
-    }
-    companion object {
-        fun fromJson(json: JSONObject): SpotifyImage = SpotifyImage(
-            url = json.optString("url", ""),
-            height = if (json.has("height") && !json.isNull("height")) json.optInt("height") else null,
-            width = if (json.has("width") && !json.isNull("width")) json.optInt("width") else null
-        )
+    fun toJson(): JSONObject = encodeWire(this)
 
-        fun listFromJsonArray(array: JSONArray?): List<SpotifyImage> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
-    }
-}
-
-data class ExternalUrls(
-    val spotify: String
-) {
     companion object {
-        fun fromJson(json: JSONObject?): ExternalUrls? {
-            if (json == null) return null
-            return ExternalUrls(spotify = json.optString("spotify", ""))
-        }
-    }
-}
-
-data class ExternalIds(
-    val isrc: String?,
-    val ean: String?,
-    val upc: String?
-) {
-    companion object {
-        fun fromJson(json: JSONObject?): ExternalIds? {
-            if (json == null) return null
-            return ExternalIds(
-                isrc = json.optString("isrc", ""),
-                ean = json.optString("ean", ""),
-                upc = json.optString("upc", "")
-            )
-        }
+        fun fromJson(json: JSONObject): SpotifyImage = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<SpotifyImage> = decodeWireList(array)
     }
 }
 
 // =============================================================================
-// AUTH
+// AUTHENTICATION
 // =============================================================================
 
+@Serializable
 data class LoginResult(
-    val success: Boolean,
-    val user: SpotifyUser?,
-    val error: String?,
-    val accessToken: String?,
-    val expiration: Long?,
-    /** What kind of failure, as stated by the engine. See [errorKindOf]. */
+    val success: Boolean = false,
+    val user: SpotifyUser? = null,
+    val error: String? = null,
+    val accessToken: String? = null,
+    @SerialName("accessTokenExpirationTimestampMs") val expiration: Long? = null,
+    /** What kind of failure, as stated by the engine. See `errorKindOf`. */
     val kind: String? = null
 ) {
     companion object {
-        fun fromJson(json: JSONObject): LoginResult = LoginResult(
-            success = json.optBoolean("success", false),
-            user = if (json.has("user") && !json.isNull("user")) SpotifyUser.fromJson(json.getJSONObject("user")) else null,
-            error = json.optString("error", ""),
-            kind = json.optString("kind").takeIf { it.isNotBlank() },
-            accessToken = if (json.has("accessToken") && !json.isNull("accessToken")) json.optString("accessToken") else null,
-            expiration = if (json.has("accessTokenExpirationTimestampMs") && !json.isNull("accessTokenExpirationTimestampMs")) json.optLong("accessTokenExpirationTimestampMs") else null
-        )
+        fun fromJson(json: JSONObject): LoginResult = decodeWire(json)
     }
 }
 
+/**
+ * Generic success/error answer from a bridge.
+ *
+ * Two Rust types land here: `models::OperationResult` for the refusals built by hand, and
+ * `lib::FailedOperation` — which `serialize_result` produces for every bridge returning a `Result`,
+ * and which is the one that carries [kind].
+ */
+@Serializable
 data class OperationResult(
-    val success: Boolean,
-    val error: String?,
+    val success: Boolean = false,
+    val error: String? = null,
     /**
      * What kind of failure the engine says this was — `auth`, `rateLimited`, `transient`,
      * `permanent` — or null when it did not say.
      *
      * Null is not an error: a handful of refusals are built by hand on the Rust side and have no
-     * error type behind them to classify, and [errorKindOf] falls back to reading [error] for those.
+     * error type behind them to classify, and `errorKindOf` falls back to reading [error] for those.
      */
     val kind: String? = null
 ) {
     companion object {
-        fun fromJson(json: JSONObject): OperationResult = OperationResult(
-            success = json.optBoolean("success", false),
-            error = if (json.has("error") && !json.isNull("error")) json.optString("error") else null,
-            kind = json.optString("kind").takeIf { it.isNotBlank() }
-        )
+        fun fromJson(json: JSONObject): OperationResult = decodeWire(json)
     }
 }
 
@@ -118,75 +191,35 @@ data class OperationResult(
 // ARTISTS
 // =============================================================================
 
+@Serializable
 data class SimpleArtist(
-    val id: String,
-    val name: String,
-    val externalUri: String,
-    val images: List<SpotifyImage>?
+    val id: String = "",
+    val name: String = "",
+    val externalUri: String = "",
+    val images: List<SpotifyImage>? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        if (images != null) {
-            val imgArr = JSONArray()
-            images.forEach { imgArr.put(it.toJson()) }
-            json.put("images", imgArr)
-        }
-        return json
-    }
-    companion object {
-        fun fromJson(json: JSONObject): SimpleArtist = SimpleArtist(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            externalUri = json.optString("externalUri", ""),
-            images = if (json.has("images") && !json.isNull("images")) SpotifyImage.listFromJsonArray(json.optJSONArray("images")) else null
-        )
+    fun toJson(): JSONObject = encodeWire(this)
 
-        fun listFromJsonArray(array: JSONArray?): List<SimpleArtist> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+    companion object {
+        fun fromJson(json: JSONObject): SimpleArtist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<SimpleArtist> = decodeWireList(array)
     }
 }
 
+@Serializable
 data class FullArtist(
-    val id: String,
-    val name: String,
-    val externalUri: String,
-    val images: List<SpotifyImage>,
-    val genres: List<String>,
-    val followersTotal: Int?
+    val id: String = "",
+    val name: String = "",
+    val externalUri: String = "",
+    val images: List<SpotifyImage> = emptyList(),
+    val genres: List<String> = emptyList(),
+    @SerialName("followers") val followersTotal: Int? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        val imgArr = JSONArray()
-        images.forEach { imgArr.put(it.toJson()) }
-        json.put("images", imgArr)
-        val genreArr = JSONArray()
-        genres.forEach { genreArr.put(it) }
-        json.put("genres", genreArr)
-        followersTotal?.let { json.put("followers", it) }
-        return json
-    }
-    companion object {
-        fun fromJson(json: JSONObject): FullArtist = FullArtist(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            externalUri = json.optString("externalUri", ""),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            genres = json.optJSONArray("genres")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: emptyList(),
-            followersTotal = if (json.has("followers") && !json.isNull("followers")) json.optInt("followers") else null
-        )
+    fun toJson(): JSONObject = encodeWire(this)
 
-        fun listFromJsonArray(array: JSONArray?): List<FullArtist> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+    companion object {
+        fun fromJson(json: JSONObject): FullArtist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<FullArtist> = decodeWireList(array)
     }
 }
 
@@ -194,99 +227,44 @@ data class FullArtist(
 // ALBUMS
 // =============================================================================
 
+@Serializable
 data class SimpleAlbum(
-    val id: String,
-    val name: String,
-    val externalUri: String,
-    val releaseDate: String?,
-    val releaseDatePrecision: String?,
-    val images: List<SpotifyImage>,
-    val artists: List<SimpleArtist>,
-    val albumType: String?
+    val id: String = "",
+    val name: String = "",
+    val externalUri: String = "",
+    val releaseDate: String? = null,
+    val releaseDatePrecision: String? = null,
+    val images: List<SpotifyImage> = emptyList(),
+    val artists: List<SimpleArtist> = emptyList(),
+    val albumType: String? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        json.put("releaseDate", releaseDate)
-        json.put("releaseDatePrecision", releaseDatePrecision)
-        val imgArr = JSONArray()
-        images.forEach { imgArr.put(it.toJson()) }
-        json.put("images", imgArr)
-        val artArr = JSONArray()
-        artists.forEach { artArr.put(it.toJson()) }
-        json.put("artists", artArr)
-        json.put("albumType", albumType)
-        return json
-    }
-    companion object {
-        fun fromJson(json: JSONObject): SimpleAlbum = SimpleAlbum(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            externalUri = json.optString("externalUri", ""),
-            releaseDate = json.optString("releaseDate", ""),
-            releaseDatePrecision = json.optString("releaseDatePrecision", ""),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            artists = SimpleArtist.listFromJsonArray(json.optJSONArray("artists")),
-            albumType = json.optString("albumType", "")
-        )
+    fun toJson(): JSONObject = encodeWire(this)
 
-        fun listFromJsonArray(array: JSONArray?): List<SimpleAlbum> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+    companion object {
+        fun fromJson(json: JSONObject): SimpleAlbum = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<SimpleAlbum> = decodeWireList(array)
     }
 }
 
+@Serializable
 data class FullAlbum(
-    val id: String,
-    val name: String,
-    val externalUri: String,
-    val releaseDate: String?,
-    val releaseDatePrecision: String?,
-    val images: List<SpotifyImage>,
-    val artists: List<SimpleArtist>,
-    val albumType: String?,
-    val totalTracks: Int?,
-    val recordLabel: String?,
-    val genres: List<String>
+    val id: String = "",
+    val name: String = "",
+    val externalUri: String = "",
+    val releaseDate: String? = null,
+    val releaseDatePrecision: String? = null,
+    val images: List<SpotifyImage> = emptyList(),
+    val artists: List<SimpleArtist> = emptyList(),
+    val albumType: String? = null,
+    val totalTracks: Int? = null,
+    val recordLabel: String? = null,
+    val genres: List<String> = emptyList()
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        json.put("releaseDate", releaseDate)
-        json.put("releaseDatePrecision", releaseDatePrecision)
-        val imgArr = JSONArray()
-        images.forEach { imgArr.put(it.toJson()) }
-        json.put("images", imgArr)
-        val artArr = JSONArray()
-        artists.forEach { artArr.put(it.toJson()) }
-        json.put("artists", artArr)
-        json.put("albumType", albumType)
-        totalTracks?.let { json.put("totalTracks", it) }
-        json.put("recordLabel", recordLabel)
-        val genreArr = JSONArray()
-        genres.forEach { genreArr.put(it) }
-        json.put("genres", genreArr)
-        return json
-    }
+    fun toJson(): JSONObject = encodeWire(this)
+
     companion object {
-        fun fromJson(json: JSONObject): FullAlbum = FullAlbum(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            externalUri = json.optString("externalUri", ""),
-            releaseDate = json.optString("releaseDate", ""),
-            releaseDatePrecision = json.optString("releaseDatePrecision", ""),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            artists = SimpleArtist.listFromJsonArray(json.optJSONArray("artists")),
-            albumType = json.optString("albumType", ""),
-            totalTracks = if (json.has("totalTracks") && !json.isNull("totalTracks")) json.optInt("totalTracks") else null,
-            recordLabel = json.optString("recordLabel", ""),
-            genres = json.optJSONArray("genres")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: emptyList()
-        )
+        fun fromJson(json: JSONObject): FullAlbum = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<FullAlbum> = decodeWireList(array)
     }
 }
 
@@ -294,89 +272,23 @@ data class FullAlbum(
 // TRACKS
 // =============================================================================
 
+@Serializable
 data class FullTrack(
-    val id: String?,
-    val name: String,
-    val externalUri: String,
-    val explicit: Boolean,
-    val durationMs: Int,
-    val isrc: String,
-    val artists: List<SimpleArtist>,
-    val album: SimpleAlbum?,
+    val id: String? = null,
+    val name: String = "",
+    val externalUri: String = "",
+    val explicit: Boolean = false,
+    val durationMs: Int = 0,
+    val isrc: String = "",
+    val artists: List<SimpleArtist> = emptyList(),
+    val album: SimpleAlbum? = null,
     val addedAt: String? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        json.put("explicit", explicit)
-        json.put("durationMs", durationMs)
-        json.put("isrc", isrc)
-        val artArr = JSONArray()
-        artists.forEach { artArr.put(it.toJson()) }
-        json.put("artists", artArr)
-        json.put("album", album?.toJson())
-        if (addedAt != null) {
-            json.put("addedAt", addedAt)
-        }
-        return json
-    }
+    fun toJson(): JSONObject = encodeWire(this)
 
     companion object {
-        fun fromJson(json: JSONObject): FullTrack = FullTrack(
-            id = if (json.has("id") && !json.isNull("id")) json.optString("id") else null,
-            name = json.optString("name", ""),
-            externalUri = json.optString("externalUri", ""),
-            explicit = json.optBoolean("explicit", false),
-            durationMs = json.optInt("durationMs", 0),
-            isrc = json.optString("isrc", ""),
-            artists = SimpleArtist.listFromJsonArray(json.optJSONArray("artists")),
-            album = if (json.has("album") && !json.isNull("album")) SimpleAlbum.fromJson(json.getJSONObject("album")) else null,
-            addedAt = if (json.has("addedAt") && !json.isNull("addedAt")) json.optString("addedAt") else null
-        )
-
-        fun listFromJsonArray(array: JSONArray?): List<FullTrack> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).mapNotNull { i ->
-                val obj = array.optJSONObject(i) ?: return@mapNotNull null
-                fromJson(obj)
-            }
-        }
-    }
-}
-
-data class SavedTrackItem(
-    val addedAt: String,
-    val track: FullTrack
-) {
-    companion object {
-        fun fromJson(json: JSONObject): SavedTrackItem = SavedTrackItem(
-            addedAt = json.optString("added_at", ""),
-            track = FullTrack.fromJson(json.getJSONObject("track"))
-        )
-
-        fun listFromJsonArray(array: JSONArray?): List<SavedTrackItem> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
-    }
-}
-
-data class SavedAlbumItem(
-    val addedAt: String,
-    val album: FullAlbum
-) {
-    companion object {
-        fun fromJson(json: JSONObject): SavedAlbumItem = SavedAlbumItem(
-            addedAt = json.optString("added_at", ""),
-            album = FullAlbum.fromJson(json.getJSONObject("album"))
-        )
-
-        fun listFromJsonArray(array: JSONArray?): List<SavedAlbumItem> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+        fun fromJson(json: JSONObject): FullTrack = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<FullTrack> = decodeWireList(array)
     }
 }
 
@@ -386,47 +298,51 @@ data class SavedAlbumItem(
 
 typealias PlaylistOwner = SpotifyUser
 
-data class SimplePlaylist(
-    val id: String,
-    val name: String,
-    val description: String?,
-    val images: List<SpotifyImage>,
-    val externalUri: String,
-    val owner: PlaylistOwner?,
-    val totalTracks: Int?
-) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("description", description)
-        val imgArr = JSONArray()
-        images.forEach { imgArr.put(it.toJson()) }
-        json.put("images", imgArr)
-        json.put("externalUri", externalUri)
-        owner?.let { json.put("owner", it.toJson()) }
-        totalTracks?.let { 
-            val tracksObj = JSONObject()
-            tracksObj.put("total", it)
-            json.put("tracks", tracksObj)
-        }
-        return json
-    }
-    companion object {
-        fun fromJson(json: JSONObject): SimplePlaylist = SimplePlaylist(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            description = json.optString("description", "").cleanHtml(),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            externalUri = json.optString("externalUri", ""),
-            owner = if (json.has("owner") && !json.isNull("owner")) PlaylistOwner.fromJson(json.getJSONObject("owner")) else null,
-            totalTracks = json.optJSONObject("tracks")?.optInt("total")
-        )
+/**
+ * Track count container.
+ *
+ * Spotify nests the total one level down and the Rust type keeps that nesting, so this one does
+ * too — [SimplePlaylist.totalTracks] is the accessor callers had before.
+ */
+@Serializable
+data class PlaylistTracks(val total: Int = 0)
 
-        fun listFromJsonArray(array: JSONArray?): List<SimplePlaylist> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+@Serializable
+data class SimplePlaylist(
+    val id: String = "",
+    val name: String = "",
+    @Serializable(with = CleanHtmlSerializer::class) val description: String? = null,
+    val images: List<SpotifyImage> = emptyList(),
+    val externalUri: String = "",
+    val owner: PlaylistOwner? = null,
+    val tracks: PlaylistTracks? = null
+) {
+    val totalTracks: Int? get() = tracks?.total
+
+    fun toJson(): JSONObject = encodeWire(this)
+
+    companion object {
+        fun fromJson(json: JSONObject): SimplePlaylist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<SimplePlaylist> = decodeWireList(array)
+    }
+}
+
+@Serializable
+data class FullPlaylist(
+    val id: String = "",
+    val name: String = "",
+    @Serializable(with = CleanHtmlSerializer::class) val description: String? = null,
+    val images: List<SpotifyImage> = emptyList(),
+    val externalUri: String = "",
+    val owner: PlaylistOwner? = null,
+    val tracks: PlaylistTracks? = null,
+    val collaborative: Boolean = false,
+    val public: Boolean? = null
+) {
+    val totalTracks: Int? get() = tracks?.total
+
+    companion object {
+        fun fromJson(json: JSONObject): FullPlaylist = decodeWire(json)
     }
 }
 
@@ -435,63 +351,22 @@ data class SimplePlaylist(
  * [com.varuna.rustify.bridge.SpotifyRepository.localTracks]); the full FullTrack objects are
  * resolved by lookup when opened, to keep the file small and free of duplicated/stale metadata.
  * Its id is prefixed with "localpl:" to avoid colliding with Spotify ids.
+ *
+ * App-side only: this one has no Rust counterpart, so nothing in the contract test pins it.
  */
+@Serializable
 data class LocalPlaylist(
-    val id: String,
-    val name: String,
-    val trackIds: List<String>,
+    val id: String = "",
+    val name: String = "",
+    val trackIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("id", id)
-        put("name", name)
-        put("trackIds", JSONArray().apply { trackIds.forEach { put(it) } })
-        put("createdAt", createdAt)
-        put("updatedAt", updatedAt)
-    }
+    fun toJson(): JSONObject = encodeWire(this)
 
     companion object {
-        fun fromJson(o: JSONObject): LocalPlaylist = LocalPlaylist(
-            id = o.optString("id", ""),
-            name = o.optString("name", ""),
-            trackIds = o.optJSONArray("trackIds")?.let { a ->
-                (0 until a.length()).map { a.getString(it) }
-            } ?: emptyList(),
-            createdAt = o.optLong("createdAt", 0L),
-            updatedAt = o.optLong("updatedAt", 0L)
-        )
-
-        fun listFromJsonArray(array: JSONArray?): List<LocalPlaylist> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
-    }
-}
-
-data class FullPlaylist(
-    val id: String,
-    val name: String,
-    val description: String?,
-    val images: List<SpotifyImage>,
-    val externalUri: String,
-    val owner: PlaylistOwner?,
-    val totalTracks: Int?,
-    val collaborative: Boolean,
-    val public: Boolean?
-) {
-    companion object {
-        fun fromJson(json: JSONObject): FullPlaylist = FullPlaylist(
-            id = json.optString("id", ""),
-            name = json.optString("name", ""),
-            description = json.optString("description", "").cleanHtml(),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            externalUri = json.optString("externalUri", ""),
-            owner = if (json.has("owner") && !json.isNull("owner")) PlaylistOwner.fromJson(json.getJSONObject("owner")) else null,
-            totalTracks = json.optJSONObject("tracks")?.optInt("total"),
-            collaborative = json.optBoolean("collaborative", false),
-            public = if (json.has("public") && !json.isNull("public")) json.optBoolean("public") else null
-        )
+        fun fromJson(json: JSONObject): LocalPlaylist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<LocalPlaylist> = decodeWireList(array)
     }
 }
 
@@ -499,38 +374,20 @@ data class FullPlaylist(
 // USER
 // =============================================================================
 
+@Serializable
 data class SpotifyUser(
-    val id: String,
-    val name: String?,
-    val externalUri: String,
-    val images: List<SpotifyImage>,
-    val followersTotal: Int?,
-    val country: String?,
-    val product: String?
+    val id: String = "",
+    val name: String? = null,
+    val externalUri: String = "",
+    val images: List<SpotifyImage> = emptyList(),
+    @SerialName("followers") val followersTotal: Int? = null,
+    val country: String? = null,
+    val product: String? = null
 ) {
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-        json.put("id", id)
-        json.put("name", name)
-        json.put("externalUri", externalUri)
-        val imgArr = JSONArray()
-        images.forEach { imgArr.put(it.toJson()) }
-        json.put("images", imgArr)
-        followersTotal?.let { json.put("followers", it) }
-        json.put("country", country)
-        json.put("product", product)
-        return json
-    }
+    fun toJson(): JSONObject = encodeWire(this)
+
     companion object {
-        fun fromJson(json: JSONObject): SpotifyUser = SpotifyUser(
-            id = json.optString("id", ""),
-            name = if (json.has("name") && !json.isNull("name")) json.optString("name") else null,
-            externalUri = json.optString("externalUri", ""),
-            images = SpotifyImage.listFromJsonArray(json.optJSONArray("images")),
-            followersTotal = if (json.has("followers") && !json.isNull("followers")) json.optInt("followers") else null,
-            country = json.optString("country", ""),
-            product = json.optString("product", "")
-        )
+        fun fromJson(json: JSONObject): SpotifyUser = decodeWire(json)
     }
 }
 
@@ -538,51 +395,28 @@ data class SpotifyUser(
 // PAGINATION
 // =============================================================================
 
+@Serializable
 data class PaginatedResponse<T>(
-    val items: List<T>,
-    val total: Int,
-    val limit: Int,
-    val nextOffset: Int?,
-    val hasMore: Boolean
-) {
-    companion object {
-        fun <T> fromJson(
-            json: JSONObject,
-            itemParser: (JSONObject) -> T
-        ): PaginatedResponse<T> {
-            val itemsArray = json.optJSONArray("items") ?: JSONArray()
-            val items = (0 until itemsArray.length()).mapNotNull { i ->
-                val obj = itemsArray.optJSONObject(i) ?: return@mapNotNull null
-                try { itemParser(obj) } catch (_: Exception) { null }
-            }
-            return PaginatedResponse(
-                items = items,
-                total = json.optInt("total", 0),
-                limit = json.optInt("limit", 20),
-                nextOffset = if (json.has("nextOffset") && !json.isNull("nextOffset")) json.optInt("nextOffset") else null,
-                hasMore = json.optBoolean("hasMore", false)
-            )
-        }
-    }
-}
+    val items: List<T> = emptyList(),
+    val total: Int = 0,
+    val limit: Int = 20,
+    val nextOffset: Int? = null,
+    val hasMore: Boolean = false
+)
 
 // =============================================================================
 // SEARCH
 // =============================================================================
 
+@Serializable
 data class NormalizedSearchResults(
-    val tracks: List<FullTrack>,
-    val albums: List<SimpleAlbum>,
-    val artists: List<FullArtist>,
-    val playlists: List<SimplePlaylist>
+    val tracks: List<FullTrack> = emptyList(),
+    val albums: List<SimpleAlbum> = emptyList(),
+    val artists: List<FullArtist> = emptyList(),
+    val playlists: List<SimplePlaylist> = emptyList()
 ) {
     companion object {
-        fun fromJson(json: JSONObject): NormalizedSearchResults = NormalizedSearchResults(
-            tracks = FullTrack.listFromJsonArray(json.optJSONArray("tracks")),
-            albums = SimpleAlbum.listFromJsonArray(json.optJSONArray("albums")),
-            artists = FullArtist.listFromJsonArray(json.optJSONArray("artists")),
-            playlists = SimplePlaylist.listFromJsonArray(json.optJSONArray("playlists"))
-        )
+        fun fromJson(json: JSONObject): NormalizedSearchResults = decodeWire(json)
     }
 }
 
@@ -590,49 +424,83 @@ data class NormalizedSearchResults(
 // BROWSE
 // =============================================================================
 
+@Serializable
 data class BrowseSection(
-    val id: String,
-    val title: String,
-    val items: List<BrowseSectionItem>
+    val id: String = "",
+    val title: String = "",
+    @Serializable(with = BrowseItemsSerializer::class)
+    val items: List<BrowseSectionItem> = emptyList()
 ) {
     companion object {
-        fun fromJson(json: JSONObject): BrowseSection {
-            val itemsArray = json.optJSONArray("items") ?: JSONArray()
-            val items = (0 until itemsArray.length()).mapNotNull { i ->
-                val obj = itemsArray.optJSONObject(i) ?: return@mapNotNull null
-                BrowseSectionItem.fromJson(obj)
-            }
-            return BrowseSection(
-                id = json.optString("id", ""),
-                title = json.optString("title", ""),
-                items = items
-            )
-        }
-
-        fun listFromJsonArray(array: JSONArray?): List<BrowseSection> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).map { fromJson(array.getJSONObject(it)) }
-        }
+        fun fromJson(json: JSONObject): BrowseSection = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<BrowseSection> = decodeWireList(array)
     }
 }
 
+/**
+ * One item in a browse row.
+ *
+ * The Rust enum is `#[serde(tag = "type")]`, which puts the discriminator *inside* the object
+ * alongside the playlist's or album's own fields. kotlinx's polymorphism writes the payload under a
+ * nested key instead, so the two variants are read by hand here — the same shape serde produces, in
+ * fifteen lines, rather than a second declaration of every field.
+ *
+ * There used to be a third variant, `ArtistItem`, with two screens rendering it. The core has never
+ * had an `artist` variant, so neither branch could run. It is gone.
+ */
 sealed class BrowseSectionItem {
     data class PlaylistItem(val playlist: SimplePlaylist) : BrowseSectionItem()
     data class AlbumItem(val album: SimpleAlbum) : BrowseSectionItem()
-    data class ArtistItem(val artist: SimpleArtist) : BrowseSectionItem()
 
-    companion object {
-        fun fromJson(json: JSONObject): BrowseSectionItem? {
-            val type = json.optString("type", json.optString("objectType", "")).lowercase()
-            return when (type) {
-                "playlist" -> PlaylistItem(SimplePlaylist.fromJson(json))
-                "album" -> AlbumItem(SimpleAlbum.fromJson(json))
-                "artist" -> ArtistItem(SimpleArtist.fromJson(json))
+    internal companion object {
+        /** Null for a variant this build does not know — a newer core may add one. */
+        fun fromElement(json: Json, element: JsonElement): BrowseSectionItem? {
+            val obj = element as? JsonObject ?: return null
+            // The tag comes back off before the payload is decoded, exactly as serde takes it off
+            // before deserialising the variant. Leaving it on is only invisible because production
+            // ignores unknown keys — which is the whole shape of bug this pair of tests exists for,
+            // and it is how this line came to be written.
+            val payload = JsonObject(obj - "type")
+            return when (obj["type"]?.jsonPrimitive?.contentOrNull?.lowercase()) {
+                "playlist" -> PlaylistItem(json.decodeFromJsonElement(SimplePlaylist.serializer(), payload))
+                "album" -> AlbumItem(json.decodeFromJsonElement(SimpleAlbum.serializer(), payload))
                 else -> null
             }
         }
+
+        fun toElement(json: Json, item: BrowseSectionItem): JsonObject {
+            val (tag, payload) = when (item) {
+                is PlaylistItem ->
+                    "playlist" to json.encodeToJsonElement(SimplePlaylist.serializer(), item.playlist)
+                is AlbumItem ->
+                    "album" to json.encodeToJsonElement(SimpleAlbum.serializer(), item.album)
+            }
+            return JsonObject(payload.jsonObject + ("type" to JsonPrimitive(tag)))
+        }
     }
 }
+
+internal object BrowseItemsSerializer : KSerializer<List<BrowseSectionItem>> {
+    private val delegate = ListSerializer(JsonElement.serializer())
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun deserialize(decoder: Decoder): List<BrowseSectionItem> {
+        val input = decoder as? JsonDecoder
+            ?: throw IllegalStateException("BrowseSection is only ever decoded from JSON")
+        return delegate.deserialize(decoder)
+            .mapNotNull { BrowseSectionItem.fromElement(input.json, it) }
+    }
+
+    override fun serialize(encoder: Encoder, value: List<BrowseSectionItem>) {
+        val output = encoder as? JsonEncoder
+            ?: throw IllegalStateException("BrowseSection is only ever encoded to JSON")
+        output.encodeJsonElement(JsonArray(value.map { BrowseSectionItem.toElement(output.json, it) }))
+    }
+}
+
+// =============================================================================
+// HELPERS
+// =============================================================================
 
 fun String.cleanHtml(): String {
     return this.replace(Regex("<[^>]*>"), "")
@@ -653,53 +521,6 @@ fun FullTrack.effectiveCoverUrl(): String? =
     album?.images?.maxByOrNull { it.width ?: 0 }?.url
         ?: externalUri.takeIf { it.isNotBlank() }
 
-// =============================================================================
-
-
-// =============================================================================
-// YOUTUBE MUSIC MODELS (serialized via JNI from RustyPipe)
-// =============================================================================
-
-data class YtmArtistRef(
-    val id: String, val name: String
-) {
-    fun toJson(): JSONObject = JSONObject().apply { put("id", id); put("name", name) }
-    companion object {
-        fun fromJson(o: JSONObject) = YtmArtistRef(o.optString("id",""), o.optString("name",""))
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
-        fun toJsonArray(list: List<YtmArtistRef>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
-    }
-}
-
-data class YtmTrack(
-    val videoId: String, val title: String, val artists: List<YtmArtistRef>,
-    val albumId: String?, val durationSec: Int, val thumbnailUrl: String, val isExplicit: Boolean = false
-) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("video_id", videoId); put("title", title)
-        put("artists", JSONArray().apply { artists.forEach { put(it.toJson()) } })
-        put("album_id", albumId ?: ""); put("duration_sec", durationSec)
-        put("thumbnail_url", thumbnailUrl); put("is_explicit", isExplicit)
-    }
-    fun toFullTrack(): FullTrack = FullTrack(
-        id = "ytm:$videoId", name = title, externalUri = "https://music.youtube.com/watch?v=$videoId",
-        explicit = isExplicit, durationMs = durationSec * 1000, isrc = "",
-        artists = artists.map { SimpleArtist(it.id, it.name, "", null) },
-        album = SimpleAlbum("", "YouTube Music", "", null, null,
-            listOf(SpotifyImage(maximiseThumbnail(thumbnailUrl), 720, 720)), emptyList(), null)
-    )
-    companion object {
-        fun fromJson(o: JSONObject) = YtmTrack(
-            o.optString("video_id",""), o.optString("title",""),
-            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
-            o.optString("album_id","").ifBlank { null }, o.optInt("duration_sec"),
-            maximiseThumbnail(o.optString("thumbnail_url","")), o.optBoolean("is_explicit")
-        )
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
-        fun toJsonArray(list: List<YtmTrack>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
-    }
-}
-
 /**
  * Largest available source. The order of `images` is whatever Spotify's GraphQL returned in
  * `coverArt.sources`, which is **not** guaranteed to be widest-first, so anything that will be seen
@@ -708,7 +529,7 @@ data class YtmTrack(
 internal fun List<SpotifyImage>.largest(): SpotifyImage? =
     maxByOrNull { (it.width ?: 0) * (it.height ?: 0) }
 
-/** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w0-h0`). */
+/** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w720-h720`). */
 internal fun maximiseThumbnail(url: String): String {
     if (url.isBlank()) return url
     return url
@@ -717,91 +538,145 @@ internal fun maximiseThumbnail(url: String): String {
         .replace("/hqdefault.", "/maxresdefault.")
 }
 
+// =============================================================================
+// YOUTUBE MUSIC MODELS
+//
+// Mirrors of core_engine/src/youtube/models.rs. snake_case on the wire, because those types are
+// `Deserialize` as well and the core reads back what it wrote.
+// =============================================================================
+
+@Serializable
+data class YtmArtistRef(
+    val id: String = "",
+    val name: String = ""
+) {
+    fun toJson(): JSONObject = encodeWire(this)
+
+    companion object {
+        fun fromJson(json: JSONObject): YtmArtistRef = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<YtmArtistRef> = decodeWireList(array)
+        fun toJsonArray(list: List<YtmArtistRef>): JSONArray = encodeWireArray(list)
+    }
+}
+
+@Serializable
+data class YtmTrack(
+    @SerialName("video_id") val videoId: String = "",
+    val title: String = "",
+    val artists: List<YtmArtistRef> = emptyList(),
+    @SerialName("album_id")
+    @Serializable(with = BlankAsNullSerializer::class) val albumId: String? = null,
+    @SerialName("duration_sec") val durationSec: Int = 0,
+    @SerialName("thumbnail_url")
+    @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
+    @SerialName("is_explicit") val isExplicit: Boolean = false
+) {
+    fun toJson(): JSONObject = encodeWire(this)
+
+    fun toFullTrack(): FullTrack = FullTrack(
+        id = "ytm:$videoId", name = title, externalUri = "https://music.youtube.com/watch?v=$videoId",
+        explicit = isExplicit, durationMs = durationSec * 1000, isrc = "",
+        artists = artists.map { SimpleArtist(it.id, it.name, "", null) },
+        album = SimpleAlbum("", "YouTube Music", "", null, null,
+            listOf(SpotifyImage(maximiseThumbnail(thumbnailUrl), 720, 720)), emptyList(), null)
+    )
+
+    companion object {
+        fun fromJson(json: JSONObject): YtmTrack = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<YtmTrack> = decodeWireList(array)
+        fun toJsonArray(list: List<YtmTrack>): JSONArray = encodeWireArray(list)
+    }
+}
+
+@Serializable
 data class YtmAlbum(
-    val browseId: String, val title: String, val artists: List<YtmArtistRef>,
-    val year: Int?, val thumbnailUrl: String, val tracks: List<YtmTrack>
+    @SerialName("browse_id") val browseId: String = "",
+    val title: String = "",
+    val artists: List<YtmArtistRef> = emptyList(),
+    @Serializable(with = ZeroAsNullSerializer::class) val year: Int? = null,
+    @SerialName("thumbnail_url")
+    @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
+    val tracks: List<YtmTrack> = emptyList()
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("browse_id", browseId); put("title", title)
-        put("artists", JSONArray().apply { artists.forEach { put(it.toJson()) } })
-        put("year", year?:0); put("thumbnail_url", thumbnailUrl)
-        put("tracks", YtmTrack.toJsonArray(tracks))
-    }
+    fun toJson(): JSONObject = encodeWire(this)
+
     companion object {
-        fun fromJson(o: JSONObject) = YtmAlbum(
-            o.optString("browse_id",""), o.optString("title",""),
-            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
-            o.optInt("year").takeIf { it > 0 }, maximiseThumbnail(o.optString("thumbnail_url","")),
-            YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
-        )
+        fun fromJson(json: JSONObject): YtmAlbum = decodeWire(json)
     }
 }
 
+@Serializable
 data class YtmAlbumSlim(
-    val browseId: String, val title: String, val year: Int?, val thumbnailUrl: String
+    @SerialName("browse_id") val browseId: String = "",
+    val title: String = "",
+    @Serializable(with = ZeroAsNullSerializer::class) val year: Int? = null,
+    @SerialName("thumbnail_url")
+    @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = ""
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("browse_id", browseId); put("title", title); put("year", year?:0); put("thumbnail_url", thumbnailUrl)
-    }
+    fun toJson(): JSONObject = encodeWire(this)
+
     companion object {
-        fun fromJson(o: JSONObject) = YtmAlbumSlim(o.optString("browse_id",""), o.optString("title",""), o.optInt("year").takeIf { it > 0 }, maximiseThumbnail(o.optString("thumbnail_url","")))
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
-        fun toJsonArray(list: List<YtmAlbumSlim>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+        fun fromJson(json: JSONObject): YtmAlbumSlim = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<YtmAlbumSlim> = decodeWireList(array)
+        fun toJsonArray(list: List<YtmAlbumSlim>): JSONArray = encodeWireArray(list)
     }
 }
 
+@Serializable
 data class YtmArtist(
-    val channelId: String, val name: String, val thumbnailUrl: String,
-    val topTracks: List<YtmTrack>, val albums: List<YtmAlbumSlim>
+    @SerialName("channel_id") val channelId: String = "",
+    val name: String = "",
+    @SerialName("thumbnail_url")
+    @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
+    @SerialName("top_tracks") val topTracks: List<YtmTrack> = emptyList(),
+    val albums: List<YtmAlbumSlim> = emptyList()
 ) {
     companion object {
-        fun fromJson(o: JSONObject) = YtmArtist(
-            o.optString("channel_id",""), o.optString("name",""), maximiseThumbnail(o.optString("thumbnail_url","")),
-            YtmTrack.listFromJsonArray(o.optJSONArray("top_tracks")),
-            YtmAlbumSlim.listFromJsonArray(o.optJSONArray("albums"))
-        )
+        fun fromJson(json: JSONObject): YtmArtist = decodeWire(json)
     }
 }
 
+@Serializable
 data class YtmPlaylist(
-    val playlistId: String, val title: String, val author: String?,
-    val thumbnailUrl: String, val tracks: List<YtmTrack>
+    @SerialName("playlist_id") val playlistId: String = "",
+    val title: String = "",
+    @Serializable(with = BlankAsNullSerializer::class) val author: String? = null,
+    @SerialName("thumbnail_url")
+    @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
+    val tracks: List<YtmTrack> = emptyList()
 ) {
     companion object {
-        fun fromJson(o: JSONObject) = YtmPlaylist(
-            o.optString("playlist_id",""), o.optString("title",""),
-            o.optString("author","").ifBlank { null }, maximiseThumbnail(o.optString("thumbnail_url","")),
-            YtmTrack.listFromJsonArray(o.optJSONArray("tracks"))
-        )
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
+        fun fromJson(json: JSONObject): YtmPlaylist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<YtmPlaylist> = decodeWireList(array)
     }
 }
 
+/** App-side only: the YT Music equivalent of [LocalPlaylist], with no Rust counterpart. */
+@Serializable
 data class YtmLocalPlaylist(
-    val localId: String, val name: String, val items: List<YtmTrack>,
-    val createdAt: Long, val updatedAt: Long
+    val localId: String = "",
+    val name: String = "",
+    val items: List<YtmTrack> = emptyList(),
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("localId", localId); put("name", name)
-        put("items", YtmTrack.toJsonArray(items)); put("createdAt", createdAt); put("updatedAt", updatedAt)
-    }
+    fun toJson(): JSONObject = encodeWire(this)
+
     companion object {
-        fun fromJson(o: JSONObject) = YtmLocalPlaylist(o.optString("localId",""), o.optString("name",""), YtmTrack.listFromJsonArray(o.optJSONArray("items")), o.optLong("createdAt"), o.optLong("updatedAt"))
-        fun listFromJsonArray(a: JSONArray?) = if (a==null) emptyList() else (0 until a.length()).map { fromJson(a.getJSONObject(it)) }
-        fun toJsonArray(list: List<YtmLocalPlaylist>) = JSONArray().apply { list.forEach { put(it.toJson()) } }
+        fun fromJson(json: JSONObject): YtmLocalPlaylist = decodeWire(json)
+        fun listFromJsonArray(array: JSONArray?): List<YtmLocalPlaylist> = decodeWireList(array)
+        fun toJsonArray(list: List<YtmLocalPlaylist>): JSONArray = encodeWireArray(list)
     }
 }
 
+@Serializable
 data class YtmSearchResults(
-    val tracks: List<YtmTrack>, val albums: List<YtmAlbumSlim>,
-    val artists: List<YtmArtistRef>, val playlists: List<YtmPlaylist>
+    val tracks: List<YtmTrack> = emptyList(),
+    val albums: List<YtmAlbumSlim> = emptyList(),
+    val artists: List<YtmArtistRef> = emptyList(),
+    val playlists: List<YtmPlaylist> = emptyList()
 ) {
     companion object {
-        fun fromJson(o: JSONObject) = YtmSearchResults(
-            YtmTrack.listFromJsonArray(o.optJSONArray("tracks")),
-            YtmAlbumSlim.listFromJsonArray(o.optJSONArray("albums")),
-            YtmArtistRef.listFromJsonArray(o.optJSONArray("artists")),
-            YtmPlaylist.listFromJsonArray(o.optJSONArray("playlists"))
-        )
+        fun fromJson(json: JSONObject): YtmSearchResults = decodeWire(json)
     }
 }

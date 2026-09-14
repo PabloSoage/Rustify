@@ -40,7 +40,9 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         // So the retry loop and the timeout were fighting: instead of one attempt that would have
         // worked, you got three that were all killed. The loop is now deadline-aware as well (see
         // `extractStreamUrlWithRetry`), and this is the budget it is aware of.
-        resolveTimeoutMs = 40_000
+        resolveTimeoutMs = 40_000,
+        // It fetches the video the id names, so a chosen alternative is exactly what it plays.
+        honoursYoutubeHint = true
     )
 
     override fun initialize() {

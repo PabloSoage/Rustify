@@ -1,0 +1,15 @@
+{
+  "id": "user-id",
+  "name": "Pablo",
+  "externalUri": "spotify:user:user-id",
+  "images": [
+    {
+      "url": "https://i.scdn.co/image/cover-640",
+      "height": 640,
+      "width": 480
+    }
+  ],
+  "followers": 17,
+  "country": "ES",
+  "product": "premium"
+}

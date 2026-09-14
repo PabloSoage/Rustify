@@ -1,0 +1,22 @@
+{
+  "playlist_id": "PLplaylist",
+  "title": "Road trip",
+  "author": "Pablo",
+  "thumbnail_url": "https://lh3.googleusercontent.com/thumb=w120-h120",
+  "tracks": [
+    {
+      "video_id": "dQw4w9WgXcQ",
+      "title": "Jóga",
+      "artists": [
+        {
+          "id": "UCartist",
+          "name": "Björk"
+        }
+      ],
+      "album_id": "MPREb_album",
+      "duration_sec": 303,
+      "thumbnail_url": "https://lh3.googleusercontent.com/thumb=w120-h120",
+      "is_explicit": true
+    }
+  ]
+}

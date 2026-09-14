@@ -23,7 +23,9 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         canStream = true,
         canDownload = true,
         requiresToken = false,
-        maxQualityKbps = 160
+        maxQualityKbps = 160,
+        // Same YouTube video, fetched through an Invidious instance instead of yt-dlp.
+        honoursYoutubeHint = true
     )
 
     override suspend fun isAvailableFor(track: FullTrack): Boolean =

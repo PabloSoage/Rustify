@@ -599,7 +599,7 @@ fun PlaylistScreen(
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 spotifyRepo.toggleFollowPlaylist(
-                                    SimplePlaylist(pl.id, pl.name, pl.description, pl.images, pl.externalUri, pl.owner, pl.totalTracks)
+                                    SimplePlaylist(pl.id, pl.name, pl.description, pl.images, pl.externalUri, pl.owner, pl.tracks)
                                 )
                             }
                         }) {

@@ -814,6 +814,36 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
 
             /**
+             * Says, out loud, whether anything ever changes the playback rate.
+             *
+             * Reported symptom: a song occasionally runs slightly fast or slow, so the pitch shifts
+             * and voices go out of tune. Nothing in this app asks for that — there is no
+             * `setPlaybackSpeed`, no `PlaybackParameters`, no silence-skipping and no audio offload
+             * anywhere in the source — but the session grants `COMMAND_SET_SPEED_AND_PITCH` to every
+             * controller that connects (the notification, Android Auto, Assistant, a head unit), so
+             * "nothing in this app" is not the same as "nothing".
+             *
+             * This line is what tells the two apart, because they need opposite fixes:
+             *
+             *  - a `speed` that is ever not 1.0 means a controller asked, and the answer is to stop
+             *    handing that command out in `LibraryCallback.onConnect`;
+             *  - a `speed` that stays 1.0 while the pitch audibly drifts means it is below the
+             *    player — the audio sink, a device resampler, or a Bluetooth clock — and no change
+             *    here would have fixed it.
+             *
+             * Logged at warn so it survives a filtered logcat: `adb logcat -s AudioPlayerService:W`.
+             */
+            override fun onPlaybackParametersChanged(
+                playbackParameters: androidx.media3.common.PlaybackParameters
+            ) {
+                android.util.Log.w(
+                    "AudioPlayerService",
+                    "playback rate changed: speed=${playbackParameters.speed} " +
+                        "pitch=${playbackParameters.pitch} — nothing in Rustify asks for this"
+                )
+            }
+
+            /**
              * Keeps a pause the user asked for from being undone by audio focus.
              *
              * Reported as: with the music paused, the notification for "USB debugging connected"
@@ -1114,7 +1144,23 @@ class AudioPlayerService private constructor(private val context: Context) {
     /** Upper bound for the lock, far beyond any real resolution; the `finally` is what normally frees it. */
     private val resolutionWakeLockTimeoutMs = 90_000L
 
-    private fun playTrack(track: FullTrack, youtubeId: String? = null, isAutoRetry: Boolean = false) {
+    /**
+     * @param youtubeId play *this specific video* rather than whatever this track resolves to. A
+     *   chosen alternative, a preview of one, or an auto-retry of one. Everything keyed by
+     *   `trackId` — the persisted URL, the pre-resolved URL, the local match, the stream cache — is
+     *   about the track and not about this video, so a hint switches all of it off. The guards are
+     *   spread over the body because the caches are; the rule is one rule.
+     * @param isPreview an audition from the alternatives dialog, not a decision. It plays, and it
+     *   writes nothing down: previewing a candidate used to persist its URL and start caching its
+     *   bytes under the *track's* id, so auditioning a wrong match left the track playing that
+     *   match afterwards even if the dialog was dismissed.
+     */
+    private fun playTrack(
+        track: FullTrack,
+        youtubeId: String? = null,
+        isAutoRetry: Boolean = false,
+        isPreview: Boolean = false
+    ) {
         val trackId = track.id ?: return
         // Whatever the last error was, it is not the one being described any more: this phone is
         // about to play something. Cleared here rather than where the error is shown, because every
@@ -1281,8 +1327,32 @@ class AudioPlayerService private constructor(private val context: Context) {
                                 // play of this track skips everything above. It does not delay this
                                 // one: the answer is null unless the bytes happen to be there
                                 // already, and then playing them is strictly better anyway.
-                                routedUrl = com.varuna.rustify.audio.StreamRouting
-                                    .rememberAfterResolving(context, trackId, info)
+                                //
+                                // Never from a preview: those bytes are a candidate being auditioned
+                                // under the real track's id, and storing them makes the audition
+                                // permanent whether or not the user accepts it.
+                                if (!isPreview) {
+                                    val routed = com.varuna.rustify.audio.StreamRouting
+                                        .rememberAfterResolving(context, trackId, info)
+                                    // "and then playing them is strictly better anyway" is true for
+                                    // exactly one case: no hint. The cache is keyed by the *track*
+                                    // (`g<gen>-<trackId>`, never the video), so with a hint the file
+                                    // on disk is the recording being replaced — and it is handed
+                                    // back here, past the `effectiveYoutubeId.isNullOrBlank()` guard
+                                    // above, because that guard is on the *read* and this is the
+                                    // *write* returning a URL as a side effect.
+                                    //
+                                    // This is the bug where every alternative you previewed played
+                                    // the current song: the chain resolved the right video, yt-dlp
+                                    // returned the right URL, and then `routedUrl` won. Confirming a
+                                    // choice worked only because that path calls `StreamRouting
+                                    // .forget` first, which is why previewing looked broken and
+                                    // accepting did not.
+                                    //
+                                    // The call still happens: after a confirmed alternative the old
+                                    // file is gone and this is what starts caching the new one.
+                                    routedUrl = if (effectiveYoutubeId.isNullOrBlank()) routed else null
+                                }
                             }
                             res.onFailure { e ->
                                 // Surface the real per-provider reason so the banner isn't just "not playable".
@@ -1328,7 +1398,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // cannot connect to anything. A backend can produce one directly — Deezer returns
                 // the proxy URL — so this checks the URL rather than where it came from.
                 val persistable = streamUrl
-                if (!TrackRef.isLocal(trackId) && !isLocalStream &&
+                if (!isPreview && !TrackRef.isLocal(trackId) && !isLocalStream &&
                     !persistable.isNullOrBlank() &&
                     !persistable.startsWith(LOOPBACK_PREFIX)
                 ) {
@@ -1682,10 +1752,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    fun playPreview(spotifyTrackId: String, youtubeVideoId: String) {
-        val track = _state.value.currentTrack
-            ?: FullTrack(spotifyTrackId, "", "", false, 0, "", emptyList(), null)
-        playTrack(track, youtubeVideoId)
+    /**
+     * Audition one specific YouTube video for [track] — the play button in the alternatives dialog.
+     *
+     * It takes the track rather than its id because [playTrack] registers the metadata the resolver
+     * matches on, and a blank shell would overwrite the real metadata with nothing. The previous
+     * shape read `currentTrack` and ignored the id it was handed, so previewing from any screen that
+     * was not the playing track previewed the wrong song entirely.
+     */
+    fun playPreview(track: FullTrack, youtubeVideoId: String) {
+        playTrack(track, youtubeVideoId, isPreview = true)
     }
 
     // -----------------------------------------------------------------------

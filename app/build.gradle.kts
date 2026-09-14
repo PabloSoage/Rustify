@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val localProperties = Properties().apply {
@@ -22,7 +23,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "3.7.1b"
+        versionName = "3.7.2b"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -94,6 +95,16 @@ android {
         resValues = true
     }
 
+    testOptions {
+        unitTests {
+            // The JVM unit tests reach code that logs — `AudioSourceChain` logs every provider
+            // attempt, which is the line that says whether a backend was slow or hung. Without this
+            // the stub `android.util.Log` throws, so the only testable code would be the code that
+            // never logs, and the chain's own ordering rules would stay untested.
+            isReturnDefaultValues = true
+        }
+    }
+
     sourceSets {
         getByName("main") {
             jniLibs.directories.add("src/main/jniLibs")
@@ -150,6 +161,8 @@ dependencies {
     implementation(libs.okhttp)
     // E99 — open-source keyless map (travel playlist).
     implementation(libs.maplibre.android)
+    // P — generated decoders for the engine's wire types (bridge/SpotifyModels.kt).
+    implementation(libs.kotlinx.serialization.json)
 }
 
 // --- RUST CORE INTEGRATION ---

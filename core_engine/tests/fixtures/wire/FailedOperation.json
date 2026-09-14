@@ -1,0 +1,5 @@
+{
+  "success": false,
+  "error": "Spotify API error 401: token expired",
+  "kind": "auth"
+}

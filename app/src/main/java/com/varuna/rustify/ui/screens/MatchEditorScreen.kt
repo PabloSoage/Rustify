@@ -241,7 +241,13 @@ fun MatchEditorScreen(
                     } else {
                         IconButton(onClick = {
                             startingId = tid
-                            runCatching { audioPlayerService.playPreview(tid, ytId) }
+                            // `ft` may still be loading; the shell carries the id, which is all a
+                            // hinted resolution needs. Same fallback the edit button already uses.
+                            val previewTrack = ft ?: FullTrack(
+                                id = tid, name = tid, externalUri = "", explicit = false,
+                                durationMs = 0, isrc = "", artists = emptyList(), album = null
+                            )
+                            runCatching { audioPlayerService.playPreview(previewTrack, ytId) }
                         }) {
                             Icon(
                                 if (isNowPlaying) Icons.AutoMirrored.Filled.VolumeUp

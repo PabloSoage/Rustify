@@ -59,7 +59,22 @@ data class AudioSourceCapabilities(
      * as "did this HTTP endpoint answer" is what produced a timeout on tracks that would have
      * resolved.
      */
-    val resolveTimeoutMs: Long? = null
+    val resolveTimeoutMs: Long? = null,
+    /**
+     * Can this provider play a *specific* YouTube video, rather than whatever it finds for the
+     * track?
+     *
+     * The `hint` of [AudioSourceProvider.resolveStreamUrl] is a YouTube video id — the alternative
+     * the user picked — and only a provider that fetches from YouTube can honour one. Deezer and an
+     * add-on cannot: they resolve from the track's own metadata, so handed a hint they return the
+     * recording the user was trying to replace.
+     *
+     * That is not a hypothetical. It is why previewing an alternative played the current song back:
+     * the chain asked every provider, the first one in the user's order could not use the hint, and
+     * it answered successfully — so every candidate sounded identical. A provider that cannot honour
+     * a hint is now not asked when there is one. See [AudioSourceChain.resolveStreamUrl].
+     */
+    val honoursYoutubeHint: Boolean = false
 )
 
 /**
