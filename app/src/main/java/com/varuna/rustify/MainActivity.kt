@@ -1617,6 +1617,18 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
+                    // Compose's AndroidView attaches its child with WRAP_CONTENT layout params and
+                    // sizes it through the modifier instead. WebView does not go along with that:
+                    // AwLayoutSizer reads the params, not the measure spec, and a WRAP_CONTENT
+                    // height turns on `force_zero_layout_height` — Blink then lays the page out in a
+                    // viewport zero pixels tall. `innerHeight` still reads right, so the damage is
+                    // invisible until a page sizes itself off the viewport: Spotify's login screen
+                    // roots at `position:absolute; inset:0`, which collapses to nothing but its own
+                    // padding, and the screen goes blank with no error anywhere.
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     // The challenge step can open a second window; without this that tap is inert

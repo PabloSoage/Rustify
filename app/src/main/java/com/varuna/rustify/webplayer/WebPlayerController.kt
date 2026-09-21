@@ -293,6 +293,13 @@ object WebPlayerController {
         playbackUsesDesktop(context)   // prime the cache; the playback path has no Context
         adblockEnabled(context)
         val wv = WebView(context.applicationContext).apply {
+            // See the note in SpotifyLoginWebView: Compose's AndroidView would otherwise leave this
+            // on WRAP_CONTENT, which makes WebView force Blink's layout height to zero and breaks
+            // every `vh`/`inset:0` rule the page has.
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
