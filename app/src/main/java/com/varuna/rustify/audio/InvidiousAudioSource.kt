@@ -1,13 +1,12 @@
 package com.varuna.rustify.audio
 
 import android.content.Context
+import android.util.Log
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
 
 /**
@@ -39,20 +38,18 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
             require(videoId.isNotBlank()) { "no YouTube id" }
             val instances = InvidiousInstances.selected(appContext)
             require(instances.isNotEmpty()) { "no Invidious instances configured" }
-            for (inst in instances.take(6)) {
-                val url = fetchAudioUrl(inst, videoId, local = false)
-                    ?: fetchAudioUrl(inst, videoId, local = true)
-                if (url != null) {
-                    return@runCatching StreamInfo(
-                        uri = url,
-                        expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L,
-                        mimeType = null,
-                        // Worth caching: the URL dies in six hours, the audio does not.
-                        cache = CacheHint(upstreamUrl = url)
-                    )
-                }
+            for (inst in InvidiousInstances.inTryOrder(instances).take(6)) {
+                val found = InvidiousInstances.resolveAudio(appContext, inst, videoId) ?: continue
+                Log.d(TAG, "$videoId via ${inst.baseUrl} (${found.via})")
+                return@runCatching StreamInfo(
+                    uri = found.url,
+                    expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L,
+                    mimeType = found.mimeType,
+                    // Worth caching: the URL dies in six hours, the audio does not.
+                    cache = CacheHint(upstreamUrl = found.url)
+                )
             }
-            error("all Invidious instances failed for $videoId")
+            error("no instance returned audio for $videoId (tried ${instances.take(6).size})")
         }
     }
 
@@ -66,31 +63,8 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         }
     }
 
-    /** GET /api/v1/videos/{id} -> best audio `adaptiveFormats` (or `formatStreams` as fallback). */
-    private fun fetchAudioUrl(inst: InvidiousInstances.Instance, videoId: String, local: Boolean): String? = runCatching {
-        val url = "${inst.baseUrl}/api/v1/videos/$videoId?fields=adaptiveFormats,formatStreams&local=$local"
-        val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
-        val body = InvidiousInstances.clientFor(appContext, inst).newCall(req).execute().use { r ->
-            if (!r.isSuccessful) return null
-            r.body.string()
-        }
-        val obj = JSONObject(body)
-        val adaptive = obj.optJSONArray("adaptiveFormats")
-        var bestUrl: String? = null; var bestBitrate = -1L
-        if (adaptive != null) {
-            for (i in 0 until adaptive.length()) {
-                val f = adaptive.optJSONObject(i) ?: continue
-                val type = f.optString("type")
-                if (!type.startsWith("audio", true)) continue
-                val br = f.optString("bitrate").toLongOrNull() ?: f.optLong("bitrate", 0)
-                val u = f.optString("url")
-                if (u.isNotBlank() && br > bestBitrate) { bestBitrate = br; bestUrl = u }
-            }
-        }
-        if (bestUrl != null) return bestUrl
-        // Fallback: first muxed formatStream (it has audio).
-        obj.optJSONArray("formatStreams")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
-    }.getOrNull()
-
-    companion object { const val ID = "invidious" }
+    companion object {
+        const val ID = "invidious"
+        private const val TAG = "InvidiousAudioSource"
+    }
 }

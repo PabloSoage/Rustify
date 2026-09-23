@@ -758,6 +758,11 @@ fun EngineTester(
                     val result = spotifyRepo.login(codeOrCookie)
                     if (result.success) {
                         isLoggedIn = true
+                        // Whatever sent us to the login screen is over. Without this, the "Saved
+                        // session expired" that the start-up restore left here outlived the login
+                        // that answered it, and Home showed it with a retry button over a session
+                        // that was working — only the retry cleared it.
+                        errorMessage = null
                         try {
                             browseSections = spotifyRepo.getBrowseSections(10)
                         } catch (e: Exception) {

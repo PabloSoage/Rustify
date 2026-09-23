@@ -268,15 +268,8 @@ object WebPlayerController {
      * it with a desktop UA gets the real player. The Chrome major version is taken from the system
      * WebView's own UA so it never goes stale as the device updates.
      */
-    private fun userAgentFor(desktop: Boolean, systemUa: String): String {
-        if (!desktop) {
-            // Plain Chrome-for-Android: drop the markers that identify an embedded WebView.
-            return systemUa.replace("; wv", "").replace("Version/4.0 ", "")
-        }
-        val chromeMajor = Regex("Chrome/(\\d+)").find(systemUa)?.groupValues?.get(1) ?: "124"
-        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/$chromeMajor.0.0.0 Safari/537.36"
-    }
+    private fun userAgentFor(desktop: Boolean, systemUa: String): String =
+        if (desktop) WebUserAgents.desktop(systemUa) else WebUserAgents.mobile(systemUa)
 
     // -------------------------------------------------------------------------------------------
     // Lifecycle
