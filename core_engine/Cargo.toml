@@ -115,3 +115,10 @@ strip = true        # Strips debugging symbols
 # a row and hoping the filesystem can tell them apart is how a cache-eviction test becomes flaky on
 # whichever machine has one-second timestamp resolution.
 filetime = "0.2"
+
+# The end-to-end tests drive the engine through `MockEnv`, which only exists outside `cfg(test)`
+# with this feature. Declared so a plain `cargo test` skips them instead of failing to compile them —
+# which is what it did, and why these tests had never run. CI passes the feature.
+[[test]]
+name = "end_to_end"
+required-features = ["mock-env"]

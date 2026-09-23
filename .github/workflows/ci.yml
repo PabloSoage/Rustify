@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core_engine
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core_engine
+
+      # Unit tests (wire-contract fixtures included) and the end-to-end tests, which drive the engine
+      # through MockEnv and need it exposed outside cfg(test).
+      #
+      # Not enforced yet, and on purpose rather than forgotten: `cargo fmt --check` (the crate has
+      # never been fmt-clean — 312 hunks) and `cargo clippy -- -D warnings` (88 findings). A check
+      # that fails on every run teaches everyone to ignore the red.
+      - run: cargo test --all-targets --features mock-env
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      # Compiles the app and runs the JVM unit tests, SpotifyModelsContractTest among them — the
+      # Kotlin half of the wire contract, reading the same fixtures the core job checks.
+      #
+      # No NDK and no cargo-ndk needed: the Rust build hooks into merge*JniLibFolders, which this
+      # task never reaches. What it is here to catch is a Kotlin or resource break.
+      - run: ./gradlew :app:testDebugUnitTest --no-daemon
