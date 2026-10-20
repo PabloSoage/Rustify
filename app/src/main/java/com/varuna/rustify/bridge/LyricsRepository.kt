@@ -40,7 +40,7 @@ object LyricsRepository {
         for (entry in LyricsSettings.load(context)) {
             if (!entry.enabled) continue
             val provider = LyricsProviders.byId(entry.id) ?: continue
-            val res = runCatching { provider.fetch(cleanArtist, cleanTitle, durationSec) }.getOrNull()
+            val res = runCatching { provider.fetchFor(trackId, cleanArtist, cleanTitle, durationSec) }.getOrNull()
             if (res != null && (res.synced.isNotEmpty() || !res.plain.isNullOrBlank())) {
                 cache[trackId] = res
                 return res

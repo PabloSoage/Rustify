@@ -25,6 +25,13 @@ interface LyricsProvider {
     val id: String
     val displayNameRes: Int
     suspend fun fetch(artist: String, title: String, durationSec: Int): LyricsResult?
+
+    /**
+     * The same, with the track's id. Every provider matched by artist and title ignores it; the
+     * Spotify one is asked for the track itself, which is the whole of its advantage.
+     */
+    suspend fun fetchFor(trackId: String, artist: String, title: String, durationSec: Int): LyricsResult? =
+        fetch(artist, title, durationSec)
 }
 
 internal object LyricsHttp {
@@ -73,6 +80,47 @@ private fun stripHtml(html: String): String =
         .lines().joinToString("\n") { it.trim() }.trim()
 
 // ── Providers ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Spotify's own lyrics (4.3), asked for by track id — no "artist + title" guess to get wrong. Needs a
+ * Spotify session (measured: the anonymous token is refused); without one, or for a track that is not
+ * a Spotify one, it answers null and the next provider is asked. See `core_engine/src/spotify/lyrics.rs`.
+ */
+object SpotifyLyricsProvider : LyricsProvider {
+    override val id = "spotify"
+    override val displayNameRes = R.string.lyrics_provider_spotify
+
+    override suspend fun fetch(artist: String, title: String, durationSec: Int): LyricsResult? = null
+
+    override suspend fun fetchFor(trackId: String, artist: String, title: String, durationSec: Int): LyricsResult? {
+        val spotifyId = TrackRef.parse(trackId)?.spotifyId ?: return null
+        val json = NativeEngine.getSpotifyLyrics(spotifyId)
+        val element = runCatching { RustifyJson.parseToJsonElement(json) }.getOrNull() ?: return null
+        if ((element as? kotlinx.serialization.json.JsonObject)?.get("success") != null) return null
+        val lyrics = runCatching { RustifyJson.decodeFromJsonElement(SpotifyLyrics.serializer(), element) }
+            .getOrNull() ?: return null
+        val lines = lyrics.lines.filter { it.words.isNotBlank() }
+        return if (lyrics.syncType == "UNSYNCED") {
+            LyricsResult(synced = emptyList(), plain = lines.joinToString("\n") { it.words })
+        } else {
+            LyricsResult(
+                synced = lines.map { LyricLine(it.startMs, it.words) },
+                plain = lines.joinToString("\n") { it.words }
+            )
+        }
+    }
+}
+
+/** `spotify::lyrics::SpotifyLyrics`, pinned by the `SpotifyLyrics` wire fixture. */
+@kotlinx.serialization.Serializable
+data class SpotifyLyrics(
+    val syncType: String = "",
+    val lines: List<SpotifyLyricLine> = emptyList(),
+    val provider: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class SpotifyLyricLine(val startMs: Long = 0, val words: String = "")
 
 object LrcLibProvider : LyricsProvider {
     override val id = "lrclib"
@@ -158,7 +206,7 @@ object PetitLyricsProvider : LyricsProvider {
 }
 
 object LyricsProviders {
-    val ALL: List<LyricsProvider> = listOf(LrcLibProvider, MusixmatchProvider, GeniusProvider, PetitLyricsProvider)
+    val ALL: List<LyricsProvider> = listOf(SpotifyLyricsProvider, LrcLibProvider, MusixmatchProvider, GeniusProvider, PetitLyricsProvider)
     fun byId(id: String): LyricsProvider? = ALL.firstOrNull { it.id == id }
 }
 
@@ -169,6 +217,7 @@ object LyricsSettings {
     data class ProviderEntry(val id: String, val enabled: Boolean)
 
     private val DEFAULT = listOf(
+        ProviderEntry("spotify", true),
         ProviderEntry("lrclib", true),
         ProviderEntry("musixmatch", false),
         ProviderEntry("genius", false),
@@ -182,7 +231,11 @@ object LyricsSettings {
             if (p.size == 2 && LyricsProviders.byId(p[0]) != null) ProviderEntry(p[0], p[1] == "1") else null
         }
         val known = parsed.map { it.id }.toSet()
-        return (parsed + DEFAULT.filter { it.id !in known }).ifEmpty { DEFAULT }
+        // Spotify's lyrics arrived in 4.3 and go first on upgrade too: they are matched by id, so
+        // when they exist they are the right ones; without a session they answer nothing at once.
+        val front = DEFAULT.filter { it.id == SpotifyLyricsProvider.id && it.id !in known }
+        return (front + parsed + DEFAULT.filter { it.id !in known && it.id != SpotifyLyricsProvider.id })
+            .ifEmpty { DEFAULT }
     }
 
     fun save(context: Context, entries: List<ProviderEntry>) {

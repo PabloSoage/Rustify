@@ -360,6 +360,19 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── Spotify lyrics (4.3) ───
+    check(golden(
+        "SpotifyLyrics",
+        &crate::spotify::lyrics::SpotifyLyrics {
+            sync_type: "LINE_SYNCED".to_string(),
+            lines: vec![crate::spotify::lyrics::SpotifyLyricLine {
+                start_ms: 1230,
+                words: "All these accidents".to_string(),
+            }],
+            provider: "MusixMatch".to_string(),
+        },
+    ));
+
     // ─── InnerTube audio (4.1) ───
     check(golden(
         "InnertubeAudio",

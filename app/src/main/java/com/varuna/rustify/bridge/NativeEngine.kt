@@ -308,6 +308,11 @@ object NativeEngine {
      */
     suspend fun searchYouTube(query: String): String = io { searchYouTubeNative(query) }
 
+    private external fun getSpotifyLyricsNative(trackId: String): String
+
+    /** Spotify's own lyrics for a track (needs a session). Answers `SpotifyLyrics` or a failure. */
+    suspend fun getSpotifyLyrics(trackId: String): String = io { getSpotifyLyricsNative(trackId) }
+
     private external fun resolveInnertubeAudioNative(videoId: String, prefsJson: String): String
 
     /**

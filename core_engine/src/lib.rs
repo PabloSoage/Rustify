@@ -1767,17 +1767,17 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
 ) {
     let _ = jni_bridge!(env_unowned, |env| {
         get_runtime().spawn(async {
-            eprintln!("[Spotify] Background hash warmup started...");
+            <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup started..."));
             // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
             // type parameter, so nothing has to be cloned out of the lock to make the call.
             match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
                 Ok(new_hashes) => {
                     let client = spotify::client::get_spotify_client();
                     client.update_gql_hashes(new_hashes);
-                    eprintln!("[Spotify] Background hash warmup completed successfully.");
+                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup completed successfully."));
                 }
                 Err(e) => {
-                    eprintln!("[Spotify] Background hash warmup failed: {}", e);
+                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));
                 }
             }
         });
@@ -2374,5 +2374,19 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_castSessionNa
             })
             .to_string(),
         }
+    })
+}
+
+/// JNI Bridge: Spotify's own lyrics for a track (4.3). Needs a session; without one it answers an
+/// `auth` failure and the app moves on to its other lyrics providers.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyLyricsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = track_id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(spotify::client::get_spotify_client().get_lyrics(&id)))
     })
 }

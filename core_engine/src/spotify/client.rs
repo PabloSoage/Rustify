@@ -6,7 +6,7 @@
 // exactly replicating the spotify-gql-client behavior.
 
 use regex::Regex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -14,7 +14,7 @@ use std::sync::{OnceLock, RwLock};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::env::android::AndroidEnv;
-use crate::env::{Env, EnvError, HttpRequest, HttpResponse, LogLevel, Method};
+use crate::env::{storage, Env, EnvError, HttpRequest, HttpResponse, LogLevel, Method};
 use crate::spotify::models::*;
 
 // =============================================================================
@@ -153,6 +153,7 @@ const MAX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
 const SPOTIFY_API_BASE: &str = "https://api.spotify.com/v1";
 const SPOTIFY_GQL_BASE: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
+const SPCLIENT_BASE: &str = "https://spclient.wg.spotify.com";
 
 /// GitHub gist containing the TOTP nuance (shared secret + version).
 const NUANCE_GIST_URL: &str = "https://api.github.com/gists/22ed9c6ba463899e933427f7de1f0eef";
@@ -165,8 +166,11 @@ const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 /// A `&'static str` rather than a `String`: it used to be built once when the `reqwest::Client` was
 /// constructed, and since requests became plain data it is stamped on **every** one — so returning
 /// an owned `String` meant an allocation per request for a constant.
+///
+/// Keep it within a few versions of the current Chrome (4.3 moved it from 122, two years stale):
+/// a browser that old is itself a signal to an anti-abuse system.
 fn generate_user_agent() -> &'static str {
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 }
 
 /// How long the GQL hash scraper may take. Generous because it pulls the web-player bundle, which is
@@ -192,6 +196,8 @@ pub struct SpotifyClient<E: Env = AndroidEnv> {
     session: RwLock<Session>,
     /// The anonymous web-player token and its expiry (ms), for public reads without a session.
     anonymous_token: RwLock<Option<(String, u64)>>,
+    /// The `client-token` the web player sends to `spclient`, and when it expires (ms).
+    pub(crate) client_token: RwLock<Option<(String, u64)>>,
     gql_hashes: RwLock<HashMap<String, String>>,
     cache_dir: RwLock<Option<String>>,
     accept_language: RwLock<Option<String>>,
@@ -214,6 +220,7 @@ impl<E: Env> SpotifyClient<E> {
         Self {
             session: RwLock::new(Session::default()),
             anonymous_token: RwLock::new(None),
+            client_token: RwLock::new(None),
             gql_hashes: RwLock::new(HashMap::new()),
             cache_dir: RwLock::new(None),
             accept_language: RwLock::new(None),
@@ -231,7 +238,7 @@ impl<E: Env> SpotifyClient<E> {
     /// applied by construction. `Env::fetch` is deliberately unopinionated — a platform layer has no
     /// business knowing that Spotify wants to be talked to like a desktop browser — so those live
     /// here instead, in the one place that does know.
-    fn base_request(&self, method: Method, url: impl Into<String>) -> HttpRequest {
+    pub(crate) fn base_request(&self, method: Method, url: impl Into<String>) -> HttpRequest {
         let mut req = HttpRequest::new(method, url)
             .header("User-Agent", generate_user_agent())
             .timeout_ms(REQUEST_TIMEOUT_MS);
@@ -355,7 +362,7 @@ impl<E: Env> SpotifyClient<E> {
     /// The point of the abstraction: a test can wind this forward and watch a token expire without
     /// waiting an hour. `max(0)` because the trait speaks `i64` (a clock can be set before the
     /// epoch) and every comparison here is against a `u64` timestamp from Spotify.
-    fn now_ms(&self) -> u64 {
+    pub(crate) fn now_ms(&self) -> u64 {
         E::now_ms().max(0) as u64
     }
 
@@ -384,7 +391,38 @@ impl<E: Env> SpotifyClient<E> {
         self.request_token(sp_dc, &totp_code, nuance.v).await
     }
 
+    /// The TOTP secret the token endpoint wants, from the most trustworthy source that answers.
+    ///
+    /// It used to come only from a third party's gist: if that changed, vanished or GitHub
+    /// rate-limited the phone, nobody could sign in. The web player carries the secret in its own
+    /// bundle (`ej=[{secret:…,version:N}]`, measured identical to the gist on 2026-10-20), so that is
+    /// the first source now. Order: one stored from the bundle in the last week → the bundle → the
+    /// gist → the last one that worked, however old.
     async fn fetch_nuance(&self) -> SpotifyResult<TotpNuance> {
+        let stored = storage::get_json::<E, StoredNuance>(NUANCE_KEY).await.ok().flatten();
+        if let Some(s) = &stored {
+            if E::now_ms() - s.fetched_at < NUANCE_FRESH_MS {
+                return Ok(TotpNuance { v: s.v, s: s.s.clone() });
+            }
+        }
+        match web_player_nuance::<E>().await {
+            Ok(n) => {
+                let record = StoredNuance { v: n.v, s: n.s.clone(), fetched_at: E::now_ms() };
+                let _ = storage::set_json::<E, StoredNuance>(NUANCE_KEY, Some(&record)).await;
+                return Ok(n);
+            }
+            Err(e) => E::log(LogLevel::Warn, "Spotify", &format!("TOTP from the web player failed: {e}")),
+        }
+        match self.gist_nuance().await {
+            Ok(n) => Ok(n),
+            Err(e) => match stored {
+                Some(s) => Ok(TotpNuance { v: s.v, s: s.s }),
+                None => Err(e),
+            },
+        }
+    }
+
+    async fn gist_nuance(&self) -> SpotifyResult<TotpNuance> {
         let req = self
             .base_request(Method::Get, NUANCE_GIST_URL)
             .header("Accept", "application/vnd.github.v3+json");
@@ -489,7 +527,7 @@ impl<E: Env> SpotifyClient<E> {
     pub fn set_cache_dir(&self, path: &str) {
         *self.cache_dir.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(path.to_string());
         if let Err(e) = self.load_hashes_from_disk() {
-            eprintln!("[Spotify] Failed to load hashes from disk cache: {}", e);
+            E::log(LogLevel::Info, "Spotify", &format!("Failed to load hashes from disk cache: {}", e));
         }
     }
 
@@ -503,7 +541,7 @@ impl<E: Env> SpotifyClient<E> {
             *cache = new_hashes;
         }
         if let Err(e) = self.save_hashes_to_disk() {
-            eprintln!("[Spotify] Failed to save hashes to disk cache: {}", e);
+            E::log(LogLevel::Info, "Spotify", &format!("Failed to save hashes to disk cache: {}", e));
         }
     }
 
@@ -526,7 +564,7 @@ impl<E: Env> SpotifyClient<E> {
                 let loaded_hashes: HashMap<String, String> = serde_json::from_reader(reader)?;
                 let mut cache = self.gql_hashes.write().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *cache = loaded_hashes;
-                eprintln!("[Spotify] Loaded {} GQL operation hashes from disk cache", cache.len());
+                E::log(LogLevel::Info, "Spotify", &format!("Loaded {} GQL operation hashes from disk cache", cache.len()));
             }
         }
         Ok(())
@@ -538,7 +576,7 @@ impl<E: Env> SpotifyClient<E> {
             let writer = std::io::BufWriter::new(file);
             let cache = self.gql_hashes.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             serde_json::to_writer_pretty(writer, &*cache)?;
-            eprintln!("[Spotify] Saved {} GQL operation hashes to disk cache", cache.len());
+            E::log(LogLevel::Info, "Spotify", &format!("Saved {} GQL operation hashes to disk cache", cache.len()));
         }
         Ok(())
     }
@@ -595,6 +633,12 @@ impl<E: Env> SpotifyClient<E> {
     /// Returns an owned `String` rather than a `&str` since 3.1: the token lives behind the session
     /// lock now, and handing out a reference into it would mean handing out the guard's lifetime.
     /// Every caller already wrote `.to_string()` anyway.
+    /// The `clientId` the signed-in session's token was issued for. `client-token` is asked for it.
+    pub(crate) fn session_client_id(&self) -> Option<String> {
+        let session = self.session.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        session.credentials.as_ref().map(|c| c.client_id.clone()).filter(|id| !id.is_empty())
+    }
+
     pub fn access_token(&self) -> SpotifyResult<String> {
         let session = self.session.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let creds = session
@@ -672,7 +716,7 @@ impl<E: Env> SpotifyClient<E> {
     }
 
     /// Sends, retries, and rejects an error status — the three steps every REST call repeated.
-    async fn send_checked(&self, req: HttpRequest) -> SpotifyResult<HttpResponse> {
+    pub(crate) async fn send_checked(&self, req: HttpRequest) -> SpotifyResult<HttpResponse> {
         let res = self.send_with_retry(req).await?;
         Self::check_response_success(res)
     }
@@ -685,6 +729,26 @@ impl<E: Env> SpotifyClient<E> {
         let res = self.send_checked(req).await?;
         res.json()
             .map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
+    }
+
+    /// GET on Spotify's internal service host, as the web player calls it (4.3).
+    ///
+    /// The routes come from the official clients (docs `serie-4.x/04`); which ones answer the
+    /// anonymous token was measured, not assumed — `inspiredby-mix` does, `color-lyrics` does not.
+    /// [`Self::read_token`] decides which token goes, so a signed-in user's own is used when there is
+    /// one and an expired session still surfaces as `TokenExpired`.
+    pub async fn spclient_get(&self, path: &str) -> SpotifyResult<Value> {
+        let token = self.read_token().await?;
+        let req = self
+            .base_request(Method::Get, format!("{}{}", SPCLIENT_BASE, path))
+            .bearer(&token)
+            .header("App-Platform", "WebPlayer")
+            .header("Accept", "application/json")
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/");
+        let res = self.send_checked(req).await?;
+        res.json()
+            .map_err(|e| SpotifyError::ParseError(format!("spclient parse error: {}", e)))
     }
 
     /// Writes are **user-scoped**, so there is deliberately no anonymous fallback here.
@@ -878,7 +942,7 @@ impl<E: Env> SpotifyClient<E> {
 
         // If not found, fetch them
         if let Err(e) = self.fetch_gql_hashes().await {
-            eprintln!("[Spotify] Failed to fetch GQL hashes dynamically: {}. Using fallback.", e);
+            E::log(LogLevel::Info, "Spotify", &format!("Failed to fetch GQL hashes dynamically: {}. Using fallback.", e));
         }
 
         // Try reading from cache again
@@ -907,7 +971,7 @@ impl<E: Env> SpotifyClient<E> {
         };
 
         if !fallback.is_empty() {
-            eprintln!("[Spotify] GQL hash for {} not found, using static fallback", operation_name);
+            E::log(LogLevel::Info, "Spotify", &format!("GQL hash for {} not found, using static fallback", operation_name));
             return Ok(fallback.to_string());
         }
 
@@ -1161,6 +1225,103 @@ pub fn parse_js_dict_raw(s: &str) -> SpotifyResult<HashMap<i32, String>> {
 /// Generic over the environment like everything else since 3.0. The former
 /// `scrape_gql_hashes_with_client(&reqwest::Client)` had to be handed the client because it was a
 /// private field nobody outside could reach; now the platform *is* the type parameter.
+const NUANCE_KEY: &str = "spotify.totp";
+const NUANCE_FRESH_MS: i64 = 7 * 86_400_000;
+
+/// The TOTP secret as last read from the web player, kept so a sign-in does not need the bundle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredNuance {
+    v: u32,
+    s: String,
+    fetched_at: i64,
+}
+
+/// Fetches the web player's main bundle and reads the TOTP secret out of it.
+async fn web_player_nuance<E: Env>() -> SpotifyResult<TotpNuance> {
+    let html = E::fetch(
+        HttpRequest::get("https://open.spotify.com")
+            .header("User-Agent", generate_user_agent())
+            .timeout_ms(SCRAPE_TIMEOUT_MS),
+    )
+    .await?
+    .text();
+    let pack = Regex::new(r#"src="([^"]*web-player/web-player\.[^"]+\.js)""#)
+        .expect("valid regex")
+        .captures(&html)
+        .map(|c| c[1].to_string())
+        .ok_or_else(|| SpotifyError::ParseError("no web-player bundle in the page".into()))?;
+    let pack = if pack.starts_with('/') { format!("https://open.spotify.com{pack}") } else { pack };
+    let js = E::fetch(
+        HttpRequest::get(pack)
+            .header("User-Agent", generate_user_agent())
+            .timeout_ms(SCRAPE_TIMEOUT_MS),
+    )
+    .await?
+    .text();
+    extract_totp_nuance(&js).ok_or_else(|| SpotifyError::ParseError("no TOTP secret in the bundle".into()))
+}
+
+/// Reads `[{secret:'…',version:N},…]` out of the bundle and derives the key the way the page does:
+/// each character XOR `(index % 33 + 9)`, the numbers written out in decimal and concatenated, and
+/// the UTF-8 bytes of that text are the HMAC key. Returned base32-encoded, as the gist gives it.
+pub fn extract_totp_nuance(js: &str) -> Option<TotpNuance> {
+    let mut best: Option<TotpNuance> = None;
+    // No back-references in this regex crate, so one pattern per quote style.
+    for pattern in [
+        r#"\{secret:'((?:\\.|[^'\\])*)',version:(\d+)\}"#,
+        r#"\{secret:"((?:\\.|[^"\\])*)",version:(\d+)\}"#,
+    ] {
+        for cap in Regex::new(pattern).expect("valid regex").captures_iter(js) {
+            let Ok(v) = cap[2].parse::<u32>() else { continue };
+            if best.as_ref().is_some_and(|b| b.v >= v) {
+                continue;
+            }
+            let raw = js_unescape(&cap[1]);
+            let digits: String = raw
+                .chars()
+                .enumerate()
+                .map(|(i, c)| ((c as u32) ^ (i as u32 % 33 + 9)).to_string())
+                .collect();
+            let Secret::Encoded(s) = Secret::Raw(digits.into_bytes()).to_encoded() else { continue };
+            best = Some(TotpNuance { v, s });
+        }
+    }
+    best
+}
+
+/// The escapes a minified JS string literal can carry.
+fn js_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('0') => out.push('\0'),
+            Some('x') => {
+                let hex: String = chars.by_ref().take(2).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    out.push(ch);
+                }
+            }
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    out.push(ch);
+                }
+            }
+            Some(other) => out.push(other),
+            None => {}
+        }
+    }
+    out
+}
+
 pub async fn scrape_gql_hashes<E: Env>() -> SpotifyResult<HashMap<String, String>> {
     // Step 1: Fetch Spotify homepage
     let html = E::fetch(HttpRequest::get("https://open.spotify.com").header("User-Agent", generate_user_agent()).timeout_ms(SCRAPE_TIMEOUT_MS))
@@ -1198,6 +1359,13 @@ pub async fn scrape_gql_hashes<E: Env>() -> SpotifyResult<HashMap<String, String
 
     // Step 5: Fetch the web-player JS pack
     let js_content = E::fetch(HttpRequest::get(js_pack_url.as_str()).timeout_ms(SCRAPE_TIMEOUT_MS)).await?.text();
+
+    // The same bundle carries the TOTP secret: keep it, so the next sign-in needs neither this
+    // download nor the gist. See `fetch_nuance`.
+    if let Some(n) = extract_totp_nuance(&js_content) {
+        let record = StoredNuance { v: n.v, s: n.s, fetched_at: E::now_ms() };
+        let _ = storage::set_json::<E, StoredNuance>(NUANCE_KEY, Some(&record)).await;
+    }
 
     // Step 6: Extract chunk mappings
     let re_obj = Regex::new(r#"\{(\d+:"[^"]+"(?:,\d+:"[^"]+")*)}"#).unwrap();
@@ -1243,7 +1411,7 @@ pub async fn scrape_gql_hashes<E: Env>() -> SpotifyResult<HashMap<String, String
         new_hashes.insert(op_name, hash);
     }
 
-    eprintln!("[Spotify] Dynamically loaded {} GQL operation hashes via scrape_gql_hashes", new_hashes.len());
+    E::log(LogLevel::Info, "Spotify", &format!("Dynamically loaded {} GQL operation hashes via scrape_gql_hashes", new_hashes.len()));
 
     Ok(new_hashes)
 }
@@ -1273,6 +1441,36 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn the_totp_secret_is_read_from_the_bundle_like_the_page_reads_it() {
+        // Synthetic literals in the bundle's shape; the newest version wins, escapes are undone.
+        let js = r#"x=1;ej=[{secret:'Ab9_x"z',version:7},{secret:"old!",version:3}].map(e=>e)"#;
+        let nuance = extract_totp_nuance(js).unwrap();
+        assert_eq!(nuance.v, 7);
+        // Each char XOR (i % 33 + 9), decimals concatenated: "72104508311744117", base32.
+        assert_eq!(nuance.s.trim_end_matches('='), "G4ZDCMBUGUYDQMZRGE3TINBRGE3Q");
+        assert!(extract_totp_nuance("no secret here").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_secret_from_the_bundle_is_kept_and_reused() {
+        let _guard = mock::lock_and_reset();
+        mock::on_prefix(
+            "https://open.spotify.com/cdn/web-player/web-player.abc.js",
+            HttpResponse::ok(r#"ej=[{secret:'Ab9_x"z',version:7}]"#),
+        );
+        mock::on_prefix(
+            "https://open.spotify.com",
+            HttpResponse::ok(r#"<script src="/cdn/web-player/web-player.abc.js"></script>"#),
+        );
+        let client = client();
+        assert_eq!(client.fetch_nuance().await.unwrap().v, 7);
+        let fetched = mock::state().requests.len();
+        assert_eq!(client.fetch_nuance().await.unwrap().v, 7);
+        assert_eq!(mock::state().requests.len(), fetched, "the second sign-in reads the stored secret");
+        assert!(!mock::state().requests.iter().any(|r| r.url.contains("gist")), "no third party needed");
+    }
     /// The TOTP secret and the server clock, which every token request needs first.
     fn mock_totp() {
         let nuances = r#"[{"v":61,"s":"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}]"#;

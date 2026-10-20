@@ -625,4 +625,5 @@
     <string name="backend_innertube">YouTube (directo, rápido)</string>
     <string name="settings_normalize_volume">Normalizar volumen</string>
     <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
+    <string name="lyrics_provider_spotify">Spotify (oficiales, requiere cuenta)</string>
 </resources>

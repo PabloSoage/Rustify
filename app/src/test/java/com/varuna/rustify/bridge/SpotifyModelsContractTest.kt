@@ -296,6 +296,20 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── Spotify lyrics (4.3) ────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `spotify lyrics arrive as timed lines`() {
+        assertEquals(
+            SpotifyLyrics(
+                syncType = "LINE_SYNCED",
+                lines = listOf(SpotifyLyricLine(startMs = 1230, words = "All these accidents")),
+                provider = "MusixMatch"
+            ),
+            fixture<SpotifyLyrics>("SpotifyLyrics")
+        )
+    }
+
     // ─── InnerTube audio (4.1) ───────────────────────────────────────────────────────────────────
 
     @Test
@@ -441,7 +455,7 @@ class SpotifyModelsContractTest {
             "SpotifyUser", "SimplePlaylist", "FullPlaylist", "BrowseSection", "PaginatedResponse",
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
-            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio"
+            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio", "SpotifyLyrics"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }

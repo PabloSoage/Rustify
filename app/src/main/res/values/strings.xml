@@ -627,4 +627,5 @@
     <string name="backend_innertube">YouTube (direct, fast)</string>
     <string name="settings_normalize_volume">Normalize volume</string>
     <string name="settings_normalize_volume_desc">Turns loud recordings down so every song plays at the same level, as Spotify does. Uses the loudness YouTube measures for each upload; your local files are left as they are.</string>
+    <string name="lyrics_provider_spotify">Spotify (official, needs an account)</string>
 </resources>

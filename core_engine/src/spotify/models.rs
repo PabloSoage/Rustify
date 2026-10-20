@@ -439,8 +439,8 @@ pub struct SpotifyCredentials {
     pub is_anonymous: bool,
 }
 
-/// TOTP nuance fetched from the GitHub gist.
-#[derive(Debug, Deserialize, Clone)]
+/// A TOTP secret (base32) and its version, from the web player bundle or the gist.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TotpNuance {
     pub v: u32,
     pub s: String,
