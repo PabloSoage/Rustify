@@ -642,4 +642,6 @@
     <string name="sleep_timer_off">Turn off timer</string>
     <string name="settings_equalizer">Equalizer</string>
     <string name="settings_equalizer_unavailable">Play something first: the equalizer attaches to the player.</string>
+    <string name="new_releases_signed_out">New releases follow the artists you follow on Spotify. Connect Spotify to see them.</string>
+    <string name="new_releases_empty">Nothing new from the artists you follow.</string>
 </resources>

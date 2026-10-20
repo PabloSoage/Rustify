@@ -81,9 +81,13 @@ fun NewReleasesScreen(
         hasMore = page.hasMore && page.nextOffset != null
     }
 
+    // Why the list is empty, when it is: it used to be a blank screen whatever went wrong. The feed is
+    // personal (it follows the artists you follow), so without an account there is nothing to show.
+    var failure by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Unit) {
         isLoading = true
-        try { fetch(0) } catch (_: Exception) { hasMore = false } finally { isLoading = false }
+        try { fetch(0) } catch (e: Exception) { hasMore = false; failure = e.message } finally { isLoading = false }
     }
 
     // Load the next page when the user nears the end of the grid.
@@ -123,6 +127,19 @@ fun NewReleasesScreen(
         if (isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFF1DB954))
+            }
+        } else if (albums.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                val signedIn = remember { spotifyRepo.hasSavedSession() }
+                Text(
+                    text = when {
+                        !signedIn -> stringResource(R.string.new_releases_signed_out)
+                        failure != null -> failure!!
+                        else -> stringResource(R.string.new_releases_empty)
+                    },
+                    color = Color.Gray,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             }
         } else {
             LazyVerticalGrid(

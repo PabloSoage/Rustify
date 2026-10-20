@@ -640,4 +640,6 @@
     <string name="sleep_timer_off">Quitar temporizador</string>
     <string name="settings_equalizer">Ecualizador</string>
     <string name="settings_equalizer_unavailable">Reproduce algo primero: el ecualizador se engancha al reproductor.</string>
+    <string name="new_releases_signed_out">Las novedades siguen a los artistas que sigues en Spotify. Conecta Spotify para verlas.</string>
+    <string name="new_releases_empty">Nada nuevo de los artistas que sigues.</string>
 </resources>

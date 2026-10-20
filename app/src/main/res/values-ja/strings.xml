@@ -639,4 +639,6 @@
     <string name="sleep_timer_off">タイマーを解除</string>
     <string name="settings_equalizer">イコライザー</string>
     <string name="settings_equalizer_unavailable">まず何か再生してください。イコライザーはプレーヤーに接続されます。</string>
+    <string name="new_releases_signed_out">新着は Spotify でフォローしているアーティストから表示されます。Spotify を接続してください。</string>
+    <string name="new_releases_empty">フォロー中のアーティストの新着はありません。</string>
 </resources>
