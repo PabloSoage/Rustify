@@ -697,4 +697,7 @@
     <string name="artist_on_tour">ツアー情報</string>
     <string name="artist_albums">アルバム</string>
     <string name="artist_fans_also_like">ファンはこちらも聴いています</string>
+    <string name="home_recent_albums">最近聴いたもの</string>
+    <string name="home_charts">チャート</string>
+    <string name="home_moods">気分で選ぶ</string>
 </resources>

@@ -698,4 +698,7 @@
     <string name="artist_on_tour">De gira</string>
     <string name="artist_albums">Álbumes</string>
     <string name="artist_fans_also_like">A los fans también les gusta</string>
+    <string name="home_recent_albums">Escuchado últimamente</string>
+    <string name="home_charts">Listas de éxitos</string>
+    <string name="home_moods">Para cada momento</string>
 </resources>

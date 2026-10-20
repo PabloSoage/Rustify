@@ -1017,15 +1017,25 @@ fun EngineTester(
                         LaunchedEffect(currentScreen) {
                             continueListening = com.varuna.rustify.bridge.ContinueListening.list()
                         }
+                        // Without an account Home is built from the public catalogue and your history.
+                        var publicSections by remember { mutableStateOf<List<BrowseSection>>(emptyList()) }
+                        LaunchedEffect(isLoggedIn) {
+                            if (!isLoggedIn) publicSections = com.varuna.rustify.bridge.PublicHome.sections(context, spotifyRepo)
+                        }
                         HomeScreen(
                             browseSections = browseSections,
+                            publicSections = publicSections,
                             isRunning = isRunning,
                             errorMessage = errorMessage,
                             isSignedIn = isLoggedIn,
                             sessionExpired = sessionExpired,
                             onSignIn = { showWebView = true },
                             onRetry = {
-                                if (!isLoggedIn) return@HomeScreen
+                                if (!isLoggedIn) {
+                                    coroutineScope.launch { publicSections = com.varuna.rustify.bridge.PublicHome.sections(context, spotifyRepo, refresh = true) }
+                                    return@HomeScreen
+                                }
+
                                 coroutineScope.launch {
                                     isRunning = true
                                     errorMessage = null

@@ -87,7 +87,9 @@ fun HomeScreen(
     isSignedIn: Boolean = true,
     /** The saved session was revoked, rather than never having existed. */
     sessionExpired: Boolean = false,
-    onSignIn: () -> Unit = {}
+    onSignIn: () -> Unit = {},
+    /** What Home shows without an account: recent albums, charts, moods (see PublicHome). */
+    publicSections: List<BrowseSection> = emptyList()
 ) {
     val darkBackground = Color(0xFF121212)
     val gradientColor = Color(0xFF2E2E2E)
@@ -263,6 +265,12 @@ fun HomeScreen(
                             detail = errorMessage,
                             onRetry = onRetry
                         )
+                    }
+                }
+
+                if (!isSignedIn) {
+                    items(publicSections) { section ->
+                        BrowseSectionView(section = section, onItemClick = onItemClick)
                     }
                 }
 

@@ -700,4 +700,7 @@
     <string name="artist_on_tour">On tour</string>
     <string name="artist_albums">Albums</string>
     <string name="artist_fans_also_like">Fans also like</string>
+    <string name="home_recent_albums">Played lately</string>
+    <string name="home_charts">Charts</string>
+    <string name="home_moods">For every mood</string>
 </resources>
