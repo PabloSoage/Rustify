@@ -7,7 +7,7 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.0.0b` · core `4.0.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.1.0b` · core `4.1.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
@@ -18,7 +18,8 @@ you pick asks for. It keeps everything it knows about you on your own device.
 ### 🎧 Playback & Audio
 - **Spotify to audio** — Your liked tracks, playlists and albums come from Spotify; the Rust resolver
   matches each one against a source using ISRC lookups, folded-title comparison and a duration check,
-  with a fallback chain behind it.
+  with a fallback chain behind it. YouTube audio is resolved by the core itself with one request — seconds
+  instead of the half minute yt-dlp took — with yt-dlp kept as the fallback and for downloads.
 - **Backends you can install** — Settings → Audio → **Add-ons**: paste a URL and it joins the same
   list as yt-dlp, Invidious and Deezer, reorderable and switchable, taking part in the same fallback
   chain. An add-on is told the title, the artists, the duration and the identifiers of a track and
