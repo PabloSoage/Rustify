@@ -139,6 +139,10 @@ fun SettingsScreen(
     onNavigateMatchEditor: () -> Unit = {},
     onNavigateCustomDownload: () -> Unit = {},
     ytmRepository: YtMusicRepository? = null,
+    /** Whether a Spotify account is connected. The app works without one since 4.0. */
+    isSignedIn: Boolean = true,
+    onSignIn: () -> Unit = {},
+    onSignedOut: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1900,18 +1904,31 @@ fun SettingsScreen(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        spotifyRepository.logout()
-                        onBack()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
+            if (isSignedIn) {
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            spotifyRepository.logout()
+                            // The rest of the app keeps working; only what needs the account goes.
+                            onSignedOut()
+                            onBack()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(
+                    onClick = onSignIn,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(stringResource(R.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
+                }
             }
 
             // Easter egg (level 1): tap the version 7 times to reveal an animated crab. Tap it 9 more

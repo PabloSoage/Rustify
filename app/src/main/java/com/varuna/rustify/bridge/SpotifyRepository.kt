@@ -135,6 +135,9 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     private val likedTrackIds = mutableStateMapOf<String, Boolean>()
 
     private val appCtx = context.applicationContext
+
+    /** Home's sections as they last loaded, for a start with no network. Personal: cleared on logout. */
+    private val homeCacheFile = java.io.File(context.filesDir, "home_browse_cache.json")
     private val repositoryScope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
     val likedTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
@@ -1036,6 +1039,8 @@ loadLocalTracksFromCache()
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_EXPIRATION)
         }
+        // Home is personal; the next account must not start on the previous one's.
+        homeCacheFile.delete()
     }
 
     /**
@@ -1732,8 +1737,20 @@ loadLocalTracksFromCache()
     suspend fun getBrowseSections(limit: Int = 20): List<BrowseSection> = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
             val json = NativeEngine.getSpotifyBrowse(limit)
-            decodeChecked<List<BrowseSection>>(json)
+            decodeChecked<List<BrowseSection>>(json).also { sections ->
+                // Kept for the next start without network: Home used to be a spinner and then an
+                // error with nothing else on screen until a connection came back.
+                if (sections.isNotEmpty()) runCatching { atomicWrite(homeCacheFile, json) }
+            }
         }
+    }
+
+    /** Home as it was the last time it loaded, or null when it never has. Reads disk only. */
+    suspend fun cachedBrowseSections(): List<BrowseSection>? = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!homeCacheFile.exists()) null
+            else decodeChecked<List<BrowseSection>>(homeCacheFile.readText())
+        }.getOrNull()
     }
 
     /**

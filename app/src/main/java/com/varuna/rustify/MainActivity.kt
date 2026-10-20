@@ -525,6 +525,13 @@ class MainActivity : ComponentActivity() {
         // provider; new backends (Invidious/Deemix) are initialized here as well.
         com.varuna.rustify.audio.AudioSourceRegistry.initialize(application)
 
+        // The audio disk cache opens its database and scans its directory when first built, and
+        // the first composable to ask for the player would build it on the main thread. Started
+        // here, off it, so that by the time the UI asks it is usually already there.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.varuna.rustify.player.AudioPlayerService.getCache(application) }
+        }
+
         // And the installed add-ons (3.0), which are backends too. Without this they would only join
         // the chain once the Settings screen had been opened, so a track played straight after
         // launch would silently skip every add-on the user installed.
@@ -623,6 +630,9 @@ fun EngineTester(
     // instead of blocking the whole app behind a network validation that, if Spotify fails, would
     // leave the user stuck on the login screen unable to even open local music.
     var isLoggedIn by remember { mutableStateOf(spotifyRepo.hasSavedSession()) }
+    // The saved session was revoked: Home says so in place of its sections, once, instead of the
+    // whole app turning into a login screen as it did up to 3.7.
+    var sessionExpired by remember { mutableStateOf(false) }
     var showWebView by remember { mutableStateOf(false) }
     var browseSections by remember { mutableStateOf<List<BrowseSection>?>(null) }
     // What you were in the middle of. Refreshed whenever Home becomes visible, because it changes
@@ -647,7 +657,13 @@ fun EngineTester(
     var settingsCategory by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Hoisted state for LibraryScreen to survive rotation and navigation pops
-    var librarySelectedTab by rememberSaveable { mutableStateOf(com.varuna.rustify.ui.screens.LibraryTab.PLAYLISTS) }
+    // Without an account the Spotify tabs only offer to connect one, so start on the music that is here.
+    var librarySelectedTab by rememberSaveable {
+        mutableStateOf(
+            if (spotifyRepo.hasSavedSession()) com.varuna.rustify.ui.screens.LibraryTab.PLAYLISTS
+            else com.varuna.rustify.ui.screens.LibraryTab.LOCAL
+        )
+    }
     var librarySelectedGroup by rememberSaveable { mutableStateOf("Tracks") }
 
     LaunchedEffect(Unit) {
@@ -729,6 +745,11 @@ fun EngineTester(
     // (restoreSession does not clear credentials in that case); only a REALLY dead session
     // (credentials cleared) sends the user to the login screen.
     LaunchedEffect(Unit) {
+        // Whatever Home showed last time, before anything touches the network. Without it a start
+        // with no connection was a spinner and then an error, with nothing else on the screen.
+        if (spotifyRepo.hasSavedSession()) {
+            browseSections = spotifyRepo.cachedBrowseSections()
+        }
         if (spotifyRepo.hasSavedSession()) {
             isRunning = true
             val result = spotifyRepo.restoreSession()
@@ -736,14 +757,18 @@ fun EngineTester(
                 try {
                     browseSections = spotifyRepo.getBrowseSections(10)
                 } catch (e: Exception) {
-                    errorMessage = e.message
+                    errorMessage = homeError(context, e.message)
                 }
             } else if (!spotifyRepo.hasSavedSession()) {
                 // Dead session (really revoked/expired → restoreSession cleared the credentials).
+                // The app stays usable; Home asks to sign in again where the sections were.
                 isLoggedIn = false
-                errorMessage = "Saved session expired. Please log in again."
+                browseSections = null
+                sessionExpired = true
+            } else {
+                // A saved session still exists = transient failure: stay with the cached Home.
+                errorMessage = homeError(context, result?.error)
             }
-            // If a saved session still exists = transient failure: stay inside with cached data.
             isRunning = false
         }
     }
@@ -758,6 +783,7 @@ fun EngineTester(
                     val result = spotifyRepo.login(codeOrCookie)
                     if (result.success) {
                         isLoggedIn = true
+                        sessionExpired = false
                         // Whatever sent us to the login screen is over. Without this, the "Saved
                         // session expired" that the start-up restore left here outlived the login
                         // that answered it, and Home showed it with a retry button over a session
@@ -766,7 +792,7 @@ fun EngineTester(
                         try {
                             browseSections = spotifyRepo.getBrowseSections(10)
                         } catch (e: Exception) {
-                            errorMessage = e.message
+                            errorMessage = homeError(context, e.message)
                         }
                     } else {
                         errorMessage = "Authentication failed: ${result.error}"
@@ -788,31 +814,10 @@ fun EngineTester(
         com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
     }
 
-    if (!isLoggedIn) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
-            ) {
-                Text("Spotify Engine Standby", style = MaterialTheme.typography.headlineMedium)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { showWebView = true }, enabled = !isRunning) {
-                    Text("Login to Spotify")
-                }
-                if (isRunning) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    CircularProgressIndicator()
-                }
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
-                }
-
-                // Removed Developer Settings UI
-            }
-        }
-        return
-    }
+    // No login wall since 4.0. Up to 3.7 this was a full-screen "Login to Spotify" that stood in front
+    // of everything — local music, YouTube Music, settings — none of which needs Spotify. Signing in
+    // is now offered where Spotify is what is missing: Home, the Spotify tabs of the library, and
+    // Settings.
 
     // Render screen based on current navigation stack state
     val currentScreen = navigationStack.lastOrNull() ?: Screen.Home
@@ -1016,14 +1021,18 @@ fun EngineTester(
                             browseSections = browseSections,
                             isRunning = isRunning,
                             errorMessage = errorMessage,
+                            isSignedIn = isLoggedIn,
+                            sessionExpired = sessionExpired,
+                            onSignIn = { showWebView = true },
                             onRetry = {
+                                if (!isLoggedIn) return@HomeScreen
                                 coroutineScope.launch {
                                     isRunning = true
                                     errorMessage = null
                                     try {
                                         browseSections = spotifyRepo.getBrowseSections(10)
                                     } catch (e: Exception) {
-                                        errorMessage = e.message
+                                        errorMessage = homeError(context, e.message)
                                     }
                                     isRunning = false
                                 }
@@ -1127,6 +1136,8 @@ fun EngineTester(
                     is Screen.Library -> {
                         LibraryScreen(
                             spotifyRepo = spotifyRepo,
+                            isSignedIn = isLoggedIn,
+                            onSignIn = { showWebView = true },
                             selectedTab = librarySelectedTab,
                             onTabSelected = { librarySelectedTab = it },
                             selectedGroup = librarySelectedGroup,
@@ -1372,6 +1383,13 @@ fun EngineTester(
                     SettingsScreen(
                         spotifyRepository = spotifyRepo,
                         ytmRepository = ytmRepo,
+                        isSignedIn = isLoggedIn,
+                        onSignIn = { showWebView = true },
+                        onSignedOut = {
+                            isLoggedIn = false
+                            browseSections = null
+                            errorMessage = null
+                        },
                         category = settingsCategory,
                         onCategoryChange = { settingsCategory = it },
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
@@ -1995,3 +2013,8 @@ private suspend fun resumeListening(
     audioPlayerService.loadPlaylist(tracks, index, context = context, startPositionMs = startAt)
     onPlaying()
 }
+
+/** What Home says when its sections did not load: the engine's words, unless there is no network. */
+private fun homeError(context: android.content.Context, engineMessage: String?): String =
+    if (!com.varuna.rustify.util.Connectivity.isOnline(context)) context.getString(R.string.home_offline)
+    else engineMessage ?: context.getString(R.string.home_error_loading)

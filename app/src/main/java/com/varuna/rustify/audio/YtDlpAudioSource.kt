@@ -45,21 +45,39 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         honoursYoutubeHint = true
     )
 
+    /**
+     * Completes once yt-dlp is unpacked and usable: `true`, or `false` when init failed.
+     *
+     * Init used to run synchronously on the caller's thread "so it completes before any execute()".
+     * The caller is `MainActivity.onCreate`, and init unpacks a Python runtime: measured at ~3 s of
+     * main thread on a cold start in 4.0, which is most of the "app isn't responding" dialog. The
+     * ordering it protected is kept by awaiting this instead of by blocking the UI.
+     */
+    private val ready get() = Companion.ready
+
+    private suspend fun awaitReady() = awaitInitialized()
+
     override fun initialize() {
-        // Synchronous init on the caller's thread: it must complete before any execute() to avoid a
-        // race that would occur if it were moved to a coroutine.
-        try {
-            YoutubeDL.getInstance().init(appContext)
-            com.yausername.ffmpeg.FFmpeg.getInstance().init(appContext)
-            Log.d(TAG, "YoutubeDL and FFmpeg initialized successfully.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize YoutubeDL", e)
-            // Even if init fails, unblock downloads waiting on initDeferred.
-            DownloadManager.initDeferred.complete(Unit)
-            return
-        }
-        // Auto-update in the background (does not block startup).
         CoroutineScope(Dispatchers.IO).launch {
+            try {
+                YoutubeDL.getInstance().init(appContext)
+                com.yausername.ffmpeg.FFmpeg.getInstance().init(appContext)
+                Log.d(TAG, "YoutubeDL and FFmpeg initialized successfully.")
+                ready.complete(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize YoutubeDL", e)
+                ready.complete(false)
+                // Even if init fails, unblock downloads waiting on initDeferred.
+                DownloadManager.initDeferred.complete(Unit)
+                return@launch
+            }
+            autoUpdate()
+        }
+    }
+
+    /** Auto-update in the background; downloads wait for it (see [DownloadManager.initDeferred]). */
+    private suspend fun autoUpdate() {
+        withContext(Dispatchers.IO) {
             try {
                 val prefs = appContext.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
                 val channelStr = prefs.getString("ytdlp_channel", "NIGHTLY")
@@ -93,6 +111,8 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
                 // A "ytm:" id already carries its YouTube video id, so skip the Spotify resolver.
                 val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeId(trackId, hint ?: "")
                 require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
+                // After the id: finding the video overlaps unpacking yt-dlp on a cold start.
+                awaitReady()
                 val url = extractStreamUrlWithRetry(ytId)
                     ?: error("yt-dlp returned no url")
                 StreamInfo(
@@ -119,6 +139,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             val ytId = youtubeIdOf(trackId) ?: NativeEngine.resolveYouTubeId(trackId, "")
             require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
 
+            awaitReady()
             if (dst.exists()) dst.delete()
             val downloadId = trackId // for YoutubeDL cancellation
 
@@ -236,5 +257,13 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
          * what makes it a reasonable floor rather than a guess.
          */
         private const val MIN_ATTEMPT_MS = 6_000L
+
+        /** See the instance `ready`: yt-dlp unpacked and usable (`true`) or failed (`false`). */
+        internal val ready = kotlinx.coroutines.CompletableDeferred<Boolean>()
+
+        /** For anything that calls `YoutubeDL` directly: waits for init instead of racing it. */
+        suspend fun awaitInitialized() {
+            if (!ready.await()) error("yt-dlp failed to initialise")
+        }
     }
 }

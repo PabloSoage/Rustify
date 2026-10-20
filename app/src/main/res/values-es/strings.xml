@@ -616,4 +616,12 @@
     <string name="settings_autoplay_radio">Cuando se acaba la cola</string>
     <string name="settings_autoplay_radio_enabled">Seguir con música parecida</string>
     <string name="settings_autoplay_radio_desc">Cuando termina la última canción de un álbum, una lista o la cola, Rustify sigue con una radio hecha a partir de ella. Desactívalo si prefieres que la música pare donde tú dijiste.</string>
+    <!-- 4.0: la app funciona sin cuenta de Spotify -->
+    <string name="spotify_sign_in">Conectar Spotify</string>
+    <string name="spotify_sign_in_title">Tu biblioteca de Spotify no está conectada</string>
+    <string name="spotify_session_expired">Tu sesión de Spotify ha caducado</string>
+    <string name="spotify_sign_in_body">La música local, YouTube Music, las descargas y tus estadísticas funcionan sin ella. Conecta Spotify para tu inicio, tus listas y tus canciones favoritas.</string>
+    <string name="home_offline_cached">Sin conexión — mostrando tu último inicio</string>
+    <string name="library_spotify_signed_out">Conecta Spotify para ver aquí tus listas y tus canciones favoritas.</string>
+    <string name="home_offline">Sin conexión</string>
 </resources>

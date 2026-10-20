@@ -82,7 +82,12 @@ fun HomeScreen(
     /** The row being resumed, if any: refetching a long playlist is several round trips. */
     resumingId: String? = null,
     onResumeListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
-    onForgetListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {}
+    onForgetListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
+    /** No Spotify account connected: the sections' place offers to connect one. */
+    isSignedIn: Boolean = true,
+    /** The saved session was revoked, rather than never having existed. */
+    sessionExpired: Boolean = false,
+    onSignIn: () -> Unit = {}
 ) {
     val darkBackground = Color(0xFF121212)
     val gradientColor = Color(0xFF2E2E2E)
@@ -100,27 +105,10 @@ fun HomeScreen(
                 )
         )
 
-        if (isRunning && browseSections == null) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color(0xFF1DB954)
-            )
-        } else if (errorMessage != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(stringResource(R.string.home_error_loading), color = MaterialTheme.colorScheme.error)
-                Text(errorMessage, color = Color.White)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
-                ) {
-                    Text(stringResource(R.string.general_retry), color = Color.White)
-                }
-            }
-        } else {
+        // Home always draws. It used to swap the whole screen for a spinner or an error, which took
+        // the menu (settings, downloads, metrics) and "continue listening" with it whenever Spotify
+        // could not be reached; the state of Spotify's sections is now one row among the others.
+        run {
             val config = androidx.compose.ui.platform.LocalConfiguration.current
             val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             val bottomPadding = if (isLandscape) 16.dp else 100.dp
@@ -258,7 +246,27 @@ fun HomeScreen(
                     }
                 }
 
-                browseSections?.let { sections ->
+                when {
+                    !isSignedIn -> item {
+                        SignInCard(sessionExpired = sessionExpired, onSignIn = onSignIn)
+                    }
+                    browseSections == null && isRunning -> item {
+                        Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color(0xFF1DB954))
+                        }
+                    }
+                    errorMessage != null -> item {
+                        // A notice, not the screen: what is cached below and everything above it
+                        // (the menu, settings, what you were in the middle of) stays usable.
+                        OfflineNotice(
+                            showingCached = browseSections != null,
+                            detail = errorMessage,
+                            onRetry = onRetry
+                        )
+                    }
+                }
+
+                browseSections?.takeIf { isSignedIn }?.let { sections ->
                     items(sections) { section ->
                         BrowseSectionView(
                             section = section,
@@ -268,7 +276,55 @@ fun HomeScreen(
                 }
             }
             }
+        }
+    }
+}
 
+/** Where Spotify's sections go when no account is connected. Everything else on Home still works. */
+@Composable
+private fun SignInCard(sessionExpired: Boolean, onSignIn: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .padding(20.dp)
+    ) {
+        Text(
+            stringResource(if (sessionExpired) R.string.spotify_session_expired else R.string.spotify_sign_in_title),
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(R.string.spotify_sign_in_body), color = Color.LightGray, fontSize = 13.sp)
+        Spacer(Modifier.height(14.dp))
+        Button(onClick = onSignIn, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))) {
+            Text(stringResource(R.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun OfflineNotice(showingCached: Boolean, detail: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(Color(0xFF2A2A2A), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(if (showingCached) R.string.home_offline_cached else R.string.home_error_loading),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 2)
+        }
+        androidx.compose.material3.TextButton(onClick = onRetry) {
+            Text(stringResource(R.string.general_retry), color = Color(0xFF1DB954))
         }
     }
 }

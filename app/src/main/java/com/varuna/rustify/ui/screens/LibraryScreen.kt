@@ -132,6 +132,9 @@ fun LibraryScreen(
     onYtmOpenLocalPlaylist: (String) -> Unit = {},
     onYtmOpenPlaylist: (String, String) -> Unit = { _, _ -> },
     onYtmPasteLink: () -> Unit = {},
+    /** Whether a Spotify account is connected; its tabs offer to connect one when not. */
+    isSignedIn: Boolean = true,
+    onSignIn: () -> Unit = {},
     currentTrackId: String?
 ) {
     val darkBackground = Color(0xFF121212)
@@ -220,7 +223,27 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(top = visibleHeaderHeightDp)
         ) {
-            when (selectedTab) {
+            val needsSpotify = selectedTab == LibraryTab.PLAYLISTS || selectedTab == LibraryTab.ALBUMS ||
+                selectedTab == LibraryTab.ARTISTS || selectedTab == LibraryTab.TRACKS
+            if (needsSpotify && !isSignedIn) {
+                // The account's own lists, with no account: say so instead of an empty list that
+                // looks like an empty library.
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        stringResource(R.string.library_spotify_signed_out),
+                        color = Color.LightGray,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onSignIn, colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)) {
+                        Text(stringResource(R.string.spotify_sign_in), color = Color.Black)
+                    }
+                }
+            } else when (selectedTab) {
                 LibraryTab.PLAYLISTS -> LibraryPlaylists(spotifyRepo, onPlaylistClick, globalSearchQuery)
                 LibraryTab.ALBUMS -> LibraryAlbums(spotifyRepo, onAlbumClick, globalSearchQuery)
                 LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)

@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 object YouTubeVideoResolver {
     suspend fun resolve(youtubeId: String, maxQuality: Boolean = true): Pair<String, String?>? = withContext(Dispatchers.IO) {
         runCatching {
+            YtDlpAudioSource.awaitInitialized()
             val req = YoutubeDLRequest("https://www.youtube.com/watch?v=$youtubeId").apply {
                 addOption("-g")
                 if (maxQuality) {

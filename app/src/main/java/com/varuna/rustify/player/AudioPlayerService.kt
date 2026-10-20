@@ -787,8 +787,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         }
 
-        loadUrlCache()
-        loadState()
+        // Off the main thread: this constructor runs on it (see readSavedState).
+        mainScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                loadUrlCache()
+                readSavedState()
+            }
+            saved?.let { applySavedState(it) }
+        }
 
         // Single consumer: debounced, serialized state persistence.
         mainScope.launch(Dispatchers.IO) {
@@ -2956,62 +2962,84 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    private fun loadState() {
+    /** What `playback_state.json` holds, parsed off the main thread by [readSavedState]. */
+    private class SavedState(
+        val track: FullTrack?,
+        val queue: List<FullTrack>,
+        val originalQueue: List<FullTrack>,
+        val userQueue: List<FullTrack>,
+        val context: PlaybackContext?,
+        val positionMs: Long,
+        val durationMs: Long,
+        val isShuffle: Boolean,
+        val isRepeat: Boolean
+    )
+
+    /**
+     * Reads the saved queue. Disk and parsing only — it used to run inside the constructor, which
+     * runs on the main thread when the first composable asks for the service: part of the several
+     * seconds of blocked main thread measured on a cold start in 4.0.
+     */
+    private fun readSavedState(): SavedState? {
         try {
             val file = java.io.File(context.filesDir, "playback_state.json")
-            if (file.exists()) {
-                val json = org.json.JSONObject(file.readText())
+            if (!file.exists()) return null
+            val json = org.json.JSONObject(file.readText())
 
-                // Discard state older than 24 hours — stale URLs and positions
-                val lastSaved = json.optLong("lastSavedTimestamp", 0L)
-                val maxAge = 24 * 60 * 60 * 1000L  // 24 hours
-                if (lastSaved > 0 && System.currentTimeMillis() - lastSaved > maxAge) {
-                    android.util.Log.d("AudioPlayerService", "Discarding stale saved state (>24h old)")
-                    file.delete()
-                    return
-                }
-
-                val trackObj = json.optJSONObject("currentTrack")
-                val track = if (trackObj != null) FullTrack.fromJson(trackObj) else null
-
-                val qArr = json.optJSONArray("queue")
-                val queue = FullTrack.listFromJsonArray(qArr)
-
-                val origArr = json.optJSONArray("originalQueue")
-                val origQueue = FullTrack.listFromJsonArray(origArr)
-
-                val uqArr = json.optJSONArray("userQueue")
-                val uqList = FullTrack.listFromJsonArray(uqArr)
-                synchronized(userQueue) {
-                    userQueue.clear()
-                    userQueue.addAll(uqList)
-                }
-
-                // Restored state has no live index; recompute it from the saved current track.
-                currentQueueIndex = queue.indexOfFirst { it.id == track?.id }
-
-                playbackContext = PlaybackContext.fromJson(json.optJSONObject("context"))
-
-                val positionMs = json.optLong("positionMs", 0L)
-                val durationMs = json.optLong("durationMs", 0L)
-                val isShuffle = json.optBoolean("isShuffle", false)
-                val isRepeat = json.optBoolean("isRepeat", false)   // restore repeat mode
-
-                _state.value = _state.value.copy(
-                    currentTrack = track,
-                    originalQueue = origQueue,
-                    queue = queue,
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    isShuffle = isShuffle,
-                    isRepeat = isRepeat,
-                    isPlaying = false,
-                    isBuffering = false
-                )
+            // Discard state older than 24 hours — stale URLs and positions
+            val lastSaved = json.optLong("lastSavedTimestamp", 0L)
+            val maxAge = 24 * 60 * 60 * 1000L  // 24 hours
+            if (lastSaved > 0 && System.currentTimeMillis() - lastSaved > maxAge) {
+                android.util.Log.d("AudioPlayerService", "Discarding stale saved state (>24h old)")
+                file.delete()
+                return null
             }
+
+            val trackObj = json.optJSONObject("currentTrack")
+            return SavedState(
+                track = if (trackObj != null) FullTrack.fromJson(trackObj) else null,
+                queue = FullTrack.listFromJsonArray(json.optJSONArray("queue")),
+                originalQueue = FullTrack.listFromJsonArray(json.optJSONArray("originalQueue")),
+                userQueue = FullTrack.listFromJsonArray(json.optJSONArray("userQueue")),
+                context = PlaybackContext.fromJson(json.optJSONObject("context")),
+                positionMs = json.optLong("positionMs", 0L),
+                durationMs = json.optLong("durationMs", 0L),
+                isShuffle = json.optBoolean("isShuffle", false),
+                isRepeat = json.optBoolean("isRepeat", false)   // restore repeat mode
+            )
         } catch (e: Exception) {
             android.util.Log.e("AudioPlayerService", "Error loading state", e)
+            return null
         }
+    }
+
+    /**
+     * Puts the saved queue back — unless something already started playing while it was being
+     * read, which is newer than anything on disk and must not be overwritten by it.
+     */
+    private fun applySavedState(saved: SavedState) {
+        val now = _state.value
+        if (now.currentTrack != null || now.queue.isNotEmpty()) return
+
+        synchronized(userQueue) {
+            userQueue.clear()
+            userQueue.addAll(saved.userQueue)
+        }
+        // Restored state has no live index; recompute it from the saved current track.
+        currentQueueIndex = saved.queue.indexOfFirst { it.id == saved.track?.id }
+        playbackContext = saved.context
+
+        _state.value = now.copy(
+            currentTrack = saved.track,
+            originalQueue = saved.originalQueue,
+            queue = saved.queue,
+            positionMs = saved.positionMs,
+            durationMs = saved.durationMs,
+            isShuffle = saved.isShuffle,
+            isRepeat = saved.isRepeat,
+            isPlaying = false,
+            isBuffering = false
+        )
     }
 
     fun switchToVideoStream(videoUrl: String, audioUrl: String? = null) {
