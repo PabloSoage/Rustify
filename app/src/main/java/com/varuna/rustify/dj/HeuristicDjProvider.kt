@@ -20,14 +20,14 @@ class HeuristicDjProvider : DjProvider {
 
         // 1) "más de X" / "more X" / "like X".
         extractMoreOf(req)?.let { target ->
-            seeds += DjSeed(DjSeed.Type.QUERY, target)
+            seeds += DjSeed(DjSeed.Type.ARTIST, target)
             introParts += l("Poniendo más de $target", "Playing more $target")
         }
 
         // 2) Approximate vibe from keywords (mood-by-text).
         val vibe = detectVibe(req, es)
         if (vibe != null) {
-            seeds += DjSeed(DjSeed.Type.QUERY, vibe.query)
+            seeds += DjSeed(DjSeed.Type.MOOD, vibe.query)
             introParts += vibe.intro
         }
 
@@ -70,13 +70,13 @@ class HeuristicDjProvider : DjProvider {
         fun l(esText: String, enText: String) = if (es) esText else enText
         return when {
             req.containsAny("tranquil", "chill", "relax", "calma", "suave", "study", "estudiar", "focus", "concentr") ->
-                Vibe("chill relax calm", l("Bajando el ritmo", "Slowing things down"))
+                Vibe("chill", l("Bajando el ritmo", "Slowing things down"))
             req.containsAny("energí", "energy", "fiesta", "party", "hype", "workout", "gym", "correr", "run", "baila", "dance") ->
-                Vibe("energetic party dance", l("Subiendo la energía", "Turning up the energy"))
+                Vibe("party", l("Subiendo la energía", "Turning up the energy"))
             req.containsAny("triste", "sad", "melanc", "llov", "rain") ->
-                Vibe("sad melancholic", l("Poniendo algo más melancólico", "Going a bit more melancholic"))
+                Vibe("sad", l("Poniendo algo más melancólico", "Going a bit more melancholic"))
             req.containsAny("feliz", "happy", "alegr", "good vibes") ->
-                Vibe("happy upbeat feel good", l("Poniendo buen rollo", "Bringing the good vibes"))
+                Vibe("happy", l("Poniendo buen rollo", "Bringing the good vibes"))
             else -> null
         }
     }

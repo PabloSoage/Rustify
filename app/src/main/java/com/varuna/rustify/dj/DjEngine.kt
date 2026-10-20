@@ -81,6 +81,7 @@ class DjEngine(
         // "energetic" while a chill track played kept returning chill). Fall back to now-playing only
         // if the request produced no usable seed (e.g. a blank automix request that resolved nothing).
         var radioSeedTrackId: String? = null
+        var moodResolved = false
 
         for (seed in seeds) {
             if (pool.size >= targetCount * 2) break
@@ -94,6 +95,16 @@ class DjEngine(
                             if (radioSeedTrackId == null) radioSeedTrackId = top.firstOrNull()?.id
                         }
                     }
+                    DjSeed.Type.MOOD -> {
+                        // A mood is what editorial playlists are for ("Chill Hits", "Lofi Beats").
+                        // It used to be searched as a track *title*, so "chill" brought back songs
+                        // literally called "Calming White Noise…" and then the radio of that — seen on
+                        // the emulator in 4.4. Spotify's own playlists first, then whoever else's.
+                        val lists = repo.searchPlaylists(seed.value, limit = 10).items
+                        val chosen = (lists.filter { it.owner?.id == "spotify" } + lists).distinctBy { it.id }.take(2)
+                        chosen.forEach { pl -> add(repo.getPlaylistTracks(pl.id, limit = 40).items) }
+                        moodResolved = moodResolved || chosen.isNotEmpty()
+                    }
                     DjSeed.Type.TRACK, DjSeed.Type.QUERY -> {
                         val found = repo.searchTracks(seed.value, limit = 8).items
                         add(found)
@@ -103,8 +114,10 @@ class DjEngine(
             }
         }
 
-        // Fall back to the now-playing track only if the request produced no usable seed.
-        if (radioSeedTrackId == null) radioSeedTrackId = nowPlaying?.id
+        // Fall back to the now-playing track only if the request produced no usable seed — and never
+        // after a mood: the radio of whatever happens to be playing is the opposite of "something chill"
+        // half the time.
+        if (radioSeedTrackId == null && !moodResolved) radioSeedTrackId = nowPlaying?.id
 
         // Primary signal: radio of the best seed (≈50 similar tracks).
         radioSeedTrackId?.let { id ->

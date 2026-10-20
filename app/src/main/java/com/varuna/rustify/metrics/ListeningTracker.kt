@@ -130,7 +130,7 @@ class ListeningTracker(private val appContext: Context) {
          * Hands the pre-4.0 `metrics.json` to the core, once. Renamed rather than deleted, so a
          * failed migration can be retried by renaming it back.
          */
-        suspend fun migrateLegacyFile(context: Context) = migration.withLock {
+        suspend fun migrateLegacyFile(context: Context) = kotlinx.coroutines.withContext(Dispatchers.IO) { migration.withLock {
             val file = File(context.filesDir, LEGACY_FILE)
             if (!file.exists()) return@withLock
             val answer = runCatching { NativeEngine.importPlayHistory(file.readText()) }.getOrNull()
@@ -140,7 +140,7 @@ class ListeningTracker(private val appContext: Context) {
             } else {
                 android.util.Log.w(TAG, "metrics.json migration failed, will retry: $answer")
             }
-        }
+        } }
 
         /** Every play, oldest first. For export and backup — screens use [stats]. */
         suspend fun loadEvents(context: Context): List<PlayEvent> {

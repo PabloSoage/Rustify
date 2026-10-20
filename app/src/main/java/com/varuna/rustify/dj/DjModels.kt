@@ -23,7 +23,8 @@ data class DjSeed(
     /** Seed text: an artist name, "Artist - Song", or a free-form search query. */
     val value: String
 ) {
-    enum class Type { ARTIST, TRACK, QUERY }
+    /** MOOD: a feeling ("chill") — resolved through editorial playlists, never a title search. */
+    enum class Type { ARTIST, TRACK, QUERY, MOOD }
 }
 
 /**
