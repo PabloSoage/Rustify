@@ -16,7 +16,9 @@ data class StreamInfo(
     val mimeType: String? = null,     // "audio/webm", "audio/mp4"... optional
     val requiresProxy: Boolean = false, // e.g. encrypted Deezer -> custom datasource
     /** What to put in the stream cache, if anything. See [CacheHint]. */
-    val cache: CacheHint? = null
+    val cache: CacheHint? = null,
+    /** How much louder than its source's reference this recording is, in dB, when known (YouTube says). */
+    val loudnessDb: Double? = null
 )
 
 /**

@@ -812,6 +812,42 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativ
     })
 }
 
+/// JNI Bridge: a YouTube video's audio stream, with one request and no yt-dlp (4.1). `prefs_json` is
+/// `{"prefer":"opus"|"aac"|"","maxKbps":0}`. See `youtube::innertube`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveInnertubeAudioNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    video_id: JString<'local>,
+    prefs_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let video = video_id.mutf8_chars(env)?.to_string();
+        let prefs: youtube::innertube::AudioPrefs =
+            serde_json::from_str(&prefs_json.mutf8_chars(env)?.to_string()).unwrap_or_default();
+        serialize_result(get_runtime().block_on(youtube::innertube::resolve_audio::<env::android::AndroidEnv>(&video, &prefs)))
+    })
+}
+
+/// JNI Bridge: replace the InnerTube client table (`[]` restores the built-in one).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_setInnertubeClientsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    clients_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = clients_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<Vec<youtube::innertube::ClientProfile>>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(list) => {
+                let outcome = get_runtime().block_on(youtube::innertube::set_clients::<env::android::AndroidEnv>(&list));
+                serialize_result(outcome.map(|_| spotify::models::OperationResult { success: true, error: None }))
+            }
+        }
+    })
+}
+
 /// JNI Bridge: Resolve Spotify Track ID to YouTube Video ID directly without local HTTP proxy
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveYouTubeIdNative<'local>(

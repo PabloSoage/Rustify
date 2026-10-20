@@ -36,7 +36,18 @@ object AudioBackendSettings {
      * blocked by YouTube/Cloudflare (they answer /stats so they look healthy, then fail to resolve
      * audio). Leaving them on by default only produced slow, confusing fallbacks.
      */
-    private val DEFAULT_ON = setOf(YtDlpAudioSource.ID)
+    private val DEFAULT_ON = setOf(InnertubeAudioSource.ID, YtDlpAudioSource.ID)
+
+    /**
+     * Providers that, on upgrade, arrive **enabled and first** instead of disabled at the end.
+     *
+     * The rule below — anything new arrives off, so an upgrade cannot change behaviour — is right for
+     * a provider that needs setup or is unproven. InnerTube is neither: it needs nothing, was
+     * measured before it shipped (0.5 s against 36 s for yt-dlp), and yt-dlp stays right behind it in
+     * the chain. Leaving it off would leave every existing user on the slow path the release exists
+     * to fix. Applied once per provider (the id is then stored), so moving it afterwards sticks.
+     */
+    private val PROMOTE_ON_UPGRADE = listOf(InnertubeAudioSource.ID)
 
     /**
      * Reads the stored order for [key], appending any missing [knownIds] at the end
@@ -67,6 +78,15 @@ object AudioBackendSettings {
         // Append missing known providers: on first run only the DEFAULT_ON ones start enabled;
         // on upgrade anything new arrives disabled so it can't change existing behaviour.
         val present = parsed.map { it.id }.toMutableSet()
+        // On a fresh install the catalogue order already puts it first.
+        if (!isFirstRun) {
+            for (id in PROMOTE_ON_UPGRADE.reversed()) {
+                if (id in knownIds && id !in present) {
+                    parsed.add(0, BackendEntry(id, enabled = true))
+                    present.add(id)
+                }
+            }
+        }
         for (id in knownIds) {
             if (id !in present) {
                 parsed.add(BackendEntry(id, isFirstRun && id in DEFAULT_ON))

@@ -360,6 +360,22 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── InnerTube audio (4.1) ───
+    check(golden(
+        "InnertubeAudio",
+        &crate::youtube::innertube::InnertubeAudio {
+            url: "https://rr3---sn.googlevideo.com/videoplayback?expire=1792536061".to_string(),
+            mime_type: "audio/webm".to_string(),
+            itag: 251,
+            bitrate: 140_095,
+            content_length: Some(5_025_760),
+            loudness_db: Some(5.67),
+            approx_duration_ms: Some(305_041),
+            expires_at_ms: Some(1_792_536_061_000),
+            client: "visionos-1.03".to_string(),
+        },
+    ));
+
     // ─── Listening history (4.0) ───
     let play = crate::metrics::Event {
         track_id: "4cOdK2wGLETKBW3PvgPWqT".to_string(),

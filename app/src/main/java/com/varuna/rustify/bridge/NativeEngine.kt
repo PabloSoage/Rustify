@@ -308,6 +308,20 @@ object NativeEngine {
      */
     suspend fun searchYouTube(query: String): String = io { searchYouTubeNative(query) }
 
+    private external fun resolveInnertubeAudioNative(videoId: String, prefsJson: String): String
+
+    /**
+     * A YouTube video's audio stream from one `/youtubei/v1/player` request, no yt-dlp (4.1).
+     * Answers an `InnertubeAudio` or the failure envelope.
+     */
+    suspend fun resolveInnertubeAudio(videoId: String, prefsJson: String): String =
+        io { resolveInnertubeAudioNative(videoId, prefsJson) }
+
+    private external fun setInnertubeClientsNative(clientsJson: String): String
+
+    /** Replaces the client table; `[]` restores the built-in one. */
+    suspend fun setInnertubeClients(clientsJson: String): String = io { setInnertubeClientsNative(clientsJson) }
+
     private external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
 
     /** Resolves a Spotify track id to a YouTube video id. Network. */

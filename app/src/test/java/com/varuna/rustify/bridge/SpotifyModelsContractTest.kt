@@ -296,6 +296,26 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── InnerTube audio (4.1) ───────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `an innertube stream carries its loudness and its expiry`() {
+        assertEquals(
+            com.varuna.rustify.audio.InnertubeAudio(
+                url = "https://rr3---sn.googlevideo.com/videoplayback?expire=1792536061",
+                mimeType = "audio/webm",
+                itag = 251,
+                bitrate = 140_095,
+                contentLength = 5_025_760,
+                loudnessDb = 5.67,
+                approxDurationMs = 305_041,
+                expiresAtMs = 1_792_536_061_000,
+                client = "visionos-1.03"
+            ),
+            fixture<com.varuna.rustify.audio.InnertubeAudio>("InnertubeAudio")
+        )
+    }
+
     // ─── Listening history (4.0) ─────────────────────────────────────────────────────────────────
 
     private val play = com.varuna.rustify.metrics.PlayEvent(
@@ -421,7 +441,7 @@ class SpotifyModelsContractTest {
             "SpotifyUser", "SimplePlaylist", "FullPlaylist", "BrowseSection", "PaginatedResponse",
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
-            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats"
+            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }

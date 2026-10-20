@@ -37,6 +37,7 @@ object AudioSourceRegistry {
             // start disabled for existing builds (via AudioBackendSettings forward-compat); the user
             // enables them in Settings.
             val built = listOf<AudioSourceProvider>(
+                InnertubeAudioSource(appContext),
                 YtDlpAudioSource(appContext),
                 InvidiousAudioSource(appContext),
                 DeezerAudioSource(appContext)

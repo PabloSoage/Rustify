@@ -626,4 +626,5 @@
     <string name="home_offline_cached">Offline — showing your last Home</string>
     <string name="library_spotify_signed_out">Connect Spotify to see your playlists and liked songs here.</string>
     <string name="home_offline">No connection</string>
+    <string name="backend_innertube">YouTube (direct, fast)</string>
 </resources>

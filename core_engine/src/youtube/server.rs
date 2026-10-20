@@ -157,7 +157,25 @@ pub fn update_playback_queue<E: Env>(track_ids: Vec<String>) {
     });
 }
 
+/// One lock per track being resolved right now.
+///
+/// Measured in 4.0: playing a track and pre-buffering the queue asked for the same song at the same
+/// moment, and both ran the whole YouTube Music search — 3.9 s each, twice. The second caller now
+/// waits for the first and then finds the mapping it stored.
+fn in_flight(track_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Bounded: entries nobody holds any more are dropped as new ones arrive.
+    if map.len() > 64 {
+        map.retain(|_, lock| std::sync::Arc::strong_count(lock) > 1);
+    }
+    map.entry(track_id.to_string()).or_default().clone()
+}
+
 pub async fn resolve_youtube_id<E: Env>(track_id: &str, cache_dir: &str) -> Option<String> {
+    let lock = in_flight(track_id);
+    let _held = lock.lock().await;
+
     // Check if we already have an alternative YT ID mapped
     let alt = get_alternative_track(track_id);
     if let Some(yt_id) = alt {

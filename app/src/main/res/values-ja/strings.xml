@@ -623,4 +623,5 @@
     <string name="home_offline_cached">オフライン — 前回のホームを表示中</string>
     <string name="library_spotify_signed_out">Spotify を接続すると、ここにプレイリストとお気に入りの曲が表示されます。</string>
     <string name="home_offline">接続がありません</string>
+    <string name="backend_innertube">YouTube (直接・高速)</string>
 </resources>
