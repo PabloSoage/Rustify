@@ -715,4 +715,8 @@
         <item quantity="one">%d canción</item>
         <item quantity="other">%d canciones</item>
     </plurals>
+    <string name="notif_mode_in_order">En orden</string>
+    <string name="notif_mode_shuffle">Aleatorio</string>
+    <string name="notif_mode_repeat">Repetir</string>
+    <string name="auto_section_recent">Escuchado recientemente</string>
 </resources>

@@ -31,7 +31,7 @@ object AndroidAutoBrowse {
 
     /** Nodes that require network (resolved in [childrenAsync]; empty in synchronous mode). */
     private fun isNetworkNode(parentId: String): Boolean =
-        parentId.startsWith("spl:") || parentId.startsWith("salb:") || parentId.startsWith("sart:")
+        parentId == "sec_recent" || parentId.startsWith("spl:") || parentId.startsWith("salb:") || parentId.startsWith("sart:")
 
     /**
      * Children of a node — synchronous version (cache only). Used by the in-app preview. Nodes that
@@ -106,6 +106,27 @@ object AndroidAutoBrowse {
         val repo = SpotifyRepository.instance ?: return emptyList()
         val nodes = if (!isNetworkNode(parentId)) children(context, parentId, ytmRepo) else runCatching {
             when {
+                parentId == "sec_recent" -> {
+                    val now = System.currentTimeMillis()
+                    com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now).recent
+                        .distinctBy { it.trackId }
+                        .take(50)
+                        .map { e ->
+                            trackNode(
+                                FullTrack(
+                                    id = e.trackId,
+                                    name = e.trackName,
+                                    durationMs = e.durationMs.toInt(),
+                                    isrc = e.isrc,
+                                    artists = e.artistNames.zip(e.artistIds) { n, id -> com.varuna.rustify.bridge.SimpleArtist(id = id, name = n) },
+                                    album = com.varuna.rustify.bridge.SimpleAlbum(
+                                        id = e.albumId, name = e.albumName,
+                                        images = listOfNotNull(e.imageUrl.takeIf { it.isNotBlank() }?.let { com.varuna.rustify.bridge.SpotifyImage(it) })
+                                    )
+                                )
+                            )
+                        }
+                }
                 parentId.startsWith("spl:") -> repo.getPlaylistTracks(parentId.removePrefix("spl:"), limit = 100).items.map { trackNode(it) }
                 parentId.startsWith("salb:") -> repo.getAlbumTracks(parentId.removePrefix("salb:"), limit = 100).items.map { trackNode(it) }
                 parentId.startsWith("sart:") -> repo.getArtistTopTracks(parentId.removePrefix("sart:"), limit = 50).items.map { trackNode(it) }
@@ -175,6 +196,9 @@ object AndroidAutoBrowse {
         val out = ArrayList<Node>()
         val hasQueue = runCatching { AudioPlayerService.getInstance(context).state.value.queue.isNotEmpty() }.getOrDefault(false)
         if (hasQueue) out += Node("sec_queue", context.getString(R.string.auto_section_queue), "", true, null)
+        // What you played lately (4.7), from the local history: works with no account and no network
+        // for whatever is downloaded or local.
+        out += Node("sec_recent", context.getString(R.string.auto_section_recent), "", true, null)
         out += Node("cat_liked", context.getString(R.string.library_tab_liked_tracks), "", true, null)
         out += Node("cat_playlists", context.getString(R.string.library_tab_playlists), "", true, null)
         out += Node("cat_albums", context.getString(R.string.library_tab_albums), "", true, null)

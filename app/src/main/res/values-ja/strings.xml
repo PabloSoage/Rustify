@@ -714,4 +714,8 @@
         <item quantity="one">%d 曲</item>
         <item quantity="other">%d 曲</item>
     </plurals>
+    <string name="notif_mode_in_order">順番に再生</string>
+    <string name="notif_mode_shuffle">シャッフル</string>
+    <string name="notif_mode_repeat">リピート</string>
+    <string name="auto_section_recent">最近再生した曲</string>
 </resources>

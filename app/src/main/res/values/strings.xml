@@ -717,4 +717,8 @@
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>
     </plurals>
+    <string name="notif_mode_in_order">In order</string>
+    <string name="notif_mode_shuffle">Shuffle</string>
+    <string name="notif_mode_repeat">Repeat</string>
+    <string name="auto_section_recent">Recently played</string>
 </resources>

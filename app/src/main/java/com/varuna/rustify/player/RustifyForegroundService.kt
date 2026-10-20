@@ -62,6 +62,7 @@ class RustifyForegroundService : MediaLibraryService() {
 
         /** Custom session command behind the notification's save button. */
         private const val ACTION_TOGGLE_SAVED = "com.varuna.rustify.TOGGLE_SAVED"
+        private const val ACTION_CYCLE_MODE = "com.varuna.rustify.CYCLE_MODE"
         // Values of the `android.media.browse.CONTENT_STYLE_*_HINT` extras.
         private const val CONTENT_STYLE_LIST = 1
         private const val CONTENT_STYLE_GRID = 2
@@ -210,16 +211,46 @@ class RustifyForegroundService : MediaLibraryService() {
                 .collectLatest { track ->
                     snapshotFlow { TrackFavorites.isSaved(this@RustifyForegroundService, track) }
                         .distinctUntilChanged()
-                        .collect { saved -> applySaveButton(track, saved) }
+                        .collect { saved -> lastSaved = saved; applySaveButton(track, saved) }
                 }
         }
+        // The mode button (4.7) follows shuffle/repeat, which change without the track changing.
+        autoScope.launch {
+            audio.state
+                .map { it.isShuffle to it.isRepeat }
+                .distinctUntilChanged()
+                .collect { applySaveButton(audio.state.value.currentTrack, lastSaved) }
+        }
     }
+
+    @Volatile private var lastSaved = false
 
     /** Session calls belong on the application thread, which is not where the flows above run. */
     private suspend fun applySaveButton(track: FullTrack?, saved: Boolean) {
         withContext(Dispatchers.Main) {
             val session = mediaSession ?: return@withContext
             // Nothing playing, or something with no id to save: no button rather than a dead one.
+            // Shuffle/repeat in one button that cycles, as in the app (4.7): Android Auto showed neither.
+            val st = AudioPlayerService.instance?.state?.value
+            val modeButton = CommandButton.Builder(
+                when {
+                    st?.isRepeat == true -> CommandButton.ICON_REPEAT_ALL
+                    st?.isShuffle == true -> CommandButton.ICON_SHUFFLE_ON
+                    else -> CommandButton.ICON_SHUFFLE_OFF
+                }
+            )
+                .setDisplayName(
+                    getString(
+                        when {
+                            st?.isRepeat == true -> R.string.notif_mode_repeat
+                            st?.isShuffle == true -> R.string.notif_mode_shuffle
+                            else -> R.string.notif_mode_in_order
+                        }
+                    )
+                )
+                .setSessionCommand(SessionCommand(ACTION_CYCLE_MODE, Bundle.EMPTY))
+                .setEnabled(true)
+                .build()
             val buttons = if (track?.id == null) {
                 ImmutableList.of()
             } else {
@@ -232,7 +263,8 @@ class RustifyForegroundService : MediaLibraryService() {
                         )
                         .setSessionCommand(SessionCommand(ACTION_TOGGLE_SAVED, Bundle.EMPTY))
                         .setEnabled(true)
-                        .build()
+                        .build(),
+                    modeButton
                 )
             }
             // A released session throws rather than ignoring the call, and this arrives from a
@@ -253,6 +285,7 @@ class RustifyForegroundService : MediaLibraryService() {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                 .buildUpon()
                 .add(SessionCommand(ACTION_TOGGLE_SAVED, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_CYCLE_MODE, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailableSessionCommands(commands)
@@ -265,6 +298,10 @@ class RustifyForegroundService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == ACTION_CYCLE_MODE) {
+                AudioPlayerService.instance?.cyclePlaybackMode()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction != ACTION_TOGGLE_SAVED) {
                 return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
