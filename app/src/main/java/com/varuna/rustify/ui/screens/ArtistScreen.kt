@@ -259,7 +259,7 @@ fun ArtistScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Top Tracks",
+                                    text = stringResource(R.string.artist_top_tracks),
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     color = Color.White
                                 )

@@ -81,6 +81,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -717,7 +718,7 @@ fun LibraryTracks(
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
                         Text(
-                            text = "No liked tracks found.",
+                            text = stringResource(R.string.library_no_liked),
                             color = Color.Gray,
                             modifier = Modifier.align(Alignment.Center)
                         )
@@ -1000,7 +1001,7 @@ fun LibraryLocalMusic(
                                 val sortedTracks = albumTracks.sortedBy { it.name.lowercase() }
                                 SearchResultRow(
                                     title = albumName,
-                                    subtitle = "${albumTracks.size} tracks",
+                                    subtitle = pluralStringResource(R.plurals.track_count, albumTracks.size, albumTracks.size),
                                     imageUrl = albumTracks.firstOrNull()?.externalUri,
                                     onClick = {
                                         val localId = "local_album:$albumName"
@@ -1035,7 +1036,7 @@ fun LibraryLocalMusic(
                                 val sortedTracks = artistTracks.sortedBy { it.name.lowercase() }
                                 SearchResultRow(
                                     title = artistName,
-                                    subtitle = "${artistTracks.size} tracks",
+                                    subtitle = pluralStringResource(R.plurals.track_count, artistTracks.size, artistTracks.size),
                                     imageUrl = artistTracks.firstOrNull()?.externalUri,
                                     isCircle = true,
                                     onClick = {
@@ -1530,7 +1531,7 @@ private fun LocalPlaylistRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${playlist.trackIds.size} ${stringResource(R.string.local_group_tracks)}",
+                text = pluralStringResource(R.plurals.track_count, playlist.trackIds.size, playlist.trackIds.size),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.LightGray,
                 maxLines = 1

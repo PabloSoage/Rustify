@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -214,7 +215,7 @@ fun PlaylistScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Something went wrong", 
+                        text = stringResource(R.string.common_something_wrong), 
                         style = MaterialTheme.typography.titleLarge, 
                         color = Color.White
                     )
@@ -363,7 +364,7 @@ fun PlaylistScreen(
                                     Spacer(modifier = Modifier.height(8.dp))
                                     val count = tracks.size
                                     Text(
-                                        text = "Playlist local · $count ${if (count == 1) "canción" else "canciones"}",
+                                        text = stringResource(R.string.local_playlist_label) + " · " + pluralStringResource(R.plurals.track_count, count, count),
                                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                         color = Color.LightGray
                                     )
@@ -399,7 +400,7 @@ fun PlaylistScreen(
                                             )
                                         }
                                         Text(
-                                            text = "${playlistDetails?.totalTracks ?: tracks.size} tracks",
+                                            text = (playlistDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(R.plurals.track_count, n, n) },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = Color.Gray
                                         )

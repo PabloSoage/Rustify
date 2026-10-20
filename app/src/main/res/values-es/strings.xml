@@ -701,4 +701,18 @@
     <string name="home_recent_albums">Escuchado últimamente</string>
     <string name="home_charts">Listas de éxitos</string>
     <string name="home_moods">Para cada momento</string>
+    <string name="common_something_wrong">Algo ha ido mal</string>
+    <string name="album_type_album">Álbum</string>
+    <string name="album_type_single">Sencillo</string>
+    <string name="album_type_ep">EP</string>
+    <string name="album_type_compilation">Recopilatorio</string>
+    <string name="album_by">De %1$s</string>
+    <string name="common_unknown_artist">Artista desconocido</string>
+    <string name="local_playlist_label">Playlist local</string>
+    <string name="artist_top_tracks">Canciones populares</string>
+    <string name="library_no_liked">Aún no hay canciones que te gusten.</string>
+    <plurals name="track_count">
+        <item quantity="one">%d canción</item>
+        <item quantity="other">%d canciones</item>
+    </plurals>
 </resources>

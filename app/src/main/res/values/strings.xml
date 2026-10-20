@@ -703,4 +703,18 @@
     <string name="home_recent_albums">Played lately</string>
     <string name="home_charts">Charts</string>
     <string name="home_moods">For every mood</string>
+    <string name="common_something_wrong">Something went wrong</string>
+    <string name="album_type_album">Album</string>
+    <string name="album_type_single">Single</string>
+    <string name="album_type_ep">EP</string>
+    <string name="album_type_compilation">Compilation</string>
+    <string name="album_by">By %1$s</string>
+    <string name="common_unknown_artist">Unknown artist</string>
+    <string name="local_playlist_label">Local playlist</string>
+    <string name="artist_top_tracks">Top tracks</string>
+    <string name="library_no_liked">No liked songs yet.</string>
+    <plurals name="track_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
 </resources>

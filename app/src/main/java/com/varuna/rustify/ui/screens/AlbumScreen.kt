@@ -53,6 +53,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -249,7 +250,7 @@ fun AlbumScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Something went wrong", 
+                        text = stringResource(R.string.common_something_wrong), 
                         style = MaterialTheme.typography.titleLarge, 
                         color = Color.White
                     )
@@ -356,7 +357,14 @@ fun AlbumScreen(
                                 horizontalAlignment = Alignment.Start
                             ) {
                                 Text(
-                                    text = "ALBUM",
+                                    text = stringResource(
+                                        when (albumDetails?.albumType?.lowercase()) {
+                                            "single" -> R.string.album_type_single
+                                            "ep" -> R.string.album_type_ep
+                                            "compilation" -> R.string.album_type_compilation
+                                            else -> R.string.album_type_album
+                                        }
+                                    ).uppercase(),
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.2.sp
@@ -375,7 +383,7 @@ fun AlbumScreen(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                val descriptionText = "Album by " + (albumDetails?.artists?.joinToString(", ") { it.name } ?: "Unknown Artist")
+                                val descriptionText = stringResource(R.string.album_by, albumDetails?.artists?.joinToString(", ") { it.name } ?: stringResource(R.string.common_unknown_artist))
                                 Text(
                                     text = descriptionText,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -403,7 +411,7 @@ fun AlbumScreen(
                                         )
                                     }
                                     Text(
-                                        text = "${albumDetails?.totalTracks ?: tracks.size} tracks",
+                                        text = (albumDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(R.plurals.track_count, n, n) },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color.Gray
                                     )

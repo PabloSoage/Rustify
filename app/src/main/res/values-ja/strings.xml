@@ -700,4 +700,18 @@
     <string name="home_recent_albums">最近聴いたもの</string>
     <string name="home_charts">チャート</string>
     <string name="home_moods">気分で選ぶ</string>
+    <string name="common_something_wrong">問題が発生しました</string>
+    <string name="album_type_album">アルバム</string>
+    <string name="album_type_single">シングル</string>
+    <string name="album_type_ep">EP</string>
+    <string name="album_type_compilation">コンピレーション</string>
+    <string name="album_by">%1$s</string>
+    <string name="common_unknown_artist">不明なアーティスト</string>
+    <string name="local_playlist_label">ローカルプレイリスト</string>
+    <string name="artist_top_tracks">人気曲</string>
+    <string name="library_no_liked">お気に入りの曲はまだありません。</string>
+    <plurals name="track_count">
+        <item quantity="one">%d 曲</item>
+        <item quantity="other">%d 曲</item>
+    </plurals>
 </resources>

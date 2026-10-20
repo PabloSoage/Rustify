@@ -1497,7 +1497,7 @@ fun LyricsView(
             lyricsResult == null -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "No se encontraron letras",
+                        text = stringResource(R.string.lyrics_not_found),
                         color = Color.Gray,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
