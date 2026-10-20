@@ -641,4 +641,10 @@
     <string name="settings_equalizer_unavailable">まず何か再生してください。イコライザーはプレーヤーに接続されます。</string>
     <string name="new_releases_signed_out">新着は Spotify でフォローしているアーティストから表示されます。Spotify を接続してください。</string>
     <string name="new_releases_empty">フォロー中のアーティストの新着はありません。</string>
+    <string name="track_menu_credits">クレジット</string>
+    <string name="track_credits_source">提供: %1$s</string>
+    <string name="track_credits_none">この曲のクレジットはありません。</string>
+    <string name="playlist_recommended">おすすめ</string>
+    <string name="playlist_recommended_hint">このプレイリストの内容から</string>
+    <string name="playlist_recommended_more">更新</string>
 </resources>

@@ -735,6 +735,17 @@ object NativeEngine {
     suspend fun getSpotifyTrackRadio(trackId: String): String =
         io { getSpotifyTrackRadioNative(trackId) }
 
+    private external fun getTrackCreditsNative(trackId: String): String
+
+    /** Who made a track, grouped by role (4.6). No session needed. Answers `TrackCredits`. */
+    suspend fun getTrackCredits(trackId: String): String = io { getTrackCreditsNative(trackId) }
+
+    private external fun extendPlaylistNative(playlistId: String, skipJson: String, count: Int): String
+
+    /** Tracks that fit a playlist and are not in it (4.6). No session needed. Answers `List<FullTrack>`. */
+    suspend fun extendPlaylist(playlistId: String, skipJson: String, count: Int): String =
+        io { extendPlaylistNative(playlistId, skipJson, count) }
+
     private external fun getSpotifyCanvasNative(trackUri: String): String
 
     /**

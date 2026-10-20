@@ -132,6 +132,22 @@ fun PlaylistScreen(
 
     LaunchedEffect(Unit) { runCatching { meId = spotifyRepo.getMe().id } }
 
+    // Recommended tracks under the playlist. Each "refresh" skips what was already offered as well
+    // as what is in the playlist, so it brings different ones instead of the same ten again.
+    var recommended by remember(playlistId) { mutableStateOf<List<FullTrack>>(emptyList()) }
+    var recommendRound by remember(playlistId) { mutableStateOf(0) }
+    val offered = remember(playlistId) { mutableSetOf<String>() }
+    val playlistLoaded = !isLocal && !spotifyRepo.isPlaylistLoading(playlistId) && tracks.isNotEmpty()
+    LaunchedEffect(playlistId, playlistLoaded, recommendRound) {
+        if (!playlistLoaded) return@LaunchedEffect
+        val skip = tracks.mapNotNull { it.id } + offered
+        val next = runCatching { spotifyRepo.extendPlaylist(playlistId, skip.distinct(), 10) }.getOrDefault(emptyList())
+        if (next.isNotEmpty()) {
+            next.mapNotNullTo(offered) { it.id }
+            recommended = next
+        }
+    }
+
     LaunchedEffect(playlistId) {
         errorMessage = null
         if (isLocal) {
@@ -546,6 +562,38 @@ fun PlaylistScreen(
                                 }
                             }
                         }
+
+                        // "Recommended" (4.6): Spotify's playlist extender, which answers without an
+                        // account. Asked once the whole playlist is in, so what is already there is skipped.
+                        if (!isLocal && !spotifyRepo.isPlaylistLoading(playlistId) && recommended.isNotEmpty()) {
+                            item(key = "recommended_header") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.playlist_recommended), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                        Text(stringResource(R.string.playlist_recommended_hint), color = Color.Gray, fontSize = 12.sp)
+                                    }
+                                    androidx.compose.material3.TextButton(onClick = { recommendRound++ }) {
+                                        Text(stringResource(R.string.playlist_recommended_more), color = spotifyGreen)
+                                    }
+                                }
+                            }
+                            itemsIndexed(recommended, key = { _, t -> "rec_" + (t.id ?: t.name) }) { index, track ->
+                                TrackRowItem(
+                                    index = index + 1,
+                                    track = track,
+                                    fallbackCoverUrl = null,
+                                    onClick = { onTrackClick(recommended, index) },
+                                    isLiked = spotifyRepo.isTrackLiked(track.id ?: ""),
+                                    isCurrentTrack = track.id == currentTrackId,
+                                    isListened = false,
+                                    onLikeToggle = { coroutineScope.launch { spotifyRepo.toggleLikeTrack(track) } },
+                                    onMoreClick = { selectedTrackForMenu = track }
+                                )
+                            }
+                        }
                     }
                 }
                 }
@@ -764,7 +812,10 @@ fun PlaylistScreen(
                 cb(t.id ?: "", t.name)
                 selectedTrackForMenu = null
             } },
-            onRemoveFromPlaylist = {
+            // Only for a row that is in the playlist, and only where removing can work: a local playlist
+            // or one you own. It was offered everywhere — for Spotify's own playlists, signed out, and
+            // for the recommended tracks below the list, which are not in it (seen in 4.6).
+            onRemoveFromPlaylist = if (selectedTrackForMenu in tracks && (isLocal || (meId != null && playlistDetails?.owner?.id == meId))) ({
                 val trackToRemove = selectedTrackForMenu!!
                 coroutineScope.launch {
                     trackToRemove.id?.let { tid ->
@@ -778,7 +829,7 @@ fun PlaylistScreen(
                     }
                 }
                 selectedTrackForMenu = null
-            }
+            }) else null
         )
     }
 }

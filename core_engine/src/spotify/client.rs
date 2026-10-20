@@ -141,6 +141,7 @@ const PUBLIC_GQL_OPERATIONS: &[&str] = &[
     "getAlbum",
     "getTrack",
     "queryArtistOverview",
+    "queryTrackCreditsGroupedModal",
     "searchAlbums",
     "searchArtists",
     "searchDesktop",
@@ -751,6 +752,23 @@ impl<E: Env> SpotifyClient<E> {
             .map_err(|e| SpotifyError::ParseError(format!("spclient parse error: {}", e)))
     }
 
+    /// [`Self::spclient_get`] with a JSON body, for the routes the official clients POST to
+    /// (`playlistextender` is one, and it answers the anonymous token — measured 2026-10-20).
+    pub async fn spclient_post(&self, path: &str, body: &Value) -> SpotifyResult<Value> {
+        let token = self.read_token().await?;
+        let req = self
+            .base_request(Method::Post, format!("{}{}", SPCLIENT_BASE, path))
+            .bearer(&token)
+            .header("App-Platform", "WebPlayer")
+            .header("Accept", "application/json")
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/")
+            .body_json(body)?;
+        let res = self.send_checked(req).await?;
+        res.json()
+            .map_err(|e| SpotifyError::ParseError(format!("spclient parse error: {}", e)))
+    }
+
     /// Writes are **user-scoped**, so there is deliberately no anonymous fallback here.
     ///
     /// The anonymous token can read public metadata, which is why [`api_get`] falls back to one. It cannot
@@ -967,6 +985,8 @@ impl<E: Env> SpotifyClient<E> {
             "addToLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
             "removeFromLibrary" => "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
             "getTrack" => "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294",
+            // From the desktop client 1.305 (docs serie-4.x/datos); answers the anonymous token.
+            "queryTrackCreditsGroupedModal" => "f135fb9be58a72d041ab5d214d817021a272405d883860468e2627afb01a3ca9",
             _ => "",
         };
 

@@ -373,6 +373,22 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── Track credits (4.6) ───
+    check(golden(
+        "TrackCredits",
+        &crate::spotify::credits::TrackCredits {
+            groups: vec![crate::spotify::credits::CreditGroup {
+                name: "Composition & Lyrics".to_string(),
+                people: vec![crate::spotify::credits::Credit {
+                    name: "Björk Guðmundsdóttir".to_string(),
+                    role: "Composer, Lyricist".to_string(),
+                    artist_id: Some("3HDfNAh4MpiptvaJP9We0w".to_string()),
+                }],
+            }],
+            sources: vec!["One Little Independent Records".to_string()],
+        },
+    ));
+
     // ─── InnerTube audio (4.1) ───
     check(golden(
         "InnertubeAudio",

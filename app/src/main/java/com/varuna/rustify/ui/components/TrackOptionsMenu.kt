@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
@@ -92,6 +93,7 @@ fun TrackOptionsMenuBottomSheet(
     val context = LocalContext.current
     var showPlaylistSelector by remember { mutableStateOf(false) }
     var showLyricsOffsetDialog by remember { mutableStateOf(false) }
+    var showCredits by remember { mutableStateOf(false) }
     // Local playlist selector + creation dialog.
     var showLocalPlaylistSelector by remember { mutableStateOf(false) }
     var showCreateLocalPlaylistDialog by remember { mutableStateOf(false) }
@@ -108,6 +110,15 @@ fun TrackOptionsMenuBottomSheet(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         // Handle if needed
+    }
+
+    if (showCredits) {
+        TrackCreditsDialog(
+            trackId = TrackRef.parse(track.id)?.spotifyId.orEmpty(),
+            spotifyRepo = spotifyRepo,
+            onArtistClick = { id -> showCredits = false; onGoToArtist(id); onDismiss() },
+            onDismiss = { showCredits = false }
+        )
     }
 
     // Per-track lyrics sync offset (±), persisted in LyricsOffsetStore.
@@ -525,6 +536,16 @@ fun TrackOptionsMenuBottomSheet(
                         onClick = {
                             onGoToArtist(track.artists.first().id)
                         }
+                    )
+                }
+
+                // Credits (4.6): Spotify's own, public — no account needed.
+                val creditsTrackId = TrackRef.parse(track.id)?.spotifyId
+                if (creditsTrackId != null) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Info,
+                        label = stringResource(R.string.track_menu_credits),
+                        onClick = { showCredits = true }
                     )
                 }
 

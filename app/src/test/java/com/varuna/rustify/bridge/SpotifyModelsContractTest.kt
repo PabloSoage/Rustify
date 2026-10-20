@@ -310,6 +310,24 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── Track credits (4.6) ─────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `credits arrive grouped with the artist page to open`() {
+        assertEquals(
+            TrackCredits(
+                groups = listOf(
+                    CreditGroup(
+                        name = "Composition & Lyrics",
+                        people = listOf(Credit("Björk Guðmundsdóttir", "Composer, Lyricist", "3HDfNAh4MpiptvaJP9We0w"))
+                    )
+                ),
+                sources = listOf("One Little Independent Records")
+            ),
+            fixture<TrackCredits>("TrackCredits")
+        )
+    }
+
     // ─── InnerTube audio (4.1) ───────────────────────────────────────────────────────────────────
 
     @Test
@@ -464,7 +482,8 @@ class SpotifyModelsContractTest {
             "SpotifyUser", "SimplePlaylist", "FullPlaylist", "BrowseSection", "PaginatedResponse",
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
-            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio", "SpotifyLyrics"
+            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio", "SpotifyLyrics",
+            "TrackCredits"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }

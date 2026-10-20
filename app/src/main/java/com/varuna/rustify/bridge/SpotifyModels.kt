@@ -147,6 +147,19 @@ data class SpotifyImage(
 // AUTHENTICATION
 // =============================================================================
 
+/** A track's credits, mirrored from `spotify/credits.rs` (4.6). */
+@Serializable
+data class TrackCredits(
+    val groups: List<CreditGroup> = emptyList(),
+    val sources: List<String> = emptyList()
+)
+
+@Serializable
+data class CreditGroup(val name: String = "", val people: List<Credit> = emptyList())
+
+@Serializable
+data class Credit(val name: String = "", val role: String = "", val artistId: String? = null)
+
 @Serializable
 data class LoginResult(
     val success: Boolean = false,

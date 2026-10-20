@@ -2390,3 +2390,34 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getSpotifyLyr
         serialize_result(get_runtime().block_on(spotify::client::get_spotify_client().get_lyrics(&id)))
     })
 }
+
+/// The credits of a track (4.6). Public catalogue: works without a session.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getTrackCreditsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = track_id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(spotify::client::get_spotify_client().get_track_credits(&id)))
+    })
+}
+
+/// Tracks that fit a playlist and are not in it (4.6). `skip_json` is a JSON array of track ids.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_extendPlaylistNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    playlist_id: JString<'local>,
+    skip_json: JString<'local>,
+    count: jni::sys::jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = playlist_id.mutf8_chars(env)?.to_string();
+        let skip: Vec<String> = serde_json::from_str(&skip_json.mutf8_chars(env)?.to_string()).unwrap_or_default();
+        serialize_result(get_runtime().block_on(
+            spotify::client::get_spotify_client().extend_playlist(&id, &skip, count.clamp(1, 50) as u32),
+        ))
+    })
+}

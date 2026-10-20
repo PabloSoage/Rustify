@@ -1667,6 +1667,25 @@ loadLocalTracksFromCache()
         }
     }
 
+    /** Who wrote, played and produced a track. Public catalogue: no account needed. */
+    suspend fun getTrackCredits(trackId: String): TrackCredits = withContext(Dispatchers.IO) {
+        retrying(onAuthError = { ensureSession() }) {
+            decodeChecked<TrackCredits>(NativeEngine.getTrackCredits(trackId))
+        }
+    }
+
+    /**
+     * Tracks that would fit [playlistId] — Spotify's "Recommended" block under a playlist. [skip] is
+     * what is already in it and what was already offered; the service leaves those out itself.
+     */
+    suspend fun extendPlaylist(playlistId: String, skip: List<String>, count: Int = 10): List<FullTrack> =
+        withContext(Dispatchers.IO) {
+            val skipJson = RustifyJson.encodeToString(skip)
+            retrying(onAuthError = { ensureSession() }) {
+                decodeChecked<List<FullTrack>>(NativeEngine.extendPlaylist(playlistId, skipJson, count))
+            }
+        }
+
     // =========================================================================
     // SEARCH
     // =========================================================================
