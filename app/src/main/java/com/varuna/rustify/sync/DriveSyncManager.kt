@@ -65,7 +65,7 @@ class DriveSyncManager(
      * state in the UI. Blocking — call on Dispatchers.IO.
      */
     @Throws(Exception::class)
-    fun syncNow(accessToken: String) {
+    suspend fun syncNow(accessToken: String) {
         val fileId = drive.findBackupFileId(accessToken)
         val remote: JSONObject? = fileId?.let { drive.download(accessToken, it) }
         val local: JSONObject = RustifyBackup.build(appContext)

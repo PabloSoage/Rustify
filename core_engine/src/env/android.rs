@@ -400,6 +400,35 @@ impl Env for AndroidEnv {
         })
     }
 
+    fn append_storage(key: &str, text: &str) -> TryEnvFuture<()> {
+        let path = storage_path(key);
+        let text = text.to_owned();
+        Box::pin(async move {
+            use tokio::io::AsyncWriteExt;
+            let path = path.ok_or_else(|| EnvError::Storage("storage dir not initialised".into()))?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| EnvError::Storage(e.to_string()))?;
+            }
+            let mut file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .await
+                .map_err(|e| EnvError::Storage(e.to_string()))?;
+            // One write of whole lines: a process death can at worst lose the tail of this line,
+            // which the reader skips, never a line already there.
+            file.write_all(text.as_bytes())
+                .await
+                .map_err(|e| EnvError::Storage(e.to_string()))?;
+            file.sync_data()
+                .await
+                .map_err(|e| EnvError::Storage(e.to_string()))?;
+            Ok(())
+        })
+    }
+
     fn now_ms() -> i64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

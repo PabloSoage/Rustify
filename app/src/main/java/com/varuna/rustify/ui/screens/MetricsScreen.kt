@@ -35,44 +35,21 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.metrics.ListeningTracker
+import com.varuna.rustify.metrics.PlayEvent
+import com.varuna.rustify.metrics.PlayImportReport
+import com.varuna.rustify.metrics.PlayStats
+import com.varuna.rustify.metrics.TopRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.util.Calendar
 import kotlin.math.cos
 import kotlin.math.sin
 
 private enum class MetricsRange { TODAY, WEEK, MONTH, YEAR, ALL }
 
-private data class TopRow(
-    val key: String, val name: String, val subtitle: String,
-    val imageUrl: String, val plays: Int, val ms: Long
-)
-
-@Suppress("ArrayInDataClass")
-private data class Stats(
-    val totalPlays: Int = 0,
-    val distinctTracks: Int = 0,
-    val distinctArtists: Int = 0,
-    val distinctAlbums: Int = 0,
-    val totalMs: Long = 0L,
-    val daysListened: Int = 0,
-    val avgPerDayMin: Long = 0L,
-    val completionRate: Int = 0,
-    val playsByHour: IntArray = IntArray(24),
-    val msByHour: LongArray = LongArray(24),
-    val playsByWeekday: IntArray = IntArray(7),
-    val playsByMonth: IntArray = IntArray(12),
-    val playsByYear: List<Pair<Int, Int>> = emptyList(),
-    val cumulativeMin: List<Long> = emptyList(),
-    val cumulativePlays: List<Long> = emptyList(),
-    val minutesPerDay: List<Long> = emptyList(),
-    val topTracks: List<TopRow> = emptyList(),
-    val topArtists: List<TopRow> = emptyList(),
-    val topAlbums: List<TopRow> = emptyList(),
-    val recent: List<JSONObject> = emptyList()
-)
+/** Computed by the core (`metrics::stats`) since 4.0; see [ListeningTracker.stats]. */
+private typealias Stats = PlayStats
 
 private val GREEN = Color(0xFF1DB954)
 private val CARD = Color(0xFF1E1E1E)
@@ -142,8 +119,8 @@ fun MetricsScreen(onBack: () -> Unit) {
                 runCatching {
                     val n = context.contentResolver.openInputStream(uri)?.use {
                         ListeningTracker.importHistory(context, it)
-                    } ?: 0
-                    withContext(Dispatchers.Main) { Toast.makeText(context, importDoneTemplate.format(n), Toast.LENGTH_SHORT).show() }
+                    } ?: PlayImportReport()
+                    withContext(Dispatchers.Main) { Toast.makeText(context, importDoneTemplate.format(n.added), Toast.LENGTH_SHORT).show() }
                     load()
                 }.onFailure { e ->
                     withContext(Dispatchers.Main) { Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show() }
@@ -267,7 +244,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             if (stats.playsByYear.size > 1) {
                 item {
                     SectionTitle(stringResource(R.string.metrics_by_year))
-                    MiniBarChart(stats.playsByYear.map { it.first.toString() to it.second.toFloat() }, Color(0xFFBA68C8))
+                    MiniBarChart(stats.playsByYear.map { it.year.toString() to it.plays.toFloat() }, Color(0xFFBA68C8))
                     Spacer(Modifier.height(20.dp))
                 }
             }
@@ -327,7 +304,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedTop(
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.itemsRecent(
-    data: List<JSONObject>, content: @Composable (JSONObject) -> Unit
+    data: List<PlayEvent>, content: @Composable (PlayEvent) -> Unit
 ) {
     items(data.size) { i -> content(data[i]) }
 }
@@ -497,11 +474,11 @@ private fun Cover(url: String, name: String, circle: Boolean) {
 }
 
 @Composable
-private fun RecentRow(e: JSONObject) {
-    val name = e.optString("trackName")
-    val artist = e.optJSONArray("artistNames")?.let { if (it.length() > 0) it.optString(0) else "" } ?: ""
-    val img = e.optString("imageUrl")
-    val ts = e.optLong("startedAt")
+private fun RecentRow(e: PlayEvent) {
+    val name = e.trackName
+    val artist = e.artistNames.firstOrNull().orEmpty()
+    val img = e.imageUrl
+    val ts = e.startedAt
     val rel = if (ts > 0) android.text.format.DateUtils.getRelativeTimeSpanString(ts).toString() else ""
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         Cover(img, name, circle = false)
@@ -534,150 +511,13 @@ private fun rangeToFrom(range: MetricsRange): Pair<Long, Long> {
     return from to to
 }
 
-private fun computeStats(context: Context, range: MetricsRange): Stats {
-    val all = ListeningTracker.loadEvents(context)
-    if (all.isEmpty()) return Stats()
+/**
+ * The core computes everything (`core_engine/src/metrics/stats.rs`): with no ceiling on the history
+ * any more, aggregating a few hundred thousand events here would put them all on the UI's heap.
+ */
+private suspend fun computeStats(context: Context, range: MetricsRange): Stats {
     val (from, to) = rangeToFrom(range)
-    val inRange = all.filter { val ts = it.optLong("startedAt"); ts in from until to }
-    val counted = inRange.filter { it.optBoolean("counted") }
-
-    val cal = Calendar.getInstance()
-    fun dayKey(ts: Long): Long {
-        cal.timeInMillis = ts
-        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
-    }
-
-    val totalPlays = counted.size
-    val totalMs = inRange.sumOf { it.optLong("listenedMs") }
-    val distinctTracks = counted.map { it.optString("trackId").ifBlank { "n:" + it.optString("trackName") } }.toSet().size
-    val distinctAlbums = counted.mapNotNull {
-        val id = it.optString("albumId").ifBlank { it.optString("albumName") }
-        id.ifBlank { null }
-    }.toSet().size
-    val artistSet = HashSet<String>()
-    counted.forEach { e ->
-        val ids = e.optJSONArray("artistIds"); val names = e.optJSONArray("artistNames")
-        val n = names?.length() ?: 0
-        for (i in 0 until n) {
-            val nm = names?.optString(i).orEmpty()
-            val id = ids?.optString(i).orEmpty().ifEmpty { "n:$nm" }
-            artistSet.add(id)
-        }
-    }
-    val distinctArtists = artistSet.size
-
-    val daysSet = HashSet<Long>()
-    inRange.forEach { if (it.optLong("listenedMs") > 0) daysSet.add(dayKey(it.optLong("startedAt"))) }
-    val daysListened = daysSet.size
-    val avgPerDayMin = if (daysListened > 0) (totalMs / 60000L) / daysListened else 0L
-
-    val playsByHour = IntArray(24); val msByHour = LongArray(24)
-    val playsByWeekday = IntArray(7); val playsByMonth = IntArray(12)
-    val yearMap = sortedMapOf<Int, Int>()
-    counted.forEach { e ->
-        cal.timeInMillis = e.optLong("startedAt")
-        playsByHour[cal.get(Calendar.HOUR_OF_DAY)]++
-        playsByWeekday[(cal.get(Calendar.DAY_OF_WEEK) + 5) % 7]++
-        playsByMonth[cal.get(Calendar.MONTH)]++
-        val y = cal.get(Calendar.YEAR); yearMap[y] = (yearMap[y] ?: 0) + 1
-    }
-    inRange.forEach { e -> cal.timeInMillis = e.optLong("startedAt"); msByHour[cal.get(Calendar.HOUR_OF_DAY)] += e.optLong("listenedMs") }
-
-    val completed = counted.count { it.optBoolean("completed") }
-    val completionRate = if (totalPlays > 0) completed * 100 / totalPlays else 0
-
-    // All-time series (all events, chronological, per day).
-    val sorted = all.sortedBy { it.optLong("startedAt") }
-    val perDayMs = LinkedHashMap<Long, Long>()
-    val perDayPlays = HashMap<Long, Int>()
-    sorted.forEach { e ->
-        val d = dayKey(e.optLong("startedAt"))
-        perDayMs[d] = (perDayMs[d] ?: 0L) + e.optLong("listenedMs")
-        if (e.optBoolean("counted")) perDayPlays[d] = (perDayPlays[d] ?: 0) + 1
-    }
-    val minutesPerDay = ArrayList<Long>()
-    val cumulativeMin = ArrayList<Long>()
-    val cumulativePlays = ArrayList<Long>()
-    var cm = 0L; var cp = 0L
-    perDayMs.forEach { (d, ms) ->
-        minutesPerDay.add(ms / 60000L)
-        cm += ms; cumulativeMin.add(cm / 60000L)
-        cp += (perDayPlays[d] ?: 0); cumulativePlays.add(cp)
-    }
-
-    return Stats(
-        totalPlays = totalPlays,
-        distinctTracks = distinctTracks,
-        distinctArtists = distinctArtists,
-        distinctAlbums = distinctAlbums,
-        totalMs = totalMs,
-        daysListened = daysListened,
-        avgPerDayMin = avgPerDayMin,
-        completionRate = completionRate,
-        playsByHour = playsByHour,
-        msByHour = msByHour,
-        playsByWeekday = playsByWeekday,
-        playsByMonth = playsByMonth,
-        playsByYear = yearMap.entries.map { it.key to it.value },
-        cumulativeMin = cumulativeMin,
-        cumulativePlays = cumulativePlays,
-        minutesPerDay = minutesPerDay,
-        topTracks = topTracks(counted),
-        topArtists = topArtists(counted),
-        topAlbums = topAlbums(counted),
-        recent = all.sortedByDescending { it.optLong("startedAt") }.take(40)
-    )
-}
-
-private fun topTracks(events: List<JSONObject>): List<TopRow> {
-    data class Acc(var plays: Int = 0, var ms: Long = 0, var name: String = "", var sub: String = "", var img: String = "", var at: Long = 0)
-    val map = HashMap<String, Acc>()
-    events.forEach { e ->
-        val key = e.optString("trackId").ifBlank { "n:" + e.optString("trackName") }
-        val at = e.optLong("startedAt")
-        val a = map.getOrPut(key) { Acc() }
-        a.plays++; a.ms += e.optLong("listenedMs")
-        if (at >= a.at) {
-            a.at = at
-            a.name = e.optString("trackName")
-            a.img = e.optString("imageUrl")
-            a.sub = e.optJSONArray("artistNames")?.let { arr -> (0 until arr.length()).joinToString(", ") { arr.optString(it) } } ?: ""
-        }
-    }
-    return map.entries.map { (k, a) -> TopRow(k, a.name, a.sub, a.img, a.plays, a.ms) }
-        .sortedByDescending { it.plays }.take(50)
-}
-
-private fun topAlbums(events: List<JSONObject>): List<TopRow> {
-    data class Acc(var plays: Int = 0, var ms: Long = 0, var name: String = "", var img: String = "", var at: Long = 0)
-    val map = HashMap<String, Acc>()
-    events.forEach { e ->
-        val id = e.optString("albumId").ifBlank { e.optString("albumName") }
-        if (id.isBlank()) return@forEach
-        val at = e.optLong("startedAt")
-        val a = map.getOrPut(id) { Acc() }
-        a.plays++; a.ms += e.optLong("listenedMs")
-        if (at >= a.at) { a.at = at; a.name = e.optString("albumName"); a.img = e.optString("imageUrl") }
-    }
-    return map.entries.map { (k, a) -> TopRow(k, a.name, "", a.img, a.plays, a.ms) }
-        .sortedByDescending { it.plays }.take(50)
-}
-
-private fun topArtists(events: List<JSONObject>): List<TopRow> {
-    data class Acc(var plays: Int = 0, var ms: Long = 0, var name: String = "", var at: Long = 0)
-    val map = HashMap<String, Acc>()
-    events.forEach { e ->
-        val ids = e.optJSONArray("artistIds"); val names = e.optJSONArray("artistNames") ?: return@forEach
-        val at = e.optLong("startedAt"); val ms = e.optLong("listenedMs")
-        for (i in 0 until names.length()) {
-            val nm = names.optString(i)
-            val id = ids?.optString(i).orEmpty().ifEmpty { "n:$nm" }
-            val a = map.getOrPut(id) { Acc() }
-            a.plays++; a.ms += ms
-            if (at >= a.at) { a.at = at; a.name = nm }
-        }
-    }
-    return map.entries.map { (k, a) -> TopRow(k, a.name, "", "", a.plays, a.ms) }
-        .sortedByDescending { it.plays }.take(50)
+    return runCatching { ListeningTracker.stats(context, from, to) }
+        .onFailure { android.util.Log.w("MetricsScreen", "stats failed: ${it.message}") }
+        .getOrDefault(Stats())
 }

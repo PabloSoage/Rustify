@@ -6,7 +6,7 @@
 // exactly replicating the spotify-gql-client behavior.
 
 use regex::Regex;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -14,7 +14,7 @@ use std::sync::{OnceLock, RwLock};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::env::android::AndroidEnv;
-use crate::env::{Env, EnvError, HttpRequest, HttpResponse, Method};
+use crate::env::{Env, EnvError, HttpRequest, HttpResponse, LogLevel, Method};
 use crate::spotify::models::*;
 
 // =============================================================================
@@ -132,6 +132,22 @@ pub struct GqlPersistedQuery {
 /// built is still valid when it lands.
 const ACCESS_TOKEN_MARGIN_MS: u64 = 30_000;
 
+/// GraphQL operations that read the public catalogue and so can run on the anonymous token.
+///
+/// A list of what is allowed rather than of what is not: an operation added later without thinking
+/// about it keeps requiring a session, which fails loudly, instead of silently running anonymous.
+const PUBLIC_GQL_OPERATIONS: &[&str] = &[
+    "fetchPlaylist",
+    "getAlbum",
+    "getTrack",
+    "queryArtistOverview",
+    "searchAlbums",
+    "searchArtists",
+    "searchDesktop",
+    "searchPlaylists",
+    "searchTracks",
+];
+
 /// Longest `Retry-After` worth waiting out inside a request. See [`SpotifyClient::send_with_retry`].
 const MAX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
@@ -174,8 +190,8 @@ pub struct SpotifyClient<E: Env = AndroidEnv> {
     /// The signed-in user, behind its own lock so that changing it never means locking the client.
     /// See [`SPOTIFY_CLIENT`] for what that used to cost.
     session: RwLock<Session>,
-    client_credentials: RwLock<Option<String>>,
-    client_credentials_expiration: RwLock<u64>,
+    /// The anonymous web-player token and its expiry (ms), for public reads without a session.
+    anonymous_token: RwLock<Option<(String, u64)>>,
     gql_hashes: RwLock<HashMap<String, String>>,
     cache_dir: RwLock<Option<String>>,
     accept_language: RwLock<Option<String>>,
@@ -197,8 +213,7 @@ impl<E: Env> SpotifyClient<E> {
     pub fn new() -> Self {
         Self {
             session: RwLock::new(Session::default()),
-            client_credentials: RwLock::new(None),
-            client_credentials_expiration: RwLock::new(0),
+            anonymous_token: RwLock::new(None),
             gql_hashes: RwLock::new(HashMap::new()),
             cache_dir: RwLock::new(None),
             accept_language: RwLock::new(None),
@@ -207,7 +222,7 @@ impl<E: Env> SpotifyClient<E> {
     }
 
     pub fn set_accept_language(&self, lang: &str) {
-        *self.accept_language.write().unwrap() = Some(lang.to_string());
+        *self.accept_language.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(lang.to_string());
     }
 
     /// Every outgoing request starts here.
@@ -220,7 +235,7 @@ impl<E: Env> SpotifyClient<E> {
         let mut req = HttpRequest::new(method, url)
             .header("User-Agent", generate_user_agent())
             .timeout_ms(REQUEST_TIMEOUT_MS);
-        if let Some(lang) = self.accept_language.read().unwrap().clone() {
+        if let Some(lang) = self.accept_language.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             req = req.header("Accept-Language", lang);
         }
         req
@@ -238,13 +253,13 @@ impl<E: Env> SpotifyClient<E> {
         // Stored before the request so a `refresh_token` racing this one has something to work
         // with, and dropped immediately: the fetch below is the ten-second part.
         {
-            let mut session = self.session.write().unwrap();
+            let mut session = self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner);
             session.sp_dc = Some(sp_dc.to_string());
         }
 
         match self.fetch_access_token(sp_dc).await {
             Ok(creds) => {
-                self.session.write().unwrap().credentials = Some(creds.clone());
+                self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner).credentials = Some(creds.clone());
                 Ok(LoginResult {
                     success: true,
                     user: None,
@@ -254,7 +269,7 @@ impl<E: Env> SpotifyClient<E> {
                 })
             }
             Err(e) => {
-                *self.session.write().unwrap() = Session::default();
+                *self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Session::default();
                 Ok(LoginResult {
                     success: false,
                     user: None,
@@ -276,12 +291,12 @@ impl<E: Env> SpotifyClient<E> {
             .ok_or(SpotifyError::NotAuthenticated)?;
 
         let creds = self.fetch_access_token(&sp_dc).await?;
-        self.session.write().unwrap().credentials = Some(creds);
+        self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner).credentials = Some(creds);
         Ok(())
     }
 
     pub fn is_authenticated(&self) -> bool {
-        let session = self.session.read().unwrap();
+        let session = self.session.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &session.credentials {
             Some(creds) => self.now_ms() < creds.expiration,
             None => false,
@@ -293,7 +308,7 @@ impl<E: Env> SpotifyClient<E> {
     }
 
     pub fn logout(&self) {
-        *self.session.write().unwrap() = Session::default();
+        *self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Session::default();
     }
 
     pub async fn restore_session(
@@ -303,7 +318,7 @@ impl<E: Env> SpotifyClient<E> {
         expiration: Option<u64>,
     ) -> SpotifyResult<LoginResult> {
         {
-            let mut session = self.session.write().unwrap();
+            let mut session = self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner);
             session.sp_dc = if sp_dc.is_empty() {
                 None
             } else {
@@ -321,7 +336,7 @@ impl<E: Env> SpotifyClient<E> {
                     expiration: exp,
                     is_anonymous: false,
                 };
-                self.session.write().unwrap().credentials = Some(creds);
+                self.session.write().unwrap_or_else(std::sync::PoisonError::into_inner).credentials = Some(creds);
                 return Ok(LoginResult {
                     success: true,
                     user: None,
@@ -349,6 +364,14 @@ impl<E: Env> SpotifyClient<E> {
     // =========================================================================
 
     async fn fetch_access_token(&self, sp_dc: &str) -> SpotifyResult<SpotifyCredentials> {
+        self.fetch_web_player_token(Some(sp_dc)).await
+    }
+
+    /// A web-player token: the user's with `sp_dc`, an **anonymous** one without it.
+    ///
+    /// The anonymous one is what open.spotify.com uses before anyone signs in, and it reads public
+    /// metadata — albums, artists, playlists, search — which is all the app needs without a session.
+    async fn fetch_web_player_token(&self, sp_dc: Option<&str>) -> SpotifyResult<SpotifyCredentials> {
         // Fetch nuance and server time concurrently to speed up login
         let (nuance_res, server_time_res) = tokio::join!(
             self.fetch_nuance(),
@@ -420,19 +443,21 @@ impl<E: Env> SpotifyClient<E> {
         Ok(totp.generate(timestamp_seconds))
     }
 
-    async fn request_token(&self, sp_dc: &str, totp: &str, totp_ver: u32) -> SpotifyResult<SpotifyCredentials> {
+    async fn request_token(&self, sp_dc: Option<&str>, totp: &str, totp_ver: u32) -> SpotifyResult<SpotifyCredentials> {
+        // `transport` is what the page asks with a session, `init` what it asks before one exists.
+        let reason = if sp_dc.is_some() { "transport" } else { "init" };
         let url = format!(
-            "https://open.spotify.com/api/token?reason=transport&productType=web-player&totp={}&totpServer={}&totpVer={}",
-            totp, totp, totp_ver
+            "https://open.spotify.com/api/token?reason={}&productType=web-player&totp={}&totpServer={}&totpVer={}",
+            reason, totp, totp, totp_ver
         );
 
-        let clean_sp_dc = sp_dc.trim_start_matches("sp_dc=").trim_end_matches(';');
-        let cookie_header = format!("sp_dc={};", clean_sp_dc);
-
-        let req = self
+        let mut req = self
             .base_request(Method::Get, url.as_str())
-            .header("Cookie", cookie_header)
             .header("App-Platform", "WebPlayer");
+        if let Some(sp_dc) = sp_dc {
+            let clean_sp_dc = sp_dc.trim_start_matches("sp_dc=").trim_end_matches(';');
+            req = req.header("Cookie", format!("sp_dc={};", clean_sp_dc));
+        }
         let res = E::fetch(req).await?;
 
         if !res.is_success() {
@@ -443,9 +468,13 @@ impl<E: Env> SpotifyClient<E> {
             .map_err(|e| SpotifyError::ParseError(format!("Failed to parse token response: {}", e)))?;
 
         if creds.access_token.len() < 100 {
-            eprintln!(
-                "[Spotify] Warning: access token is only {} chars (expected ~374). Auth may not work.",
-                creds.access_token.len()
+            E::log(
+                LogLevel::Warn,
+                "Spotify",
+                &format!(
+                    "access token is only {} chars (expected ~374); auth may not work",
+                    creds.access_token.len()
+                ),
             );
         }
 
@@ -454,11 +483,11 @@ impl<E: Env> SpotifyClient<E> {
 
     // =========================================================================
     // =========================================================================
-    // CLIENT CREDENTIALS FLOW (for REST API)
+    // ANONYMOUS TOKEN (public reads without a session)
     // =========================================================================
 
     pub fn set_cache_dir(&self, path: &str) {
-        *self.cache_dir.write().unwrap() = Some(path.to_string());
+        *self.cache_dir.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(path.to_string());
         if let Err(e) = self.load_hashes_from_disk() {
             eprintln!("[Spotify] Failed to load hashes from disk cache: {}", e);
         }
@@ -470,7 +499,7 @@ impl<E: Env> SpotifyClient<E> {
 
     pub fn update_gql_hashes(&self, new_hashes: HashMap<String, String>) {
         {
-            let mut cache = self.gql_hashes.write().unwrap();
+            let mut cache = self.gql_hashes.write().unwrap_or_else(std::sync::PoisonError::into_inner);
             *cache = new_hashes;
         }
         if let Err(e) = self.save_hashes_to_disk() {
@@ -480,12 +509,12 @@ impl<E: Env> SpotifyClient<E> {
 
     /// Returns a snapshot of the current GQL operation hashes cache.
     pub fn get_gql_hashes_snapshot(&self) -> HashMap<String, String> {
-        self.gql_hashes.read().unwrap().clone()
+        self.gql_hashes.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
 
     fn get_hashes_file_path(&self) -> Option<std::path::PathBuf> {
-        let dir = self.cache_dir.read().unwrap();
+        let dir = self.cache_dir.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         dir.as_ref().map(|d| std::path::Path::new(d).join("spotify_gql_hashes.json"))
     }
 
@@ -495,7 +524,7 @@ impl<E: Env> SpotifyClient<E> {
                 let file = std::fs::File::open(path)?;
                 let reader = std::io::BufReader::new(file);
                 let loaded_hashes: HashMap<String, String> = serde_json::from_reader(reader)?;
-                let mut cache = self.gql_hashes.write().unwrap();
+                let mut cache = self.gql_hashes.write().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *cache = loaded_hashes;
                 eprintln!("[Spotify] Loaded {} GQL operation hashes from disk cache", cache.len());
             }
@@ -507,58 +536,46 @@ impl<E: Env> SpotifyClient<E> {
         if let Some(path) = self.get_hashes_file_path() {
             let file = std::fs::File::create(path)?;
             let writer = std::io::BufWriter::new(file);
-            let cache = self.gql_hashes.read().unwrap();
+            let cache = self.gql_hashes.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             serde_json::to_writer_pretty(writer, &*cache)?;
             eprintln!("[Spotify] Saved {} GQL operation hashes to disk cache", cache.len());
         }
         Ok(())
     }
 
-    pub async fn fetch_client_credentials_token(&self) -> SpotifyResult<String> {
-        // Seconds, not millis: this cache is keyed on `expires_in`, which Spotify gives in seconds.
-        let now = self.now_ms() / 1000;
-
-        // Read from cache
+    /// The anonymous web-player token, cached until shortly before it expires.
+    ///
+    /// Replaces a client-credentials grant made with another application's id and secret, written
+    /// in this file. Those could be revoked by their owner at any moment — taking every public read
+    /// down with them — and publishing them was not ours to do. The page itself reads public data
+    /// with this token before anyone signs in; so do we.
+    pub async fn fetch_anonymous_token(&self) -> SpotifyResult<String> {
         {
-            let token_lock = self.client_credentials.read().unwrap();
-            let exp_lock = self.client_credentials_expiration.read().unwrap();
-            if let Some(ref token) = *token_lock {
-                if now + 60 < *exp_lock {
+            let token_lock = self.anonymous_token.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some((ref token, expiration)) = *token_lock {
+                if self.now_ms() + ACCESS_TOKEN_MARGIN_MS < expiration {
                     return Ok(token.clone());
                 }
             }
         }
 
-        // App-level Spotify credentials for the client-credentials grant.
-        let client_id = "4c97a4b21a07409ea4017e889d701ab0".to_string();
-        let client_secret = "049386348c4146059d646b9a89d7fa2a".to_string();
+        let creds = self.fetch_web_player_token(None).await?;
+        *self.anonymous_token.write().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((creds.access_token.clone(), creds.expiration));
+        Ok(creds.access_token)
+    }
 
-        let url = "https://accounts.spotify.com/api/token";
-
-        let req = self
-            .base_request(Method::Post, url)
-            .basic_auth(&client_id, &client_secret)
-            .body_form(&[("grant_type", "client_credentials")]);
-        let res = E::fetch(req).await?;
-
-        if !res.is_success() {
-            return Err(SpotifyError::ApiError(res.status, format!("Client credentials request failed: {}", res.text())));
+    /// The token for a **read**: the user's when signed in, the anonymous one when nobody is.
+    ///
+    /// Only `NotAuthenticated` falls back. An expired user token stays an error, because that error
+    /// is what makes the Kotlin side refresh the session; reading with an anonymous token instead
+    /// would quietly turn a personal Home into a public one and never repair the session.
+    async fn read_token(&self) -> SpotifyResult<String> {
+        match self.access_token() {
+            Ok(token) => Ok(token),
+            Err(SpotifyError::NotAuthenticated) => self.fetch_anonymous_token().await,
+            Err(other) => Err(other),
         }
-
-        #[derive(Deserialize)]
-        struct ClientCredentialsResponse {
-            access_token: String,
-            expires_in: u64,
-        }
-
-        let resp: ClientCredentialsResponse = res.json()?;
-        let token = resp.access_token.clone();
-
-        // Update cache
-        *self.client_credentials.write().unwrap() = Some(token.clone());
-        *self.client_credentials_expiration.write().unwrap() = now + resp.expires_in;
-
-        Ok(token)
     }
 
     // =========================================================================
@@ -570,7 +587,7 @@ impl<E: Env> SpotifyClient<E> {
     /// Refuses to hand out a token that has already expired. That sounds obvious, and it was not
     /// what this did: it returned whatever was stored, so every request kept presenting a dead
     /// token and coming back `401 Missing/invalid/expired access token` — including
-    /// `api_get`, which has a client-credentials fallback for public data that could never be
+    /// `api_get`, which has a fallback token for public data that could never be
     /// reached, because this returned `Ok` and the fallback only runs on `Err`.
     ///
     /// The margin is for the request that is fine when it is built and expired by the time it
@@ -579,7 +596,7 @@ impl<E: Env> SpotifyClient<E> {
     /// lock now, and handing out a reference into it would mean handing out the guard's lifetime.
     /// Every caller already wrote `.to_string()` anyway.
     pub fn access_token(&self) -> SpotifyResult<String> {
-        let session = self.session.read().unwrap();
+        let session = self.session.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let creds = session
             .credentials
             .as_ref()
@@ -661,11 +678,7 @@ impl<E: Env> SpotifyClient<E> {
     }
 
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> SpotifyResult<T> {
-        let token = if let Ok(user_token) = self.access_token() {
-            user_token
-        } else {
-            self.fetch_client_credentials_token().await?
-        };
+        let token = self.read_token().await?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
 
         let req = self.base_request(Method::Get, url).bearer(&token);
@@ -674,9 +687,9 @@ impl<E: Env> SpotifyClient<E> {
             .map_err(|e| SpotifyError::ParseError(format!("api_get parse error: {}", e)))
     }
 
-    /// Writes are **user-scoped**, so there is deliberately no client-credentials fallback here.
+    /// Writes are **user-scoped**, so there is deliberately no anonymous fallback here.
     ///
-    /// An app token can read public metadata, which is why [`api_get`] falls back to one. It cannot
+    /// The anonymous token can read public metadata, which is why [`api_get`] falls back to one. It cannot
     /// touch a user's library: `POST /playlists/{id}/tracks` with one comes back 400/403, which the
     /// Kotlin retry layer classifies as permanent and gives up on — "adding to a playlist fails
     /// with a 400". Propagating `TokenExpired` instead classifies as AUTH, which refreshes the
@@ -694,7 +707,7 @@ impl<E: Env> SpotifyClient<E> {
             .map_err(|e| SpotifyError::ParseError(format!("api_post parse error: {}", e)))
     }
 
-    /// User-scoped write. No client-credentials fallback — see [`api_post`].
+    /// User-scoped write. No anonymous fallback — see [`api_post`].
     pub async fn api_put(&self, path: &str, body: &Value) -> SpotifyResult<()> {
         let token = self.access_token()?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
@@ -707,7 +720,7 @@ impl<E: Env> SpotifyClient<E> {
         Ok(())
     }
 
-    /// User-scoped write. No client-credentials fallback — see [`api_post`].
+    /// User-scoped write. No anonymous fallback — see [`api_post`].
     pub async fn api_delete(&self, path: &str, body: &Value) -> SpotifyResult<()> {
         let token = self.access_token()?;
         let url = format!("{}{}", SPOTIFY_API_BASE, path);
@@ -788,7 +801,13 @@ impl<E: Env> SpotifyClient<E> {
 
     /// Perform a GraphQL persisted query POST to the Spotify partner API.
     pub async fn gql_post(&self, variables: Value, operation_name: &str, sha256_hash: &str) -> SpotifyResult<Value> {
-        let token = self.access_token()?;
+        // Public catalogue reads work without a session (the anonymous token); anything about the
+        // user — their library, their Home, a write — still needs the user's own.
+        let token = if PUBLIC_GQL_OPERATIONS.contains(&operation_name) {
+            self.read_token().await?
+        } else {
+            self.access_token()?
+        };
 
         let hash = if sha256_hash.is_empty() {
             self.get_gql_hash(operation_name).await?
@@ -851,7 +870,7 @@ impl<E: Env> SpotifyClient<E> {
     pub async fn get_gql_hash(&self, operation_name: &str) -> SpotifyResult<String> {
         // First try reading from cache
         {
-            let cache = self.gql_hashes.read().unwrap();
+            let cache = self.gql_hashes.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(hash) = cache.get(operation_name) {
                 return Ok(hash.clone());
             }
@@ -864,7 +883,7 @@ impl<E: Env> SpotifyClient<E> {
 
         // Try reading from cache again
         {
-            let cache = self.gql_hashes.read().unwrap();
+            let cache = self.gql_hashes.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(hash) = cache.get(operation_name) {
                 return Ok(hash.clone());
             }
@@ -1240,6 +1259,28 @@ mod tests {
         SpotifyClient::<MockEnv>::new()
     }
 
+    /// What the anonymous token needs on the wire: the TOTP secret, the server clock and the token
+    /// endpoint itself, answering with `token`.
+    fn mock_anonymous_token(token: &str) {
+        mock_totp();
+        mock::on_prefix(
+            "https://open.spotify.com/api/token",
+            HttpResponse::ok(format!(
+                r#"{{"clientId":"c","accessToken":"{}","accessTokenExpirationTimestampMs":{},"isAnonymous":true}}"#,
+                token,
+                u64::MAX / 2
+            )),
+        );
+    }
+
+    /// The TOTP secret and the server clock, which every token request needs first.
+    fn mock_totp() {
+        let nuances = r#"[{"v":61,"s":"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}]"#;
+        let gist = serde_json::json!({"files": {"nuances.json": {"content": nuances}}});
+        mock::on_prefix(NUANCE_GIST_URL, HttpResponse::ok(gist.to_string()));
+        mock::on_prefix(SERVER_TIME_URL, HttpResponse::ok(r#"{"serverTime":1700000000}"#));
+    }
+
     #[tokio::test]
     async fn an_unauthenticated_client_refuses_writes_without_calling_out() {
         let _guard = mock::lock_and_reset();
@@ -1250,21 +1291,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_app_token_is_surfaced_with_its_status() {
+    async fn a_refused_anonymous_token_is_surfaced_with_its_status() {
         let _guard = mock::lock_and_reset();
-        // The token endpoint deliberately does *not* go through `send_with_retry` — it did not
-        // before 3.0 either — so this is one attempt and one error, not three.
+        mock_totp();
         mock::on_prefix(
-            "https://accounts.spotify.com/api/token",
+            "https://open.spotify.com/api/token",
             HttpResponse {
                 status: 429,
                 headers: vec![("Retry-After".into(), "0".into())],
                 body: b"slow down".to_vec(),
             },
         );
-        let result = client().fetch_client_credentials_token().await;
+        // The token endpoint deliberately does *not* go through `send_with_retry`, so this is one
+        // attempt and one error, not three.
+        let result = client().fetch_anonymous_token().await;
         assert!(matches!(result, Err(SpotifyError::ApiError(429, _))));
-        assert_eq!(mock::state().requests.len(), 1);
+        let token_attempts = mock::state()
+            .requests
+            .iter()
+            .filter(|r| r.url.starts_with("https://open.spotify.com/api/token"))
+            .count();
+        assert_eq!(token_attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn the_anonymous_token_carries_no_cookie_and_asks_as_init() {
+        let _guard = mock::lock_and_reset();
+        mock_anonymous_token("anon");
+        assert_eq!(client().fetch_anonymous_token().await.unwrap(), "anon");
+        let sent = mock::state()
+            .requests
+            .iter()
+            .find(|r| r.url.starts_with("https://open.spotify.com/api/token"))
+            .cloned()
+            .expect("the token endpoint should have been asked");
+        assert!(sent.url.contains("reason=init"));
+        assert!(!sent.headers.iter().any(|(k, _)| k == "Cookie"));
+    }
+
+    #[tokio::test]
+    async fn an_expired_session_is_not_papered_over_with_an_anonymous_token() {
+        let _guard = mock::lock_and_reset();
+        mock_anonymous_token("anon");
+        let client = client();
+        client.session.write().unwrap().credentials = Some(SpotifyCredentials {
+            client_id: "c".into(),
+            access_token: "user".into(),
+            expiration: 0,
+            is_anonymous: false,
+        });
+        // TokenExpired is what makes the app refresh the session; an anonymous read would hide it.
+        let result: SpotifyResult<Value> = client.api_get("/tracks?ids=1").await;
+        assert!(matches!(result, Err(SpotifyError::TokenExpired)));
+        assert!(mock::state().requests.is_empty());
     }
 
     #[tokio::test]
@@ -1280,10 +1359,7 @@ mod tests {
                 body: Vec::new(),
             },
         );
-        mock::on_prefix(
-            "https://accounts.spotify.com/api/token",
-            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
-        );
+        mock_anonymous_token("app-token");
         let result: SpotifyResult<Value> = client().api_get("/tracks?ids=1").await;
         assert!(matches!(result, Err(SpotifyError::ApiError(429, _))));
         // One token call plus exactly one API attempt — not three.
@@ -1296,12 +1372,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn public_reads_fall_back_to_an_app_token() {
+    async fn public_reads_without_a_session_use_the_anonymous_token() {
         let _guard = mock::lock_and_reset();
-        mock::on_prefix(
-            "https://accounts.spotify.com/api/token",
-            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
-        );
+        mock_anonymous_token("app-token");
         mock::on_prefix(
             "https://api.spotify.com/v1/tracks",
             HttpResponse::ok(r#"{"ok":true}"#),
@@ -1326,10 +1399,7 @@ mod tests {
     #[tokio::test]
     async fn the_accept_language_setting_reaches_the_wire() {
         let _guard = mock::lock_and_reset();
-        mock::on_prefix(
-            "https://accounts.spotify.com/api/token",
-            HttpResponse::ok(r#"{"access_token":"app-token","expires_in":3600}"#),
-        );
+        mock_anonymous_token("app-token");
         mock::on_prefix("https://api.spotify.com/v1", HttpResponse::ok("{}"));
 
         let client = client();

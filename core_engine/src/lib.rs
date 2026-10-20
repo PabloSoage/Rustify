@@ -17,6 +17,7 @@ pub mod export;
 pub mod links;
 pub mod listened;
 pub mod matcher;
+pub mod metrics;
 pub mod player;
 pub mod search;
 pub mod server;
@@ -94,6 +95,15 @@ fn serialize_result<T: serde::Serialize, E: std::fmt::Display + errors::Classify
     }
 }
 
+/// What a bridge answers when its body panicked or a JNI call inside it failed.
+///
+/// `with_env` already catches the panic — jni 0.22 wraps the closure in `catch_unwind` — so the
+/// process survives. What it used to hand Kotlin afterwards was `null`, into an `external fun` declared
+/// to return `String`: the crash just moved to the first line that read the answer. A failure in the
+/// shape every other failure has lets `classifyError` treat it like one.
+const BRIDGE_FAILURE_JSON: &str =
+    r#"{"success":false,"error":"internal engine error","kind":"permanent"}"#;
+
 /// Helper macro to reduce boilerplate in JNI bridge functions.
 /// Handles the EnvUnowned → Env upgrade, string conversion, and error handling.
 macro_rules! jni_bridge {
@@ -106,7 +116,20 @@ macro_rules! jni_bridge {
         });
         match env_outcome.into_outcome() {
             Outcome::Ok(j_str) => j_str,
-            _ => std::ptr::null_mut(),
+            _ => {
+                <env::android::AndroidEnv as env::Env>::log(
+                    env::LogLevel::Error,
+                    "Engine",
+                    "bridge failed or panicked; answering with a permanent failure",
+                );
+                let fallback = $env_unowned.with_env(|env| -> jni::errors::Result<jstring> {
+                    Ok(env.new_string(BRIDGE_FAILURE_JSON)?.into_raw())
+                });
+                match fallback.into_outcome() {
+                    Outcome::Ok(j_str) => j_str,
+                    _ => std::ptr::null_mut(),
+                }
+            }
         }
     }};
 }
@@ -141,6 +164,73 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_recordListeni
                 }))
             }
         }
+    })
+}
+
+// =============================================================================
+// LISTENING HISTORY (4.0) — every play, no ceiling
+// =============================================================================
+
+/// JNI Bridge: append one of the app's own plays to the history.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_recordPlayNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    event_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = event_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<metrics::Event>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(event) => {
+                let outcome = get_runtime().block_on(metrics::record::<env::android::AndroidEnv>(event));
+                serialize_result(outcome.map(|_| spotify::models::OperationResult { success: true, error: None }))
+            }
+        }
+    })
+}
+
+/// JNI Bridge: import a history file (Rustify, Spotify Extended or legacy). Answers an
+/// `ImportReport` — read, added, duplicates.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_importPlayHistoryNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    history_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = history_json.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(metrics::import::<env::android::AndroidEnv>(&raw)))
+    })
+}
+
+/// JNI Bridge: every play, oldest first, as a JSON array. For export and backup — the screen asks
+/// for [`Java_com_varuna_rustify_bridge_NativeEngine_playStatsNative`] instead.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_allPlaysNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serialize_result(get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>()))
+    })
+}
+
+/// JNI Bridge: the Metrics screen's numbers for `[from, to)`. `zone_json` is the device zone as
+/// `[[fromMs, offsetMs], …]`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_playStatsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    from_ms: jlong,
+    to_ms: jlong,
+    zone_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let zone_raw = zone_json.mutf8_chars(env)?.to_string();
+        let zone: metrics::stats::Zone = serde_json::from_str(&zone_raw).unwrap_or_default();
+        let events = get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>());
+        serialize_result(events.map(|events| metrics::stats::compute(&events, from_ms, to_ms, &zone)))
     })
 }
 
@@ -810,7 +900,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockIsRead
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) -> jboolean {
-    if adblock_engine::is_ready() { JNI_TRUE } else { JNI_FALSE }
+    if std::panic::catch_unwind(adblock_engine::is_ready).unwrap_or(false) { JNI_TRUE } else { JNI_FALSE }
 }
 
 /// JNI Bridge: release the compiled engine (web player closed).
@@ -819,7 +909,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_adblockClearN
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    adblock_engine::clear();
+    let _ = std::panic::catch_unwind(adblock_engine::clear);
 }
 
 // =============================================================================
@@ -914,7 +1004,9 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_logoutSpotify
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    spotify::client::get_spotify_client().logout();
+    // Outside `with_env`, so nothing would catch a panic here: one unwinding across `extern
+    // "system"` aborts the process.
+    let _ = std::panic::catch_unwind(|| spotify::client::get_spotify_client().logout());
 }
 
 /// JNI Bridge: Refresh access token
@@ -944,7 +1036,11 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_isSpotifyAuth
 ) -> jboolean {
     // No lock to acquire since 3.1, which is the point: this is called from the main thread at
     // start-up and used to be able to sit behind a token refresh that was waiting on a socket.
-    if spotify::client::get_spotify_client().is_authenticated() {
+    // Guarded for the same reason as `logoutSpotifyNative`: no `with_env` around it.
+    let authenticated =
+        std::panic::catch_unwind(|| spotify::client::get_spotify_client().is_authenticated())
+            .unwrap_or(false);
+    if authenticated {
         JNI_TRUE
     } else {
         JNI_FALSE

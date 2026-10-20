@@ -8,7 +8,6 @@ import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.metrics.ListeningTracker
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.File
 
 /**
@@ -23,7 +22,7 @@ import java.io.File
  *  - **local**    — `local_playlists.json` + `local_favorites.json`
  *    (same `rustify-local-user-data` schema as the manual settings export).
  *  - **ytm**      — YouTube Music library ([YtMusicRepository.exportJson] → `ytm_library.json`).
- *  - **metrics**  — raw listening events ([ListeningTracker], `metrics.json`).
+ *  - **metrics**  — raw listening events (kept by the core since 4.0, via [ListeningTracker]).
  *
  * Format:
  * ```jsonc
@@ -59,7 +58,6 @@ object RustifyBackup {
     private const val F_LOCAL_PLAYLISTS = "local_playlists.json"
     private const val F_LOCAL_FAVORITES = "local_favorites.json"
     private const val F_YTM = "ytm_library.json"
-    private const val F_METRICS = "metrics.json"
 
     /** Stable device id (for diagnostics/merge only, not a secret). */
     @SuppressLint("HardwareIds")
@@ -72,7 +70,7 @@ object RustifyBackup {
     // ---------------------------------------------------------------------
 
     /** Reads the local files and produces the JSON container. Does not touch the network. */
-    fun build(ctx: Context): JSONObject {
+    suspend fun build(ctx: Context): JSONObject {
         val dir = ctx.filesDir
         val root = JSONObject()
         root.put("schema", SCHEMA)
@@ -96,7 +94,7 @@ object RustifyBackup {
         root.put("ytm", readObject(File(dir, F_YTM)) ?: JSONObject())
 
         // metrics: array of raw events
-        root.put("metrics", readArray(File(dir, F_METRICS)) ?: JSONArray())
+        root.put("metrics", ListeningTracker.loadEventsJson(ctx))
 
         return root
     }
@@ -105,7 +103,7 @@ object RustifyBackup {
     data class Category(val key: String, val label: String, val count: Int)
 
     /** Per-category count of what would be uploaded to Drive NOW (reads disk, no network). */
-    fun summarize(ctx: Context): List<Category> {
+    suspend fun summarize(ctx: Context): List<Category> {
         val c = build(ctx)
         val local = c.optJSONObject("local") ?: JSONObject()
         val ytm = c.optJSONObject("ytm") ?: JSONObject()
@@ -134,7 +132,7 @@ object RustifyBackup {
      * @param spotifyRepo for `reloadLocalUserData()` after writing the local data.
      * @param ytmRepo for `reloadLibrary()` after writing the YTM data.
      */
-    fun apply(
+    suspend fun apply(
         ctx: Context,
         container: JSONObject,
         spotifyRepo: SpotifyRepository?,
@@ -173,7 +171,7 @@ object RustifyBackup {
         // metrics — dedupe import (union, not replace)
         container.optJSONArray("metrics")?.let { metrics ->
             runCatching {
-                ListeningTracker.importHistory(ctx, ByteArrayInputStream(metrics.toString().toByteArray(Charsets.UTF_8)))
+                ListeningTracker.importEvents(ctx, metrics)
             }
         }
     }

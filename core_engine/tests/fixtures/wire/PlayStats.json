@@ -1,0 +1,98 @@
+{
+  "totalEvents": 40,
+  "totalPlays": 30,
+  "distinctTracks": 9,
+  "distinctArtists": 4,
+  "distinctAlbums": 5,
+  "totalMs": 6000000,
+  "daysListened": 3,
+  "avgPerDayMin": 33,
+  "completionRate": 80,
+  "playsByHour": [
+    1,
+    2
+  ],
+  "msByHour": [
+    60000,
+    120000
+  ],
+  "playsByWeekday": [
+    3,
+    4
+  ],
+  "playsByMonth": [
+    5,
+    6
+  ],
+  "playsByYear": [
+    {
+      "year": 2024,
+      "plays": 30
+    }
+  ],
+  "cumulativeMin": [
+    10,
+    20
+  ],
+  "cumulativePlays": [
+    1,
+    2
+  ],
+  "minutesPerDay": [
+    10,
+    10
+  ],
+  "topTracks": [
+    {
+      "key": "4cOdK2wGLETKBW3PvgPWqT",
+      "name": "Jóga",
+      "subtitle": "Björk",
+      "imageUrl": "https://i.scdn.co/image/row",
+      "plays": 7,
+      "ms": 2100000
+    }
+  ],
+  "topArtists": [
+    {
+      "key": "7w29UYBi0qsHi5RTcv3lmA",
+      "name": "Björk",
+      "subtitle": "Björk",
+      "imageUrl": "https://i.scdn.co/image/row",
+      "plays": 7,
+      "ms": 2100000
+    }
+  ],
+  "topAlbums": [
+    {
+      "key": "1DFixLWuPkv3KT3TnV35m3",
+      "name": "Homogenic",
+      "subtitle": "Björk",
+      "imageUrl": "https://i.scdn.co/image/row",
+      "plays": 7,
+      "ms": 2100000
+    }
+  ],
+  "recent": [
+    {
+      "trackId": "4cOdK2wGLETKBW3PvgPWqT",
+      "isrc": "GBAYE9700120",
+      "trackName": "Jóga",
+      "artistIds": [
+        "7w29UYBi0qsHi5RTcv3lmA"
+      ],
+      "artistNames": [
+        "Björk"
+      ],
+      "albumId": "1DFixLWuPkv3KT3TnV35m3",
+      "albumName": "Homogenic",
+      "imageUrl": "https://i.scdn.co/image/play",
+      "durationMs": 305000,
+      "startedAt": 1700000000000,
+      "listenedMs": 290000,
+      "counted": true,
+      "completed": true,
+      "source": "spotify",
+      "origin": "spotify-extended"
+    }
+  ]
+}

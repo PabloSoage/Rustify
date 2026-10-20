@@ -227,7 +227,7 @@ pub fn today_from_ms(now_ms: i64) -> ReleaseDate {
 // are short enough to carry rather than depend on. Valid for the proleptic Gregorian calendar.
 // --------------------------------------------------------------------------------------------
 
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let m = m as i64;
     let d = d as i64;
     let y = if m <= 2 { y - 1 } else { y };
@@ -239,7 +239,7 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097; // [0, 146096]

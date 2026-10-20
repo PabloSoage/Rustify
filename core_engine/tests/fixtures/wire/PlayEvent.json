@@ -1,0 +1,21 @@
+{
+  "trackId": "4cOdK2wGLETKBW3PvgPWqT",
+  "isrc": "GBAYE9700120",
+  "trackName": "Jóga",
+  "artistIds": [
+    "7w29UYBi0qsHi5RTcv3lmA"
+  ],
+  "artistNames": [
+    "Björk"
+  ],
+  "albumId": "1DFixLWuPkv3KT3TnV35m3",
+  "albumName": "Homogenic",
+  "imageUrl": "https://i.scdn.co/image/play",
+  "durationMs": 305000,
+  "startedAt": 1700000000000,
+  "listenedMs": 290000,
+  "counted": true,
+  "completed": true,
+  "source": "spotify",
+  "origin": "spotify-extended"
+}

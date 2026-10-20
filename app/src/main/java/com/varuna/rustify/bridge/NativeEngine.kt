@@ -40,6 +40,33 @@ object NativeEngine {
 
 
     // =====================================================================
+    // LISTENING HISTORY (4.0)
+    // =====================================================================
+    //
+    // Every play, kept by the core with no ceiling. All of these touch storage, so all are `suspend`.
+
+    private external fun recordPlayNative(eventJson: String): String
+
+    /** Appends one of the app's own plays. */
+    suspend fun recordPlay(eventJson: String): String = io { recordPlayNative(eventJson) }
+
+    private external fun importPlayHistoryNative(historyJson: String): String
+
+    /** Imports a Rustify, Spotify Extended or legacy history file; answers an import report. */
+    suspend fun importPlayHistory(historyJson: String): String = io { importPlayHistoryNative(historyJson) }
+
+    private external fun allPlaysNative(): String
+
+    /** Every play, oldest first, as a JSON array. For export and backup; screens ask for stats. */
+    suspend fun allPlays(): String = io { allPlaysNative() }
+
+    private external fun playStatsNative(fromMs: Long, toMs: Long, zoneJson: String): String
+
+    /** The Metrics screen's numbers for `[fromMs, toMs)`, in the zone described by [zoneJson]. */
+    suspend fun playStats(fromMs: Long, toMs: Long, zoneJson: String): String =
+        io { playStatsNative(fromMs, toMs, zoneJson) }
+
+    // =====================================================================
     // CONTINUE LISTENING
     // =====================================================================
     //

@@ -109,6 +109,10 @@ fn first_url(text: &str) -> Option<&str> {
 /// Reads any link Rustify understands out of `text`.
 pub fn parse(text: &str) -> Option<LinkTarget> {
     let raw = first_url(text).unwrap_or_else(|| text.trim());
+    // `spotify:track:ID` — the URI form, which Spotify's exports and "Copy Spotify URI" use.
+    if let Some(target) = parse_spotify_uri(raw) {
+        return Some(target);
+    }
     let url = Url::parse(raw).ok()?;
     let host = url.host_str()?.to_ascii_lowercase();
 
@@ -122,6 +126,24 @@ pub fn parse(text: &str) -> Option<LinkTarget> {
         "music.youtube.com" | "www.youtube.com" | "youtube.com" | "m.youtube.com" => {
             parse_youtube(&url)
         }
+        _ => None,
+    }
+}
+
+fn parse_spotify_uri(raw: &str) -> Option<LinkTarget> {
+    let mut parts = raw.strip_prefix("spotify:")?.splitn(2, ':');
+    let kind = parts.next()?;
+    let id = parts.next().filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric()))?;
+    // `spotify:local:…` and `spotify:user:…:playlist:…` fall out here: their tail is not a base62 id.
+    spotify_target(kind, id)
+}
+
+fn spotify_target(kind: &str, id: &str) -> Option<LinkTarget> {
+    match kind {
+        "track" => Some(LinkTarget::SpotifyTrack(id.to_string())),
+        "album" => Some(LinkTarget::SpotifyAlbum(id.to_string())),
+        "playlist" => Some(LinkTarget::SpotifyPlaylist(id.to_string())),
+        "artist" => Some(LinkTarget::SpotifyArtist(id.to_string())),
         _ => None,
     }
 }
@@ -271,6 +293,21 @@ mod tests {
             parse("escucha esto https://open.spotify.com/artist/0TnOYISbd1XYRBk9myaseg ahora"),
             Some(LinkTarget::SpotifyArtist("0TnOYISbd1XYRBk9myaseg".into()))
         );
+    }
+
+    #[test]
+    fn spotify_uris_are_links_too() {
+        assert_eq!(
+            parse("spotify:track:4cOdK2wGLETKBW3PvgPWqT"),
+            Some(LinkTarget::SpotifyTrack("4cOdK2wGLETKBW3PvgPWqT".into()))
+        );
+        assert_eq!(
+            parse("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"),
+            Some(LinkTarget::SpotifyPlaylist("37i9dQZF1DXcBWIGoYBM5M".into()))
+        );
+        // A local file's URI carries no id: it is not a link to anything.
+        assert_eq!(parse("spotify:local:Artist:Album:Title:215"), None);
+        assert_eq!(parse("spotify:track:"), None);
     }
 
     #[test]

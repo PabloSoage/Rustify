@@ -421,6 +421,13 @@ pub trait Env: 'static {
     /// `None` deletes the key. Deleting something absent succeeds.
     fn set_storage(key: &str, value: Option<&str>) -> TryEnvFuture<()>;
 
+    /// Adds `text` to the end of the value under `key`, creating it if absent.
+    ///
+    /// For logs that only grow — the listening history. `set_storage` rewrites the whole value
+    /// atomically, which is right for a document and wrong for something written once per song:
+    /// it made every play cost a rewrite of every play before it.
+    fn append_storage(key: &str, text: &str) -> TryEnvFuture<()>;
+
     /// Milliseconds since the Unix epoch.
     ///
     /// Not `chrono::DateTime<Utc>`: we would be adding a dependency for an integer. When calendar

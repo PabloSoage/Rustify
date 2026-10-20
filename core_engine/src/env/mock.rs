@@ -226,6 +226,11 @@ impl Env for MockEnv {
         Box::pin(async move { Ok(()) })
     }
 
+    fn append_storage(key: &str, text: &str) -> TryEnvFuture<()> {
+        state().storage.entry(key.to_owned()).or_default().push_str(text);
+        Box::pin(async move { Ok(()) })
+    }
+
     fn now_ms() -> i64 {
         state().now_ms
     }

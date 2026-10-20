@@ -360,6 +360,64 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── Listening history (4.0) ───
+    let play = crate::metrics::Event {
+        track_id: "4cOdK2wGLETKBW3PvgPWqT".to_string(),
+        isrc: "GBAYE9700120".to_string(),
+        track_name: "Jóga".to_string(),
+        artist_ids: vec!["7w29UYBi0qsHi5RTcv3lmA".to_string()],
+        artist_names: vec!["Björk".to_string()],
+        album_id: "1DFixLWuPkv3KT3TnV35m3".to_string(),
+        album_name: "Homogenic".to_string(),
+        image_url: "https://i.scdn.co/image/play".to_string(),
+        duration_ms: 305_000,
+        started_at: 1_700_000_000_000,
+        listened_ms: 290_000,
+        counted: true,
+        completed: true,
+        source: "spotify".to_string(),
+        origin: Some(crate::metrics::ORIGIN_EXTENDED.to_string()),
+    };
+    check(golden("PlayEvent", &play));
+    check(golden(
+        "PlayImportReport",
+        &crate::metrics::ImportReport { read: 12, added: 10, duplicates: 2 },
+    ));
+    let row = |key: &str, name: &str| crate::metrics::stats::TopRow {
+        key: key.to_string(),
+        name: name.to_string(),
+        subtitle: "Björk".to_string(),
+        image_url: "https://i.scdn.co/image/row".to_string(),
+        plays: 7,
+        ms: 2_100_000,
+    };
+    check(golden(
+        "PlayStats",
+        &crate::metrics::stats::Stats {
+            total_events: 40,
+            total_plays: 30,
+            distinct_tracks: 9,
+            distinct_artists: 4,
+            distinct_albums: 5,
+            total_ms: 6_000_000,
+            days_listened: 3,
+            avg_per_day_min: 33,
+            completion_rate: 80,
+            plays_by_hour: vec![1, 2],
+            ms_by_hour: vec![60_000, 120_000],
+            plays_by_weekday: vec![3, 4],
+            plays_by_month: vec![5, 6],
+            plays_by_year: vec![crate::metrics::stats::YearPlays { year: 2024, plays: 30 }],
+            cumulative_min: vec![10, 20],
+            cumulative_plays: vec![1, 2],
+            minutes_per_day: vec![10, 10],
+            top_tracks: vec![row("4cOdK2wGLETKBW3PvgPWqT", "Jóga")],
+            top_artists: vec![row("7w29UYBi0qsHi5RTcv3lmA", "Björk")],
+            top_albums: vec![row("1DFixLWuPkv3KT3TnV35m3", "Homogenic")],
+            recent: vec![play],
+        },
+    ));
+
     problems
 }
 

@@ -296,6 +296,60 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── Listening history (4.0) ─────────────────────────────────────────────────────────────────
+
+    private val play = com.varuna.rustify.metrics.PlayEvent(
+        trackId = "4cOdK2wGLETKBW3PvgPWqT",
+        isrc = "GBAYE9700120",
+        trackName = "Jóga",
+        artistIds = listOf("7w29UYBi0qsHi5RTcv3lmA"),
+        artistNames = listOf("Björk"),
+        albumId = "1DFixLWuPkv3KT3TnV35m3",
+        albumName = "Homogenic",
+        imageUrl = "https://i.scdn.co/image/play",
+        durationMs = 305_000,
+        startedAt = 1_700_000_000_000,
+        listenedMs = 290_000,
+        counted = true,
+        completed = true,
+        source = "spotify",
+        origin = "spotify-extended"
+    )
+
+    @Test
+    fun `a play and an import report are what the core writes`() {
+        assertEquals(play, fixture<com.varuna.rustify.metrics.PlayEvent>("PlayEvent"))
+        assertEquals(
+            com.varuna.rustify.metrics.PlayImportReport(read = 12, added = 10, duplicates = 2),
+            fixture<com.varuna.rustify.metrics.PlayImportReport>("PlayImportReport")
+        )
+    }
+
+    @Test
+    fun `the metrics screen reads the core's stats field by field`() {
+        fun row(key: String, name: String) = com.varuna.rustify.metrics.TopRow(
+            key = key, name = name, subtitle = "Björk",
+            imageUrl = "https://i.scdn.co/image/row", plays = 7, ms = 2_100_000
+        )
+        assertEquals(
+            com.varuna.rustify.metrics.PlayStats(
+                totalEvents = 40, totalPlays = 30, distinctTracks = 9, distinctArtists = 4,
+                distinctAlbums = 5, totalMs = 6_000_000, daysListened = 3, avgPerDayMin = 33,
+                completionRate = 80,
+                playsByHour = listOf(1, 2), msByHour = listOf(60_000L, 120_000L),
+                playsByWeekday = listOf(3, 4), playsByMonth = listOf(5, 6),
+                playsByYear = listOf(com.varuna.rustify.metrics.YearPlays(year = 2024, plays = 30)),
+                cumulativeMin = listOf(10L, 20L), cumulativePlays = listOf(1L, 2L),
+                minutesPerDay = listOf(10L, 10L),
+                topTracks = listOf(row("4cOdK2wGLETKBW3PvgPWqT", "Jóga")),
+                topArtists = listOf(row("7w29UYBi0qsHi5RTcv3lmA", "Björk")),
+                topAlbums = listOf(row("1DFixLWuPkv3KT3TnV35m3", "Homogenic")),
+                recent = listOf(play)
+            ),
+            fixture<com.varuna.rustify.metrics.PlayStats>("PlayStats")
+        )
+    }
+
     // ─── YouTube Music ───────────────────────────────────────────────────────────────────────────
 
     @Test
@@ -367,7 +421,7 @@ class SpotifyModelsContractTest {
             "SpotifyUser", "SimplePlaylist", "FullPlaylist", "BrowseSection", "PaginatedResponse",
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
-            "YtmSearchResults"
+            "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }
