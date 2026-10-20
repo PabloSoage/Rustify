@@ -478,7 +478,7 @@ fun AlbumScreen(
                                     .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No tracks found", color = Color.Gray)
+                                Text(stringResource(R.string.common_no_tracks), color = Color.Gray)
                             }
                         }
                     } else {

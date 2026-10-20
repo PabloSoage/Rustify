@@ -496,7 +496,7 @@
     <string name="travel_save_ok">Saved to your Spotify library.</string>
     <string name="travel_save_fail">Couldn\'t save the playlist. Try again.</string>
     <string name="travel_google_key">Google Geocoding API key (optional)</string>
-    <string name="travel_google_key_desc">Create a Google Cloud project and enable the Geocoding API. Overrides all keyless engines for spot-on search results (especially rural addresses). Tier free: $200/month.</string>
+    <string name="travel_google_key_desc">Create a Google Cloud project and enable the Geocoding API. When set, it is used instead of the keyless search and finds rural addresses better. Google gives a monthly free allowance.</string>
     <string name="travel_google_key_on">Search uses Google Geocoding (excellent for any address).</string>
     <string name="travel_google_key_off">Search uses Photon+Nominatim (OpenStreetMap, keyless).</string>
     <string name="travel_route_mode">Route</string>
@@ -668,4 +668,28 @@
     <string name="settings_fade_off">Fade between songs: off</string>
     <string name="settings_fade_seconds">Fade between songs: %1$d s</string>
     <string name="settings_fade_desc">The end of a song fades out and the next one fades in. Rustify plays one song at a time, so they fade rather than overlap.</string>
+    <string name="queue_title">Queue</string>
+    <string name="queue_now_playing">Now playing</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_no_tracks">No tracks found</string>
+    <string name="logs_levels">V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Warn  ·  E = Error</string>
+    <string name="logs_levels_hint">Verbose shows the most detail; Error only what is critical.</string>
+    <string name="match_editor_title">Match editor</string>
+    <string name="match_editor_add">Add a match by hand</string>
+    <string name="match_editor_search_hint">Search title / artist</string>
+    <string name="match_editor_find_song">Find a song</string>
+    <string name="match_editor_name_hint">Name / artist</string>
+    <string name="common_search">Search</string>
+    <string name="common_searching">Searching…</string>
+    <string name="playlist_edit_title">Edit playlist</string>
+    <string name="common_name">Name</string>
+    <string name="common_description">Description</string>
+    <string name="deezer_arl_legend">✅ premium · ⚠️ free (no streaming) · ❌ invalid</string>
+    <string name="common_total">Total</string>
+    <string name="common_model">Model</string>
+    <string name="common_api_key_optional">API key (optional)</string>
+    <string name="common_loading">Loading…</string>
+    <string name="track_assign_youtube">Choose the YouTube video</string>
+    <string name="track_search_youtube">Search YouTube</string>
+    <string name="common_confirm">Confirm</string>
 </resources>

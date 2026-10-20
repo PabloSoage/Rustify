@@ -1128,7 +1128,7 @@ fun SettingsScreen(
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(formatBytesLocal(totalBytes), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Text("Total", color = Color.Gray, fontSize = 11.sp)
+                                Text(stringResource(R.string.common_total), color = Color.Gray, fontSize = 11.sp)
                             }
                         }
                     }
@@ -1449,17 +1449,17 @@ fun SettingsScreen(
                                         }
                                     }) { Text(stringResource(R.string.settings_dj_add_provider), color = Color(0xFF1DB954)) }
                                 },
-                                dismissButton = { TextButton(onClick = { showAddProvider = false }) { Text("Cancel") } },
+                                dismissButton = { TextButton(onClick = { showAddProvider = false }) { Text(stringResource(R.string.common_cancel)) } },
                                 title = { Text(stringResource(R.string.settings_dj_add_provider)) },
                                 text = {
                                     Column {
-                                        OutlinedTextField(value = npLabel, onValueChange = { npLabel = it }, label = { Text("Name") }, singleLine = true)
+                                        OutlinedTextField(value = npLabel, onValueChange = { npLabel = it }, label = { Text(stringResource(R.string.common_name)) }, singleLine = true)
                                         Spacer(Modifier.height(6.dp))
-                                        OutlinedTextField(value = npUrl, onValueChange = { npUrl = it }, label = { Text("Base URL") }, singleLine = true)
+                                        OutlinedTextField(value = npUrl, onValueChange = { npUrl = it }, label = { Text(stringResource(R.string.settings_dj_base_url)) }, singleLine = true)
                                         Spacer(Modifier.height(6.dp))
-                                        OutlinedTextField(value = npModel, onValueChange = { npModel = it }, label = { Text("Model") }, singleLine = true)
+                                        OutlinedTextField(value = npModel, onValueChange = { npModel = it }, label = { Text(stringResource(R.string.common_model)) }, singleLine = true)
                                         Spacer(Modifier.height(6.dp))
-                                        OutlinedTextField(value = npKey, onValueChange = { npKey = it }, label = { Text("API key (optional)") }, singleLine = true)
+                                        OutlinedTextField(value = npKey, onValueChange = { npKey = it }, label = { Text(stringResource(R.string.common_api_key_optional)) }, singleLine = true)
                                     }
                                 }
                             )
@@ -1833,7 +1833,7 @@ fun SettingsScreen(
                                 color = Color.Black
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Loading...", color = Color.Black, fontSize = 14.sp)
+                            Text(stringResource(R.string.common_loading), color = Color.Black, fontSize = 14.sp)
                         } else {
                             Icon(
                                 Icons.Filled.PlayArrow,

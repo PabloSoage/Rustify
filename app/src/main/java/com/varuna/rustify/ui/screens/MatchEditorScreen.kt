@@ -144,7 +144,7 @@ fun MatchEditorScreen(
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text("Editor de matches", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.match_editor_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
@@ -167,14 +167,14 @@ fun MatchEditorScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Añadir match manualmente", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.match_editor_add), fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Buscar título / artista") },
+                    label = { Text(stringResource(R.string.match_editor_search_hint)) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color.White, unfocusedTextColor = Color.White,
@@ -339,21 +339,21 @@ private fun SongPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF1E1E1E),
-        title = { Text("Buscar canción", color = Color.White) },
+        title = { Text(stringResource(R.string.match_editor_find_song), color = Color.White) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Nombre / artista") },
+                    label = { Text(stringResource(R.string.match_editor_name_hint)) },
                     singleLine = true
                 )
                 Button(
                     onClick = { search() },
                     colors = ButtonDefaults.buttonColors(containerColor = green, contentColor = Color.Black),
                     modifier = Modifier.padding(top = 8.dp).align(Alignment.End)
-                ) { Text("Buscar") }
+                ) { Text(stringResource(R.string.common_search)) }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f, fill = false)) {
                     items(results) { t ->
@@ -373,11 +373,11 @@ private fun SongPickerDialog(
                             }
                         }
                     }
-                    if (searching) item { Text("Buscando…", color = Color.Gray, modifier = Modifier.padding(8.dp)) }
+                    if (searching) item { Text(stringResource(R.string.common_searching), color = Color.Gray, modifier = Modifier.padding(8.dp)) }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar", color = green) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close), color = green) } }
     )
 }

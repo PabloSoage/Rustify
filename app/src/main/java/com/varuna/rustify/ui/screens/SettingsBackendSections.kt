@@ -351,7 +351,7 @@ internal fun DeezerBackendSection(context: Context) {
                         Text(stringResource(R.string.dz_fetched_fmt, rel), color = Color.Gray, fontSize = 10.sp)
                     }
                     // Legend: ✅ plays (premium) · ⚠️ authenticates but does not play (free account) · ❌ invalid.
-                    Text("✅ premium · ⚠️ free (no stream) · ❌ inválido", color = Color(0xFF888888), fontSize = 10.sp)
+                    Text(stringResource(R.string.deezer_arl_legend), color = Color(0xFF888888), fontSize = 10.sp)
                     entries.take(30).forEach { e ->
                         val tested = entryStatus.containsKey(e.arl)
                         val chk = entryStatus[e.arl]

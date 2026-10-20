@@ -164,6 +164,7 @@ dependencies {
     // P — generated decoders for the engine's wire types (bridge/SpotifyModels.kt).
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
+    implementation(libs.reorderable)
 }
 
 // --- RUST CORE INTEGRATION ---

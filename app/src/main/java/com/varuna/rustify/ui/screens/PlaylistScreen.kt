@@ -673,20 +673,20 @@ fun PlaylistScreen(
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Edit playlist", color = Color.White) },
+            title = { Text(stringResource(R.string.playlist_edit_title), color = Color.White) },
             text = {
                 Column {
                     androidx.compose.material3.OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
-                        label = { Text("Name") },
+                        label = { Text(stringResource(R.string.common_name)) },
                         singleLine = true
                     )
                     Spacer(Modifier.height(8.dp))
                     androidx.compose.material3.OutlinedTextField(
                         value = editDesc,
                         onValueChange = { editDesc = it },
-                        label = { Text("Description") }
+                        label = { Text(stringResource(R.string.common_description)) }
                     )
                 }
             },
@@ -702,11 +702,11 @@ fun PlaylistScreen(
                             }
                         }
                     }
-                }) { Text("Save", color = Color(0xFF1DB954)) }
+                }) { Text(stringResource(R.string.ytm_save), color = Color(0xFF1DB954)) }
             },
             dismissButton = {
                 TextButton(onClick = { showEditDialog = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(stringResource(R.string.common_cancel), color = Color.Gray)
                 }
             }
         )

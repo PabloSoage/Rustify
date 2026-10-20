@@ -495,7 +495,7 @@
     <string name="travel_save_ok">Guardada en tu biblioteca de Spotify.</string>
     <string name="travel_save_fail">No se pudo guardar la playlist. Inténtalo otra vez.</string>
     <string name="travel_google_key">API key de Google Geocoding (opcional)</string>
-    <string name="travel_google_key_desc">Crea un proyecto en Google Cloud y activa la API Geocoding. Reemplaza todos los motores keyless para resultados precisos (especialmente en direcciones rurales). Tier gratuito: $200/mes.</string>
+    <string name="travel_google_key_desc">Crea un proyecto en Google Cloud y activa la API Geocoding. Si la pones, se usa en lugar de la búsqueda sin clave y encuentra mejor las direcciones rurales. Google da una cuota gratuita mensual.</string>
     <string name="travel_google_key_on">La búsqueda usa Google Geocoding (excelente para cualquier dirección).</string>
     <string name="travel_google_key_off">La búsqueda usa Photon+Nominatim (OpenStreetMap, sin key).</string>
     <string name="travel_route_mode">Ruta</string>
@@ -666,4 +666,28 @@
     <string name="settings_fade_off">Fundido entre canciones: no</string>
     <string name="settings_fade_seconds">Fundido entre canciones: %1$d s</string>
     <string name="settings_fade_desc">El final de una canción se apaga y la siguiente entra poco a poco. Rustify reproduce una canción cada vez, así que se funden en lugar de solaparse.</string>
+    <string name="queue_title">Cola de reproducción</string>
+    <string name="queue_now_playing">Sonando ahora</string>
+    <string name="common_cancel">Cancelar</string>
+    <string name="common_no_tracks">No hay canciones</string>
+    <string name="logs_levels">V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Aviso  ·  E = Error</string>
+    <string name="logs_levels_hint">Verbose muestra más detalle; Error solo lo crítico.</string>
+    <string name="match_editor_title">Editor de coincidencias</string>
+    <string name="match_editor_add">Añadir una coincidencia a mano</string>
+    <string name="match_editor_search_hint">Buscar título / artista</string>
+    <string name="match_editor_find_song">Buscar canción</string>
+    <string name="match_editor_name_hint">Nombre / artista</string>
+    <string name="common_search">Buscar</string>
+    <string name="common_searching">Buscando…</string>
+    <string name="playlist_edit_title">Editar playlist</string>
+    <string name="common_name">Nombre</string>
+    <string name="common_description">Descripción</string>
+    <string name="deezer_arl_legend">✅ premium · ⚠️ gratuita (sin streaming) · ❌ no válida</string>
+    <string name="common_total">Total</string>
+    <string name="common_model">Modelo</string>
+    <string name="common_api_key_optional">Clave de API (opcional)</string>
+    <string name="common_loading">Cargando…</string>
+    <string name="track_assign_youtube">Asignar vídeo de YouTube</string>
+    <string name="track_search_youtube">Buscar en YouTube</string>
+    <string name="common_confirm">Confirmar</string>
 </resources>

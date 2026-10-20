@@ -282,7 +282,7 @@
     <string name="travel_save_ok">Spotify ライブラリに保存しました。</string>
     <string name="travel_save_fail">保存できませんでした。もう一度お試しください。</string>
     <string name="travel_google_key">Google Geocoding API キー (任意)</string>
-    <string name="travel_google_key_desc">Google Cloud プロジェクトを作成して Geocoding API を有効にしてください。キーレスエンジンより正確な結果が得られます（特に田舎の住所に有効です）。無料枠：月額$200。</string>
+    <string name="travel_google_key_desc">Google Cloud プロジェクトを作成して Geocoding API を有効にしてください。設定するとキー不要の検索の代わりに使われ、郊外の住所がより正確に見つかります。Google には毎月の無料枠があります。</string>
     <string name="travel_google_key_on">Google Geocoding で検索します（どんな住所にも高精度）。</string>
     <string name="travel_google_key_off">Photon + Nominatim（OpenStreetMap、キー不要）で検索します。</string>
     <string name="travel_route_mode">ルート</string>
@@ -665,4 +665,28 @@
     <string name="settings_fade_off">曲間のフェード: オフ</string>
     <string name="settings_fade_seconds">曲間のフェード: %1$d 秒</string>
     <string name="settings_fade_desc">曲の終わりをフェードアウトし、次の曲をフェードインします。1曲ずつ再生するため、重ねずにフェードします。</string>
+    <string name="queue_title">再生キュー</string>
+    <string name="queue_now_playing">再生中</string>
+    <string name="common_cancel">キャンセル</string>
+    <string name="common_no_tracks">曲が見つかりません</string>
+    <string name="logs_levels">V = 詳細  ·  D = デバッグ  ·  I = 情報  ·  W = 警告  ·  E = エラー</string>
+    <string name="logs_levels_hint">Verbose は最も詳細、Error は重大なもののみ。</string>
+    <string name="match_editor_title">マッチ編集</string>
+    <string name="match_editor_add">手動でマッチを追加</string>
+    <string name="match_editor_search_hint">曲名 / アーティストを検索</string>
+    <string name="match_editor_find_song">曲を検索</string>
+    <string name="match_editor_name_hint">曲名 / アーティスト</string>
+    <string name="common_search">検索</string>
+    <string name="common_searching">検索中…</string>
+    <string name="playlist_edit_title">プレイリストを編集</string>
+    <string name="common_name">名前</string>
+    <string name="common_description">説明</string>
+    <string name="deezer_arl_legend">✅ プレミアム · ⚠️ 無料（ストリーミング不可） · ❌ 無効</string>
+    <string name="common_total">合計</string>
+    <string name="common_model">モデル</string>
+    <string name="common_api_key_optional">APIキー（任意）</string>
+    <string name="common_loading">読み込み中…</string>
+    <string name="track_assign_youtube">YouTube 動画を指定</string>
+    <string name="track_search_youtube">YouTube で検索</string>
+    <string name="common_confirm">確認</string>
 </resources>

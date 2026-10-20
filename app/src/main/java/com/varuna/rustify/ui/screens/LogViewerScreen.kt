@@ -236,9 +236,9 @@ fun LogViewerScreen(
                 Column(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text("V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Warn  ·  E = Error",
+                    Text(stringResource(R.string.logs_levels),
                         color = legendColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text("Verbose → mayor detalle, menor severidad. Error → crítico, menor detalle.",
+                    Text(stringResource(R.string.logs_levels_hint),
                         color = legendColor.copy(alpha = 0.7f), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }

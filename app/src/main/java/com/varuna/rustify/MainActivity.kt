@@ -1613,7 +1613,7 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             horizontalArrangement = Arrangement.End
         ) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
         }
 
         failure?.let { reason ->
@@ -1633,7 +1633,7 @@ fun SpotifyLoginWebView(onLoginSuccess: (String) -> Unit, onCancel: () -> Unit) 
                 TextButton(onClick = {
                     failure = null
                     webView?.loadUrl(SPOTIFY_LOGIN_URL)
-                }) { Text("Retry", color = Color(0xFF1DB954)) }
+                }) { Text(stringResource(R.string.general_retry), color = Color(0xFF1DB954)) }
             }
         }
 
