@@ -615,11 +615,17 @@ fun PlaylistScreen(
                 )
             }
 
-            // Custom floating top bar
+            // Custom floating top bar. Over a fade, not bare: scrolled, its icons sat straight on top of
+            // the rows below and were hard to tell apart from them (4.7).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 40.dp, start = 8.dp, end = 8.dp),
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(0xFF121212), Color(0xEB121212), Color.Transparent)
+                        )
+                    )
+                    .padding(top = 40.dp, start = 8.dp, end = 8.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

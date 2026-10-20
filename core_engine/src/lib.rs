@@ -2421,3 +2421,16 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_extendPlaylis
         ))
     })
 }
+
+/// An artist page's "About" (4.7): biography, listeners, cities, concerts. No session needed.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getArtistAboutNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    artist_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = artist_id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(spotify::client::get_spotify_client().get_artist_about(&id)))
+    })
+}

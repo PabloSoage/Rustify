@@ -1,0 +1,21 @@
+{
+  "biography": "Inheritors of a throne previously occupied by David Bowie.",
+  "monthlyListeners": 46481978,
+  "worldRank": 82,
+  "topCities": [
+    {
+      "city": "London",
+      "country": "GB",
+      "listeners": 722950
+    }
+  ],
+  "concerts": [
+    {
+      "title": "Radiohead",
+      "venue": "Hard Rock Live",
+      "city": "Hollywood",
+      "startsAt": "2026-12-28T20:00-05:00",
+      "festival": false
+    }
+  ]
+}

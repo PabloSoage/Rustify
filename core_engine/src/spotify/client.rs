@@ -975,7 +975,8 @@ impl<E: Env> SpotifyClient<E> {
         let fallback = match operation_name {
             "getAlbum" => "317769974246830509a25b3992b8d00ca45a556dfbfbf6d8b9415c1e5509c25f",
             "fetchPlaylist" => "63df14979e27306db09b9f71c4c1a792440026e64c39ebc6381df43d46342807",
-            "queryArtistOverview" => "54b684534720973a903332eb45c613e55136ff937e29cf9787ffda42a1768df2",
+            // The old one answers "Invalid query hash"; this is the desktop client 1.305's (2026-10-21).
+            "queryArtistOverview" => "1ac33ddab5d39a3a9c27802774e6d78b9405cc188c6f75aed007df2a32737c72",
             "searchDesktop" => "4801118d4a100f756e833d33984436a3899cff359c532f8fd3aaf174b60b3b49",
             "searchTracks" => "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428",
             "searchAlbums" => "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2",

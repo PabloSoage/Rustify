@@ -690,4 +690,12 @@
     <string name="track_assign_youtube">Asignar vídeo de YouTube</string>
     <string name="track_search_youtube">Buscar en YouTube</string>
     <string name="common_confirm">Confirmar</string>
+    <string name="artist_followers">%1$s seguidores</string>
+    <string name="artist_about">Acerca de</string>
+    <string name="artist_monthly_listeners">%1$s oyentes mensuales</string>
+    <string name="artist_world_rank">N.º %1$d del mundo</string>
+    <string name="artist_city_listeners">%1$s oyentes</string>
+    <string name="artist_on_tour">De gira</string>
+    <string name="artist_albums">Álbumes</string>
+    <string name="artist_fans_also_like">A los fans también les gusta</string>
 </resources>

@@ -15,3 +15,4 @@ pub mod browse;
 pub mod canvas;
 pub mod lyrics;
 pub mod credits;
+pub mod about;

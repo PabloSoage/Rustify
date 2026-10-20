@@ -689,4 +689,12 @@
     <string name="track_assign_youtube">YouTube 動画を指定</string>
     <string name="track_search_youtube">YouTube で検索</string>
     <string name="common_confirm">確認</string>
+    <string name="artist_followers">フォロワー %1$s 人</string>
+    <string name="artist_about">アーティスト情報</string>
+    <string name="artist_monthly_listeners">月間リスナー %1$s 人</string>
+    <string name="artist_world_rank">世界 %1$d 位</string>
+    <string name="artist_city_listeners">%1$s 人</string>
+    <string name="artist_on_tour">ツアー情報</string>
+    <string name="artist_albums">アルバム</string>
+    <string name="artist_fans_also_like">ファンはこちらも聴いています</string>
 </resources>

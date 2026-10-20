@@ -310,6 +310,22 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── Artist about (4.7) ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `an artist's about carries listeners, cities and concerts`() {
+        assertEquals(
+            ArtistAbout(
+                biography = "Inheritors of a throne previously occupied by David Bowie.",
+                monthlyListeners = 46_481_978L,
+                worldRank = 82,
+                topCities = listOf(TopCity("London", "GB", 722_950L)),
+                concerts = listOf(Concert("Radiohead", "Hard Rock Live", "Hollywood", "2026-12-28T20:00-05:00", false))
+            ),
+            fixture<ArtistAbout>("ArtistAbout")
+        )
+    }
+
     // ─── Track credits (4.6) ─────────────────────────────────────────────────────────────────────
 
     @Test
@@ -483,7 +499,7 @@ class SpotifyModelsContractTest {
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
             "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio", "SpotifyLyrics",
-            "TrackCredits"
+            "TrackCredits", "ArtistAbout"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }

@@ -1667,6 +1667,13 @@ loadLocalTracksFromCache()
         }
     }
 
+    /** An artist's biography, listeners, top cities and upcoming concerts. No account needed. */
+    suspend fun getArtistAbout(artistId: String): ArtistAbout = withContext(Dispatchers.IO) {
+        retrying(onAuthError = { ensureSession() }) {
+            decodeChecked<ArtistAbout>(NativeEngine.getArtistAbout(artistId))
+        }
+    }
+
     /** Who wrote, played and produced a track. Public catalogue: no account needed. */
     suspend fun getTrackCredits(trackId: String): TrackCredits = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {

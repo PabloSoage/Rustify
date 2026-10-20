@@ -91,6 +91,7 @@ fun ArtistScreen(
     var topTracks by remember(artistId) { mutableStateOf(SpotifyRepository.artistTopTracksCache[artistId] ?: emptyList()) }
     var albums by remember(artistId) { mutableStateOf(SpotifyRepository.artistAlbumsCache[artistId] ?: emptyList()) }
     var relatedArtists by remember { mutableStateOf<List<FullArtist>>(emptyList()) }
+    var about by remember { mutableStateOf<com.varuna.rustify.bridge.ArtistAbout?>(null) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
     var showEntityMenu by remember { mutableStateOf(false) }
 
@@ -132,11 +133,13 @@ fun ArtistScreen(
                     val tracksDef = async { spotifyRepo.getArtistTopTracks(artistId, limit = 10) }
                     val albumsDef = async { spotifyRepo.getArtistAlbums(artistId, limit = 20) }
                     val relatedDef = async { spotifyRepo.getRelatedArtists(artistId, limit = 10) }
+                    val aboutDef = async { runCatching { spotifyRepo.getArtistAbout(artistId) }.getOrNull() }
 
                     artistDetails = artistDef.await()
                     topTracks = tracksDef.await().items
                     albums = albumsDef.await().items
                     relatedArtists = relatedDef.await().items
+                    about = aboutDef.await()
                     // Cache the results so a re-render (e.g. from the miniplayer) does not reload.
                     SpotifyRepository.artistTopTracksCache[artistId] = topTracks
                     SpotifyRepository.artistAlbumsCache[artistId] = albums
@@ -223,7 +226,7 @@ fun ArtistScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${artist.followersTotal ?: 0} followers",
+                                text = stringResource(R.string.artist_followers, java.text.NumberFormat.getIntegerInstance().format(artist.followersTotal ?: 0)),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Gray
                             )
@@ -382,7 +385,7 @@ fun ArtistScreen(
                     if (albums.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Albums",
+                                text = stringResource(R.string.artist_albums),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -408,7 +411,7 @@ fun ArtistScreen(
                     if (relatedArtists.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Fans Also Like",
+                                text = stringResource(R.string.artist_fans_also_like),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -430,15 +433,29 @@ fun ArtistScreen(
                             Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
+
+                    // ABOUT (4.7): biography, listeners, top cities and concerts, from the same
+                    // overview the page already reads. Shown only when there is something in it.
+                    about?.let { info ->
+                        if (info.biography.isNotBlank() || info.monthlyListeners != null || info.concerts.isNotEmpty()) item {
+                            com.varuna.rustify.ui.components.ArtistAboutSection(info)
+                        }
+                    }
                 }
             }
             }
             
-            // Custom floating top bar
+            // Custom floating top bar. Over a fade, not bare: scrolled, its icons sat straight on top of
+            // the rows below and were hard to tell apart from them (4.7).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 40.dp, start = 8.dp, end = 8.dp),
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(0xFF121212), Color(0xEB121212), Color.Transparent)
+                        )
+                    )
+                    .padding(top = 40.dp, start = 8.dp, end = 8.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

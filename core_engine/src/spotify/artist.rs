@@ -196,7 +196,12 @@ impl<E: Env> SpotifyClient<E> {
         }
 
         let empty = vec![];
-        let related_items = artist_data["relatedArtists"]["items"].as_array().unwrap_or(&empty);
+        // Under `relatedContent` now; the top-level `relatedArtists` this used to read is gone, so the
+        // "fans also like" row was always empty (found 2026-10-21). Both are tried.
+        let related_items = artist_data["relatedContent"]["relatedArtists"]["items"]
+            .as_array()
+            .or_else(|| artist_data["relatedArtists"]["items"].as_array())
+            .unwrap_or(&empty);
         let artists: Vec<FullArtist> = related_items.iter().filter_map(|item| {
             let uri = item["uri"].as_str()?;
             let artist_id = id_from_uri(uri)?.to_string();

@@ -692,4 +692,12 @@
     <string name="track_assign_youtube">Choose the YouTube video</string>
     <string name="track_search_youtube">Search YouTube</string>
     <string name="common_confirm">Confirm</string>
+    <string name="artist_followers">%1$s followers</string>
+    <string name="artist_about">About</string>
+    <string name="artist_monthly_listeners">%1$s monthly listeners</string>
+    <string name="artist_world_rank">#%1$d in the world</string>
+    <string name="artist_city_listeners">%1$s listeners</string>
+    <string name="artist_on_tour">On tour</string>
+    <string name="artist_albums">Albums</string>
+    <string name="artist_fans_also_like">Fans also like</string>
 </resources>

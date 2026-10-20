@@ -389,6 +389,28 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── Artist about (4.7) ───
+    check(golden(
+        "ArtistAbout",
+        &crate::spotify::about::ArtistAbout {
+            biography: "Inheritors of a throne previously occupied by David Bowie.".to_string(),
+            monthly_listeners: Some(46_481_978),
+            world_rank: Some(82),
+            top_cities: vec![crate::spotify::about::TopCity {
+                city: "London".to_string(),
+                country: "GB".to_string(),
+                listeners: 722_950,
+            }],
+            concerts: vec![crate::spotify::about::Concert {
+                title: "Radiohead".to_string(),
+                venue: "Hard Rock Live".to_string(),
+                city: "Hollywood".to_string(),
+                starts_at: "2026-12-28T20:00-05:00".to_string(),
+                festival: false,
+            }],
+        },
+    ));
+
     // ─── InnerTube audio (4.1) ───
     check(golden(
         "InnertubeAudio",

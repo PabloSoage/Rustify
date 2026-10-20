@@ -735,6 +735,11 @@ object NativeEngine {
     suspend fun getSpotifyTrackRadio(trackId: String): String =
         io { getSpotifyTrackRadioNative(trackId) }
 
+    private external fun getArtistAboutNative(artistId: String): String
+
+    /** Biography, listeners, top cities and concerts of an artist (4.7). Answers `ArtistAbout`. */
+    suspend fun getArtistAbout(artistId: String): String = io { getArtistAboutNative(artistId) }
+
     private external fun getTrackCreditsNative(trackId: String): String
 
     /** Who made a track, grouped by role (4.6). No session needed. Answers `TrackCredits`. */

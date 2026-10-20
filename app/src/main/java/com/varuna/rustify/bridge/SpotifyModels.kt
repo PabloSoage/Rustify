@@ -147,6 +147,28 @@ data class SpotifyImage(
 // AUTHENTICATION
 // =============================================================================
 
+/** An artist page's "About", mirrored from `spotify/about.rs` (4.7). */
+@Serializable
+data class ArtistAbout(
+    val biography: String = "",
+    val monthlyListeners: Long? = null,
+    val worldRank: Int? = null,
+    val topCities: List<TopCity> = emptyList(),
+    val concerts: List<Concert> = emptyList()
+)
+
+@Serializable
+data class TopCity(val city: String = "", val country: String = "", val listeners: Long = 0)
+
+@Serializable
+data class Concert(
+    val title: String = "",
+    val venue: String = "",
+    val city: String = "",
+    val startsAt: String = "",
+    val festival: Boolean = false
+)
+
 /** A track's credits, mirrored from `spotify/credits.rs` (4.6). */
 @Serializable
 data class TrackCredits(
