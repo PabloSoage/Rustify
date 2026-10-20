@@ -626,4 +626,18 @@
     <string name="settings_normalize_volume">Normalizar volumen</string>
     <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
     <string name="lyrics_provider_spotify">Spotify (oficiales, requiere cuenta)</string>
+    <string name="metrics_vs_previous">%1$s escuchas frente al periodo anterior (%2$d)</string>
+    <string name="metrics_streak_current">Días seguidos</string>
+    <string name="metrics_streak_longest">Racha más larga</string>
+    <string name="metrics_records">Récords</string>
+    <string name="metrics_tier_bronze">Bronce</string>
+    <string name="metrics_tier_silver">Plata</string>
+    <string name="metrics_tier_gold">Oro</string>
+    <string name="metrics_tier_platinum">Platino</string>
+    <string name="sleep_timer">Temporizador</string>
+    <string name="sleep_timer_minutes">%1$d minutos</string>
+    <string name="sleep_timer_track_end">Al terminar esta canción</string>
+    <string name="sleep_timer_off">Quitar temporizador</string>
+    <string name="settings_equalizer">Ecualizador</string>
+    <string name="settings_equalizer_unavailable">Reproduce algo primero: el ecualizador se engancha al reproductor.</string>
 </resources>

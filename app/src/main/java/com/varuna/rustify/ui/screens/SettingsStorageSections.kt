@@ -583,3 +583,67 @@ internal fun NormalizeVolumeSection(context: Context) {
         }
     }
 }
+
+/**
+ * The equaliser (4.4): on/off, the device's presets, and its bands as sliders. Moving a band turns
+ * the preset into a custom curve. What the device offers decides how many bands there are.
+ */
+@Composable
+internal fun EqualizerSection(context: Context) {
+    val eq = com.varuna.rustify.player.EqualizerController
+    var enabled by remember { mutableStateOf(eq.isEnabled(context)) }
+    var preset by remember { mutableStateOf(eq.presetIndex(context)) }
+    var bands by remember { mutableStateOf(eq.bands()) }
+    val presets = remember { eq.presets() }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_equalizer), color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Switch(checked = enabled, onCheckedChange = { on ->
+                    enabled = on
+                    eq.setEnabled(context, on)
+                    bands = eq.bands()
+                })
+            }
+            if (bands.isEmpty()) {
+                Text(stringResource(R.string.settings_equalizer_unavailable), color = Color.Gray, fontSize = 12.sp)
+                return@Column
+            }
+            if (enabled) {
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(presets.size) { i ->
+                        androidx.compose.material3.FilterChip(
+                            selected = preset == i,
+                            onClick = { preset = i; eq.setPreset(context, i); bands = eq.bands() },
+                            label = { Text(presets[i], fontSize = 12.sp) }
+                        )
+                    }
+                }
+                bands.forEach { band ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val label = if (band.centerHz >= 1000) "${band.centerHz / 1000}k" else "${band.centerHz}"
+                        Text(label, color = Color.Gray, fontSize = 11.sp, modifier = Modifier.width(44.dp))
+                        Slider(
+                            value = band.levelMb.toFloat(),
+                            valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
+                            onValueChange = { v ->
+                                eq.setBand(context, band.index, v.toInt())
+                                preset = -1
+                                bands = eq.bands()
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("${band.levelMb / 100} dB", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.width(48.dp))
+                    }
+                }
+            }
+        }
+    }
+}

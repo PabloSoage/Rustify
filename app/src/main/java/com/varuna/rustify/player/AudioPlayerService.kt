@@ -124,6 +124,12 @@ class AudioPlayerService private constructor(private val context: Context) {
         private set
 
     companion object {
+        /** [setSleepTimer] argument: stop when the current track ends. */
+        const val SLEEP_MINUTES_TRACK_END = -1
+        /** [sleepTimer] value for "when the current track ends". */
+        const val SLEEP_AT_TRACK_END = -1L
+        private const val FADE_MS = 10_000L
+
         /**
          * Whether the end of a queue starts an autoplay radio.
          *
@@ -805,8 +811,16 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         }
 
+        // The session the player already has, before any change is reported.
+        EqualizerController.attach(context, exoPlayer.audioSessionId)
+
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                // The equaliser lives on the audio session; a new session needs it bound again.
+                EqualizerController.attach(context, audioSessionId)
+            }
+
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     _state.value = _state.value.copy(
@@ -2264,6 +2278,59 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }.getOrDefault(false)
 
+    // ── Sleep timer (4.4) ───────────────────────────────────────────────────────────────────────
+
+    private var sleepJob: kotlinx.coroutines.Job? = null
+    @Volatile private var sleepAtTrackEnd = false
+
+    /**
+     * When playback will stop: epoch ms, [SLEEP_AT_TRACK_END] for "when this track ends", or null
+     * when no timer is set. The screen counts down from it.
+     */
+    private val _sleepTimer = MutableStateFlow<Long?>(null)
+    val sleepTimer: StateFlow<Long?> = _sleepTimer
+
+    /**
+     * Pauses after [minutes], fading the last ten seconds out; `0` cancels, [SLEEP_MINUTES_TRACK_END]
+     * stops when the current track ends. A pause, not a stop: the queue and position stay, so
+     * picking up the next morning is one tap.
+     */
+    fun setSleepTimer(minutes: Int) {
+        sleepJob?.cancel()
+        sleepAtTrackEnd = false
+        when {
+            minutes == 0 -> { _sleepTimer.value = null; restoreAfterFade() }
+            minutes == SLEEP_MINUTES_TRACK_END -> { sleepAtTrackEnd = true; _sleepTimer.value = SLEEP_AT_TRACK_END }
+            else -> {
+                val endsAt = System.currentTimeMillis() + minutes * 60_000L
+                _sleepTimer.value = endsAt
+                sleepJob = mainScope.launch {
+                    delay((endsAt - System.currentTimeMillis() - FADE_MS).coerceAtLeast(0))
+                    val steps = 20
+                    for (i in steps downTo 1) {
+                        if (!isDucking) runCatching { exoPlayer.volume = baseVolume * i / steps }
+                        delay(FADE_MS / steps)
+                    }
+                    pause()
+                    restoreAfterFade()
+                    _sleepTimer.value = null
+                }
+            }
+        }
+    }
+
+    private fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepAtTrackEnd = false
+        _sleepTimer.value = null
+        pause()
+    }
+
+    /** The fade leaves the volume low; the next play must not start there. */
+    private fun restoreAfterFade() {
+        if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
+    }
+
     fun pause() {
         if (isCasting) { pauseOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
@@ -2370,6 +2437,11 @@ class AudioPlayerService private constructor(private val context: Context) {
         // say so honestly — a skip at forty seconds is not having heard it. Recorded here rather
         // than on a timer for exactly that reason.
         markCurrentAsListened(st)
+        // Sleep timer set to "end of this track": stop here instead of moving on.
+        if (sleepAtTrackEnd) {
+            cancelSleepTimer()
+            return
+        }
         val decision = PlayerQueue.decide(
             ids = PlayerQueue.idsFor(st.queue.map { it.id }),
             index = idx,

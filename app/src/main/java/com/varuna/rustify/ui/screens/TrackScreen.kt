@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -777,6 +778,7 @@ fun TrackScreen(
                                         }
                                     }
 
+                                    SleepTimerButton(audioPlayerService)
                                     trackToShow.let {
                                         IconButton(onClick = { showOptionsMenu = true }) {
                                             Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
@@ -1736,5 +1738,57 @@ fun YouTubeVideoPlayer(videoUrlPair: Pair<String, String?>, audioPlayerService: 
                 } 
             }
         )
+    }
+}
+
+/**
+ * The sleep timer (4.4): a moon in the track screen's header, a menu of durations, and the minutes
+ * left beside it while one runs. The fading and pausing live in [AudioPlayerService.setSleepTimer].
+ */
+@Composable
+private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
+    val endsAt by audioPlayerService.sleepTimer.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    // Ticks the label down once a minute is enough; it reads the flow's deadline each time.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(endsAt) {
+        while (endsAt != null) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+    Box {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val active = endsAt != null
+            val left = endsAt?.takeIf { it > 0 }?.let { ((it - now) / 60_000 + 1).coerceAtLeast(1) }
+            if (left != null) Text("${left}m", color = Color(0xFF1DB954), fontSize = 12.sp)
+            IconButton(onClick = { open = true }) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.Bedtime,
+                    contentDescription = stringResource(R.string.sleep_timer),
+                    tint = if (active) Color(0xFF1DB954) else Color.White
+                )
+            }
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            val options = listOf(15, 30, 45, 60).map { m -> stringResource(R.string.sleep_timer_minutes, m) to m } +
+                listOf(stringResource(R.string.sleep_timer_track_end) to AudioPlayerService.SLEEP_MINUTES_TRACK_END)
+            options.forEach { (label, minutes) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, color = Color.White) },
+                    onClick = { audioPlayerService.setSleepTimer(minutes); open = false }
+                )
+            }
+            if (endsAt != null) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sleep_timer_off), color = Color(0xFFE57373)) },
+                    onClick = { audioPlayerService.setSleepTimer(0); open = false }
+                )
+            }
+        }
     }
 }

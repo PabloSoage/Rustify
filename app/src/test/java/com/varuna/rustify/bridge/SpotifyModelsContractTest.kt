@@ -378,7 +378,16 @@ class SpotifyModelsContractTest {
                 topTracks = listOf(row("4cOdK2wGLETKBW3PvgPWqT", "Jóga")),
                 topArtists = listOf(row("7w29UYBi0qsHi5RTcv3lmA", "Björk")),
                 topAlbums = listOf(row("1DFixLWuPkv3KT3TnV35m3", "Homogenic")),
-                recent = listOf(play)
+                recent = listOf(play),
+                currentStreakDays = 4,
+                longestStreakDays = 11,
+                milestones = listOf(
+                    com.varuna.rustify.metrics.Milestone(
+                        key = "7w29UYBi0qsHi5RTcv3lmA", name = "Björk", plays = 260, tier = "silver"
+                    )
+                ),
+                previousPlays = 25,
+                previousMs = 5_000_000
             ),
             fixture<com.varuna.rustify.metrics.PlayStats>("PlayStats")
         )

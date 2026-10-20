@@ -41,7 +41,7 @@ impl Zone {
     }
 
     fn local(&self, ms: i64) -> i64 {
-        ms + self.offset_at(ms)
+        ms.saturating_add(self.offset_at(ms))
     }
 
     fn local_day(&self, ms: i64) -> i64 {
@@ -91,8 +91,51 @@ pub struct Stats {
     pub top_artists: Vec<TopRow>,
     pub top_albums: Vec<TopRow>,
     pub recent: Vec<Event>,
+    /// Days in a row with at least one counted play, ending today (or yesterday: a streak is not
+    /// broken before the day is over).
+    pub current_streak_days: u32,
+    pub longest_streak_days: u32,
+    /// All-time play counts that crossed a milestone, per artist: the stats.fm "records".
+    pub milestones: Vec<Milestone>,
+    /// The same totals for the period of the same length just before `[from, to)`.
+    pub previous_plays: u32,
+    pub previous_ms: i64,
 }
 
+
+/// A tier reached by all-time plays of one artist.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Milestone {
+    pub key: String,
+    pub name: String,
+    pub plays: u32,
+    /// `bronze` (100), `silver` (250), `gold` (500) or `platinum` (1000).
+    pub tier: String,
+}
+
+const TIERS: [(u32, &str); 4] = [(1000, "platinum"), (500, "gold"), (250, "silver"), (100, "bronze")];
+
+fn tier_for(plays: u32) -> Option<&'static str> {
+    TIERS.iter().find(|(min, _)| plays >= *min).map(|(_, name)| *name)
+}
+
+/// Current and longest run of consecutive local days with a counted play.
+fn streaks(events: &[Event], zone: &Zone, today: i64) -> (u32, u32) {
+    let days: std::collections::BTreeSet<i64> =
+        events.iter().filter(|e| e.counted).map(|e| zone.local_day(e.started_at)).collect();
+    let (mut longest, mut run, mut prev) = (0u32, 0u32, None::<i64>);
+    for &d in &days {
+        run = if prev == Some(d - 1) { run + 1 } else { 1 };
+        longest = longest.max(run);
+        prev = Some(d);
+    }
+    let current = match prev {
+        Some(last) if last >= today - 1 => run,
+        _ => 0,
+    };
+    (current, longest)
+}
 /// Resolves name-only artists and tracks to the id some other play carries for the same name.
 struct Identities {
     artist_by_name: HashMap<String, String>,
@@ -277,6 +320,42 @@ pub fn compute(events: &[Event], from: i64, to: i64, zone: &Zone) -> Stats {
     stats.top_albums = top(albums);
 
     stats.recent = events.iter().rev().take(RECENT_LIMIT).cloned().collect();
+
+    // Streaks: over the whole history, ending at the range's end ("today" for every range the
+    // screen offers).
+    let (current, longest) = streaks(events, zone, zone.local_day(to.saturating_sub(1)));
+    stats.current_streak_days = current;
+    stats.longest_streak_days = longest;
+
+    // Records: all-time, whatever the range — a milestone is not undone by looking at one week.
+    let mut all_time: HashMap<String, Acc> = HashMap::new();
+    for e in events.iter().filter(|e| e.counted) {
+        for (key, name) in ids.artists(e) {
+            let mut no_cover = e.clone();
+            no_cover.image_url.clear();
+            all_time.entry(key).or_default().add(&no_cover, name, String::new());
+        }
+    }
+    let mut milestones: Vec<Milestone> = all_time
+        .into_iter()
+        .filter_map(|(key, a)| {
+            tier_for(a.plays).map(|tier| Milestone { key, name: a.name, plays: a.plays, tier: tier.into() })
+        })
+        .collect();
+    milestones.sort_by(|a, b| b.plays.cmp(&a.plays).then(a.name.cmp(&b.name)));
+    milestones.truncate(TOP_LIMIT);
+    stats.milestones = milestones;
+
+    // The period just before, of the same length, for "+12 % vs last week". Not for "all time".
+    if from > 0 {
+        let before = from - (to - from);
+        for e in events.iter().filter(|e| e.started_at >= before && e.started_at < from) {
+            stats.previous_ms += e.listened_ms;
+            if e.counted {
+                stats.previous_plays += 1;
+            }
+        }
+    }
     stats
 }
 
@@ -338,5 +417,36 @@ mod tests {
         let stats = compute(&[skip], 0, i64::MAX, &Zone::default());
         assert_eq!((stats.total_plays, stats.total_ms), (0, 5_000));
         assert!(stats.top_tracks.is_empty());
+    }
+
+    #[test]
+    fn a_streak_counts_consecutive_days_and_survives_until_the_day_is_over() {
+        let day = |d: i64| d * DAY_MS + 12 * 3_600_000;
+        // Days 1-3 in a row, a gap, then 6-7.
+        let events: Vec<Event> = [1, 2, 3, 6, 7].iter().map(|&d| play("t", ("x", "X"), day(d))).collect();
+        let stats = compute(&events, 0, day(8), &Zone::default());
+        assert_eq!(stats.longest_streak_days, 3);
+        // Range ends on day 8, last play day 7: still alive.
+        assert_eq!(stats.current_streak_days, 2);
+        let later = compute(&events, 0, day(10), &Zone::default());
+        assert_eq!(later.current_streak_days, 0);
+    }
+
+    #[test]
+    fn records_are_all_time_tiers_per_artist() {
+        let events: Vec<Event> = (0..260).map(|i| play("t", ("a1", "Björk"), i * 1000)).collect();
+        // A one-day range: the record is still there.
+        let stats = compute(&events, 200_000, 260_000, &Zone::default());
+        assert_eq!(stats.milestones.len(), 1);
+        assert_eq!(stats.milestones[0].tier, "silver");
+        assert_eq!(stats.milestones[0].plays, 260);
+    }
+
+    #[test]
+    fn the_previous_period_is_the_same_length_just_before() {
+        let events = vec![play("a", ("x", "X"), 5 * DAY_MS), play("b", ("x", "X"), 15 * DAY_MS)];
+        let stats = compute(&events, 10 * DAY_MS, 20 * DAY_MS, &Zone::default());
+        assert_eq!((stats.total_plays, stats.previous_plays), (1, 1));
+        assert_eq!(compute(&events, 0, 20 * DAY_MS, &Zone::default()).previous_plays, 0);
     }
 }

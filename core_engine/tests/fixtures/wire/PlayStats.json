@@ -94,5 +94,17 @@
       "source": "spotify",
       "origin": "spotify-extended"
     }
-  ]
+  ],
+  "currentStreakDays": 4,
+  "longestStreakDays": 11,
+  "milestones": [
+    {
+      "key": "7w29UYBi0qsHi5RTcv3lmA",
+      "name": "Björk",
+      "plays": 260,
+      "tier": "silver"
+    }
+  ],
+  "previousPlays": 25,
+  "previousMs": 5000000
 }

@@ -200,6 +200,53 @@ fun MetricsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(20.dp))
             }
 
+            // Against the period just before (4.4). Not for "all time", which has no "before".
+            if (selectedRange != MetricsRange.ALL && stats.previousPlays > 0) {
+                item {
+                    val delta = (stats.totalPlays - stats.previousPlays) * 100 / stats.previousPlays
+                    val sign = if (delta >= 0) "+" else ""
+                    Text(
+                        stringResource(R.string.metrics_vs_previous, "$sign$delta%", stats.previousPlays),
+                        color = if (delta >= 0) GREEN else Color(0xFFE57373),
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
+            // Streaks (4.4)
+            item {
+                StatGrid(
+                    listOf(
+                        Triple(stats.currentStreakDays.toString(), stringResource(R.string.metrics_streak_current), Color(0xFFFF8A65)),
+                        Triple(stats.longestStreakDays.toString(), stringResource(R.string.metrics_streak_longest), Color(0xFFFFD54F))
+                    )
+                )
+                Spacer(Modifier.height(20.dp))
+            }
+
+            // Records: all-time milestones per artist (4.4)
+            if (stats.milestones.isNotEmpty()) {
+                item {
+                    SectionTitle(stringResource(R.string.metrics_records))
+                    stats.milestones.take(10).forEach { m ->
+                        val (color, label) = when (m.tier) {
+                            "platinum" -> Color(0xFFE5E4E2) to stringResource(R.string.metrics_tier_platinum)
+                            "gold" -> Color(0xFFFFD700) to stringResource(R.string.metrics_tier_gold)
+                            "silver" -> Color(0xFFC0C0C0) to stringResource(R.string.metrics_tier_silver)
+                            else -> Color(0xFFCD7F32) to stringResource(R.string.metrics_tier_bronze)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+                            Spacer(Modifier.width(10.dp))
+                            Text(m.name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text("$label · ${m.plays}", color = color, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                }
+            }
+
             // Listening clocks (radial 24h)
             item {
                 SectionTitle(stringResource(R.string.metrics_clocks))

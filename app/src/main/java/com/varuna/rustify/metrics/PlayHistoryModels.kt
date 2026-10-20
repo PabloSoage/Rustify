@@ -72,5 +72,21 @@ data class PlayStats(
     val topTracks: List<TopRow> = emptyList(),
     val topArtists: List<TopRow> = emptyList(),
     val topAlbums: List<TopRow> = emptyList(),
-    val recent: List<PlayEvent> = emptyList()
+    val recent: List<PlayEvent> = emptyList(),
+    /** Days in a row with a counted play, ending today (or yesterday). */
+    val currentStreakDays: Int = 0,
+    val longestStreakDays: Int = 0,
+    /** All-time milestones per artist: bronze 100, silver 250, gold 500, platinum 1000 plays. */
+    val milestones: List<Milestone> = emptyList(),
+    /** Totals for the period of the same length just before; zero for "all time". */
+    val previousPlays: Int = 0,
+    val previousMs: Long = 0
+)
+
+@Serializable
+data class Milestone(
+    val key: String = "",
+    val name: String = "",
+    val plays: Int = 0,
+    val tier: String = ""
 )

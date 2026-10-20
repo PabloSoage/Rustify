@@ -104,8 +104,7 @@ object AndroidAutoBrowse {
     /** Asynchronous version: also resolves the Spotify nodes that require network. */
     suspend fun childrenAsync(context: Context, parentId: String, ytmRepo: YtMusicRepository): List<Node> {
         val repo = SpotifyRepository.instance ?: return emptyList()
-        if (!isNetworkNode(parentId)) return children(context, parentId, ytmRepo)
-        return runCatching {
+        val nodes = if (!isNetworkNode(parentId)) children(context, parentId, ytmRepo) else runCatching {
             when {
                 parentId.startsWith("spl:") -> repo.getPlaylistTracks(parentId.removePrefix("spl:"), limit = 100).items.map { trackNode(it) }
                 parentId.startsWith("salb:") -> repo.getAlbumTracks(parentId.removePrefix("salb:"), limit = 100).items.map { trackNode(it) }
@@ -113,10 +112,51 @@ object AndroidAutoBrowse {
                 else -> emptyList()
             }
         }.getOrDefault(emptyList())
+        remember(nodes)
+        return nodes
     }
+
+    /**
+     * Search from the head unit (4.4): Spotify's catalogue — which works without an account — plus
+     * the local library, matched by the core's accent-folding search.
+     */
+    suspend fun search(query: String): List<Node> {
+        val repo = SpotifyRepository.instance ?: return emptyList()
+        val local = runCatching {
+            com.varuna.rustify.util.LocalSearch.index("aa-local", repo.localTracks.toList(), { it.id.orEmpty() }) {
+                listOf(it.name, it.artists.joinToString(" ") { a -> a.name }, it.album?.name.orEmpty())
+            }
+            com.varuna.rustify.util.LocalSearch.filter("aa-local", repo.localTracks.toList(), query) { it.id.orEmpty() }
+        }.getOrDefault(emptyList()).take(10)
+        val remote = runCatching { repo.searchTracks(query, limit = 20).items }.getOrDefault(emptyList())
+        val nodes = (local + remote).map { trackNode(it) }
+        remember(nodes)
+        return nodes
+    }
+
+    /**
+     * Every list the head unit was shown, by track id: the list and the track's place in it.
+     *
+     * A tap arrives as a bare media id. Resolving it used to look only at liked, local and YouTube
+     * Music favourites, so a song inside a Spotify playlist or album that was not also liked did not
+     * play at all. And playing it alone is not what anyone expects from tapping a song in an album:
+     * the album is the queue. Bounded, newest lists win.
+     */
+    private val shown = java.util.concurrent.ConcurrentHashMap<String, Pair<List<FullTrack>, Int>>()
+
+    private fun remember(nodes: List<Node>) {
+        val tracks = nodes.mapNotNull { it.track }
+        if (tracks.isEmpty()) return
+        if (shown.size > 2_000) shown.clear()
+        nodes.forEach { n -> n.track?.let { t -> shown[n.id] = tracks to tracks.indexOf(t) } }
+    }
+
+    /** The list a tapped track was shown in, and its index there; null for anything never shown. */
+    fun contextOf(mediaId: String): Pair<List<FullTrack>, Int>? = shown[mediaId]?.takeIf { it.second >= 0 }
 
     fun resolveTrack(mediaId: String, ytmRepo: YtMusicRepository): FullTrack? {
         val repo = SpotifyRepository.instance ?: return null
+        shown[mediaId]?.let { (list, i) -> list.getOrNull(i)?.let { return it } }
         return when {
             mediaId.startsWith("queue:") -> {
                 val id = mediaId.removePrefix("queue:")

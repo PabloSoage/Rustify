@@ -444,6 +444,16 @@ fn all_fixtures() -> Vec<String> {
             top_artists: vec![row("7w29UYBi0qsHi5RTcv3lmA", "Björk")],
             top_albums: vec![row("1DFixLWuPkv3KT3TnV35m3", "Homogenic")],
             recent: vec![play],
+            current_streak_days: 4,
+            longest_streak_days: 11,
+            milestones: vec![crate::metrics::stats::Milestone {
+                key: "7w29UYBi0qsHi5RTcv3lmA".to_string(),
+                name: "Björk".to_string(),
+                plays: 260,
+                tier: "silver".to_string(),
+            }],
+            previous_plays: 25,
+            previous_ms: 5_000_000,
         },
     ));
 

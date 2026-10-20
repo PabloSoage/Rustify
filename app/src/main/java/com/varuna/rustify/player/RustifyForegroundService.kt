@@ -62,6 +62,9 @@ class RustifyForegroundService : MediaLibraryService() {
 
         /** Custom session command behind the notification's save button. */
         private const val ACTION_TOGGLE_SAVED = "com.varuna.rustify.TOGGLE_SAVED"
+        // Values of the `android.media.browse.CONTENT_STYLE_*_HINT` extras.
+        private const val CONTENT_STYLE_LIST = 1
+        private const val CONTENT_STYLE_GRID = 2
     }
 
     @SuppressLint("ObsoleteSdkInt")
@@ -281,7 +284,51 @@ class RustifyForegroundService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            return Futures.immediateFuture(LibraryResult.ofItem(browsable("root", getString(R.string.app_name)), params))
+            // Tells the head unit how to draw the tree and that it can search (4.4): folders of
+            // albums and playlists as a grid of covers, tracks as a list, as Spotify's own does.
+            val extras = Bundle().apply {
+                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", CONTENT_STYLE_GRID)
+                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", CONTENT_STYLE_LIST)
+                putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+            }
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(
+                    browsable("root", getString(R.string.app_name)),
+                    LibraryParams.Builder().setExtras(extras).build()
+                )
+            )
+        }
+
+        /** Results per query, until the head unit asks for them. */
+        private val searchResults = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
+
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> {
+            autoScope.launch {
+                val items = runCatching { AndroidAutoBrowse.search(query).map { nodeItem(it) } }.getOrDefault(emptyList())
+                searchResults[query] = items
+                session.notifySearchResultChanged(browser, query, items.size, params)
+            }
+            return Futures.immediateFuture(LibraryResult.ofVoid())
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val all = searchResults[query].orEmpty()
+            val from = (page * pageSize).coerceAtMost(all.size)
+            val slice = all.subList(from, (from + pageSize).coerceAtMost(all.size))
+            return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(slice), params))
         }
 
         override fun onGetChildren(
@@ -326,6 +373,13 @@ class RustifyForegroundService : MediaLibraryService() {
             // A "queue" section item jumps to that point without reloading the list.
             if (first != null && first.startsWith("queue:")) {
                 svc.playSpecificTrackInQueue(first.removePrefix("queue:"))
+                return Futures.immediateFuture(mutableListOf())
+            }
+            // One tapped track plays inside the list it was shown in — the album, the playlist, the
+            // search results — starting at it, as on the phone.
+            val shownIn = if (mediaItems.size == 1 && first != null) AndroidAutoBrowse.contextOf(first) else null
+            if (shownIn != null) {
+                svc.loadPlaylist(shownIn.first, shownIn.second)
                 return Futures.immediateFuture(mutableListOf())
             }
             val tracks = mediaItems.mapNotNull { resolveTrack(it.mediaId) }

@@ -625,4 +625,18 @@
     <string name="settings_normalize_volume">音量を均一にする</string>
     <string name="settings_normalize_volume_desc">音の大きい録音を下げて、Spotify のように全曲を同じ音量で再生します。YouTube が測定した音量を使用し、ローカルファイルはそのままです。</string>
     <string name="lyrics_provider_spotify">Spotify（公式・アカウント必要）</string>
+    <string name="metrics_vs_previous">前の期間と比べて再生 %1$s（%2$d）</string>
+    <string name="metrics_streak_current">連続日数</string>
+    <string name="metrics_streak_longest">最長連続記録</string>
+    <string name="metrics_records">記録</string>
+    <string name="metrics_tier_bronze">ブロンズ</string>
+    <string name="metrics_tier_silver">シルバー</string>
+    <string name="metrics_tier_gold">ゴールド</string>
+    <string name="metrics_tier_platinum">プラチナ</string>
+    <string name="sleep_timer">スリープタイマー</string>
+    <string name="sleep_timer_minutes">%1$d 分</string>
+    <string name="sleep_timer_track_end">この曲の終わり</string>
+    <string name="sleep_timer_off">タイマーを解除</string>
+    <string name="settings_equalizer">イコライザー</string>
+    <string name="settings_equalizer_unavailable">まず何か再生してください。イコライザーはプレーヤーに接続されます。</string>
 </resources>
