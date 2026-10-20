@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -130,8 +132,10 @@ fun MetricsScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) } },
                 actions = {
@@ -153,17 +157,17 @@ fun MetricsScreen(onBack: () -> Unit) {
         ) {
             // Range chips
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Scrolls rather than squeezing: five equal chips wrapped "This Week" onto two lines.
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ranges.forEach { (range, label) ->
                         FilterChip(
                             selected = selectedRange == range,
                             onClick = { selectedRange = range },
-                            label = { Text(label, fontSize = 11.sp) },
+                            label = { Text(label, fontSize = 13.sp, maxLines = 1) },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = Color(0xFF2A2A2A), selectedContainerColor = GREEN,
                                 labelColor = Color.White, selectedLabelColor = Color.Black
-                            ),
-                            modifier = Modifier.weight(1f)
+                            )
                         )
                     }
                 }
@@ -182,18 +186,17 @@ fun MetricsScreen(onBack: () -> Unit) {
 
             // Summary stat grid
             item {
-                val hours = stats.totalMs / 3_600_000L
-                val minutes = stats.totalMs / 60_000L
+                // One readable duration instead of a whole number of hours, which read "0" under an hour.
+                val listened = formatListened(stats.totalMs)
                 StatGrid(
                     listOf(
                         Triple(stats.totalPlays.toString(), stringResource(R.string.metrics_total_plays), GREEN),
-                        Triple(minutes.toString(), stringResource(R.string.metrics_total_minutes), GREEN),
-                        Triple(hours.toString(), stringResource(R.string.metrics_stat_hours), Color(0xFF4FC3F7)),
+                        Triple(listened, stringResource(R.string.metrics_stat_hours), Color(0xFF4FC3F7)),
                         Triple(stats.distinctTracks.toString(), stringResource(R.string.metrics_stat_tracks), Color(0xFFBA68C8)),
                         Triple(stats.distinctArtists.toString(), stringResource(R.string.metrics_stat_artists), Color(0xFFFFB74D)),
                         Triple(stats.distinctAlbums.toString(), stringResource(R.string.metrics_stat_albums), Color(0xFF4DB6AC)),
                         Triple(stats.daysListened.toString(), stringResource(R.string.metrics_stat_days), Color(0xFFE57373)),
-                        Triple("${stats.avgPerDayMin}m", stringResource(R.string.metrics_stat_avg_day), Color(0xFF90A4AE)),
+                        Triple(formatListened(stats.avgPerDayMin * 60_000L), stringResource(R.string.metrics_stat_avg_day), Color(0xFF90A4AE)),
                         Triple("${stats.completionRate}%", stringResource(R.string.metrics_stat_completion), Color(0xFFAED581))
                     )
                 )
@@ -567,4 +570,16 @@ private suspend fun computeStats(context: Context, range: MetricsRange): Stats {
     return runCatching { ListeningTracker.stats(context, from, to) }
         .onFailure { android.util.Log.w("MetricsScreen", "stats failed: ${it.message}") }
         .getOrDefault(Stats())
+}
+
+/** "24 min", "3 h 12 min": how long, in the units a person would say it. */
+private fun formatListened(ms: Long): String {
+    val totalMin = ms / 60_000L
+    val h = totalMin / 60
+    val m = totalMin % 60
+    return when {
+        h == 0L -> "$m min"
+        m == 0L -> "$h h"
+        else -> "$h h $m min"
+    }
 }

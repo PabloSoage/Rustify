@@ -53,8 +53,10 @@ fun DownloadsScreen(
     val downloads by DownloadManager.downloads.collectAsState()
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.home_downloads), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

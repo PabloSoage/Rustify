@@ -179,7 +179,7 @@
     <string name="dj_change_in_settings">設定で変更</string>
     <string name="dj_mode_heuristic">ヒューリスティック（オフライン）</string>
     <string name="dj_mode_api">外部AI（API）</string>
-    <string name="dj_mode_local">ローカルLLM（実験的）</string>
+    <string name="dj_mode_local">端末上のAI（NPU）</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">DJモード</string>
     <string name="settings_dj_mode_desc">ヒューリスティックはオフラインで動作します。外部AIは再生コンテキストをOpenAI互換エンドポイントに送信します（オプトイン）。ローカルLLMは未実装です。</string>
@@ -187,7 +187,7 @@
     <string name="settings_dj_model">モデル</string>
     <string name="settings_dj_api_key">APIキー（任意）</string>
     <string name="settings_dj_api_desc">デフォルトのエンドポイントはPollinations AI（無料・キー不要・ベストエフォート）です。OpenAI互換のAPIを指定できます。リクエストは端末外に送信されます。</string>
-    <string name="settings_dj_local_note">端末上のローカルLLMは未実装です。ヒューリスティックDJにフォールバックします。</string>
+    <string name="settings_dj_local_note">端末上のAIの有無を確認しています…</string>
     <!-- DJ v2.8: moods, autonomous mode, voice, providers -->
     <string name="dj_mood_chill">チル</string>
     <string name="dj_mood_energetic">エネルギッシュ</string>
@@ -513,12 +513,12 @@
     <string name="metrics_empty">再生データがまだありません</string>
     <!-- E102 — メトリクス刷新 -->
     <string name="metrics_range_year">年</string>
-    <string name="metrics_stat_hours">時間</string>
+    <string name="metrics_stat_hours">再生時間</string>
     <string name="metrics_stat_tracks">曲</string>
     <string name="metrics_stat_artists">アーティスト</string>
     <string name="metrics_stat_albums">アルバム</string>
     <string name="metrics_stat_days">聴いた日数</string>
-    <string name="metrics_stat_avg_day">平均/日（分）</string>
+    <string name="metrics_stat_avg_day">1日あたり</string>
     <string name="metrics_stat_completion">完了率</string>
     <string name="metrics_clocks">リスニング時計</string>
     <string name="metrics_clock_plays">再生</string>
@@ -647,4 +647,16 @@
     <string name="playlist_recommended">おすすめ</string>
     <string name="playlist_recommended_hint">このプレイリストの内容から</string>
     <string name="playlist_recommended_more">更新</string>
+    <string name="dj_chip_chill">チル</string>
+    <string name="dj_chip_focus">集中</string>
+    <string name="dj_chip_party">パーティー</string>
+    <string name="dj_chip_workout">ワークアウト</string>
+    <string name="dj_chip_happy">ハッピー</string>
+    <string name="dj_chip_sad">しっとり</string>
+    <string name="dj_chip_more_like">%1$s 風</string>
+    <string name="settings_dj_local_ready">この端末で Gemini Nano が使えます。DJ は端末の AI ハードウェアで動き、データは外に出ません。</string>
+    <string name="settings_dj_local_downloading">Gemini Nano をダウンロード中… 完了まではヒューリスティック DJ を使います。</string>
+    <string name="settings_dj_local_downloadable">この端末は Gemini Nano に対応しています。一度ダウンロードが必要です。</string>
+    <string name="settings_dj_local_download">ダウンロード</string>
+    <string name="settings_dj_local_unsupported">この端末には端末上の AI（AICore）がありません。ヒューリスティック DJ を使います。</string>
 </resources>

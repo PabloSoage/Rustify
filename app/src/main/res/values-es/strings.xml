@@ -284,18 +284,18 @@
     <string name="metrics_top_artists">Artistas</string>
     <string name="metrics_top_albums">Álbumes</string>
     <string name="metrics_range_today">Hoy</string>
-    <string name="metrics_range_week">Esta Semana</string>
-    <string name="metrics_range_month">Este Mes</string>
+    <string name="metrics_range_week">Semana</string>
+    <string name="metrics_range_month">Mes</string>
     <string name="metrics_range_all">Todo</string>
     <string name="metrics_empty">Sin datos aún</string>
     <!-- E102 — Overhaul de métricas -->
     <string name="metrics_range_year">Año</string>
-    <string name="metrics_stat_hours">Horas</string>
+    <string name="metrics_stat_hours">Tiempo</string>
     <string name="metrics_stat_tracks">Pistas</string>
     <string name="metrics_stat_artists">Artistas</string>
     <string name="metrics_stat_albums">Álbumes</string>
     <string name="metrics_stat_days">Días escuchados</string>
-    <string name="metrics_stat_avg_day">Media/día (min)</string>
+    <string name="metrics_stat_avg_day">Por día</string>
     <string name="metrics_stat_completion">Completadas</string>
     <string name="metrics_clocks">Reloj de escucha</string>
     <string name="metrics_clock_plays">Reproducciones</string>
@@ -392,7 +392,7 @@
     <string name="dj_change_in_settings">Cambiar en Ajustes</string>
     <string name="dj_mode_heuristic">Heurístico (sin conexión)</string>
     <string name="dj_mode_api">IA externa (API)</string>
-    <string name="dj_mode_local">LLM local (experimental)</string>
+    <string name="dj_mode_local">IA en el móvil (NPU)</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">Modo del DJ</string>
     <string name="settings_dj_mode_desc">El heurístico funciona sin conexión. La IA externa envía tu contexto de escucha a un endpoint compatible con OpenAI (opt-in). El LLM local aún no está implementado.</string>
@@ -400,7 +400,7 @@
     <string name="settings_dj_model">Modelo</string>
     <string name="settings_dj_api_key">Clave API (opcional)</string>
     <string name="settings_dj_api_desc">El endpoint por defecto es Pollinations AI (gratuito, sin clave, best-effort). Puedes apuntarlo a cualquier API compatible con OpenAI. Las peticiones salen de tu dispositivo.</string>
-    <string name="settings_dj_local_note">El LLM local en el dispositivo aún no está implementado; recurre al DJ heurístico.</string>
+    <string name="settings_dj_local_note">Comprobando si este móvil tiene IA en el dispositivo…</string>
     <!-- DJ v2.8: moods, modo autónomo, voz, proveedores -->
     <string name="dj_mood_chill">Tranquilo</string>
     <string name="dj_mood_energetic">Con energía</string>
@@ -648,4 +648,16 @@
     <string name="playlist_recommended">Recomendadas</string>
     <string name="playlist_recommended_hint">Según lo que hay en esta playlist</string>
     <string name="playlist_recommended_more">Otras</string>
+    <string name="dj_chip_chill">Tranquilo</string>
+    <string name="dj_chip_focus">Concentración</string>
+    <string name="dj_chip_party">Fiesta</string>
+    <string name="dj_chip_workout">Entrenar</string>
+    <string name="dj_chip_happy">Alegre</string>
+    <string name="dj_chip_sad">Triste</string>
+    <string name="dj_chip_more_like">Más como %1$s</string>
+    <string name="settings_dj_local_ready">Gemini Nano está listo en este móvil. El DJ corre en su hardware de IA: sin conexión, nada sale del dispositivo.</string>
+    <string name="settings_dj_local_downloading">Descargando Gemini Nano… Hasta que acabe, el DJ usa la heurística.</string>
+    <string name="settings_dj_local_downloadable">Este móvil puede usar Gemini Nano; hay que descargarlo una vez.</string>
+    <string name="settings_dj_local_download">Descargar</string>
+    <string name="settings_dj_local_unsupported">Este móvil no tiene IA en el dispositivo (AICore). El DJ usa la heurística.</string>
 </resources>

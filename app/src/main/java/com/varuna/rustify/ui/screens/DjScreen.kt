@@ -40,6 +40,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -100,6 +101,16 @@ fun DjScreen(
         DjMode.LOCAL -> stringResource(R.string.dj_mode_local)
     }
     val emptyResultMsg = stringResource(R.string.dj_no_results)
+
+    // Your three most played artists of the last 30 days, for "more like …" shortcuts.
+    var topArtists by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val now = System.currentTimeMillis()
+        topArtists = runCatching {
+            com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now)
+                .topArtists.map { it.name }.filter { it.isNotBlank() }.take(3)
+        }.getOrDefault(emptyList())
+    }
 
     fun startDj() {
         if (isLoading) return
@@ -173,8 +184,10 @@ fun DjScreen(
     DisposableEffect(Unit) { onDispose { speech.stop() } }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.dj_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -236,6 +249,33 @@ fun DjScreen(
                             focusedIndicatorColor = green
                         )
                     )
+                    Spacer(Modifier.height(10.dp))
+                    // One tap instead of typing (4.7). The request sent is the English keyword the
+                    // heuristic knows whatever the UI language; the label is translated.
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val moods = listOf(
+                            "chill" to R.string.dj_chip_chill, "focus" to R.string.dj_chip_focus,
+                            "party" to R.string.dj_chip_party, "workout" to R.string.dj_chip_workout,
+                            "happy" to R.string.dj_chip_happy, "sad" to R.string.dj_chip_sad
+                        )
+                        moods.forEach { (query, label) ->
+                            androidx.compose.material3.AssistChip(
+                                onClick = { request = query; startDj() },
+                                label = { Text(stringResource(label), color = Color.White) },
+                                enabled = !isLoading
+                            )
+                        }
+                        topArtists.forEach { name ->
+                            androidx.compose.material3.AssistChip(
+                                onClick = { request = "more like $name"; startDj() },
+                                label = { Text(stringResource(R.string.dj_chip_more_like, name), color = Color.White, maxLines = 1) },
+                                enabled = !isLoading
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(

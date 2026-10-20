@@ -69,9 +69,15 @@ class HeuristicDjProvider : DjProvider {
     private fun detectVibe(req: String, es: Boolean): Vibe? {
         fun l(esText: String, enText: String) = if (es) esText else enText
         return when {
-            req.containsAny("tranquil", "chill", "relax", "calma", "suave", "study", "estudiar", "focus", "concentr") ->
+            // Focus and workout are their own moods: folded into "chill" and "party" they got lo-fi beats
+            // for studying and dance pop for the gym, which is close but not what was asked.
+            req.containsAny("study", "estudiar", "focus", "concentr", "trabaj", "work mode") ->
+                Vibe("focus", l("Algo para concentrarse", "Something to focus to"))
+            req.containsAny("workout", "gym", "entren", "correr", "running") ->
+                Vibe("workout", l("A tope para entrenar", "Workout mode"))
+            req.containsAny("tranquil", "chill", "relax", "calma", "suave") ->
                 Vibe("chill", l("Bajando el ritmo", "Slowing things down"))
-            req.containsAny("energí", "energy", "fiesta", "party", "hype", "workout", "gym", "correr", "run", "baila", "dance") ->
+            req.containsAny("energí", "energy", "fiesta", "party", "hype", "baila", "dance") ->
                 Vibe("party", l("Subiendo la energía", "Turning up the energy"))
             req.containsAny("triste", "sad", "melanc", "llov", "rain") ->
                 Vibe("sad", l("Poniendo algo más melancólico", "Going a bit more melancholic"))

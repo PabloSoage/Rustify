@@ -32,7 +32,10 @@ appauth = "0.11.1"
 # and decoded here by a generated parser instead of 500 lines of hand-written org.json reads.
 # See bridge/SpotifyModels.kt.
 kotlinxSerialization = "1.12.0"
+# 4.7 — Gemini Nano through AICore for the on-device DJ (runs on the NPU where there is one).
+mlkitGenaiPrompt = "1.0.0-beta4"
 [libraries]
+mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

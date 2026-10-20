@@ -56,9 +56,11 @@ fun ArtistAllSongsScreen(
     LaunchedEffect(artistId) { spotifyRepo.loadArtistAllTracks(artistId) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         containerColor = Color(0xFF121212),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(artistName, color = Color.White, maxLines = 1, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

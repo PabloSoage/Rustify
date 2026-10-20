@@ -171,9 +171,11 @@ fun YtMusicSearchScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         containerColor = YtmDark,
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.ytm_title), color = Color.White, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -517,9 +519,11 @@ private fun YtmDetailScaffold(
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         containerColor = YtmDark,
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

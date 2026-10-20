@@ -285,18 +285,18 @@
     <string name="metrics_top_artists">Top Artists</string>
     <string name="metrics_top_albums">Top Albums</string>
     <string name="metrics_range_today">Today</string>
-    <string name="metrics_range_week">This Week</string>
-    <string name="metrics_range_month">This Month</string>
-    <string name="metrics_range_all">All Time</string>
+    <string name="metrics_range_week">Week</string>
+    <string name="metrics_range_month">Month</string>
+    <string name="metrics_range_all">All</string>
     <string name="metrics_empty">No listening data yet</string>
     <!-- E102 — Metrics overhaul -->
     <string name="metrics_range_year">Year</string>
-    <string name="metrics_stat_hours">Hours</string>
+    <string name="metrics_stat_hours">Time</string>
     <string name="metrics_stat_tracks">Tracks</string>
     <string name="metrics_stat_artists">Artists</string>
     <string name="metrics_stat_albums">Albums</string>
     <string name="metrics_stat_days">Days listened</string>
-    <string name="metrics_stat_avg_day">Avg/day (min)</string>
+    <string name="metrics_stat_avg_day">Per day</string>
     <string name="metrics_stat_completion">Completed</string>
     <string name="metrics_clocks">Listening clock</string>
     <string name="metrics_clock_plays">Plays</string>
@@ -393,7 +393,7 @@
     <string name="dj_change_in_settings">Change in Settings</string>
     <string name="dj_mode_heuristic">Heuristic (offline)</string>
     <string name="dj_mode_api">External AI (API)</string>
-    <string name="dj_mode_local">Local LLM (experimental)</string>
+    <string name="dj_mode_local">On-device AI (NPU)</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">DJ mode</string>
     <string name="settings_dj_mode_desc">Heuristic works offline. External AI sends your listening context to an OpenAI-compatible endpoint (opt-in). Local LLM is not implemented yet.</string>
@@ -401,7 +401,7 @@
     <string name="settings_dj_model">Model</string>
     <string name="settings_dj_api_key">API key (optional)</string>
     <string name="settings_dj_api_desc">Default endpoint is Pollinations AI (free, keyless, best-effort). You can point it to any OpenAI-compatible API. Requests leave your device.</string>
-    <string name="settings_dj_local_note">Local on-device LLM is not implemented yet; falls back to the heuristic DJ.</string>
+    <string name="settings_dj_local_note">Checking whether this phone has on-device AI…</string>
     <!-- DJ v2.8: moods, autonomous mode, voice, providers -->
     <string name="dj_mood_chill">Chill</string>
     <string name="dj_mood_energetic">Energetic</string>
@@ -650,4 +650,16 @@
     <string name="playlist_recommended">Recommended</string>
     <string name="playlist_recommended_hint">Based on what is in this playlist</string>
     <string name="playlist_recommended_more">Refresh</string>
+    <string name="dj_chip_chill">Chill</string>
+    <string name="dj_chip_focus">Focus</string>
+    <string name="dj_chip_party">Party</string>
+    <string name="dj_chip_workout">Workout</string>
+    <string name="dj_chip_happy">Happy</string>
+    <string name="dj_chip_sad">Sad</string>
+    <string name="dj_chip_more_like">More like %1$s</string>
+    <string name="settings_dj_local_ready">Gemini Nano is ready on this phone. The DJ runs on its AI hardware: offline, nothing leaves the device.</string>
+    <string name="settings_dj_local_downloading">Downloading Gemini Nano… Until it finishes, the DJ uses the heuristic.</string>
+    <string name="settings_dj_local_downloadable">This phone can run Gemini Nano; it has to be downloaded once.</string>
+    <string name="settings_dj_local_download">Download</string>
+    <string name="settings_dj_local_unsupported">This phone has no on-device AI (AICore). The DJ uses the heuristic instead.</string>
 </resources>

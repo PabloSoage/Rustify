@@ -163,6 +163,7 @@ dependencies {
     implementation(libs.maplibre.android)
     // P — generated decoders for the engine's wire types (bridge/SpotifyModels.kt).
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.mlkit.genai.prompt)
 }
 
 // --- RUST CORE INTEGRATION ---

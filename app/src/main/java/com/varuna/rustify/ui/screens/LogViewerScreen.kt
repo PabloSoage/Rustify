@@ -116,8 +116,10 @@ fun LogViewerScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.log_viewer_title), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

@@ -77,6 +77,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -441,8 +442,10 @@ fun SettingsScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.settings_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { if (settingsCategory != null) onCategoryChange(null) else onBack() }) {
@@ -1537,7 +1540,22 @@ fun SettingsScreen(
 
                     if (djMode == "local") {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(stringResource(R.string.settings_dj_local_note), color = Color.Gray, fontSize = 12.sp)
+                        // Where Gemini Nano stands on this phone, asked of AICore when the mode is picked.
+                        val nano by com.varuna.rustify.dj.OnDeviceModel.status.collectAsState()
+                        LaunchedEffect(Unit) { com.varuna.rustify.dj.OnDeviceModel.refresh() }
+                        val nanoText = when (nano) {
+                            com.varuna.rustify.dj.OnDeviceModel.Status.READY -> stringResource(R.string.settings_dj_local_ready)
+                            com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADING -> stringResource(R.string.settings_dj_local_downloading)
+                            com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADABLE -> stringResource(R.string.settings_dj_local_downloadable)
+                            com.varuna.rustify.dj.OnDeviceModel.Status.UNSUPPORTED -> stringResource(R.string.settings_dj_local_unsupported)
+                            else -> stringResource(R.string.settings_dj_local_note)
+                        }
+                        Text(nanoText, color = if (nano == com.varuna.rustify.dj.OnDeviceModel.Status.READY) Color(0xFF1DB954) else Color.Gray, fontSize = 12.sp)
+                        if (nano == com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADABLE) {
+                            TextButton(onClick = { com.varuna.rustify.dj.OnDeviceModel.download() }) {
+                                Text(stringResource(R.string.settings_dj_local_download), color = Color(0xFF1DB954))
+                            }
+                        }
                     }
 
                     // DJ voice (hybrid: native TTS plus an optional cloud endpoint).
