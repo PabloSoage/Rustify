@@ -120,7 +120,7 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 
 /**
- * "Travel playlist": full-screen interactive map (CARTO Voyager OSM basemap by default,
+ * "Travel playlist": full-screen interactive map (OpenFreeMap OSM basemap by default,
  * or MapTiler Cloud if the user provides a key), with destination autocomplete (Photon + Nominatim,
  * keyless), live location drawn on the map, an OSRM route drawn on the map, a prompt to enable GPS,
  * and two playlist modes:
@@ -198,13 +198,14 @@ fun TravelScreen(
     val titleColor = if (isDarkMap) Color.White else Color.Black
     val onMapTextColor = if (isDarkMap) Color.White else Color.Black
     val onMapIconColor = if (isDarkMap) Color.White else Color.Black
-    val scrimColor = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
+    // Nearly opaque: at 80 % the map showed through the suggestions and the route card (4.4).
+    val scrimColor = if (isDarkMap) Color(0xF2121212) else Color(0xF7FFFFFF)
 
     // When the style changes from the dropdown, apply it to the already-loaded map
     // (MapView is created only once in the MapLibreView remember).
     LaunchedEffect(mapStyleIndex) {
         val m = mapRef[0] ?: return@LaunchedEffect
-        val uri = TravelSettings.ASSET_STYLES[mapStyleIndex]
+        val uri = TravelSettings.MAP_STYLES[mapStyleIndex]
         styleSwitching = true
         m.setStyle(Style.Builder().fromUri(uri)) { style ->
             registerLayers(style)
@@ -358,8 +359,12 @@ fun TravelScreen(
     }
 
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+    // Set when the text changes because a suggestion was picked, not typed: searching for the label
+    // just chosen reopened the list on top of the route card.
+    var queryFromPick by remember { mutableStateOf(false) }
     LaunchedEffect(query) {
         if (query.isBlank()) { showSuggestions = false; suggestions = emptyList(); return@LaunchedEffect }
+        if (queryFromPick) { queryFromPick = false; return@LaunchedEffect }
         searching = true
         debounceJob?.cancel()
         debounceJob = scope.launch {
@@ -468,7 +473,7 @@ fun TravelScreen(
 
         MapLibreView(
             Modifier.fillMaxSize(),
-            styleUri = { TravelSettings.ASSET_STYLES[mapStyleIndex] },
+            styleUri = { TravelSettings.MAP_STYLES[mapStyleIndex] },
             onMapReady = { map, style ->
                 mapRef[0] = map
                 registerLayers(style)
@@ -556,6 +561,13 @@ fun TravelScreen(
             }
         )
 
+        // A fade from the panels' colour behind the bar: transparent, the title and icons sat straight on
+        // the map and vanished into its labels (seen on the emulator in 4.4).
+        Box(
+            Modifier.fillMaxWidth().height(170.dp).background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(listOf(scrimColor, scrimColor.copy(alpha = 0f)))
+            )
+        )
         // Transparent TopAppBar over the map (manual status bar padding).
         TopAppBar(
             title = {
@@ -728,6 +740,7 @@ fun TravelScreen(
                                             setOrigin(s)
                                         } else {
                                             pickedDestination = s
+                                            queryFromPick = true
                                             query = s.label
                                             destSourceRef[0]?.setGeoJson(pointFeatureJson(s.lat, s.lon))
                                             routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
@@ -744,7 +757,7 @@ fun TravelScreen(
 
 // Minimal attribution (over the map, instead of MapLibre's logo/(i) which crashes).
         Text(
-            "© OpenStreetMap, CARTO · Esri · OpenTopoMap",
+            "© OpenStreetMap · OpenFreeMap · Esri · OpenTopoMap",
             color = onMapTextColor.copy(alpha = 0.65f),
             fontSize = 9.sp,
             modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 6.dp, bottom = 4.dp)
@@ -754,7 +767,7 @@ fun TravelScreen(
         // Shown whenever a destination is chosen (even if the OSRM route fails or there is no GPS),
         // so the "Navigate in Google Maps" button and manual mode stay available.
         if (route != null || showManualCard || pickedDestination != null) {
-            val cardScrim = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
+            val cardScrim = scrimColor
             val cardText = if (isDarkMap) Color.White else Color.Black
             val cardSub = if (isDarkMap) Color(0xFFCCCCCC) else Color(0xFF555555)
             Surface(
@@ -977,7 +990,7 @@ fun TravelScreen(
 
         // Prompt shown when location is disabled.
         if (!locationEnabled) {
-            val promptScrim = if (isDarkMap) Color(0xCC000000) else Color(0xCCFFFFFF)
+            val promptScrim = scrimColor
             val promptText = if (isDarkMap) Color.White else Color.Black
             Surface(
                 color = promptScrim,
@@ -1256,7 +1269,9 @@ private fun PreviewSheetContent(
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.travel_play), color = Color.Black, fontWeight = FontWeight.Bold)
             }
-            Button(
+            // Saving needs an account; without one the button only led to a failure message.
+            val signedIn = remember { com.varuna.rustify.bridge.SpotifyRepository.instance?.hasSavedSession() == true }
+            if (signedIn) Button(
                 onClick = {
                     saving = true; saveResult = null
                     onSaveToSpotify(saveName) { ok -> saving = false; saveResult = ok }

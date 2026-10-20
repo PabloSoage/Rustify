@@ -208,7 +208,18 @@ object TravelRouting {
                 dx * dx + dy * dy
             }
         }
-        combined
+        // But a place whose own name *is* what was typed goes first. Nearest-first alone put
+        // "Rúa Santiago de Compostela" (a street nearby) and a charger above the city itself when
+        // "Santiago de Compostela" was typed — seen on the emulator in 4.4. The match is ranked by the
+        // core's search over each result's own name (the label's first part), not by hand.
+        val ranked = runCatching {
+            com.varuna.rustify.util.LocalSearch.index("travel-geo", combined, { it.label }) {
+                listOf(it.label.substringBefore(","))
+            }
+            com.varuna.rustify.util.LocalSearch.filter("travel-geo", combined, q) { it.label }
+        }.getOrDefault(emptyList())
+        val exact = ranked.filter { it.label.substringBefore(",").trim().length <= q.length + 2 }
+        (exact + combined).distinct()
     }
 
     // ── Geocoding helpers ────────────────────────────────────────────────────────────────

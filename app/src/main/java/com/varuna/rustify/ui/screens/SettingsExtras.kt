@@ -424,7 +424,7 @@ internal fun TravelMapSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Text(
                 if (mapTilerKey.isBlank())
-                    "Using bundled keyless basemap (CARTO Voyager / OpenStreetMap)."
+                    "Using the keyless basemap (OpenFreeMap / OpenStreetMap)."
                 else
                     "Using MapTiler Cloud vector tiles with your key.",
                 color = Color.Gray, fontSize = 11.sp
