@@ -50,6 +50,38 @@ object AudioBackendSettings {
     private val PROMOTE_ON_UPGRADE = listOf(InnertubeAudioSource.ID)
 
     /**
+     * Where each provider belongs by default, by what was measured and by how well it survives
+     * upstream changes (docs `serie-4.x/02` §2.3):
+     *
+     * 0. **InnerTube** — fastest (~5 s tap-to-sound against ~38 s for yt-dlp on the emulator), but it
+     *    impersonates official clients, so a change at YouTube can break it until a client table
+     *    update. Which is why it is not alone:
+     * 1. **yt-dlp** — slow, but it updates itself, so it is the stable one. The hedged chain starts it
+     *    4 s after InnerTube if InnerTube has not answered, so its slowness only costs when needed.
+     * 2. **Add-ons** — whatever the user installed on purpose.
+     * 8. **Invidious** — public instances are blocked by YouTube more often than not.
+     * 9. **Deezer** — needs an ARL, which expires, and decrypting through the proxy.
+     *
+     * The last two ship **off**. Unknown ids (add-ons) rank as add-ons.
+     */
+    internal fun defaultRank(id: String): Int = when (id) {
+        InnertubeAudioSource.ID -> 0
+        YtDlpAudioSource.ID -> 1
+        InvidiousAudioSource.ID -> 8
+        DeezerAudioSource.ID -> 9
+        else -> 2
+    }
+
+    /** Set once the 4.7 reorder has been applied to a stored list, so a later drag sticks. */
+    private const val KEY_RANKED = "audio_backends_ranked_v47"
+
+    /**
+     * [entries] in [defaultRank] order, keeping each one's on/off and, within a rank, the user's
+     * relative order (the sort is stable).
+     */
+    internal fun ranked(entries: List<BackendEntry>): List<BackendEntry> = entries.sortedBy { defaultRank(it.id) }
+
+    /**
      * Reads the stored order for [key], appending any missing [knownIds] at the end
      * as `enabled=false`. Never throws: if the JSON is corrupt, it falls back to the default.
      */
@@ -94,7 +126,19 @@ object AudioBackendSettings {
             }
         }
         // Drop unknown ids (providers removed in future versions).
-        return parsed.filter { it.id in knownIds }
+        val known = parsed.filter { it.id in knownIds }
+        if (isFirstRun) return ranked(known)
+        // Once per list on upgrade: put the stored order into the default ranking, so the slow and
+        // fragile providers end up behind the rest. On/off is kept — someone who set up Deezer
+        // still has it — and from then on the user's drags are left alone.
+        val rankedKey = "${KEY_RANKED}_$key"
+        if (!prefs.getBoolean(rankedKey, false)) {
+            val reordered = ranked(known)
+            prefs.edit { putBoolean(rankedKey, true) }
+            if (reordered != known) saveOrder(context, key, reordered)
+            return reordered
+        }
+        return known
     }
 
     /**
@@ -127,7 +171,10 @@ object AudioBackendSettings {
             val present = stored.map { it.id }.toSet()
             val missing = ids.filter { it !in present }
             if (missing.isEmpty()) continue
-            stored.addAll(missing.map { BackendEntry(it, enabled = true) })
+            // In front of Invidious and Deezer rather than behind them: an add-on was installed on
+            // purpose, those two are last for being unreliable.
+            val at = stored.indexOfFirst { defaultRank(it.id) > defaultRank(missing.first()) }.let { if (it < 0) stored.size else it }
+            stored.addAll(at, missing.map { BackendEntry(it, enabled = true) })
             saveOrder(context, key, stored)
         }
     }
