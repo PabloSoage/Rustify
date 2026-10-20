@@ -35,7 +35,7 @@
     <string name="settings_addons_privacy">A un complemento se le dice el título, los artistas, la duración y los identificadores de la canción que se está resolviendo, y nada más. Nunca recibe tu sesión de Spotify, y las canciones guardadas en este dispositivo no se envían nunca.</string>
     <string name="settings_stream_cache">Canciones guardadas</string>
     <string name="settings_stream_cache_enabled">Guardar canciones en este dispositivo</string>
-    <string name="settings_stream_cache_desc">Una canción que ya has escuchado se queda aquí, así que volver a ponerla empieza al instante, no gasta datos y funciona sin conexión. Hasta 512 MB; primero se van las más antiguas. Las canciones que ya están en tu móvil no se copian nunca. Desactivarlo detiene también el servidor local del reproductor, así que no se ejecuta nada de lo que añadió la 3.1.</string>
+    <string name="settings_stream_cache_desc">Una canción que ya has escuchado se queda aquí, así que volver a ponerla empieza al instante, no gasta datos y funciona sin conexión. Hasta 512 MB; primero se van las más antiguas. Las canciones que ya están en tu móvil no se copian nunca. Desactivarlo detiene también el servidor local del reproductor.</string>
     <string name="settings_stream_cache_using">Ocupando %1$s</string>
     <string name="settings_stream_cache_clear">Vaciar</string>
     <string name="home_continue_listening">Sigue donde lo dejaste</string>
@@ -123,8 +123,8 @@
     <string name="settings_add_folder">Añadir Carpeta</string>
     
     <string name="settings_cleanup">Limpieza</string>
-    <string name="settings_cleanup_audio">Audio</string>
-    <string name="settings_cleanup_images">Imágenes</string>
+    <string name="settings_cleanup_audio">Vaciar audio</string>
+    <string name="settings_cleanup_images">Vaciar imágenes</string>
     <string name="settings_cache_audio_cleared">Caché de audio borrada</string>
     <string name="settings_cache_images_cleared">Caché de imágenes borrada</string>
     
@@ -395,7 +395,7 @@
     <string name="dj_mode_local">IA en el móvil (NPU)</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">Modo del DJ</string>
-    <string name="settings_dj_mode_desc">El heurístico funciona sin conexión. La IA externa envía tu contexto de escucha a un endpoint compatible con OpenAI (opt-in). El LLM local aún no está implementado.</string>
+    <string name="settings_dj_mode_desc">El heurístico funciona sin conexión. La IA externa envía tu contexto de escucha a un endpoint compatible con OpenAI (opt-in). La IA en el móvil usa Gemini Nano en el hardware de IA del propio teléfono (NPU) si lo tiene.</string>
     <string name="settings_dj_base_url">URL base</string>
     <string name="settings_dj_model">Modelo</string>
     <string name="settings_dj_api_key">Clave API (opcional)</string>
@@ -660,4 +660,10 @@
     <string name="settings_dj_local_downloadable">Este móvil puede usar Gemini Nano; hay que descargarlo una vez.</string>
     <string name="settings_dj_local_download">Descargar</string>
     <string name="settings_dj_local_unsupported">Este móvil no tiene IA en el dispositivo (AICore). El DJ usa la heurística.</string>
+    <string name="settings_max_video_quality">Máxima calidad de vídeo</string>
+    <string name="settings_max_video_quality_desc">Intenta 1080p o más en los videoclips. Desactívalo si cargan lentos.</string>
+    <string name="settings_sound">Sonido</string>
+    <string name="settings_fade_off">Fundido entre canciones: no</string>
+    <string name="settings_fade_seconds">Fundido entre canciones: %1$d s</string>
+    <string name="settings_fade_desc">El final de una canción se apaga y la siguiente entra poco a poco. Rustify reproduce una canción cada vez, así que se funden en lugar de solaparse.</string>
 </resources>

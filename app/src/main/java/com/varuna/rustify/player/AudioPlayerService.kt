@@ -997,6 +997,26 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         })
 
+        // Fading between songs (TransitionFade). Its own loop because the position one ticks too
+        // slowly for a fade to sound smooth: 50 ms inside a fade, a quarter second outside. It
+        // keeps out of the way of the voice ducking and of the sleep timer's own fade.
+        mainScope.launch {
+            var applied = 1f
+            while (true) {
+                val fadeMs = TransitionFade.seconds(context) * 1000L
+                val holdsCurrentTrack = preparedTrackId != null && preparedTrackId == _state.value.currentTrack?.id
+                val gain = if (fadeMs > 0 && holdsCurrentTrack && !isResolving && !isCasting) {
+                    val duration = if (exoPlayer.duration > 0) exoPlayer.duration else _state.value.durationMs
+                    TransitionFade.gain(exoPlayer.currentPosition, duration, fadeMs)
+                } else 1f
+                if (!isDucking && sleepJob?.isActive != true && kotlin.math.abs(gain - applied) > 0.01f) {
+                    runCatching { exoPlayer.volume = baseVolume * gain }
+                    applied = gain
+                }
+                delay(if (gain < 1f) 50L else 250L)
+            }
+        }
+
         // Periodic position / buffer update
         mainScope.launch {
             var lastSaveTime = 0L

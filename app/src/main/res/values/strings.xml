@@ -35,7 +35,7 @@
     <string name="settings_addons_privacy">An add-on is told the title, artists, duration and identifiers of the song being resolved, and nothing else. It never receives your Spotify session, and songs stored on this device are never sent.</string>
     <string name="settings_stream_cache">Stored songs</string>
     <string name="settings_stream_cache_enabled">Keep songs on this device</string>
-    <string name="settings_stream_cache_desc">A song you have played once is kept here, so playing it again starts straight away, uses no data and works with no connection at all. Up to 512 MB; the oldest go first. Songs already on your phone are never copied. Keeping songs off also stops the local player server from starting at all, so nothing new to 3.1 runs.</string>
+    <string name="settings_stream_cache_desc">A song you have played once is kept here, so playing it again starts straight away, uses no data and works with no connection at all. Up to 512 MB; the oldest go first. Songs already on your phone are never copied. Turning it off also keeps the local player server from starting at all.</string>
     <string name="settings_stream_cache_using">Using %1$s</string>
     <string name="settings_stream_cache_clear">Clear</string>
     <string name="home_continue_listening">Pick up where you left off</string>
@@ -127,8 +127,8 @@
     <string name="settings_local_covers_fullres_desc">Keep the original embedded album art (sharper). Off = downscale to 512px to save space. Covers are deduplicated per album either way.</string>
     
     <string name="settings_cleanup">Cleanup</string>
-    <string name="settings_cleanup_audio">Audio</string>
-    <string name="settings_cleanup_images">Images</string>
+    <string name="settings_cleanup_audio">Clear audio</string>
+    <string name="settings_cleanup_images">Clear images</string>
     <string name="settings_cache_audio_cleared">Audio cache cleared</string>
     <string name="settings_cache_images_cleared">Image cache cleared</string>
     
@@ -396,7 +396,7 @@
     <string name="dj_mode_local">On-device AI (NPU)</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">DJ mode</string>
-    <string name="settings_dj_mode_desc">Heuristic works offline. External AI sends your listening context to an OpenAI-compatible endpoint (opt-in). Local LLM is not implemented yet.</string>
+    <string name="settings_dj_mode_desc">Heuristic works offline. External AI sends your listening context to an OpenAI-compatible endpoint (opt-in). On-device AI runs Gemini Nano on the phone\'s own AI hardware (NPU) where available.</string>
     <string name="settings_dj_base_url">Base URL</string>
     <string name="settings_dj_model">Model</string>
     <string name="settings_dj_api_key">API key (optional)</string>
@@ -662,4 +662,10 @@
     <string name="settings_dj_local_downloadable">This phone can run Gemini Nano; it has to be downloaded once.</string>
     <string name="settings_dj_local_download">Download</string>
     <string name="settings_dj_local_unsupported">This phone has no on-device AI (AICore). The DJ uses the heuristic instead.</string>
+    <string name="settings_max_video_quality">Highest video quality</string>
+    <string name="settings_max_video_quality_desc">Try 1080p or higher for music videos. Turn off if they load slowly.</string>
+    <string name="settings_sound">Sound</string>
+    <string name="settings_fade_off">Fade between songs: off</string>
+    <string name="settings_fade_seconds">Fade between songs: %1$d s</string>
+    <string name="settings_fade_desc">The end of a song fades out and the next one fades in. Rustify plays one song at a time, so they fade rather than overlap.</string>
 </resources>

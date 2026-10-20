@@ -185,7 +185,8 @@ internal fun StreamCacheSection(context: Context) {
                     onCheckedChange = { on ->
                         enabled = on
                         com.varuna.rustify.audio.StreamRouting.setEnabled(context, on)
-                    }
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -365,7 +366,8 @@ internal fun AutoplayRadioSection(context: Context) {
                                 on
                             )
                             .apply()
-                    }
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -436,7 +438,8 @@ internal fun CastingSection(context: Context) {
                             active = null
                             failure = null
                         }
-                    }
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -553,7 +556,15 @@ internal fun NormalizeVolumeSection(context: Context) {
     var enabled by remember {
         mutableStateOf(com.varuna.rustify.audio.LoudnessStore.isEnabled(context))
     }
-    Spacer(modifier = Modifier.height(16.dp))
+    // Its own heading: under "When a queue ends" it read as something that happens at the end.
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        stringResource(R.string.settings_sound),
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
         shape = RoundedCornerShape(12.dp),
@@ -575,7 +586,8 @@ internal fun NormalizeVolumeSection(context: Context) {
                             .edit()
                             .putBoolean(com.varuna.rustify.audio.LoudnessStore.PREF_ENABLED, on)
                             .apply()
-                    }
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -609,7 +621,9 @@ internal fun EqualizerSection(context: Context) {
                     enabled = on
                     eq.setEnabled(context, on)
                     bands = eq.bands()
-                })
+                },
+ colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+)
             }
             if (bands.isEmpty()) {
                 Text(stringResource(R.string.settings_equalizer_unavailable), color = Color.Gray, fontSize = 12.sp)
@@ -644,6 +658,35 @@ internal fun EqualizerSection(context: Context) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Fading between songs (4.7) — see [com.varuna.rustify.player.TransitionFade]. */
+@Composable
+internal fun FadeBetweenSongsSection(context: Context) {
+    var seconds by remember { mutableIntStateOf(com.varuna.rustify.player.TransitionFade.seconds(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                if (seconds == 0) stringResource(R.string.settings_fade_off)
+                else stringResource(R.string.settings_fade_seconds, seconds),
+                color = Color.White, fontSize = 16.sp
+            )
+            Slider(
+                value = seconds.toFloat(),
+                onValueChange = { seconds = it.toInt() },
+                onValueChangeFinished = { com.varuna.rustify.player.TransitionFade.setSeconds(context, seconds) },
+                valueRange = 0f..com.varuna.rustify.player.TransitionFade.MAX_SECONDS.toFloat(),
+                steps = com.varuna.rustify.player.TransitionFade.MAX_SECONDS - 1,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFF1DB954), activeTrackColor = Color(0xFF1DB954))
+            )
+            Text(stringResource(R.string.settings_fade_desc), color = Color.Gray, fontSize = 12.sp)
         }
     }
 }

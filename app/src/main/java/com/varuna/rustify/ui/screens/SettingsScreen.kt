@@ -612,8 +612,8 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Máxima Calidad de Vídeo", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("Actívalo para intentar cargar vídeos en 1080p o superior. Si va lento, desactívalo.", color = Color.Gray, fontSize = 12.sp)
+                            Text(stringResource(R.string.settings_max_video_quality), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.settings_max_video_quality_desc), color = Color.Gray, fontSize = 12.sp)
                         }
                         Switch(
                             checked = highQualityVideo,
@@ -1133,42 +1133,6 @@ fun SettingsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Clear buttons
-                    val audioClearedMsg = stringResource(R.string.settings_cache_audio_cleared)
-                    val imageClearedMsg = stringResource(R.string.settings_cache_images_cleared)
-                    val errorMsg = stringResource(R.string.general_error)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                try {
-                                    if (audioCacheDir.exists()) audioCacheDir.deleteRecursively()
-                                    Toast.makeText(context, audioClearedMsg, Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.settings_clear_audio_cache), color = Color.White, fontSize = 12.sp)
-                        }
-                        Button(
-                            onClick = {
-                                try {
-                                    if (imageCacheDir.exists()) imageCacheDir.deleteRecursively()
-                                    Toast.makeText(context, imageClearedMsg, Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.settings_clear_image_cache), color = Color.White, fontSize = 12.sp)
-                        }
-                    }
                 }
             }
 
@@ -1584,7 +1548,8 @@ fun SettingsScreen(
                             onCheckedChange = {
                                 djVoiceEnabled = it
                                 prefs.edit { putBoolean(com.varuna.rustify.dj.DjSettings.KEY_VOICE_ENABLED, it) }
-                            }
+                            },
+                            colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                         )
                     }
                     var voiceLangExpanded by remember { mutableStateOf(false) }

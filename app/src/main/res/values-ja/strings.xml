@@ -36,8 +36,8 @@
     <string name="settings_add_folder">フォルダを追加</string>
     
     <string name="settings_cleanup">クリーンアップ</string>
-    <string name="settings_cleanup_audio">オーディオ</string>
-    <string name="settings_cleanup_images">画像</string>
+    <string name="settings_cleanup_audio">音声を削除</string>
+    <string name="settings_cleanup_images">画像を削除</string>
     <string name="settings_cache_audio_cleared">オーディオキャッシュを消去しました</string>
     <string name="settings_cache_images_cleared">画像キャッシュを消去しました</string>
     
@@ -182,7 +182,7 @@
     <string name="dj_mode_local">端末上のAI（NPU）</string>
     <string name="settings_dj">DJ</string>
     <string name="settings_dj_mode">DJモード</string>
-    <string name="settings_dj_mode_desc">ヒューリスティックはオフラインで動作します。外部AIは再生コンテキストをOpenAI互換エンドポイントに送信します（オプトイン）。ローカルLLMは未実装です。</string>
+    <string name="settings_dj_mode_desc">ヒューリスティックはオフラインで動作します。外部AIは再生コンテキストをOpenAI互換エンドポイントに送信します（オプトイン）。端末上のAIは、対応端末のAIハードウェア（NPU）で Gemini Nano を実行します。</string>
     <string name="settings_dj_base_url">ベースURL</string>
     <string name="settings_dj_model">モデル</string>
     <string name="settings_dj_api_key">APIキー（任意）</string>
@@ -394,7 +394,7 @@
     <string name="settings_addons_privacy">アドオンに渡されるのは、解決中の曲のタイトル・アーティスト・長さ・識別子だけです。Spotifyのセッションが渡されることはなく、この端末に保存された曲が送信されることもありません。</string>
     <string name="settings_stream_cache">保存した曲</string>
     <string name="settings_stream_cache_enabled">この端末に曲を保存する</string>
-    <string name="settings_stream_cache_desc">一度再生した曲はここに残るので、次からはすぐに再生でき、通信も使わず、オフラインでも聴けます。最大512MBで、古いものから消えます。端末にすでにある曲がコピーされることはありません。オフにすると端末内のプレイヤー用サーバーも起動しなくなり、3.1で追加された処理は一切動きません。</string>
+    <string name="settings_stream_cache_desc">一度再生した曲はここに残るので、次からはすぐに再生でき、通信も使わず、オフラインでも聴けます。最大512MBで、古いものから消えます。端末にすでにある曲がコピーされることはありません。オフにすると端末内のプレイヤー用サーバーも起動しなくなります。</string>
     <string name="settings_stream_cache_using">%1$s を使用中</string>
     <string name="settings_stream_cache_clear">消去</string>
     <string name="home_continue_listening">続きから再生</string>
@@ -659,4 +659,10 @@
     <string name="settings_dj_local_downloadable">この端末は Gemini Nano に対応しています。一度ダウンロードが必要です。</string>
     <string name="settings_dj_local_download">ダウンロード</string>
     <string name="settings_dj_local_unsupported">この端末には端末上の AI（AICore）がありません。ヒューリスティック DJ を使います。</string>
+    <string name="settings_max_video_quality">最高画質の動画</string>
+    <string name="settings_max_video_quality_desc">ミュージックビデオを1080p以上で読み込みます。遅い場合はオフにしてください。</string>
+    <string name="settings_sound">サウンド</string>
+    <string name="settings_fade_off">曲間のフェード: オフ</string>
+    <string name="settings_fade_seconds">曲間のフェード: %1$d 秒</string>
+    <string name="settings_fade_desc">曲の終わりをフェードアウトし、次の曲をフェードインします。1曲ずつ再生するため、重ねずにフェードします。</string>
 </resources>

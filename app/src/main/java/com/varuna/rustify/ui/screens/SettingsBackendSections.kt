@@ -224,11 +224,11 @@ internal fun InvidiousBackendSection(context: Context) {
                     Text(stringResource(R.string.inv_allow_anon), color = Color.White, fontSize = 13.sp)
                     Text(stringResource(R.string.inv_allow_anon_desc), color = Color.Gray, fontSize = 11.sp)
                 }
-                Switch(checked = anonOn, onCheckedChange = { anonOn = it; inv.setAllowAnonNetworks(context, it) })
+                Switch(checked = anonOn, onCheckedChange = { anonOn = it; inv.setAllowAnonNetworks(context, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.inv_tor_route), color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(checked = torOn, onCheckedChange = { torOn = it; inv.setTorEnabled(context, it) })
+                Switch(checked = torOn, onCheckedChange = { torOn = it; inv.setTorEnabled(context, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
             }
 
             // Test playback of the current track via Invidious (resolves like the real backend).
@@ -462,7 +462,14 @@ internal fun AudioBackendsSection(context: Context) {
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.settings_backends_download_order), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            ReorderableBackendList(downloadOrder, catalog) { newOrder -> downloadOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, newOrder) }
+            // Only what can download. InnerTube streams only, and listing it here switched on read as
+            // "downloads go through it" when the chain skips it; it stays stored, after the rest.
+            val canDownload: (String) -> Boolean = { id -> catalog[id]?.canDownload != false }
+            ReorderableBackendList(downloadOrder.filter { canDownload(it.id) }, catalog) { newOrder ->
+                val full = newOrder + downloadOrder.filterNot { canDownload(it.id) }
+                downloadOrder = full
+                com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, full)
+            }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.settings_backends_drag_hint), color = Color.Gray, fontSize = 12.sp)
         }
@@ -472,6 +479,7 @@ internal fun AudioBackendsSection(context: Context) {
     AutoplayRadioSection(context)
     NormalizeVolumeSection(context)
     EqualizerSection(context)
+    FadeBetweenSongsSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     CastingSection(context)

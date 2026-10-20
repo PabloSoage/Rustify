@@ -202,7 +202,8 @@ internal fun AddonsSection(context: Context, onAddonsChanged: () -> Unit) {
                                 com.varuna.rustify.bridge.AddonRepository.setEnabled(addon.id, on)
                                 reload()
                             }
-                        }
+                        },
+                        colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
                     )
                     IconButton(onClick = {
                         scope.launch {
