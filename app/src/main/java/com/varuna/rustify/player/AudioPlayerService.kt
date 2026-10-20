@@ -1287,133 +1287,123 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // session a dead port.
                 var routedUrl: String? = null
 
-                if (TrackRef.isLocal(trackId)) {
-                    streamUrl = TrackRef.localUriOf(trackId) ?: trackId
-                    android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
-                } else {
-                    // "Match local first": a file already on the device beats every cache and every
-                    // network backend below, which is why this runs before any of them.
-                    streamUrl = localStreamFor(track, effectiveYoutubeId)
-
-                    // Only use the cached/pre-resolved URL when NO explicit youtubeId hint is given.
-                    // An explicit hint means "force a fresh resolution" (e.g. picking a YouTube alternative),
-                    // so the stale cached URL must not shadow the new source.
-                    if (streamUrl == null && effectiveYoutubeId.isNullOrBlank()) {
-                        // A confirmed user alternative must beat EVERY cached URL — including the one
-                        // preBufferNextTrack produced for this track, possibly before the user made the
-                        // choice. Checking it only inside the persisted-cache branch (as this used to)
-                        // meant the alternative applied when the track was started by hand (which clears
-                        // the pre-buffer) but was silently ignored when the queue reached it on its own.
-                        val mappedId = NativeEngine.getAlternativeTrackNative(trackId)
-                        val hasUserMapping = mappedId.isNotBlank() &&
-                            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                // Where the audio comes from: SourceLadder decides, in the order and with the rules
+                // written down there (and tested); the side effects of each answer stay here.
+                val hasHint = !effectiveYoutubeId.isNullOrBlank()
+                val decision = SourceLadder.decide(
+                    SourceLadder.Inputs(
+                        isLocalTrack = TrackRef.isLocal(trackId),
+                        hasHint = hasHint,
+                        localFile = { TrackRef.localUriOf(trackId) ?: trackId },
+                        localMatch = { localStreamFor(track, effectiveYoutubeId) },
+                        hasUserAlternative = {
+                            NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() &&
+                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                        },
                         // Honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on ExoPlayer.
-                        val expiresAt = urlExpiryCache[trackId]
-                        val expired = expiresAt != null && System.currentTimeMillis() >= expiresAt
-
-                        if (hasUserMapping || expired) {
-                            if (expired) android.util.Log.d("AudioPlayerService", "Cached URL for $trackId expired; re-resolving")
-                            if (hasUserMapping) android.util.Log.d("AudioPlayerService", "User mapping found for $trackId ($mappedId); dropping every cached URL")
+                        urlExpired = { urlExpiryCache[trackId]?.let { System.currentTimeMillis() >= it } == true },
+                        streamCache = { com.varuna.rustify.audio.StreamRouting.cachedUrlFor(context, trackId) },
+                        persisted = { getCachedStreamUrl(trackId) },
+                        preResolved = { preResolvedUrls[trackId] },
+                    )
+                )
+                when (decision.kind) {
+                    SourceLadder.Kind.LOCAL_FILE -> {
+                        streamUrl = decision.url
+                        android.util.Log.d("AudioPlayerService", "Playing local track: $streamUrl")
+                    }
+                    SourceLadder.Kind.LOCAL_MATCH -> streamUrl = decision.url
+                    SourceLadder.Kind.STREAM_CACHE -> {
+                        routedUrl = decision.url
+                        android.util.Log.d("AudioPlayerService", "Playing $trackId from the stream cache")
+                    }
+                    SourceLadder.Kind.PERSISTED -> {
+                        streamUrl = decision.url
+                        android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
+                    }
+                    SourceLadder.Kind.PRE_RESOLVED -> {
+                        streamUrl = decision.url
+                        android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
+                        preResolvedUrls.remove(trackId)
+                    }
+                    SourceLadder.Kind.NETWORK -> {
+                        if (decision.invalidate) {
+                            // A confirmed user alternative must beat every cached URL, including the
+                            // one the prefetch produced before the choice was made; an expired URL is
+                            // dead anyway. The stored audio goes too for an alternative: serving the
+                            // old bytes would make the choice look as if it had done nothing.
+                            android.util.Log.d("AudioPlayerService", "Dropping cached URLs for $trackId (alternative chosen or URL expired)")
                             removeCachedStreamUrl(trackId)
                             preResolvedUrls.remove(trackId)
                             resolvedStreamUrls.remove(trackId)
                             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
-                            // The stored audio too. A user alternative is the user saying "not that
-                            // recording"; serving the old bytes from disk would make the choice look
-                            // as if it had done nothing. An expiry does not mean that, but the URL is
-                            // gone either way and the file will simply be refetched.
-                            if (hasUserMapping) com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
-                        } else {
-                            // The stream cache. Asked before anything else because it is the only
-                            // path that costs nothing: the audio is already on disk, so there is no
-                            // backend to choose, no yt-dlp to run and nothing to download. It comes
-                            // back as an ordinary http://127.0.0.1 URL that Media3 can seek in.
-                            routedUrl = com.varuna.rustify.audio.StreamRouting.cachedUrlFor(context, trackId)
-                            if (routedUrl != null) {
-                                android.util.Log.d("AudioPlayerService", "Playing $trackId from the stream cache")
-                            } else {
-                                // Persisted URL cache — avoids an unnecessary yt-dlp resolution.
-                                val cachedUrl = getCachedStreamUrl(trackId)
-                                if (!cachedUrl.isNullOrBlank()) {
-                                    streamUrl = cachedUrl
-                                    android.util.Log.d("AudioPlayerService", "Using persisted cached URL for $trackId")
-                                }
+                            val alternative = NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() &&
+                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                            if (alternative) com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
+                        }
+
+                        android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
+                        // Resolve OFF the main thread. Providers already switch to IO internally,
+                        // but isAvailableFor() (e.g. Invidious fetching its instance directory) runs
+                        // outside their withContext, so a stalled directory fetch could still jank the
+                        // UI thread. Wrapping the whole chain call here guarantees the main thread stays
+                        // free during a slow/hung backend resolution.
+                        val res = withContext(Dispatchers.IO) {
+                            com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                                .resolveStreamUrl(track, hint = effectiveYoutubeId)
+                        }
+                        res.onSuccess { (providerId, info) ->
+                            streamUrl = info.uri
+                            lastResolveError = null   // clear any stale failure reason on success
+                            // Remembered per track, for when the next play comes from the cache.
+                            // Not from a preview: that is a different recording under this id.
+                            if (!isPreview) info.loudnessDb?.let {
+                                com.varuna.rustify.audio.LoudnessStore.put(context, trackId, it)
+                            }
+                            // Remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
+                            info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
+                            android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
+                            // Start filling the stream cache in the background, so the *next*
+                            // play of this track skips everything above. It does not delay this
+                            // one: the answer is null unless the bytes happen to be there
+                            // already, and then playing them is strictly better anyway.
+                            //
+                            // Never from a preview: those bytes are a candidate being auditioned
+                            // under the real track's id, and storing them makes the audition
+                            // permanent whether or not the user accepts it.
+                            if (!isPreview) {
+                                val routed = com.varuna.rustify.audio.StreamRouting
+                                    .rememberAfterResolving(context, trackId, info)
+                                // "and then playing them is strictly better anyway" is true for
+                                // exactly one case: no hint. The cache is keyed by the *track*
+                                // (`g<gen>-<trackId>`, never the video), so with a hint the file
+                                // on disk is the recording being replaced — and it is handed
+                                // back here, past the `effectiveYoutubeId.isNullOrBlank()` guard
+                                // above, because that guard is on the *read* and this is the
+                                // *write* returning a URL as a side effect.
+                                //
+                                // This is the bug where every alternative you previewed played
+                                // the current song: the chain resolved the right video, yt-dlp
+                                // returned the right URL, and then `routedUrl` won. Confirming a
+                                // choice worked only because that path calls `StreamRouting
+                                // .forget` first, which is why previewing looked broken and
+                                // accepting did not.
+                                //
+                                // The call still happens: after a confirmed alternative the old
+                                // file is gone and this is what starts caching the new one.
+                                routedUrl = if (effectiveYoutubeId.isNullOrBlank()) routed else null
                             }
                         }
-                    }
-                    if (streamUrl == null && routedUrl == null) {
-                        if (effectiveYoutubeId.isNullOrBlank()) streamUrl = preResolvedUrls[trackId]
-                        if (streamUrl.isNullOrBlank()) {
-                            // Network resolution now lives in the backend chain
-                            // (AudioSourceRegistry.streamChain). yt-dlp is the default provider;
-                            // `hint` is the explicit youtubeId of a chosen alternative.
-                            android.util.Log.d("AudioPlayerService", "Resolving stream URL via audio chain for $trackId (hint=$youtubeId)...")
-                            // Resolve OFF the main thread. Providers already switch to IO internally,
-                            // but isAvailableFor() (e.g. Invidious fetching its instance directory) runs
-                            // outside their withContext, so a stalled directory fetch could still jank the
-                            // UI thread. Wrapping the whole chain call here guarantees the main thread stays
-                            // free during a slow/hung backend resolution.
-                            val res = withContext(Dispatchers.IO) {
-                                com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
-                                    .resolveStreamUrl(track, hint = effectiveYoutubeId)
-                            }
-                            res.onSuccess { (providerId, info) ->
-                                streamUrl = info.uri
-                                lastResolveError = null   // clear any stale failure reason on success
-                                // Remembered per track, for when the next play comes from the cache.
-                                // Not from a preview: that is a different recording under this id.
-                                if (!isPreview) info.loudnessDb?.let {
-                                    com.varuna.rustify.audio.LoudnessStore.put(context, trackId, it)
-                                }
-                                // Remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
-                                info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
-                                android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
-                                // Start filling the stream cache in the background, so the *next*
-                                // play of this track skips everything above. It does not delay this
-                                // one: the answer is null unless the bytes happen to be there
-                                // already, and then playing them is strictly better anyway.
-                                //
-                                // Never from a preview: those bytes are a candidate being auditioned
-                                // under the real track's id, and storing them makes the audition
-                                // permanent whether or not the user accepts it.
-                                if (!isPreview) {
-                                    val routed = com.varuna.rustify.audio.StreamRouting
-                                        .rememberAfterResolving(context, trackId, info)
-                                    // "and then playing them is strictly better anyway" is true for
-                                    // exactly one case: no hint. The cache is keyed by the *track*
-                                    // (`g<gen>-<trackId>`, never the video), so with a hint the file
-                                    // on disk is the recording being replaced — and it is handed
-                                    // back here, past the `effectiveYoutubeId.isNullOrBlank()` guard
-                                    // above, because that guard is on the *read* and this is the
-                                    // *write* returning a URL as a side effect.
-                                    //
-                                    // This is the bug where every alternative you previewed played
-                                    // the current song: the chain resolved the right video, yt-dlp
-                                    // returned the right URL, and then `routedUrl` won. Confirming a
-                                    // choice worked only because that path calls `StreamRouting
-                                    // .forget` first, which is why previewing looked broken and
-                                    // accepting did not.
-                                    //
-                                    // The call still happens: after a confirmed alternative the old
-                                    // file is gone and this is what starts caching the new one.
-                                    routedUrl = if (effectiveYoutubeId.isNullOrBlank()) routed else null
-                                }
-                            }
-                            res.onFailure { e ->
-                                // Surface the real per-provider reason so the banner isn't just "not playable".
-                                val detail = (e as? com.varuna.rustify.audio.AudioSourceChainException)
-                                    ?.errors?.mapNotNull { it.message }?.joinToString("; ")
-                                    ?.takeIf { it.isNotBlank() } ?: e.message
-                                android.util.Log.w("AudioPlayerService", "Stream chain failed for $trackId: $detail")
-                                lastResolveError = detail
-                            }
-                        } else {
-                            android.util.Log.d("AudioPlayerService", "Using pre-buffered stream URL for $trackId")
-                            preResolvedUrls.remove(trackId)
+                        res.onFailure { e ->
+                            // Surface the real per-provider reason so the banner isn't just "not playable".
+                            val detail = (e as? com.varuna.rustify.audio.AudioSourceChainException)
+                                ?.errors?.mapNotNull { it.message }?.joinToString("; ")
+                                ?.takeIf { it.isNotBlank() } ?: e.message
+                            android.util.Log.w("AudioPlayerService", "Stream chain failed for $trackId: $detail")
+                            lastResolveError = detail
                         }
                     }
                 }
-
                 if (streamUrl.isNullOrBlank() && routedUrl.isNullOrBlank()) {
                     // Auto-retry the extraction failure instead of leaving the user stuck.
                     scheduleExtractionRetry(track, effectiveYoutubeId)
