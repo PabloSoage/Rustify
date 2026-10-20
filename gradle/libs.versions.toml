@@ -1,13 +1,13 @@
 [versions]
 agp = "9.4.1"
-coreKtx = "1.19.0"
+coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 lifecycleRuntimeCompose = "2.11.0"
 activityCompose = "1.13.0"
-kotlin = "2.4.20"
+kotlin = "2.4.21"
 composeBom = "2026.09.00"
 coilCompose = "2.7.0"
 media3 = "1.11.1"
@@ -24,14 +24,14 @@ playServicesAuth = "22.0.0"
 okhttp = "5.5.0"
 # E99 — MapLibre GL (open-source, keyless map). Routing via OSRM + geocoding via Nominatim are
 # plain HTTP (no extra dependency). Verify this artifact resolves on your first Gradle sync.
-maplibre = "13.6.1"
+maplibre = "13.7.1"
 # E50 (B) — AppAuth (RFC 8252 + PKCE): browser-based Google OAuth with a single cert-independent
 # client, so Drive backup works on any build (including forks), like the paimon.moe web model.
 appauth = "0.11.1"
 # P — the wire shape of every Spotify model is declared once, in core_engine/src/spotify/models.rs,
 # and decoded here by a generated parser instead of 500 lines of hand-written org.json reads.
 # See bridge/SpotifyModels.kt.
-kotlinxSerialization = "1.11.0"
+kotlinxSerialization = "1.12.0"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
