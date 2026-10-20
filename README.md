@@ -3,11 +3,11 @@
 **Rustify** is an Android music player that uses your Spotify library as the catalogue and a backend
 of your own choosing for the audio, over a native **Rust core** wired in through JNI.
 
-It is a personal project, released as betas. It needs your own accounts — a Spotify session for the
-metadata, plus whatever the audio backend you pick asks for — and it keeps everything it knows about
-you on your own device.
+It is a personal project, released as betas. Local music, YouTube Music and search work without any
+account; your own Spotify session brings in your library and Home, plus whatever the audio backend
+you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `3.7.0b` · core `3.7.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.0.0b` · core `4.0.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
@@ -71,7 +71,7 @@ you on your own device.
 - **AI DJ** — Automixes from your listening history in three modes: heuristic (offline, rule-based),
   external OpenAI-compatible API, and local. Custom base URL, model and key; defaults to a keyless
   endpoint.
-- **Listening metrics** — Plays, time and streaks aggregated by track, artist and album with
+- **Listening metrics** — Every play kept, with no ceiling, in the core. Plays, time and streaks aggregated by track, artist and album with
   daily/weekly/monthly filters and a full history. Imports Spotify's Extended and legacy
   `StreamingHistory*.json` exports, with deduplication.
 - **Song Radio** — A playlist of similar tracks from any Spotify track, on every detail screen.
@@ -118,7 +118,7 @@ you on your own device.
 ### 🪵 Developer & Diagnostics
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 257 in the Rust engine (unit plus end-to-end) and 21 in Kotlin, run by
+- **Tests** — 276 in the Rust engine (unit plus end-to-end) and 50 in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
 - **Internationalization** — English, Spanish and Japanese.
