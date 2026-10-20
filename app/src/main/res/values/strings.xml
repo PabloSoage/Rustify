@@ -532,8 +532,6 @@
     <!-- E124 — virtual mouse -->
     <string name="web_player_pointer">Pointer</string>
     <string name="web_player_pointer_hint">Drag to move the pointer · tap to click · two-finger tap to play · two fingers to scroll.</string>
-    <string name="web_player_desktop_playback">Play through the desktop page</string>
-    <string name="web_player_desktop_playback_desc">Off: the phone page, which starts instantly but plays shuffled without Premium. On: the desktop page — on-demand in theory, but it has never been observed to produce audio here, so it is kept for testing only.</string>
     <string name="web_player_adblock">Block trackers</string>
     <string name="web_player_adblock_desc">Filters third-party ads and trackers in the web player with uBlock Origin\'s lists. Spotify\'s own servers are never filtered. Turn it off if a page misbehaves.</string>
     <string name="playlists_load_failed">Could not load your playlists: %1$s</string>
@@ -627,4 +625,6 @@
     <string name="library_spotify_signed_out">Connect Spotify to see your playlists and liked songs here.</string>
     <string name="home_offline">No connection</string>
     <string name="backend_innertube">YouTube (direct, fast)</string>
+    <string name="settings_normalize_volume">Normalize volume</string>
+    <string name="settings_normalize_volume_desc">Turns loud recordings down so every song plays at the same level, as Spotify does. Uses the loudness YouTube measures for each upload; your local files are left as they are.</string>
 </resources>

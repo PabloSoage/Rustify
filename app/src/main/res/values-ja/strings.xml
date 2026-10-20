@@ -317,8 +317,6 @@
     <!-- E124 — 仮想マウス -->
     <string name="web_player_pointer">ポインタ</string>
     <string name="web_player_pointer_hint">ドラッグでポインタを移動 · タップでクリック · 2本指タップで再生 · 2本指でスクロール。</string>
-    <string name="web_player_desktop_playback">デスクトップ版ページで再生</string>
-    <string name="web_player_desktop_playback_desc">オフ：モバイル版ページ。即座に始まりますが、Premium でない場合はシャッフル再生になります。オン：デスクトップ版ページ。理論上はオンデマンドですが、この端末で音が出たことは一度もないため、検証用としてのみ残しています。</string>
     <string name="web_player_adblock">トラッカーをブロック</string>
     <string name="web_player_adblock_desc">uBlock Origin のフィルターリストで、ウェブプレーヤー内のサードパーティ広告とトラッカーを遮断します。Spotify 自身のサーバーは決して遮断しません。ページの動作がおかしいときはオフにしてください。</string>
     <string name="playlists_load_failed">プレイリストを読み込めませんでした：%1$s</string>
@@ -624,4 +622,6 @@
     <string name="library_spotify_signed_out">Spotify を接続すると、ここにプレイリストとお気に入りの曲が表示されます。</string>
     <string name="home_offline">接続がありません</string>
     <string name="backend_innertube">YouTube (直接・高速)</string>
+    <string name="settings_normalize_volume">音量を均一にする</string>
+    <string name="settings_normalize_volume_desc">音の大きい録音を下げて、Spotify のように全曲を同じ音量で再生します。YouTube が測定した音量を使用し、ローカルファイルはそのままです。</string>
 </resources>

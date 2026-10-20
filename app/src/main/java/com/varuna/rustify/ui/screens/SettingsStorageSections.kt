@@ -543,3 +543,43 @@ internal fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
+
+/**
+ * Loudness normalisation (4.2): loud recordings turned down to YouTube's reference, so consecutive
+ * songs from different uploads sound equally loud. On by default; local files are never touched.
+ */
+@Composable
+internal fun NormalizeVolumeSection(context: Context) {
+    var enabled by remember {
+        mutableStateOf(com.varuna.rustify.audio.LoudnessStore.isEnabled(context))
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_normalize_volume),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { on ->
+                        enabled = on
+                        context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean(com.varuna.rustify.audio.LoudnessStore.PREF_ENABLED, on)
+                            .apply()
+                    }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.settings_normalize_volume_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}

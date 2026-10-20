@@ -223,9 +223,6 @@ internal fun WebPlayerSection(context: Context) {
     val scope = rememberCoroutineScope()
     val green = Color(0xFF1DB954)
     var enabled by remember { mutableStateOf(prefs.getBoolean("web_player_backend", false)) }
-    var desktopPlayback by remember {
-        mutableStateOf(com.varuna.rustify.webplayer.WebPlayerController.playbackUsesDesktop(context))
-    }
     var adblock by remember {
         mutableStateOf(com.varuna.rustify.webplayer.WebPlayerController.adblockEnabled(context))
     }
@@ -254,17 +251,6 @@ internal fun WebPlayerSection(context: Context) {
                     enabled = it
                     prefs.edit { putBoolean("web_player_backend", it) }
                     com.varuna.rustify.player.AudioPlayerService.instance?.setWebPlayerMode(it)
-                }
-            )
-
-            Spacer(Modifier.height(8.dp))
-            SettingSwitchRow(
-                title = stringResource(R.string.web_player_desktop_playback),
-                desc = stringResource(R.string.web_player_desktop_playback_desc),
-                checked = desktopPlayback,
-                onChange = {
-                    desktopPlayback = it
-                    com.varuna.rustify.webplayer.WebPlayerController.setPlaybackUsesDesktop(context, it)
                 }
             )
 

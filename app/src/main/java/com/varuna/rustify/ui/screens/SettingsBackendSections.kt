@@ -470,6 +470,7 @@ internal fun AudioBackendsSection(context: Context) {
 
     AddonsSection(context, onAddonsChanged = { backendsRevision++ })
     AutoplayRadioSection(context)
+    NormalizeVolumeSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     CastingSection(context)

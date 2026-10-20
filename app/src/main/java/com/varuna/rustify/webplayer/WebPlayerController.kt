@@ -106,7 +106,6 @@ object WebPlayerController {
 
     private const val PREFS = "rustify_settings"
     private const val KEY_LAYOUT_WIDTH = "web_player_layout_width"
-    private const val KEY_PLAYBACK_DESKTOP = "web_player_playback_desktop"
     private const val KEY_ADBLOCK = "web_player_adblock"
 
     /**
@@ -178,35 +177,6 @@ object WebPlayerController {
         cachedAdblock = on
     }
 
-    /**
-     * Which page the *backend* plays through, independently of the layout you browse in.
-     *
-     * The two behave differently and neither is strictly better, so this is a switch rather than a
-     * decision baked into the code:
-     *
-     *  - **Phone page** (default). Starts instantly on a tap — measured. But it is the mobile site,
-     *    so on an account without Premium it plays shuffled, and the backend can end up on a
-     *    different track than the one it asked for.
-     *  - **Desktop page.** On-demand and no shuffle restriction, but it is a Spotify Connect remote
-     *    before it is a player: unless this browser is the active device, its play button asks
-     *    whatever device you last used, and nothing happens here. [takeOverPlaybackDevice] is what
-     *    makes that case recoverable.
-     */
-    @Volatile private var cachedPlaybackDesktop = false
-
-    /** Reads and caches [KEY_PLAYBACK_DESKTOP]; the cache is what the playback path can reach. */
-    fun playbackUsesDesktop(context: Context): Boolean {
-        cachedPlaybackDesktop = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_PLAYBACK_DESKTOP, false)
-        return cachedPlaybackDesktop
-    }
-
-    /** Persists the choice. Takes effect on the next track opened; nothing is reloaded now. */
-    fun setPlaybackUsesDesktop(context: Context, desktop: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit { putBoolean(KEY_PLAYBACK_DESKTOP, desktop) }
-        cachedPlaybackDesktop = desktop
-    }
 
     /**
      * Layout widths the page can be laid out at, in CSS pixels, cycled from the screen's top bar —
@@ -283,7 +253,6 @@ object WebPlayerController {
     fun getOrCreate(context: Context): WebView {
         webView?.let { return it }
         val width = layoutWidth(context)
-        playbackUsesDesktop(context)   // prime the cache; the playback path has no Context
         adblockEnabled(context)
         val wv = WebView(context.applicationContext).apply {
             // See the note in SpotifyLoginWebView: Compose's AndroidView would otherwise leave this
@@ -480,12 +449,6 @@ object WebPlayerController {
     @Volatile var lastPlayAttempt: String? = null
         private set
 
-    /**
-     * Result of the last attempt to claim playback for this page, or null if it was never needed
-     * (which is the good case — it means the page had a player of its own).
-     */
-    @Volatile var lastDeviceTakeover: String? = null
-        private set
 
     /**
      * The last few distinct JavaScript errors the page reported, newest last.
@@ -573,9 +536,8 @@ object WebPlayerController {
      * Opens a Spotify entity in the page and starts it. [url] is a plain https Spotify URL; the page
      * is a SPA, so this navigates and then autoplays once the transport button appears.
      *
-     * **Playback picks its own page**, independently of the layout the screen is browsing in — see
-     * [cachedPlaybackDesktop]. Nothing is reloaded for it, because opening a track is a navigation
-     * anyway.
+     * **Playback always uses the phone page**, whatever layout the screen is browsing in. Since 4.2
+     * there is no switch: the desktop page is refused by the server (docs 101 §12), measured.
      *
      * The desktop page was the obvious choice — it is the one with a real library — but measured, it
      * does not play here. The self-test reached the point of reporting
@@ -592,7 +554,7 @@ object WebPlayerController {
         _state.value = WebState()
         mainHandler.post {
             runCatching {
-                val ua = userAgentFor(cachedPlaybackDesktop, systemUserAgent ?: wv.settings.userAgentString)
+                val ua = userAgentFor(false, systemUserAgent ?: wv.settings.userAgentString)
                 if (wv.settings.userAgentString != ua) wv.settings.userAgentString = ua
             }
             runCatching { wv.loadUrl(url) }
@@ -669,126 +631,6 @@ object WebPlayerController {
             }
         }
     }
-
-    // -------------------------------------------------------------------------------------------
-    // Spotify Connect: making this page the device
-    // -------------------------------------------------------------------------------------------
-
-    /**
-     * Tells the page to play **here** instead of wherever the account last played.
-     *
-     * Spotify's transport bar is a Connect remote first and a player second: it shows the state of
-     * your last active device, and its play button asks *that* device to resume. Reported exactly
-     * that way — "I see my last Spotify playback in the miniplayer, but it won't let me interact with
-     * play" — and it matches a self-test that finds the button, clicks it, and never hears anything.
-     * The click was not being ignored; it was being sent somewhere else.
-     *
-     * The fix is the same one a person would do: open the device picker and choose this browser. Two
-     * evaluations with a pause between them, because the list is rendered when the picker opens.
-     *
-     * Returns a short description of what happened, for the self-test — **including which selector
-     * opened the picker**. The first measurement that reached this step answered "this browser not in
-     * device list (1 entries, 0 skipped)", and one entry is not a device list; it is far more likely
-     * that the button that got clicked was not the device picker at all. Without naming the selector
-     * there is no way to tell those apart, and the fallbacks match on a fragment of a label
-     * ("onnect", "onectar") that other buttons can carry too.
-     *
-     * Tried repeatedly, because it **is** a race and that is measured, not assumed: two consecutive
-     * runs of the same build, on the same page, answered `switched to "Este navegador web"` and then
-     * `not in list of 3` with only the cookie-settings control in it. The device list is not rendered
-     * with the picker — it is fetched, and until it arrives the popover is an empty dialog. Two
-     * attempts were not enough; five over four seconds cost nothing when the alternative is a
-     * diagnostic that reports a different thing each time it is run.
-     */
-    suspend fun takeOverPlaybackDevice(): String {
-        val opened = eval(JS_OPEN_DEVICE_PICKER) ?: "no answer"
-        if (!opened.startsWith("opened")) return opened
-        val via = opened.removePrefix("opened via ").take(28)
-        var picked = "no answer"
-        repeat(5) { attempt ->
-            delay(if (attempt == 0) 700 else 850)
-            picked = eval(JS_PICK_THIS_BROWSER) ?: picked
-            if (!picked.startsWith("not in")) return "$via → $picked"
-        }
-        return "$via → $picked"
-    }
-
-    private const val JS_OPEN_DEVICE_PICKER = """
-        (function(){
-          try {
-            var sels = [
-              '[data-testid="control-button-connect-to-device"]',
-              '[data-testid="connect-device-picker-trigger"]',
-              'button[aria-label*="onnect"]',
-              'button[aria-label*="onectar"]',
-              'button[aria-label*="ispositiv"]'
-            ];
-            for (var i = 0; i < sels.length; i++) {
-              var b = document.querySelector(sels[i]);
-              if (!b) continue;
-              b.click();
-              // The last three match a fragment of an accessible label, which other buttons can carry
-              // too. Naming the one that was actually clicked is what tells a picker that opened onto
-              // the wrong list from a picker that was never opened.
-              var lbl = (b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 20);
-              return 'opened via ' + (i < 2 ? sels[i].slice(0, 24) : 'label "' + lbl + '"');
-            }
-            return 'no device picker';
-          } catch (e) { return 'error'; }
-        })();
-    """
-
-    /**
-     * Picks the entry that *is* this browser. Spotify labels it differently per platform and
-     * language ("Web Player (Chrome)", "This web browser", "Este navegador web"), so the list is
-     * matched on text rather than on a position or an id.
-     *
-     * Two entries can match that description at once, which broke the first version of this: open
-     * the phone page, let it register, then switch to desktop and the picker lists a **"Mobile Web
-     * Player"** alongside this one. Clicking the first "web player" in the list then transfers
-     * playback to the device we are trying to move away from — reported as "I click this browser
-     * and it doesn't change". So phone entries are excluded, and so is whichever entry is already
-     * the active device, since selecting that is by definition a no-op.
-     *
-     * When nothing matches it now **quotes what it did find**. "1 entries, 0 skipped" was a dead end:
-     * a count cannot say whether the list was the wrong list, whether Spotify renamed the entry, or
-     * whether the picker had not rendered yet. The labels can, and they are the only thing here that
-     * Spotify is free to change without warning.
-     */
-    private const val JS_PICK_THIS_BROWSER = """
-        (function(){
-          try {
-            var items = document.querySelectorAll(
-              '[data-testid="device-picker-item"], [data-testid="connect-device-list-item"], ' +
-              '[data-testid="connect-device-list-item-current"], [data-testid*="device"], ' +
-              'li button, [role="menuitem"], [role="menuitemradio"], [role="option"]'
-            );
-            var dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]').length;
-            var wanted = /(web ?player|this (web )?browser|este navegador|ce navigateur|dieser browser)/i;
-            var notHere = /(mobile|m[oó]vil|phone|tel[eé]fono|android|iphone|ipad|tablet|tv|speaker|altavoz)/i;
-            var skipped = 0, seen = [];
-            for (var i = 0; i < items.length; i++) {
-              var el = items[i];
-              var t = (el.textContent || '').trim().replace(/\s+/g, ' ');
-              // Empty entries told us nothing last time and there were two of them. Only labelled
-              // ones are worth the space on the report.
-              if (t && seen.length < 4) seen.push('"' + t.slice(0, 22) + '"');
-              if (!wanted.test(t)) continue;
-              if (notHere.test(t)) { skipped++; continue; }
-              // Already the active device: Spotify marks it, and clicking it changes nothing.
-              var active = el.getAttribute('aria-checked') === 'true' ||
-                           el.getAttribute('aria-current') === 'true' ||
-                           (el.getAttribute('data-testid') || '').indexOf('current') !== -1;
-              if (active) { skipped++; continue; }
-              el.click();
-              return 'switched to "' + t.slice(0, 28) + '"';
-            }
-            return 'not in list of ' + items.length + ' (' + dialogs + ' dialogs, ' +
-                   skipped + ' skipped): ' +
-                   (seen.length ? seen.join(' ') : 'nothing labelled');
-          } catch (e) { return 'error'; }
-        })();
-    """
 
     /**
      * Waits until a **real, secure** document has been parsed.
@@ -890,9 +732,8 @@ object WebPlayerController {
     suspend fun awaitPlaybackStart(timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         var polls = 0
-        var tookOver = false
+        var presses = 0
         lastPlayAttempt = null
-        lastDeviceTakeover = null
         while (System.currentTimeMillis() < deadline) {
             delay(POLL_INTERVAL_MS)
             refreshState()
@@ -901,43 +742,24 @@ object WebPlayerController {
             // The first polls are ignored: a navigation that has not committed yet can still be
             // answered by the outgoing page, which reads as "already playing".
             if (polls > 2 && s.available && s.isPlaying && s.positionMs > 0) return true
-            // Every ~1.6s: the transport may only just have rendered. Note this must NOT be gated on
-            // `available`, which is "there is a media element or media-session metadata" — both false
-            // on a page that has never played, which is precisely when play needs pressing. Gating on
-            // it meant the nudges never fired for a freshly opened track.
-            // Metadata with no media element of its own: the page is showing another device's
-            // playback and every click is being forwarded there. Pressing play harder will not help
-            // — claim the playback first, once, and then go back to nudging.
+            // Pressed at ~1.6 s, when the transport has usually rendered, and once more at ~4.8 s.
+            // Not gated on `available` ("there is a media element or media-session metadata"), which
+            // is false on a page that has never played — exactly when play needs pressing.
             //
-            // Only on the desktop page. The phone page registers itself as a Connect device and
-            // plays locally, so a takeover there can only move playback *away* — which it did,
-            // audibly, while the media element was going undetected (see [JS_MEDIA_FN]).
-            //
-            // The title requirement is gone. It was there to identify the "showing another device"
-            // case specifically, and it meant the takeover never ran once: the desktop page under
-            // test publishes no media-session metadata at all, so the title is blank and the
-            // condition could not be met on the very page it was written for — no `takeover:` has
-            // appeared in any measurement. Claiming playback for a page that simply has not rendered
-            // yet costs nothing: [JS_PICK_THIS_BROWSER] skips the entry that is already active and
-            // every phone entry, and it runs once.
-            if (!tookOver && cachedPlaybackDesktop && polls > 6 && !s.hasLocalMedia) {
-                tookOver = true
-                lastDeviceTakeover = takeOverPlaybackDevice()
-                // Press it again right away when the takeover actually landed. Until now the next
-                // nudge was up to four polls away, and the click before it went to a different device
-                // by definition — that is what the takeover was for. Waiting after succeeding wastes
-                // the only part of the attempt that changed anything.
-                if (lastDeviceTakeover?.contains("switched to") == true) {
-                    lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
-                }
-                continue
+            // Twice and no more (T11). This used to press every 1.6 s for the whole wait: about nine
+            // play commands in eleven seconds at a server that was not going to answer, which is the
+            // kind of pattern an anti-abuse system penalises — and the session was lost once during
+            // the 3.7.4 investigation. Read rather than fired and forgotten: it is the only evidence of
+            // whether the button was even there, and it is what the self-test reports on failure.
+            if (presses < MAX_PLAY_PRESSES && polls % 8 == 4) {
+                presses++
+                lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
             }
-            // Read the result rather than firing and forgetting: it is the only evidence of whether
-            // the button was even there, and it is what the self-test reports on failure.
-            if (polls % 4 == 0) lastPlayAttempt = eval(JS_AUTOPLAY, timeoutMs = 2_000) ?: "no answer"
         }
         return false
     }
+
+    private const val MAX_PLAY_PRESSES = 2
 
     private const val POLL_INTERVAL_MS = 400L
 

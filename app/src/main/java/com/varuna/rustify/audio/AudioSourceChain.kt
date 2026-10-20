@@ -1,7 +1,14 @@
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -17,6 +24,8 @@ import java.util.concurrent.ConcurrentHashMap
 class AudioSourceChain(
     private val providers: List<AudioSourceProvider>,
     private val perProviderTimeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    /** How long the provider in front gets before the next one starts alongside it. */
+    private val hedgeAfterMs: Long = DEFAULT_HEDGE_MS,
     /** trackId -> provider.id that served the stream last time. Shared between chains so the
      *  cache persists across calls (the registry keeps it). */
     private val lastGood: ConcurrentHashMap<String, String> = ConcurrentHashMap()
@@ -66,42 +75,90 @@ class AudioSourceChain(
                 )
             )
         }
+        val streamers = ordered.filter { it.capabilities.canStream }
         val errors = mutableListOf<Throwable>()
-        for (p in ordered) {
-            if (!p.capabilities.canStream) continue
-            // isAvailableFor() must run INSIDE the timeout. It can do network I/O (e.g. Invidious
-            // fetching its instance directory); if it ran outside, a stalled directory fetch would hang
-            // the whole resolution with no upper bound, a prime cause of play-time ANRs. A null result
-            // means "not available for this track" -> skip quietly (no error).
-            val budget = p.capabilities.resolveTimeoutMs ?: perProviderTimeoutMs
-            val startedAt = System.currentTimeMillis()
-            val r = runCatching {
-                withTimeout(budget) {
-                    if (!p.isAvailableFor(track)) null
-                    else p.resolveStreamUrl(track, hint).getOrThrow()
+        if (streamers.isEmpty()) return Result.failure(AudioSourceChainException(errors))
+
+        // ## Hedged, not sequential (4.2)
+        //
+        // One provider at a time meant that a provider which hung spent its whole budget before the
+        // next one started: up to 40 s of silence for yt-dlp alone. Now the next provider starts as
+        // soon as the previous one *fails*, or after [hedgeAfterMs] if it has not answered — without
+        // cancelling it — and the first success wins. The user's order still decides who starts
+        // first; what changes is that a slow provider no longer blocks a fast one behind it.
+        // Providers run in a scope of their own, which is cancelled but **not awaited** on the way out.
+        // A losing yt-dlp is a blocking process that ignores cancellation until it returns: under
+        // `coroutineScope` the winner waited for it (measured: 20.9 s for an answer ready at 3 s).
+        val racing = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        return try {
+            val results = Channel<Pair<AudioSourceProvider, Result<StreamInfo?>>>(Channel.UNLIMITED)
+            var next = 0
+            var running = 0
+
+            fun launchNext() {
+                val p = streamers[next++]
+                running++
+                racing.launch {
+                    // isAvailableFor() must run INSIDE the timeout. It can do network I/O (e.g.
+                    // Invidious fetching its instance directory); if it ran outside, a stalled
+                    // directory fetch would hang the whole resolution with no upper bound. A null
+                    // result means "not available for this track" -> skip quietly (no error).
+                    val budget = p.capabilities.resolveTimeoutMs ?: perProviderTimeoutMs
+                    val startedAt = System.currentTimeMillis()
+                    val r = runCatching {
+                        withTimeout(budget) {
+                            if (!p.isAvailableFor(track)) null
+                            else p.resolveStreamUrl(track, hint).getOrThrow()
+                        }
+                    }
+                    // Logged whatever happens, because "it timed out" on its own says nothing about
+                    // whether the ceiling was too low or the provider was hung.
+                    android.util.Log.d(
+                        TAG,
+                        "${p.capabilities.id}: ${System.currentTimeMillis() - startedAt} ms of $budget " +
+                            (if (r.isSuccess) "ok" else "-> ${r.exceptionOrNull()?.message}")
+                    )
+                    results.send(p to r)
                 }
             }
-            // Logged whatever happens, because "it timed out" on its own says nothing about whether
-            // the ceiling was too low or the provider was hung — and that is the difference between
-            // raising a number and fixing a bug.
-            android.util.Log.d(
-                TAG,
-                "${p.capabilities.id}: ${System.currentTimeMillis() - startedAt} ms of $budget " +
-                    (if (r.isSuccess) "ok" else "-> ${r.exceptionOrNull()?.message}")
-            )
-            val info = r.getOrNull()
-            if (r.isSuccess && info != null) {
-                lastGood[trackId] = p.capabilities.id
-                return Result.success(p.capabilities.id to info)
+
+            launchNext()
+            var winner: Pair<String, StreamInfo>? = null
+            while (winner == null && (running > 0 || next < streamers.size)) {
+                val got = if (running > 0 && next < streamers.size) {
+                    withTimeoutOrNull(hedgeAfterMs) { results.receive() }
+                } else if (running > 0) {
+                    results.receive()
+                } else {
+                    null
+                }
+                if (got == null) {
+                    // Nobody answered in time (or nothing is running): bring in the next one.
+                    launchNext()
+                    continue
+                }
+                running--
+                val (p, r) = got
+                val info = r.getOrNull()
+                when {
+                    r.isSuccess && info != null -> {
+                        lastGood[trackId] = p.capabilities.id
+                        winner = p.capabilities.id to info
+                    }
+                    r.isSuccess -> Unit // unavailable for this track: skip without an error
+                    else -> r.onFailure { e ->
+                        // Tagged with the provider id so the aggregated message names who failed.
+                        errors += labelError(p.capabilities.id, e)
+                        if (lastGood[trackId] == p.capabilities.id) lastGood.remove(trackId)
+                    }
+                }
+                // A provider that is done (failed or unavailable) frees its turn immediately.
+                if (winner == null && running == 0 && next < streamers.size) launchNext()
             }
-            if (r.isSuccess) continue // provider unavailable for this track — skip without logging an error
-            r.onFailure { e ->
-                // Tag the error with the provider id so the aggregated message names who failed and why.
-                errors += labelError(p.capabilities.id, e)
-                if (lastGood[trackId] == p.capabilities.id) lastGood.remove(trackId)
-            }
+            winner?.let { Result.success(it) } ?: Result.failure(AudioSourceChainException(errors))
+        } finally {
+            racing.cancel()
         }
-        return Result.failure(AudioSourceChainException(errors))
     }
 
     /** Downloads to [dst]; same fallback pattern, filtering by capabilities.canDownload. */
@@ -160,6 +217,8 @@ class AudioSourceChain(
     companion object {
         private const val TAG = "AudioSourceChain"
         const val DEFAULT_TIMEOUT_MS = 15_000L
+        /** Long enough for InnerTube to find the video and answer (2–3 s when unmapped). */
+        const val DEFAULT_HEDGE_MS = 4_000L
         /** Downloads are full file transfers (can take minutes); resolve-sized timeouts would abort them. */
         const val DOWNLOAD_TIMEOUT_MS = 20 * 60_000L
     }

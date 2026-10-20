@@ -530,8 +530,6 @@
     <!-- E124 — ratón virtual -->
     <string name="web_player_pointer">Puntero</string>
     <string name="web_player_pointer_hint">Arrastra para mover el puntero · toca para hacer clic · toca con dos dedos para reproducir · dos dedos para desplazar.</string>
-    <string name="web_player_desktop_playback">Reproducir con la página de escritorio</string>
-    <string name="web_player_desktop_playback_desc">Desactivado: la página de móvil, que arranca al instante pero reproduce en aleatorio sin Premium. Activado: la página de escritorio; a la carta en teoría, pero aquí nunca se ha conseguido que suene, así que se mantiene solo para pruebas.</string>
     <string name="web_player_adblock">Bloquear rastreadores</string>
     <string name="web_player_adblock_desc">Filtra anuncios y rastreadores de terceros en el reproductor web con las listas de uBlock Origin. Los servidores de Spotify nunca se filtran. Desactívalo si alguna página se comporta de forma rara.</string>
     <string name="playlists_load_failed">No se pudieron cargar tus playlists: %1$s</string>
@@ -625,4 +623,6 @@
     <string name="library_spotify_signed_out">Conecta Spotify para ver aquí tus listas y tus canciones favoritas.</string>
     <string name="home_offline">Sin conexión</string>
     <string name="backend_innertube">YouTube (directo, rápido)</string>
+    <string name="settings_normalize_volume">Normalizar volumen</string>
+    <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
 </resources>

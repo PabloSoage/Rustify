@@ -135,9 +135,6 @@ object WebPlayerDiagnostics {
             if (heard.isBlank()) media else "$heard · $media"
         } else buildString {
             append(WebPlayerController.lastPlayAttempt ?: "play never attempted")
-            // Present only when the page turned out to be a remote for another device, which is the
-            // one failure that looks exactly like success right up to the sound.
-            WebPlayerController.lastDeviceTakeover?.let { append(" · takeover: $it") }
             append(" · ")
             append(media)
             // Which third parties we stopped during this attempt. The page cannot tell a request we

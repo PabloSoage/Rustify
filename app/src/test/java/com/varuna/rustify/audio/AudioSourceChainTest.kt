@@ -1,162 +1,115 @@
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /**
- * What the chain does with a `hint`.
+ * The chain's decisions, with fake providers and real (short) clocks.
  *
- * A hint is a YouTube video id — the alternative the user picked in the dialog, or is previewing.
- * Deezer and add-ons resolve from the track's own metadata: handed a video id they ignore it and
- * answer **successfully** with the recording the user was trying to replace. A successful wrong
- * answer ends the chain, so with either of them first nothing else is ever asked and every
- * candidate plays the same thing.
- *
- * Found while chasing the 3.7.2 preview bug and **not** its cause — that one was the track-keyed
- * stream cache overriding a correctly resolved URL, and it bit a yt-dlp-only setup where this
- * cannot. Kept and pinned because it is a real second way to reach the identical symptom, and
- * because it only shows up for someone who has Deezer or an add-on enabled, which is the kind of
- * bug that gets reported as "works for me".
+ * What these pin: a slow provider no longer holds up a fast one behind it (4.2), a failure hands
+ * over immediately, and a YouTube hint still never reaches a provider that cannot honour it.
  */
 class AudioSourceChainTest {
 
-    private val track = FullTrack(
-        id = "4cOdK2wGLETKBW3PvgPWqT",
-        name = "Jóga",
-        externalUri = "spotify:track:4cOdK2wGLETKBW3PvgPWqT",
-        durationMs = 303_000
-    )
-
-    /**
-     * A backend in two flavours.
-     *
-     * @param honoursHint whether it declares it can play a specific video — yt-dlp and Invidious do,
-     *   Deezer and add-ons do not.
-     * @param ignoresHintAnyway what Deezer actually does to the hint it is given: nothing. Kept
-     *   separate from [honoursHint] on purpose, so a test can build the exact provider that caused
-     *   the bug — one that does not honour a hint but answers successfully regardless.
-     */
-    private class FakeSource(
-        id: String,
-        private val honoursHint: Boolean,
-        private val ignoresHintAnyway: Boolean = !honoursHint,
-        private val available: Boolean = true
+    private class Fake(
+        val id: String,
+        private val delayMs: Long,
+        private val answer: String?,
+        private val honoursHint: Boolean = true,
+        private val fails: Boolean = false
     ) : AudioSourceProvider {
-        var asked: Boolean = false
-            private set
-
+        var asked = 0
         override val capabilities = AudioSourceCapabilities(
-            id = id,
-            displayNameRes = 0,
-            canStream = true,
-            canDownload = true,
-            honoursYoutubeHint = honoursHint
+            id = id, displayNameRes = 0, canStream = true, canDownload = false,
+            resolveTimeoutMs = 5_000, honoursYoutubeHint = honoursHint
         )
-
-        override suspend fun isAvailableFor(track: FullTrack): Boolean = available
-
         override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> {
-            asked = true
-            val video = if (ignoresHintAnyway || hint.isNullOrBlank()) "whatever-it-found" else hint
-            return Result.success(StreamInfo(uri = "https://$video"))
+            asked++
+            delay(delayMs)
+            if (fails) return Result.failure(IllegalStateException("$id broke"))
+            return Result.success(StreamInfo(uri = answer ?: error("no answer")))
         }
-
-        override suspend fun downloadTo(
-            track: FullTrack,
-            dst: File,
-            onProgress: (Int) -> Unit
-        ): Result<File> = Result.failure(UnsupportedOperationException("not under test"))
+        override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit) =
+            Result.failure<File>(UnsupportedOperationException())
     }
 
-    /**
-     * The bug, in one assertion.
-     *
-     * Deezer is first — which is the user's own drag-and-drop order, not an accident — and it can
-     * stream this track. Before the fix it was asked, ignored the hint, succeeded, and the preview
-     * played the original recording.
-     */
+    private val track = FullTrack(id = "t1", name = "Song")
+
     @Test
-    fun `a backend that cannot play a chosen video is not asked for one`() = runBlocking {
-        val deezer = FakeSource("deezer", honoursHint = false)
-        val ytdlp = FakeSource("ytdlp", honoursHint = true)
-        val chain = AudioSourceChain(listOf(deezer, ytdlp))
-
-        val (providerId, info) = chain.resolveStreamUrl(track, hint = "dQw4w9WgXcQ").getOrThrow()
-
-        assertEquals("ytdlp", providerId)
-        assertEquals("https://dQw4w9WgXcQ", info.uri)
-        assertTrue("Deezer cannot honour a video id and must not be asked", !deezer.asked)
+    fun `a slow first provider does not block a fast one behind it`() = runBlocking {
+        val slow = Fake("slow", delayMs = 3_000, answer = "slow-url")
+        val fast = Fake("fast", delayMs = 50, answer = "fast-url")
+        val chain = AudioSourceChain(listOf(slow, fast), hedgeAfterMs = 200)
+        val started = System.currentTimeMillis()
+        val (id, info) = chain.resolveStreamUrl(track).getOrThrow()
+        assertEquals("fast", id)
+        assertEquals("fast-url", info.uri)
+        assertTrue("took ${System.currentTimeMillis() - started} ms", System.currentTimeMillis() - started < 1_500)
     }
 
-    /**
-     * `lastGood` is the other half, and on its own it put the same wrong provider back in front.
-     *
-     * It remembers who served this *track* last time, which is the right answer to "play this track"
-     * and the wrong answer to "play this video" — and it is written by every ordinary play, so it
-     * names Deezer for exactly the tracks Deezer has.
-     */
     @Test
-    fun `the provider that served this track last time does not outrank the hint`() = runBlocking {
-        val deezer = FakeSource("deezer", honoursHint = false)
-        val ytdlp = FakeSource("ytdlp", honoursHint = true)
-        val lastGood = ConcurrentHashMap<String, String>().apply { put(track.id!!, "deezer") }
-        val chain = AudioSourceChain(listOf(ytdlp, deezer), lastGood = lastGood)
-
-        val (providerId, _) = chain.resolveStreamUrl(track, hint = "dQw4w9WgXcQ").getOrThrow()
-
-        assertEquals("ytdlp", providerId)
-        assertTrue(!deezer.asked)
+    fun `a healthy first provider answers alone`() = runBlocking {
+        val first = Fake("first", delayMs = 50, answer = "first-url")
+        val second = Fake("second", delayMs = 50, answer = "second-url")
+        val (id, _) = AudioSourceChain(listOf(first, second), hedgeAfterMs = 500).resolveStreamUrl(track).getOrThrow()
+        assertEquals("first", id)
+        assertEquals("the second was never needed", 0, second.asked)
     }
 
-    /**
-     * With nothing left to ask, refuse.
-     *
-     * Falling back to a provider that ignores the hint is the failure that looks like success: the
-     * music plays, so nothing appears wrong, and the user concludes the feature is broken rather
-     * than that a backend is missing.
-     */
     @Test
-    fun `no backend that can play a chosen video is a failure, not a fallback`() = runBlocking {
-        val deezer = FakeSource("deezer", honoursHint = false)
-        val addon = FakeSource("addon:example", honoursHint = false)
-        val chain = AudioSourceChain(listOf(deezer, addon))
-
-        val result = chain.resolveStreamUrl(track, hint = "dQw4w9WgXcQ")
-
-        assertTrue("a wrong recording must not be served as a fallback", result.isFailure)
-        assertTrue(!deezer.asked)
-        assertTrue(!addon.asked)
+    fun `a failure hands over without waiting for the hedge`() = runBlocking {
+        val broken = Fake("broken", delayMs = 10, answer = null, fails = true)
+        val next = Fake("next", delayMs = 10, answer = "next-url")
+        val started = System.currentTimeMillis()
+        val (id, _) = AudioSourceChain(listOf(broken, next), hedgeAfterMs = 5_000).resolveStreamUrl(track).getOrThrow()
+        assertEquals("next", id)
+        assertTrue(System.currentTimeMillis() - started < 2_000)
     }
 
-    /** And with no hint, nothing changes: the remembered provider is still tried first. */
     @Test
-    fun `without a hint the remembered provider is still preferred`() = runBlocking {
-        val deezer = FakeSource("deezer", honoursHint = false)
-        val ytdlp = FakeSource("ytdlp", honoursHint = true)
-        val lastGood = ConcurrentHashMap<String, String>().apply { put(track.id!!, "deezer") }
-        val chain = AudioSourceChain(listOf(ytdlp, deezer), lastGood = lastGood)
-
-        val (providerId, _) = chain.resolveStreamUrl(track).getOrThrow()
-
-        assertEquals("deezer", providerId)
-        assertTrue("the preferred provider answered, so nothing below it is asked", !ytdlp.asked)
+    fun `everyone failing names everyone`() = runBlocking {
+        val a = Fake("a", delayMs = 10, answer = null, fails = true)
+        val b = Fake("b", delayMs = 10, answer = null, fails = true)
+        val error = AudioSourceChain(listOf(a, b), hedgeAfterMs = 100).resolveStreamUrl(track).exceptionOrNull()
+        assertTrue(error is AudioSourceChainException)
+        val message = error!!.message.orEmpty()
+        assertTrue(message, message.contains("a: a broke") && message.contains("b: b broke"))
     }
 
-    /** A hint-capable backend that is simply not usable right now still falls through to the next. */
     @Test
-    fun `an unavailable hint-capable backend falls through to the next one`() = runBlocking {
-        val invidious = FakeSource("invidious", honoursHint = true, available = false)
-        val ytdlp = FakeSource("ytdlp", honoursHint = true)
-        val chain = AudioSourceChain(listOf(invidious, ytdlp))
+    fun `a hint never reaches a provider that cannot honour it`() = runBlocking {
+        val deezer = Fake("deezer", delayMs = 10, answer = "wrong-recording", honoursHint = false)
+        val youtube = Fake("youtube", delayMs = 300, answer = "the-video")
+        val (id, _) = AudioSourceChain(listOf(deezer, youtube), hedgeAfterMs = 50)
+            .resolveStreamUrl(track, hint = "videoId").getOrThrow()
+        assertEquals("youtube", id)
+        assertEquals(0, deezer.asked)
+    }
 
-        val (providerId, info) = chain.resolveStreamUrl(track, hint = "dQw4w9WgXcQ").getOrThrow()
-
-        assertEquals("ytdlp", providerId)
-        assertEquals("https://dQw4w9WgXcQ", info.uri)
+    @Test
+    fun `a losing provider that ignores cancellation does not hold the winner`() = runBlocking {
+        // yt-dlp's shape: a blocking call that only notices cancellation when it returns.
+        val blocking = object : AudioSourceProvider {
+            override val capabilities = AudioSourceCapabilities(
+                id = "blocking", displayNameRes = 0, canStream = true, canDownload = false,
+                resolveTimeoutMs = 10_000
+            )
+            override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> {
+                Thread.sleep(3_000)
+                return Result.success(StreamInfo(uri = "late"))
+            }
+            override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit) =
+                Result.failure<File>(UnsupportedOperationException())
+        }
+        val fast = Fake("fast", delayMs = 100, answer = "fast-url")
+        val started = System.currentTimeMillis()
+        val (id, _) = AudioSourceChain(listOf(blocking, fast), hedgeAfterMs = 100).resolveStreamUrl(track).getOrThrow()
+        assertEquals("fast", id)
+        assertTrue("took ${System.currentTimeMillis() - started} ms", System.currentTimeMillis() - started < 1_500)
     }
 }

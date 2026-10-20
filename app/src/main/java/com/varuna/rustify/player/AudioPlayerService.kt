@@ -890,7 +890,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                         // Safety net against silent playback: once the audio is ready, restore full
                         // volume unless the DJ is actively ducking. Prevents a stuck ducking/zero volume
                         // from leaving the track playing muted.
-                        if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
+                        if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
                         requestSave()
                     }
                     Player.STATE_ENDED -> {
@@ -1326,6 +1326,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                             res.onSuccess { (providerId, info) ->
                                 streamUrl = info.uri
                                 lastResolveError = null   // clear any stale failure reason on success
+                                // Remembered per track, for when the next play comes from the cache.
+                                // Not from a preview: that is a different recording under this id.
+                                if (!isPreview) info.loudnessDb?.let {
+                                    com.varuna.rustify.audio.LoudnessStore.put(context, trackId, it)
+                                }
                                 // Remember when this URL dies so a later play doesn't hand ExoPlayer a 403.
                                 info.expiresAtMs?.let { urlExpiryCache[trackId] = it }
                                 android.util.Log.d("AudioPlayerService", "Chain resolved stream URL for $trackId via $providerId: ${info.uri.take(80)}...")
@@ -1441,6 +1446,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // (before a slow resolution) caused a foreground-service ANR with Invidious/Deezer.
                 ensureForegroundServiceBound()
 
+                // Loudness normalisation (4.2). Local files are the user's own masters: left alone.
+                baseVolume = withContext(Dispatchers.IO) {
+                    if (TrackRef.isLocal(trackId) || !com.varuna.rustify.audio.LoudnessStore.isEnabled(context)) 1f
+                    else com.varuna.rustify.audio.LoudnessStore.gainFor(
+                        com.varuna.rustify.audio.LoudnessStore.get(context, trackId)
+                    )
+                }
+
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
                 // From here on the player really holds THIS track, so its live position is meaningful.
@@ -1451,7 +1464,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     exoPlayer.seekTo(desiredStartMs)
                 }
                 // Never inherit a leftover DJ-duck volume onto a fresh track (a stuck 0.22 is inaudible).
-                if (!isDucking) runCatching { exoPlayer.volume = 1.0f }
+                if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
                 // If a call is active/ringing, DON'T start audio — otherwise the song would play over a
                 // hands-free call when a track change coincides with an incoming call. Stay paused; the
                 // player is prepared and seeked, so the user (or the media button) resumes instantly.
@@ -1674,60 +1687,74 @@ class AudioPlayerService private constructor(private val context: Context) {
             prefetchRadioForEndOfQueue(st)
         }
         if (idx != -1 && idx < st.queue.lastIndex) {
-            val nextTrack = st.queue[idx + 1]
-            val nextTrackId = nextTrack.id ?: return
-            if (preResolvedUrls.containsKey(nextTrackId)) {
-                return
-            }
-            // A track that will play off the device needs no network resolution: playTrack takes the
-            // local match before it looks at any cache, so anything resolved here would be thrown
-            // away — after possibly failing and logging a yt-dlp error for a song we already have.
-            // The lyrics preload below still runs, which is the other half of what this does.
+            // The next PREFETCH_AHEAD tracks, not only the next one (4.2): a skip, or two quick ones,
+            // used to land on a track nobody had resolved. Sequential on purpose — the nearest first,
+            // and never a burst of parallel requests at a provider.
+            val ahead = st.queue.subList(idx + 1, minOf(st.queue.size, idx + 1 + PREFETCH_AHEAD))
+            val pending = ahead.filter { t -> t.id != null && !preResolvedUrls.containsKey(t.id) }
+            if (pending.isEmpty()) return
             preBufferingJob?.cancel()
             preBufferingJob = mainScope.launch {
-                // Inside the coroutine: matching against the local library can touch disk the first
-                // time, and this is called from the main thread.
-                val nextIsLocal = TrackRef.isLocal(nextTrackId) ||
-                    withContext(Dispatchers.IO) { localStreamFor(nextTrack, null) } != null
-
-                if (!nextIsLocal) {
-                    android.util.Log.d("AudioPlayerService", "Pre-buffering next track: ${nextTrack.name}")
-
-                    // Register metadata in Rust so the resolver can match the track
-                    val artistsJson = "[" + nextTrack.artists.joinToString(",") {
-                        "\"" + it.name.replace("\"", "\\\"") + "\""
-                    } + "]"
-                    NativeEngine.registerTrackMetadataNative(
-                        nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
-                    )
-
-                    // Pre-buffer through the same backend chain as playTrack
-                    // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
-                    val res = withContext(Dispatchers.IO) {
-                        com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
-                            .resolveStreamUrl(nextTrack, hint = null)
-                    }
-                    res.onSuccess { (_, info) ->
-                        preResolvedUrls[nextTrackId] = info.uri
-                        resolvedStreamUrls[nextTrackId] = info.uri
-                        info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
-                        // And put it in the stream cache while we are here. Pre-buffering already
-                        // decided this track is worth resolving ahead of time; downloading it is
-                        // the same bet, and it is the one that survives the URL expiring.
-                        com.varuna.rustify.audio.StreamRouting
-                            .rememberAfterResolving(context, nextTrackId, info)
-                        android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
-                    }
-                    res.onFailure { e ->
-                        android.util.Log.w("AudioPlayerService", "Pre-buffer chain failed for ${nextTrack.name}: ${e.message}")
-                    }
-                } else {
-                    android.util.Log.d("AudioPlayerService", "Next track plays from a local file; no pre-buffer needed")
+                for ((i, track) in pending.withIndex()) {
+                    preResolve(track)
+                    // Lyrics only for the very next one: they are for the screen you are about to see.
+                    if (i == 0 && track.id == ahead.first().id) preloadLyrics(track)
                 }
-
-                // Preload lyrics for the next track so they're ready when the user views the track screen
-                preloadLyrics(nextTrack)
             }
+        }
+    }
+
+    /** How many upcoming tracks are resolved ahead of time. */
+    private val PREFETCH_AHEAD = 2
+
+    /**
+     * Resolves [nextTrack] through the same chain as playTrack and puts it in the stream cache.
+     *
+     * A track that will play off the device needs no network resolution: playTrack takes the local
+     * match before it looks at any cache, so anything resolved here would be thrown away — after
+     * possibly failing and logging an error for a song we already have.
+     */
+    private suspend fun preResolve(nextTrack: FullTrack) {
+        val nextTrackId = nextTrack.id ?: return
+        // Matching against the local library can touch disk the first time, and this runs on
+        // the main dispatcher.
+        val nextIsLocal = TrackRef.isLocal(nextTrackId) ||
+            withContext(Dispatchers.IO) { localStreamFor(nextTrack, null) } != null
+
+        if (!nextIsLocal) {
+            android.util.Log.d("AudioPlayerService", "Pre-buffering next track: ${nextTrack.name}")
+
+            // Register metadata in Rust so the resolver can match the track
+            val artistsJson = "[" + nextTrack.artists.joinToString(",") {
+                "\"" + it.name.replace("\"", "\\\"") + "\""
+            } + "]"
+            NativeEngine.registerTrackMetadataNative(
+                nextTrackId, nextTrack.name, artistsJson, nextTrack.durationMs, nextTrack.isrc
+            )
+
+            // Pre-buffer through the same backend chain as playTrack
+            // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
+            val res = withContext(Dispatchers.IO) {
+                com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                    .resolveStreamUrl(nextTrack, hint = null)
+            }
+            res.onSuccess { (_, info) ->
+                preResolvedUrls[nextTrackId] = info.uri
+                info.loudnessDb?.let { com.varuna.rustify.audio.LoudnessStore.put(context, nextTrackId, it) }
+                resolvedStreamUrls[nextTrackId] = info.uri
+                info.expiresAtMs?.let { urlExpiryCache[nextTrackId] = it }  // track pre-buffered URL expiry too
+                // And put it in the stream cache while we are here. Pre-buffering already
+                // decided this track is worth resolving ahead of time; downloading it is
+                // the same bet, and it is the one that survives the URL expiring.
+                com.varuna.rustify.audio.StreamRouting
+                    .rememberAfterResolving(context, nextTrackId, info)
+                android.util.Log.d("AudioPlayerService", "Successfully pre-buffered: ${nextTrack.name}")
+            }
+            res.onFailure { e ->
+                android.util.Log.w("AudioPlayerService", "Pre-buffer chain failed for ${nextTrack.name}: ${e.message}")
+            }
+        } else {
+            android.util.Log.d("AudioPlayerService", "${nextTrack.name} plays from a local file; no pre-buffer needed")
         }
     }
 
@@ -2143,8 +2170,15 @@ class AudioPlayerService private constructor(private val context: Context) {
     // Track duck state so a fresh track never inherits a stuck 0.22 duck (which made a track play but
     // be inaudible if unduck never fired, e.g. a TTS error on a bad connection).
     @Volatile private var isDucking = false
-    fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f } } }
-    fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = 1.0f } } }
+
+    /**
+     * Full volume for the current track: 1.0, or less when loudness normalisation turns a loud
+     * recording down (see [com.varuna.rustify.audio.LoudnessStore]). Every place that used to restore
+     * `1.0f` restores this, so the DJ's duck and the "stuck duck" safety net keep the track's level.
+     */
+    @Volatile private var baseVolume = 1f
+    fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f * baseVolume } } }
+    fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = baseVolume } } }
 
     // Reset media3's internal AudioFocusManager by briefly disabling and re-enabling focus handling.
     // Disabling routes through ExoPlayerImplInternal.setAudioAttributesInternal, which does
