@@ -7,7 +7,7 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.4.0b` · core `4.4.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.5.0b` · core `4.5.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
