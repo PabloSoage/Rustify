@@ -373,7 +373,8 @@ fun AlbumScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = albumName,
+                                    // From the loaded album when the link that opened it carried no name (4.7).
+                                    text = albumName.ifBlank { albumDetails?.name.orEmpty() },
                                     style = MaterialTheme.typography.headlineMedium.copy(
                                         fontWeight = FontWeight.ExtraBold
                                     ),

@@ -1287,6 +1287,11 @@ fun TrackScreenControls(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Playback Controls Row
+        // Compact on a narrow phone (4.7): seven 48 dp buttons and the 72 dp play button do not fit
+        // in 360 dp, and the last ones in each group were squeezed to a fraction of their size.
+        val compactControls = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400
+        val ctlMod = if (compactControls) Modifier.size(42.dp) else Modifier
+        val playSize = if (compactControls) 64.dp else 72.dp
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
@@ -1300,7 +1305,7 @@ fun TrackScreenControls(
             // Alternative source picker (YouTube mapping)
             val isLocal = TrackRef.isLocal(track.id)
             if (!isLocal) {
-                IconButton(onClick = onShowMappingDialog) {
+                IconButton(onClick = onShowMappingDialog, modifier = ctlMod) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.CallSplit,
                         contentDescription = stringResource(R.string.track_menu_view_youtube),
@@ -1317,7 +1322,7 @@ fun TrackScreenControls(
             val djActive = com.varuna.rustify.dj.DjAutoController.state.collectAsState().value != null
             val djCtx = LocalContext.current
             if (djActive) {
-                IconButton(onClick = { com.varuna.rustify.dj.DjAutoController.next(djCtx) }) {
+                IconButton(onClick = { com.varuna.rustify.dj.DjAutoController.next(djCtx) }, modifier = ctlMod) {
                     Icon(
                         imageVector = Icons.Default.Radio,
                         contentDescription = "DJ",
@@ -1328,7 +1333,7 @@ fun TrackScreenControls(
             }
 
             // Shuffle / Repeat Mode Button
-            IconButton(onClick = { audioPlayerService.cyclePlaybackMode() }) {
+            IconButton(onClick = { audioPlayerService.cyclePlaybackMode() }, modifier = ctlMod) {
                 val icon = if (playerState.isRepeat) Icons.Default.Repeat else Icons.Default.Shuffle
                 val tint = if (playerState.isShuffle || playerState.isRepeat) Color(0xFF1DB954) else Color.White
                 Icon(
@@ -1341,6 +1346,7 @@ fun TrackScreenControls(
 
             // Previous button
             IconButton(
+                modifier = ctlMod,
                 onClick = { audioPlayerService.skipToPrevious() },
                 enabled = hasPrevious
             ) {
@@ -1355,13 +1361,13 @@ fun TrackScreenControls(
 
             // Play/Pause button with buffering indicator
             Box(
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier.size(playSize),
                 contentAlignment = Alignment.Center
             ) {
                 // Background circle
                 Surface(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(playSize)
                         .clickable {
                             if (isCurrentTrack) {
                                 audioPlayerService.togglePlayPause()
@@ -1425,6 +1431,7 @@ fun TrackScreenControls(
             ) {
             // Next button
             IconButton(
+                modifier = ctlMod,
                 onClick = { audioPlayerService.skipToNext() },
                 enabled = hasNext
             ) {
@@ -1437,7 +1444,7 @@ fun TrackScreenControls(
             }
 
             // Queue Button
-            IconButton(onClick = onShowQueue) {
+            IconButton(onClick = onShowQueue, modifier = ctlMod) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
                     contentDescription = "View Queue",
@@ -1447,7 +1454,7 @@ fun TrackScreenControls(
             }
 
             // Lyrics Button (Far Right)
-            IconButton(onClick = { showLyrics = !showLyrics }) {
+            IconButton(onClick = { showLyrics = !showLyrics }, modifier = ctlMod) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Subject,
                     contentDescription = "Lyrics",

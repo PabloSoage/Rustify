@@ -351,7 +351,7 @@ fun PlaylistScreen(
                                     text = if (isLocal)
                                         (spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name
                                             ?: localPlaylist?.name ?: playlistName)
-                                    else playlistName,
+                                    else playlistName.ifBlank { playlistDetails?.name.orEmpty() },
                                     style = MaterialTheme.typography.headlineMedium.copy(
                                         fontWeight = FontWeight.ExtraBold
                                     ),
