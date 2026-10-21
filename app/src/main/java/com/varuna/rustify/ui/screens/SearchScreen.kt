@@ -65,6 +65,7 @@ import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.util.LinkTarget
+import com.varuna.rustify.util.RecentSearches
 
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -107,6 +108,14 @@ fun SearchScreen(
     var searchResults by remember { mutableStateOf<NormalizedSearchResults?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
+    var recentSearches by remember { mutableStateOf(RecentSearches.list(context)) }
+    // The category being browsed, while its query is still the one in the field.
+    var browsing by remember { mutableStateOf<SearchCategory?>(null) }
+
+    // Kept only when the search was meant: submitted, or followed by opening a result.
+    fun keepQuery() {
+        if (searchQuery.isNotBlank()) recentSearches = RecentSearches.add(context, searchQuery)
+    }
 
     fun performSearch(query: String) {
         if (query.isBlank()) {
@@ -156,7 +165,9 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp)),
-                placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
+                placeholder = {
+                    Text(stringResource(R.string.search_placeholder), color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search), tint = Color.White)
                 },
@@ -165,6 +176,9 @@ fun SearchScreen(
                         IconButton(onClick = {
                             searchQuery = ""
                             searchResults = null
+                            // The category chose the Playlists filter, not the user.
+                            if (browsing != null) activeFilter = SearchFilter.ALL
+                            browsing = null
                         }) {
                             Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
                         }
@@ -210,6 +224,7 @@ fun SearchScreen(
                 keyboardActions = KeyboardActions(
                     onSearch = {
                         focusManager.clearFocus()
+                        keepQuery()
                         performSearch(searchQuery)
                     }
                 )
@@ -262,10 +277,25 @@ fun SearchScreen(
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else if (searchResults == null && searchQuery.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.search_empty_prompt),
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.Center)
+                SearchEmptyState(
+                    recent = recentSearches,
+                    onRecentClick = { q ->
+                        searchQuery = q
+                        focusManager.clearFocus()
+                        keepQuery()
+                        performSearch(q)
+                    },
+                    onRecentRemove = { q -> recentSearches = RecentSearches.remove(context, q) },
+                    onClearRecent = { recentSearches = RecentSearches.clear(context) },
+                    onCategoryClick = { cat ->
+                        // A category is a way in, not something the user typed: not kept as recent.
+                        searchQuery = cat.query
+                        browsing = cat
+                        activeFilter = SearchFilter.PLAYLISTS
+                        focusManager.clearFocus()
+                        performSearch(cat.query)
+                    },
+                    bottomPadding = bottomPadding
                 )
             } else if (searchResults != null) {
                 val results = searchResults!!
@@ -321,7 +351,7 @@ fun SearchScreen(
                                             title = track.name,
                                             subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
                                             imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
-                                            onClick = { onTrackClick(track) },
+                                            onClick = { keepQuery(); onTrackClick(track) },
                                             isLiked = isLiked,
                                             isCurrentTrack = track.id == currentTrackId,
                                             onLikeToggle = {
@@ -348,7 +378,7 @@ fun SearchScreen(
                                     title = album.name,
                                     subtitle = stringResource(R.string.search_subtitle_album, album.artists.joinToString(", ") { it.name }),
                                     imageUrl = album.images.maxByOrNull { it.width ?: 0 }?.url,
-                                    onClick = { onAlbumClick(album.id, album.name, album.images) }
+                                    onClick = { keepQuery(); onAlbumClick(album.id, album.name, album.images) }
                                 )
                             }
                         }
@@ -357,12 +387,15 @@ fun SearchScreen(
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.PLAYLISTS) {
                         if (results.playlists.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.search_header_playlists)) }
-                            items(results.playlists) { playlist ->
+                            // Browsing a category, Spotify's own playlists for it come first.
+                            val playlists = if (browsing?.query == searchQuery) results.playlists.sortedByDescending { it.owner?.id == "spotify" }
+                                else results.playlists
+                            items(playlists) { playlist ->
                                 SearchResultRow(
                                     title = playlist.name,
                                     subtitle = stringResource(R.string.search_subtitle_playlist, playlist.owner?.name ?: "Spotify"),
                                     imageUrl = playlist.images.maxByOrNull { it.width ?: 0 }?.url,
-                                    onClick = { onPlaylistClick(playlist.id, playlist.name, playlist.images) }
+                                    onClick = { keepQuery(); onPlaylistClick(playlist.id, playlist.name, playlist.images) }
                                 )
                             }
                         }
@@ -377,7 +410,7 @@ fun SearchScreen(
                                     subtitle = stringResource(R.string.search_subtitle_artist),
                                     imageUrl = artist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     isCircle = true,
-                                    onClick = { onArtistClick(artist.id) }
+                                    onClick = { keepQuery(); onArtistClick(artist.id) }
                                 )
                             }
                         }

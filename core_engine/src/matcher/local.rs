@@ -198,10 +198,17 @@ mod tests {
     }
 
     // The registry is process-wide, so every test that touches it must set it up itself rather than
-    // inherit whatever ran before. `put` replaces, which is what makes that cheap.
+    // inherit whatever ran before. `put` replaces, which is what makes that cheap — but tests run on
+    // parallel threads, so one test's `put` could land between another's `put` and `find` (CI failed
+    // that way on 2026-10-21). Each test holds this lock for its whole body.
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn the_accented_title_that_used_to_be_missed() {
+        let _serial = serial();
         // The reason this moved. Kotlin lowercased and stripped `feat.` but never folded accents,
         // so a local file tagged with plain ASCII never matched the Spotify track it was a copy of —
         // and the only symptom was that it streamed instead of playing off the disk.
@@ -233,6 +240,7 @@ mod tests {
 
     #[test]
     fn the_isrc_settles_it_when_both_sides_have_one() {
+        let _serial = serial();
         put(&[with_isrc(
             track("local:1", "completely different title", &["nobody"], 1),
             "USUM71700966",
@@ -248,6 +256,7 @@ mod tests {
 
     #[test]
     fn a_different_isrc_is_a_rejection_and_not_a_fall_through() {
+        let _serial = serial();
         // Both sides know the answer and they disagree. Falling through to compare titles would let
         // a cover version pass for the original.
         put(&[with_isrc(
@@ -265,6 +274,7 @@ mod tests {
 
     #[test]
     fn a_radio_edit_does_not_pass_for_the_album_version() {
+        let _serial = serial();
         put(&[track("local:1", "Marquee Moon", &["Television"], 190_000)]);
         assert_eq!(
             find(&track("spotify:1", "Marquee Moon", &["Television"], 583_000)),
@@ -274,6 +284,7 @@ mod tests {
 
     #[test]
     fn a_missing_duration_does_not_reject() {
+        let _serial = serial();
         // Plenty of local files have no duration in their tags. Absent is not "wrong".
         put(&[track("local:1", "Marquee Moon", &["Television"], 0)]);
         assert_eq!(
@@ -284,6 +295,7 @@ mod tests {
 
     #[test]
     fn one_artist_in_common_is_enough_and_containment_counts() {
+        let _serial = serial();
         put(&[track(
             "local:1",
             "Atlantic City",
@@ -298,6 +310,7 @@ mod tests {
 
     #[test]
     fn a_different_artist_with_the_same_title_is_not_a_match() {
+        let _serial = serial();
         put(&[track("local:1", "Hurt", &["Nine Inch Nails"], 373_000)]);
         assert_eq!(
             find(&track("spotify:1", "Hurt", &["Johnny Cash"], 216_000)),
@@ -307,12 +320,14 @@ mod tests {
 
     #[test]
     fn an_empty_library_answers_none_rather_than_panicking() {
+        let _serial = serial();
         put(&[]);
         assert_eq!(find(&track("spotify:1", "anything", &["anyone"], 1000)), None);
     }
 
     #[test]
     fn put_replaces_rather_than_merges() {
+        let _serial = serial();
         // A registry that merged would go on offering files the user deleted from the folder.
         put(&[track("local:1", "Gone", &["Someone"], 1000)]);
         put(&[track("local:2", "Still Here", &["Someone"], 1000)]);

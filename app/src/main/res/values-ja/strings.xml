@@ -108,7 +108,6 @@
     <string name="search_filter_albums">アルバム</string>
     <string name="search_filter_artists">アーティスト</string>
     <string name="search_filter_playlists">プレイリスト</string>
-    <string name="search_empty_prompt">曲、アルバム、アーティスト、プレイリストを検索</string>
     <string name="search_header_tracks">曲</string>
     <string name="search_header_albums">アルバム</string>
     <string name="search_header_playlists">プレイリスト</string>
@@ -117,6 +116,26 @@
     <string name="search_subtitle_album">アルバム • %1$s</string>
     <string name="search_subtitle_playlist">プレイリスト • %1$s</string>
     <string name="search_subtitle_artist">アーティスト</string>
+    <string name="search_recent">最近の検索</string>
+    <string name="search_recent_clear">消去</string>
+    <string name="search_recent_remove">%1$s を削除</string>
+    <string name="search_browse">すべてを見る</string>
+    <string name="search_cat_pop">ポップ</string>
+    <string name="search_cat_rock">ロック</string>
+    <string name="search_cat_hiphop">ヒップホップ</string>
+    <string name="search_cat_latin">ラテン</string>
+    <string name="search_cat_electronic">エレクトロニック</string>
+    <string name="search_cat_indie">インディー</string>
+    <string name="search_cat_rnb">R&amp;B</string>
+    <string name="search_cat_jazz">ジャズ</string>
+    <string name="search_cat_classical">クラシック</string>
+    <string name="search_cat_metal">メタル</string>
+    <string name="search_cat_chill">チル</string>
+    <string name="search_cat_focus">集中</string>
+    <string name="search_cat_workout">ワークアウト</string>
+    <string name="search_cat_party">パーティー</string>
+    <string name="search_cat_sleep">睡眠</string>
+    <string name="search_cat_decades">80年代</string>
     
     <!-- LibraryScreen extras -->
     <string name="library_tab_liked_tracks">お気に入りの曲</string>

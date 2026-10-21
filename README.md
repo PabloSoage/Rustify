@@ -25,8 +25,8 @@ Taken on the Android emulator, signed out — everything shown works without a S
 | Queue — drag to reorder | Lyrics, translated on the phone | Artist | Artist · About |
 | <img src="assets/screenshots/dj.webp" width="180" alt="DJ — moods in one tap"> | <img src="assets/screenshots/recap.webp" width="180" alt="Your year in music"> | <img src="assets/screenshots/travel-map.webp" width="180" alt="Travel playlist"> | <img src="assets/screenshots/travel-route.webp" width="180" alt="Route → playlist length"> |
 | DJ — moods in one tap | Your year in music | Travel playlist | Route → playlist length |
-| <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> |
-| Audio sources, fastest first |
+| <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> | <img src="assets/screenshots/search.webp" width="180" alt="Search — recent and browse"> |
+| Audio sources, fastest first | Search — recent and browse |
 
 ---
 
@@ -86,7 +86,8 @@ Taken on the Android emulator, signed out — everything shown works without a S
 ### 📚 Library, Discovery & Metrics
 - **Search that ignores accents and word order** — `bjork` finds Björk; `dark side moon` finds *The
   Dark Side of the Moon*. Results are ranked rather than merely filtered, and songs can be found by
-  their album. One implementation, in the core, for every tab.
+  their album. One implementation, in the core, for every tab. Before you type, Search shows your
+  recent searches and categories to browse (genres and moods, Spotify's own playlists first).
 - **Pick up where you left off** — A row on Home for the albums, playlists and radios you were partway
   through, showing `4/12 · Song Name` and resuming at the track and the minute you left. It keeps
   several at once; a song you skipped past does not qualify, and something you finished disappears.
@@ -152,7 +153,7 @@ Taken on the Android emulator, signed out — everything shown works without a S
 ### 🪵 Developer & Diagnostics
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 298 in the Rust engine (289 unit, 9 end-to-end; clippy-clean and enforced in CI) and 73
+- **Tests** — 298 in the Rust engine (289 unit, 9 end-to-end; clippy-clean and enforced in CI) and 77
   in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.

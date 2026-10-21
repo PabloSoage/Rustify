@@ -213,7 +213,6 @@
     <string name="search_filter_albums">Álbumes</string>
     <string name="search_filter_artists">Artistas</string>
     <string name="search_filter_playlists">Playlists</string>
-    <string name="search_empty_prompt">Busca canciones, álbumes, artistas o playlists.</string>
     <string name="search_header_tracks">Canciones</string>
     <string name="search_header_albums">Álbumes</string>
     <string name="search_header_playlists">Playlists</string>
@@ -222,6 +221,26 @@
     <string name="search_subtitle_album">Álbum • %1$s</string>
     <string name="search_subtitle_playlist">Playlist • %1$s</string>
     <string name="search_subtitle_artist">Artista</string>
+    <string name="search_recent">Búsquedas recientes</string>
+    <string name="search_recent_clear">Borrar</string>
+    <string name="search_recent_remove">Quitar %1$s</string>
+    <string name="search_browse">Explorar todo</string>
+    <string name="search_cat_pop">Pop</string>
+    <string name="search_cat_rock">Rock</string>
+    <string name="search_cat_hiphop">Hip-hop</string>
+    <string name="search_cat_latin">Latina</string>
+    <string name="search_cat_electronic">Electrónica</string>
+    <string name="search_cat_indie">Indie</string>
+    <string name="search_cat_rnb">R&amp;B</string>
+    <string name="search_cat_jazz">Jazz</string>
+    <string name="search_cat_classical">Clásica</string>
+    <string name="search_cat_metal">Metal</string>
+    <string name="search_cat_chill">Relax</string>
+    <string name="search_cat_focus">Concentración</string>
+    <string name="search_cat_workout">Entrenamiento</string>
+    <string name="search_cat_party">Fiesta</string>
+    <string name="search_cat_sleep">Dormir</string>
+    <string name="search_cat_decades">Años 80</string>
     
     <!-- LibraryScreen extras -->
     <string name="library_tab_liked_tracks">Canciones que te gustan</string>
