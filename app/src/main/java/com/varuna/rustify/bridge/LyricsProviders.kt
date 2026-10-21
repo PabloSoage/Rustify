@@ -96,10 +96,16 @@ object SpotifyLyricsProvider : LyricsProvider {
         val spotifyId = TrackRef.parse(trackId)?.spotifyId ?: return null
         val json = NativeEngine.getSpotifyLyrics(spotifyId)
         val element = runCatching { RustifyJson.parseToJsonElement(json) }.getOrNull() ?: return null
-        if ((element as? kotlinx.serialization.json.JsonObject)?.get("success") != null) return null
+        if ((element as? kotlinx.serialization.json.JsonObject)?.get("success") != null) {
+            // Says why, once per track: "no account", "no lyrics for this one" and "the token was refused"
+            // look the same from the screen (the next provider answers), and only the log tells them apart.
+            android.util.Log.i("Lyrics", "spotify: none for $spotifyId: ${json.take(160)}")
+            return null
+        }
         val lyrics = runCatching { RustifyJson.decodeFromJsonElement(SpotifyLyrics.serializer(), element) }
             .getOrNull() ?: return null
         val lines = lyrics.lines.filter { it.words.isNotBlank() }
+        android.util.Log.i("Lyrics", "spotify: ${lines.size} lines, ${lyrics.syncType}, from ${lyrics.provider}")
         return if (lyrics.syncType == "UNSYNCED") {
             LyricsResult(synced = emptyList(), plain = lines.joinToString("\n") { it.words })
         } else {

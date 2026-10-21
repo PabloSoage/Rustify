@@ -61,10 +61,15 @@ class GoogleDriveSync(private val appContext: Context) {
 
     private val scope = Scope(SCOPE_APPDATA)
 
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    // Lazy: building it creates an SSL context, and this class is constructed by the Settings screen
+    // on the main thread just to show the Drive section. Only an actual request needs the client,
+    // and those run on IO.
+    private val http: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
 
     // ---------------------------------------------------------------------
     // AUTH
