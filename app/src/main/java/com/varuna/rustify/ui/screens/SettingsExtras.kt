@@ -423,10 +423,7 @@ internal fun TravelMapSection(context: Context) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                if (mapTilerKey.isBlank())
-                    "Using the keyless basemap (OpenFreeMap / OpenStreetMap)."
-                else
-                    "Using MapTiler Cloud vector tiles with your key.",
+                stringResource(if (mapTilerKey.isBlank()) R.string.travel_maptiler_key_off else R.string.travel_maptiler_key_on),
                 color = Color.Gray, fontSize = 11.sp
             )
         }

@@ -517,6 +517,8 @@
     <string name="travel_google_key_desc">Crea un proyecto en Google Cloud y activa la API Geocoding. Si la pones, se usa en lugar de la búsqueda sin clave y encuentra mejor las direcciones rurales. Google da una cuota gratuita mensual.</string>
     <string name="travel_google_key_on">La búsqueda usa Google Geocoding (excelente para cualquier dirección).</string>
     <string name="travel_google_key_off">La búsqueda usa Photon+Nominatim (OpenStreetMap, sin key).</string>
+    <string name="travel_maptiler_key_off">Usando el mapa sin key (OpenFreeMap / OpenStreetMap).</string>
+    <string name="travel_maptiler_key_on">Usando los mapas vectoriales de MapTiler con tu key.</string>
     <string name="travel_route_mode">Ruta</string>
     <string name="travel_time_mode">Manual</string>
     <string name="travel_duration">Duración del viaje</string>

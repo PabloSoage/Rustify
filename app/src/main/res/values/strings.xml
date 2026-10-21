@@ -518,6 +518,8 @@
     <string name="travel_google_key_desc">Create a Google Cloud project and enable the Geocoding API. When set, it is used instead of the keyless search and finds rural addresses better. Google gives a monthly free allowance.</string>
     <string name="travel_google_key_on">Search uses Google Geocoding (excellent for any address).</string>
     <string name="travel_google_key_off">Search uses Photon+Nominatim (OpenStreetMap, keyless).</string>
+    <string name="travel_maptiler_key_off">Using the keyless basemap (OpenFreeMap / OpenStreetMap).</string>
+    <string name="travel_maptiler_key_on">Using MapTiler Cloud vector tiles with your key.</string>
     <string name="travel_route_mode">Route</string>
     <string name="travel_time_mode">Manual</string>
     <string name="travel_duration">Trip duration</string>

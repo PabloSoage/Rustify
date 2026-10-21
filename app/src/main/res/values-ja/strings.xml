@@ -304,6 +304,8 @@
     <string name="travel_google_key_desc">Google Cloud プロジェクトを作成して Geocoding API を有効にしてください。設定するとキー不要の検索の代わりに使われ、郊外の住所がより正確に見つかります。Google には毎月の無料枠があります。</string>
     <string name="travel_google_key_on">Google Geocoding で検索します（どんな住所にも高精度）。</string>
     <string name="travel_google_key_off">Photon + Nominatim（OpenStreetMap、キー不要）で検索します。</string>
+    <string name="travel_maptiler_key_off">キー不要のベースマップ（OpenFreeMap / OpenStreetMap）を使用中。</string>
+    <string name="travel_maptiler_key_on">あなたのキーで MapTiler Cloud のベクタータイルを使用中。</string>
     <string name="travel_route_mode">ルート</string>
     <string name="travel_time_mode">手動</string>
     <string name="travel_duration">移動時間</string>
