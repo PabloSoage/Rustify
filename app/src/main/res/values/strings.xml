@@ -724,16 +724,25 @@
     <string name="recap_open">Your %1$d in music</string>
     <string name="recap_empty">Nothing played in %1$d yet.</string>
     <string name="recap_minutes_title">In %1$d you listened for</string>
-    <string name="recap_minutes_sub">minutes · %1$s plays · %2$d artists</string>
     <string name="recap_top_artist">Your top artist</string>
     <string name="recap_top_track">Your top song</string>
-    <string name="recap_plays">%1$d plays</string>
     <string name="recap_when_title">You are</string>
     <string name="recap_type_night">a night owl</string>
     <string name="recap_type_early">an early bird</string>
     <string name="recap_type_day">a daytime listener</string>
     <string name="recap_type_evening">an evening listener</string>
-    <string name="recap_when_sub">Your month: %1$s · Your day: %2$s · Longest streak: %3$d days</string>
     <string name="recap_share">Share</string>
     <string name="lyrics_translate">Translate lyrics</string>
+    <plurals name="recap_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
+    <plurals name="recap_minutes_sub">
+        <item quantity="one">minutes · %1$s play · %2$d artists</item>
+        <item quantity="other">minutes · %1$s plays · %2$d artists</item>
+    </plurals>
+    <plurals name="recap_when_sub">
+        <item quantity="one">Your month: %1$s · Your day: %2$s · Longest streak: %3$d day</item>
+        <item quantity="other">Your month: %1$s · Your day: %2$s · Longest streak: %3$d days</item>
+    </plurals>
 </resources>

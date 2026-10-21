@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -116,9 +117,9 @@ private fun RecapPager(r: Recap) {
     val months = DateFormatSymbols.getInstance().months
     val weekdays = DateFormatSymbols.getInstance().weekdays // Sunday = 1
     val pages = buildList<@Composable () -> Unit> {
-        add { BigNumberCard(stringResource(R.string.recap_minutes_title, r.year), numbers.format(r.minutes), stringResource(R.string.recap_minutes_sub, numbers.format(r.plays), r.distinctArtists)) }
-        r.topArtist?.let { a -> add { TopCard(stringResource(R.string.recap_top_artist), a, stringResource(R.string.recap_plays, a.plays), r.topArtists) } }
-        r.topTrack?.let { t -> add { TopCard(stringResource(R.string.recap_top_track), t, stringResource(R.string.recap_plays, t.plays), r.topTracks) } }
+        add { BigNumberCard(stringResource(R.string.recap_minutes_title, r.year), numbers.format(r.minutes), pluralStringResource(R.plurals.recap_minutes_sub, r.plays, numbers.format(r.plays), r.distinctArtists)) }
+        r.topArtist?.let { a -> add { TopCard(stringResource(R.string.recap_top_artist), a, pluralStringResource(R.plurals.recap_plays, a.plays, a.plays), r.topArtists) } }
+        r.topTrack?.let { t -> add { TopCard(stringResource(R.string.recap_top_track), t, pluralStringResource(R.plurals.recap_plays, t.plays, t.plays), r.topTracks) } }
         add {
             val type = when (r.listener) {
                 ListenerType.NIGHT_OWL -> R.string.recap_type_night
@@ -132,7 +133,7 @@ private fun RecapPager(r: Recap) {
             val day = r.peakWeekday?.let { weekdays[(it + 1) % 7 + 1].replaceFirstChar { c -> c.uppercase() } } ?: "—"
             BigNumberCard(
                 stringResource(R.string.recap_when_title), stringResource(type),
-                stringResource(R.string.recap_when_sub, month, day, r.longestStreakDays)
+                pluralStringResource(R.plurals.recap_when_sub, r.longestStreakDays, month, day, r.longestStreakDays)
             )
         }
     }
