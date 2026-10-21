@@ -7,9 +7,26 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.6.0b` · core `4.6.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.7.0b` · core `4.7.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
+
+---
+
+## 📸 Screenshots
+
+Taken on the Android emulator, signed out — everything shown works without a Spotify account.
+
+|   |   |   |   |
+|---|---|---|---|
+| <img src="assets/screenshots/home.webp" width="180" alt="Home without an account"> | <img src="assets/screenshots/playlist.webp" width="180" alt="Playlist"> | <img src="assets/screenshots/album.webp" width="180" alt="Album"> | <img src="assets/screenshots/now-playing.webp" width="180" alt="Now playing"> |
+| Home without an account | Playlist | Album | Now playing |
+| <img src="assets/screenshots/queue.webp" width="180" alt="Queue — drag to reorder"> | <img src="assets/screenshots/lyrics-translate.webp" width="180" alt="Lyrics, translated on the phone"> | <img src="assets/screenshots/artist.webp" width="180" alt="Artist"> | <img src="assets/screenshots/artist-about.webp" width="180" alt="Artist · About"> |
+| Queue — drag to reorder | Lyrics, translated on the phone | Artist | Artist · About |
+| <img src="assets/screenshots/dj.webp" width="180" alt="DJ — moods in one tap"> | <img src="assets/screenshots/recap.webp" width="180" alt="Your year in music"> | <img src="assets/screenshots/travel-map.webp" width="180" alt="Travel playlist"> | <img src="assets/screenshots/travel-route.webp" width="180" alt="Route → playlist length"> |
+| DJ — moods in one tap | Your year in music | Travel playlist | Route → playlist length |
+| <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> |
+| Audio sources, fastest first |
 
 ---
 
@@ -26,7 +43,12 @@ you pick asks for. It keeps everything it knows about you on your own device.
   nothing else — never your session, never your library, never anything about your device — and there
   is a test that checks that rather than a comment promising it.
 - **Pluggable backend chain** — Per-source priority, enable/disable switches and per-provider
-  timeouts, shared by playback and downloads, each with its own diagnostics and playback test.
+  timeouts, shared by playback and downloads, each with its own diagnostics and playback test. Sources
+  **race**: the next starts if the first has not answered in 4 s, and the first answer plays. The
+  default order follows speed and robustness — the direct YouTube client, then yt-dlp (slower, but it
+  updates itself), then add-ons; Invidious and Deezer last and off.
+- **Sound** — Volume normalised from song to song with YouTube's loudness data, a fade between songs,
+  an equaliser and a sleep timer that fades out and pauses.
 - **Stored songs** — A song you have played once is kept on the device (512 MB, oldest evicted first)
   and served to the player as an ordinary address on `127.0.0.1`, so it starts instantly and seeks
   properly. The first play is unchanged: nothing waits for a download. Local files are never copied.
@@ -55,8 +77,9 @@ you pick asks for. It keeps everything it knows about you on your own device.
   driven by Rustify's own transport controls.
 
 ### 🚗 In the Car
-- **Android Auto** — Browse your library and control playback from the head unit, over a media tree
-  that stays in sync with the app.
+- **Android Auto** — Browse your library, search (no account needed), recently played, shuffle and
+  repeat from the head unit, over a media tree that stays in sync with the app; albums and
+  playlists show as a grid of covers.
 - **Travel Playlist** — Compute a route and fill a playlist to match its estimated duration, on an
   open-source, keyless map stack.
 
@@ -69,13 +92,21 @@ you pick asks for. It keeps everything it knows about you on your own device.
   several at once; a song you skipped past does not qualify, and something you finished disappears.
 - **What you have already heard** — Albums and playlists mark fully-listened tracks with a tick where
   the track number goes. It survives a playlist being edited.
-- **AI DJ** — Automixes from your listening history in three modes: heuristic (offline, rule-based),
-  external OpenAI-compatible API, and local. Custom base URL, model and key; defaults to a keyless
-  endpoint.
-- **Listening metrics** — Every play kept, with no ceiling, in the core. Plays, time and streaks aggregated by track, artist and album with
-  daily/weekly/monthly filters and a full history. Imports Spotify's Extended and legacy
-  `StreamingHistory*.json` exports, with deduplication.
-- **Song Radio** — A playlist of similar tracks from any Spotify track, on every detail screen.
+- **AI DJ** — Automixes from your listening history in three modes: heuristic (offline,
+  rule-based), an external OpenAI-compatible API, and **on-device** — Gemini Nano through Android's
+  AICore, on the phone's NPU where it has one: offline, no key, nothing leaves the phone. One-tap
+  moods (chill, focus, party, workout, happy, sad) and "more like" your most played artists.
+- **Listening metrics** — Every play kept, with no ceiling, in the core. Plays, time, streaks and
+  per-artist records (bronze to platinum) by track, artist and album, against the previous period,
+  with a full history. Imports Spotify's Extended and legacy `StreamingHistory*.json` exports, with
+  deduplication.
+- **Your year in music** — A Wrapped-style recap of any year from the history on your phone —
+  minutes, top artist and song, what kind of listener you are — as cards you can share as an image.
+- **Song Radio** — Spotify's own radio for any track, without an account.
+- **Credits & recommendations** — Who wrote, played and produced a song; ten songs that fit any
+  playlist, under it. Both from the public catalogue, no account needed.
+- **Artist pages** — Top tracks, discography, fans also like, and *About*: monthly listeners, world
+  rank, biography, the cities that listen most and upcoming concerts.
 - **New Releases & full discographies** — Latest releases grouped by when they actually came out
   (Spotify gives dates at three precisions, and treating them alike puts a whole year on 1 January),
   plus a per-artist view of every track in release order.
@@ -110,7 +141,9 @@ you pick asks for. It keeps everything it knows about you on your own device.
 
 ### 🎨 Interface & UX
 - **Jetpack Compose + Material 3** — Reactive state via `StateFlow`, navigation over a manual stack
-  with `SaveableStateHolder`. Synchronized auto-scrolling lyrics (LRCLIB, cached, retry on failure),
+  with `SaveableStateHolder`. Synchronized auto-scrolling lyrics (Spotify's own when signed in,
+  then LRCLIB and others, reorderable) with **on-device translation** line by line (ML Kit, offline
+  once the model is downloaded),
   library management with bulk actions, pull-to-refresh, draggable queue reordering, swipe-to-queue
   and adaptive marquee scrolling.
 - **Spotify Canvas** — Short looping muted videos behind the cover art and controls; tap to hide the
@@ -119,7 +152,8 @@ you pick asks for. It keeps everything it knows about you on your own device.
 ### 🪵 Developer & Diagnostics
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 276 in the Rust engine (unit plus end-to-end) and 50 in Kotlin, run by
+- **Tests** — 298 in the Rust engine (289 unit, 9 end-to-end; clippy-clean and enforced in CI) and 73
+  in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
 - **Internationalization** — English, Spanish and Japanese.
