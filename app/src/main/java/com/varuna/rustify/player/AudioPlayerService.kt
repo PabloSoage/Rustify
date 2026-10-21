@@ -733,8 +733,20 @@ class AudioPlayerService private constructor(private val context: Context) {
         // one (typically the software decoder) instead. Vendor video decoders do fail on unusual
         // profiles, and when they do it is per-video and perfectly reproducible.
         .setRenderersFactory(
-            androidx.media3.exoplayer.DefaultRenderersFactory(context)
-                .setEnableDecoderFallback(true)
+            object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+                // The audio lab's tap (AudioTap): a pass-through in the PCM chain. Offloaded
+                // playback skips the chain entirely, so it does not stand in offload's way.
+                override fun buildAudioSink(
+                    context: android.content.Context,
+                    enableFloatOutput: Boolean,
+                    enableAudioTrackPlaybackParams: Boolean
+                ): androidx.media3.exoplayer.audio.AudioSink =
+                    androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(enableFloatOutput)
+                        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                        .setAudioProcessors(arrayOf(AudioTap.processor))
+                        .build()
+            }.setEnableDecoderFallback(true)
         )
         // Keep the CPU and the Wi-Fi radio alive *while playing*. Without this the player defaults to
         // WAKE_MODE_NONE: with the screen off the device suspends, and the work that follows
@@ -2124,6 +2136,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         // Cancelling the job skips its `finally`, so free the resolution lock here rather than
         // waiting for its timeout.
         runCatching { if (resolutionWakeLock.isHeld) resolutionWakeLock.release() }
+        // Pause first: with audio offload the DSP holds seconds to minutes of the song, and a bare
+        // stop() lets an offloaded track play out what it has. Pausing flushes it at once.
+        exoPlayer.pause()
         exoPlayer.stop()
         _state.value = _state.value.copy(isPlaying = false, isBuffering = false)
         saveNow()

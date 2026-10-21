@@ -15,6 +15,7 @@
 pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
+pub mod dsp;
 pub mod calendar;
 pub mod env;
 pub mod errors;
@@ -2437,5 +2438,86 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getArtistAbou
     jni_bridge!(env_unowned, |env| {
         let id = artist_id.mutf8_chars(env)?.to_string();
         serialize_result(get_runtime().block_on(spotify::client::get_spotify_client().get_artist_about(&id)))
+    })
+}
+
+// =============================================================================
+// AUDIO LAB (4.7.1) — spectrum on kernels picked by the CPU's ARM extensions
+// =============================================================================
+
+/// JNI Bridge: analyse one frame of mono PCM. Answers `bands` dB values, then RMS and peak; an empty
+/// array when the input is unusable (not a power of two, too short) or anything fails. `kernel` is a
+/// [`dsp::Kernel`] id, or empty for the best this CPU has.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspAnalyzeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    samples: jni::objects::JFloatArray<'local>,
+    sample_rate: jint,
+    bands: jint,
+    kernel: JString<'local>,
+) -> jni::sys::jfloatArray {
+    let outcome = env_unowned.with_env(|env| -> jni::errors::Result<jni::sys::jfloatArray> {
+        let n = samples.len(env)?;
+        let mut buf = vec![0f32; n];
+        samples.get_region(env, 0, &mut buf)?;
+        let wanted = kernel.mutf8_chars(env)?.to_string();
+        let k = dsp::Kernel::available()
+            .into_iter()
+            .find(|k| k.id() == wanted)
+            .unwrap_or_else(dsp::Kernel::best);
+        let values: Vec<f32> = if n >= 64 && n.is_power_of_two() && sample_rate > 0 {
+            std::panic::catch_unwind(|| dsp::analyse(k, &buf, sample_rate as u32, bands.max(1) as usize))
+                .map(|a| a.bands_db.into_iter().chain([a.rms, a.peak]).collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let out = env.new_float_array(values.len())?;
+        out.set_region(env, 0, &values)?;
+        Ok(out.into_raw())
+    });
+    match outcome.into_outcome() {
+        Outcome::Ok(arr) => arr,
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// JNI Bridge: the CPU's ARM extensions and the analysis kernels it can run, as JSON:
+/// `{"features":[…],"kernels":[{"id","name"}],"best":"…"}`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspInfoNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let _ = &env;
+        serde_json::json!({
+            "features": dsp::cpu_features(),
+            "kernels": dsp::Kernel::available().iter().map(|k| serde_json::json!({"id": k.id(), "name": k.name()})).collect::<Vec<_>>(),
+            "best": dsp::Kernel::best().id(),
+        })
+        .to_string()
+    })
+}
+
+/// JNI Bridge: nanoseconds per `n`-sample frame for each kernel this CPU has, as JSON
+/// `[{"id","name","ns"}]` — the lab's "measure" button.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspBenchNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    n: jint,
+    iterations: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let _ = &env;
+        let n = (n.max(64) as usize).next_power_of_two();
+        let rows: Vec<serde_json::Value> = std::panic::catch_unwind(|| dsp::bench(n, iterations.max(1) as usize))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))
+            .collect();
+        serde_json::Value::Array(rows).to_string()
     })
 }

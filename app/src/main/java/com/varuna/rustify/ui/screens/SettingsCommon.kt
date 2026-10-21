@@ -397,12 +397,20 @@ internal fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
 
 // "Advanced" category: hash inspector plus access to metrics, the match editor, and logs.
 @Composable
-internal fun AdvancedLinks(onMetrics: () -> Unit, onMatchEditor: () -> Unit, onLogs: () -> Unit) {
+internal fun AdvancedLinks(
+    onMetrics: () -> Unit,
+    onMatchEditor: () -> Unit,
+    onLogs: () -> Unit,
+    onNanoChat: () -> Unit = {},
+    onAudioLab: () -> Unit = {},
+) {
     Spacer(Modifier.height(16.dp))
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
             stringResource(R.string.home_metrics) to onMetrics,
-            stringResource(R.string.settings_edit_matches) to onMatchEditor
+            stringResource(R.string.settings_edit_matches) to onMatchEditor,
+            stringResource(R.string.audio_lab_title) to onAudioLab,
+            stringResource(R.string.nano_chat_title) to onNanoChat
         ).forEach { (label, action) ->
             Button(onClick = action, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(label, color = Color.White, modifier = Modifier.weight(1f))

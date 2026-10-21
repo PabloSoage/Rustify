@@ -150,6 +150,9 @@ sealed class Screen {
     // Custom downloads (paste a URL, choose video/audio quality, separate folder).
     object CustomDownload : Screen()
     object LogViewer : Screen()
+    // Settings tools (4.7.1): a chat with Gemini Nano, and the audio analyser.
+    object NanoChat : Screen()
+    object AudioLab : Screen()
     object Metrics : Screen()
     // YouTube match editor (list with names; edit/preview/delete, add manually).
     object MatchEditor : Screen()

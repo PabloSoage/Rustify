@@ -531,6 +531,8 @@ fun RustifyApp(
             is Screen.Downloads -> "Downloads"
             is Screen.CustomDownload -> "CustomDownload"
             is Screen.LogViewer -> "LogViewer"
+            is Screen.NanoChat -> "NanoChat"
+            is Screen.AudioLab -> "AudioLab"
             is Screen.Metrics -> "Metrics"
             is Screen.NewReleases -> "NewReleases"
             is Screen.Dj -> "Dj"
@@ -935,6 +937,8 @@ fun RustifyApp(
                         onCategoryChange = { settingsCategory = it },
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
+                        onNavigateNanoChat = { navigationStack.add(Screen.NanoChat) },
+                        onNavigateAudioLab = { navigationStack.add(Screen.AudioLab) },
                         onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
                         onNavigateMatchEditor = { navigationStack.add(Screen.MatchEditor) },
                         onNavigateCustomDownload = { navigationStack.add(Screen.CustomDownload) },
@@ -967,6 +971,12 @@ fun RustifyApp(
                     com.varuna.rustify.ui.screens.CustomDownloadScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
+                }
+                is Screen.NanoChat -> {
+                    com.varuna.rustify.ui.screens.NanoChatScreen(onBack = { navigationStack.removeAt(navigationStack.lastIndex) })
+                }
+                is Screen.AudioLab -> {
+                    com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { navigationStack.removeAt(navigationStack.lastIndex) })
                 }
                 is Screen.LogViewer -> {
                     LogViewerScreen(

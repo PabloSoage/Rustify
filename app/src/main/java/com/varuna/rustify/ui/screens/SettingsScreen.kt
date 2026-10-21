@@ -135,6 +135,8 @@ fun SettingsScreen(
     category: String? = null,
     onCategoryChange: (String?) -> Unit = {},
     onNavigateLogViewer: () -> Unit = {},
+    onNavigateNanoChat: () -> Unit = {},
+    onNavigateAudioLab: () -> Unit = {},
     onLocaleChanged: ((String) -> Unit)? = null,
     onNavigateMetrics: () -> Unit = {},
     onNavigateMatchEditor: () -> Unit = {},
@@ -241,7 +243,7 @@ fun SettingsScreen(
                 UpdatesSection(context)
                 LoggingSection(context, onNavigateLogViewer)
                 SpotifyHashInspectorSection()
-                AdvancedLinks(onNavigateMetrics, onNavigateMatchEditor, onNavigateLogViewer)
+                AdvancedLinks(onNavigateMetrics, onNavigateMatchEditor, onNavigateLogViewer, onNavigateNanoChat, onNavigateAudioLab)
             }
             else -> {
                 GeneralCategory(

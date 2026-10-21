@@ -18,6 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -105,6 +108,30 @@ fun PlaylistScreen(
     var localTracksState by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
     val spotifyTracks = if (!isLocal) spotifyRepo.playlistTracksLive(playlistId) else null
     val tracks: List<FullTrack> = if (isLocal) localTracksState else spotifyTracks!!
+
+    // Find in this playlist (issue #2). The repo loads every page in the background, so once it is
+    // done the index holds the whole playlist, not the part scrolled into view; it is rebuilt each
+    // time the list grows. Ids are positions, so a song the playlist repeats is found at each place.
+    var findQuery by remember(playlistId) { mutableStateOf("") }
+    // A copy as the key: for a Spotify playlist `tracks` is the repo's live list, one object that
+    // grows as pages arrive, so keying on it froze the index at the moment it was still empty.
+    val trackSnapshot = tracks.toList()
+    val indexedTracks = remember(trackSnapshot) {
+        trackSnapshot.withIndex().toList().also { all ->
+            com.varuna.rustify.util.LocalSearch.index(
+                com.varuna.rustify.util.LocalSearch.PLAYLIST, all, { it.index.toString() },
+                { (_, t) -> listOf(t.name) + t.artists.map { a -> a.name } + listOf(t.album?.name.orEmpty()) }
+            )
+        }
+    }
+    val shownTracks = remember(indexedTracks, findQuery) {
+        com.varuna.rustify.util.LocalSearch.filter(
+            com.varuna.rustify.util.LocalSearch.PLAYLIST, indexedTracks, findQuery
+        ) { it.index.toString() }
+    }
+    androidx.compose.runtime.DisposableEffect(playlistId) {
+        onDispose { com.varuna.rustify.util.LocalSearch.forget(com.varuna.rustify.util.LocalSearch.PLAYLIST) }
+    }
 
     // Which of these have been heard through — point I. A row with no id gets a positional stand-in
     // rather than being dropped: dropping it would shift every tick after it onto the wrong song.
@@ -485,7 +512,27 @@ fun PlaylistScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(tracks, key = { index, track -> track.id?.takeIf { it.isNotBlank() } ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
+                        if (tracks.size > 1) {
+                            item(key = "find_in_playlist") {
+                                FindInPlaylistField(
+                                    query = findQuery,
+                                    onQueryChange = { findQuery = it },
+                                    searchedOf = if (loadingNow) tracks.size else null
+                                )
+                            }
+                        }
+                        if (shownTracks.isEmpty() && findQuery.isNotBlank()) {
+                            item(key = "find_no_results") {
+                                Text(
+                                    stringResource(R.string.playlist_find_none, findQuery),
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
+                                )
+                            }
+                        }
+                        // `index` stays the song's place in the whole playlist: playing from a result
+                        // plays the playlist from there, and the listened ticks line up.
+                        items(shownTracks, key = { (index, track) -> track.id?.takeIf { it.isNotBlank() }?.let { "$it@$index" } ?: "local_${index}_${track.name.hashCode()}" }) { (index, track) ->
                             // No scroll pagination: the repo loads all pages in the background
                             // (loadFullPlaylist), so the list is already complete here.
                             val trackId = track.id ?: ""
@@ -841,3 +888,35 @@ fun PlaylistScreen(
     }
 }
 
+
+/** The "find in playlist" box (issue #2). [searchedOf] is how many songs are loaded yet, while loading. */
+@Composable
+private fun FindInPlaylistField(query: String, onQueryChange: (String) -> Unit, searchedOf: Int?) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        androidx.compose.material3.OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.playlist_find_hint), color = Color.Gray) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.playlist_find_clear), tint = Color.Gray)
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                focusedContainerColor = Color(0xFF242424), unfocusedContainerColor = Color(0xFF242424),
+                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Color(0xFF1DB954)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (searchedOf != null && query.isNotBlank()) {
+            Text(stringResource(R.string.playlist_find_loading, searchedOf), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}

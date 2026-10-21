@@ -22,16 +22,20 @@ object AudioOffload {
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, on).apply()
     }
 
-    /** Why offload is not used right now, or null when it is wanted. */
-    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE }
+    /** The audio lab is open: it reads the PCM, and with offload there is none in the app. */
+    @Volatile var labOpen = false
 
-    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int): Blocker? = when {
+    /** Why offload is not used right now, or null when it is wanted. */
+    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB }
+
+    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false): Blocker? = when {
         !enabled -> Blocker.SWITCHED_OFF
+        labOpen -> Blocker.AUDIO_LAB
         equalizerOn -> Blocker.EQUALIZER
         fadeSeconds > 0 -> Blocker.FADE
         else -> null
     }
 
     fun blocker(context: Context): Blocker? =
-        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context))
+        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen)
 }

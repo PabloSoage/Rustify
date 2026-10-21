@@ -848,6 +848,20 @@ object NativeEngine {
     /** True once a filter list has been compiled. */
     external fun adblockIsReadyNative(): Boolean
 
+    // --- Audio lab (4.7.1). CPU only, no I/O: plain calls, but keep them off the main thread. ---
+
+    /**
+     * One frame of mono PCM (length a power of two, ≥ 64) → [bands] dB values, then RMS and peak.
+     * Empty on unusable input. [kernel] is an id from [dspInfoNative], or "" for the best one.
+     */
+    external fun dspAnalyzeNative(samples: FloatArray, sampleRate: Int, bands: Int, kernel: String): FloatArray?
+
+    /** `{"features":[…],"kernels":[{"id","name"}],"best":"…"}` — the CPU's ARM extensions and kernels. */
+    external fun dspInfoNative(): String
+
+    /** `[{"id","name","ns"}]` — nanoseconds per [n]-sample frame for each kernel, [iterations] runs. */
+    external fun dspBenchNative(n: Int, iterations: Int): String
+
     /** Releases the compiled engine (frees its memory when the web player closes). */
     external fun adblockClearNative()
 }
