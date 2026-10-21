@@ -472,6 +472,13 @@ fun TrackScreen(
     }
     val config = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    // Cover sized to the screen (4.7.1). Fixed 180/280 dp suited a phone and left a tablet's player
+    // a stamp-sized cover over an empty half screen. Phones in portrait keep 280.
+    val coverSize = when {
+        isLandscape -> minOf(config.screenHeightDp - 140, (config.screenWidthDp * 0.42f).toInt()).coerceAtLeast(180).dp
+        config.screenWidthDp >= 600 -> minOf(config.screenWidthDp - 96, (config.screenHeightDp * 0.45f).toInt()).dp
+        else -> 280.dp
+    }
 
     Scaffold(
         containerColor = darkBackground,
@@ -604,14 +611,14 @@ fun TrackScreen(
                                             TrackCoverSimple(
                                                 imgUrl = imgUrl,
                                                 contentDescription = track.name,
-                                                size = 180.dp
+                                                size = coverSize
                                             )
                                             Spacer(modifier = Modifier.width(24.dp))
                                         } else {
                                             // Tappable placeholder — preserves layout, tap to hide UI
                                             Box(
                                                 modifier = Modifier
-                                                    .size(180.dp)
+                                                    .size(coverSize)
                                                     .clickable(
                                                         indication = null,
                                                         interactionSource = remember { MutableInteractionSource() }
@@ -664,14 +671,14 @@ fun TrackScreen(
                                             TrackCoverSimple(
                                                 imgUrl = imgUrl,
                                                 contentDescription = track.name,
-                                                size = 280.dp
+                                                size = coverSize
                                             )
                                             Spacer(modifier = Modifier.height(24.dp))
                                         } else {
                                             // Tappable placeholder — preserves layout, tap to hide UI
                                             Box(
                                                 modifier = Modifier
-                                                    .size(280.dp)
+                                                    .size(coverSize)
                                                     .clickable(
                                                         indication = null,
                                                         interactionSource = remember { MutableInteractionSource() }
