@@ -65,7 +65,12 @@ object PublicHome {
 
     private suspend fun charts(context: Context, repo: SpotifyRepository): BrowseSection? = coroutineScope {
         // The country's name in English is what the chart playlists are called ("Top 50 - Spain").
-        val country = Locale.getDefault().getDisplayCountry(Locale.ENGLISH).takeIf { it.isNotBlank() }
+        // Spotify's own short names where they differ from the English country name.
+        val country = when (Locale.getDefault().country) {
+            "US" -> "USA"
+            "GB" -> "UK"
+            else -> Locale.getDefault().getDisplayCountry(Locale.ENGLISH).takeIf { it.isNotBlank() }
+        }
         val queries = listOfNotNull("Top 50 Global", country?.let { "Top 50 $it" }, "Viral 50 Global", country?.let { "Viral 50 $it" })
         val found = queries.map { q -> async { editorial(repo, q) } }.awaitAll().filterNotNull().distinctBy { it.id }
         if (found.isEmpty()) null
