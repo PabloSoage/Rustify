@@ -1519,22 +1519,7 @@ private fun GeneralCategory(
 
                         if (djMode == "local") {
                             Spacer(modifier = Modifier.height(8.dp))
-                            // Where Gemini Nano stands on this phone, asked of AICore when the mode is picked.
-                            val nano by com.varuna.rustify.dj.OnDeviceModel.status.collectAsState()
-                            LaunchedEffect(Unit) { com.varuna.rustify.dj.OnDeviceModel.refresh() }
-                            val nanoText = when (nano) {
-                                com.varuna.rustify.dj.OnDeviceModel.Status.READY -> stringResource(R.string.settings_dj_local_ready)
-                                com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADING -> stringResource(R.string.settings_dj_local_downloading)
-                                com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADABLE -> stringResource(R.string.settings_dj_local_downloadable)
-                                com.varuna.rustify.dj.OnDeviceModel.Status.UNSUPPORTED -> stringResource(R.string.settings_dj_local_unsupported)
-                                else -> stringResource(R.string.settings_dj_local_note)
-                            }
-                            Text(nanoText, color = if (nano == com.varuna.rustify.dj.OnDeviceModel.Status.READY) Color(0xFF1DB954) else Color.Gray, fontSize = 12.sp)
-                            if (nano == com.varuna.rustify.dj.OnDeviceModel.Status.DOWNLOADABLE) {
-                                TextButton(onClick = { com.varuna.rustify.dj.OnDeviceModel.download() }) {
-                                    Text(stringResource(R.string.settings_dj_local_download), color = Color(0xFF1DB954))
-                                }
-                            }
+                            NanoModelPanel()
                         }
 
                         // DJ voice (hybrid: native TTS plus an optional cloud endpoint).

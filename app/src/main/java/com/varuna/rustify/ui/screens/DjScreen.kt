@@ -105,6 +105,14 @@ fun DjScreen(
     // Your three most played artists of the last 30 days, for "more like …" shortcuts.
     var topArtists by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(Unit) {
+        // On-device DJ: load Gemini Nano while the user is still choosing, so the first answer is
+        // not the slow one (12.5 s cold vs 6.9 s warm, measured on a POCO F8 Ultra).
+        if (mode == DjMode.LOCAL) {
+            com.varuna.rustify.dj.OnDeviceModel.init(context)
+            if (com.varuna.rustify.dj.OnDeviceModel.refresh() == com.varuna.rustify.dj.OnDeviceModel.Status.READY) {
+                com.varuna.rustify.dj.OnDeviceModel.warmup()
+            }
+        }
         val now = System.currentTimeMillis()
         topArtists = runCatching {
             com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now)

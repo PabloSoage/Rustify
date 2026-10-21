@@ -480,6 +480,7 @@ internal fun AudioBackendsSection(context: Context) {
     NormalizeVolumeSection(context)
     EqualizerSection(context)
     FadeBetweenSongsSection(context)
+    AudioOffloadSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     CastingSection(context)

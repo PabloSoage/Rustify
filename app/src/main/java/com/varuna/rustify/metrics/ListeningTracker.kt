@@ -63,9 +63,7 @@ class ListeningTracker(private val appContext: Context) {
         val now = System.currentTimeMillis()
         val posDelta = posMs - s.lastPos
         val wallDelta = if (s.lastTickAt > 0L) now - s.lastTickAt else 0L
-        if (posDelta > 0L && wallDelta in 1L..10_000L) {
-            s.listenedMs += minOf(posDelta, wallDelta)
-        }
+        s.listenedMs += creditedListenMs(posDelta, wallDelta)
         s.lastPos = posMs
         s.lastTickAt = now
     }
@@ -237,4 +235,20 @@ class ListeningTracker(private val appContext: Context) {
         suspend fun importEvents(context: Context, events: JSONArray): PlayImportReport =
             importHistory(context, events.toString().byteInputStream())
     }
+}
+
+/**
+ * How much of a tick counts as listening: the position advanced [posDelta], the clock [wallDelta].
+ *
+ * Ticks are half a second apart while the app is awake, and the old rule — count only gaps up to
+ * 10 s — was written for that. With audio offload (4.7.1) the DSP plays while the CPU sleeps, and
+ * the next tick can come minutes later; dropping those gaps lost whole songs from the stats. A long
+ * gap counts when the position moved about as much as the clock did — playback went on unattended.
+ * A seek (position far ahead of the clock) and a pause (position still) still count nothing extra.
+ */
+internal fun creditedListenMs(posDelta: Long, wallDelta: Long): Long = when {
+    posDelta <= 0L || wallDelta <= 0L -> 0L
+    wallDelta <= 10_000L -> minOf(posDelta, wallDelta)
+    kotlin.math.abs(posDelta - wallDelta) <= maxOf(2_000L, wallDelta / 20) -> minOf(posDelta, wallDelta)
+    else -> 0L
 }

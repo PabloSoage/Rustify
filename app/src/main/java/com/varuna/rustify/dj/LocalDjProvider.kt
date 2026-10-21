@@ -68,11 +68,46 @@ object OnDeviceModel {
     private val _status = MutableStateFlow(Status.UNKNOWN)
     val status: StateFlow<Status> = _status
 
+    /** While downloading: bytes so far and in total (total 0 until AICore says it). */
+    data class Progress(val downloaded: Long, val total: Long)
+    private val _progress = MutableStateFlow<Progress?>(null)
+    val progress: StateFlow<Progress?> = _progress
+
+    /** The model AICore serves, e.g. "gemini-nano-…"; null until it is ready. */
+    private val _modelName = MutableStateFlow<String?>(null)
+    val modelName: StateFlow<String?> = _modelName
+
+    private const val PREFS = "rustify_settings"
+    private const val KEY_SIZE = "dj_nano_size_bytes"
+
+    /**
+     * The model's size as AICore last reported it when downloading, or 0 if this install never saw
+     * a download. The API has no "how big is it" for a model already on the phone.
+     */
+    fun knownSizeBytes(context: android.content.Context): Long =
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getLong(KEY_SIZE, 0L)
+
+    @Volatile private var appContext: android.content.Context? = null
+    fun init(context: android.content.Context) { appContext = context.applicationContext }
+
+    /**
+     * Loads the model into memory ahead of the first request: measured on a POCO F8 Ultra, the
+     * first answer took 12.5 s and later ones 6.9 s. Called when the DJ screen opens in this mode.
+     */
+    fun warmup() {
+        if (_status.value != Status.READY) return
+        scope.launch { runCatching { model.warmup() }.onFailure { Log.w("LocalDj", "warmup failed: ${it.message}") } }
+    }
+
     internal val model: GenerativeModel by lazy { Generation.getClient() }
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /** Asks AICore where it stands. Never throws: a phone without AICore is [Status.UNSUPPORTED]. */
-    suspend fun refresh(): Status {
+    // Off the main thread: the first call builds AICore's client, which reads from disk (StrictMode
+    // flagged it from the DJ screen's LaunchedEffect).
+    suspend fun refresh(): Status = kotlinx.coroutines.withContext(Dispatchers.IO) { refreshOnIo() }
+
+    private suspend fun refreshOnIo(): Status {
         if (following) return Status.DOWNLOADING
         val s = runCatching {
             when (model.checkStatus()) {
@@ -83,6 +118,9 @@ object OnDeviceModel {
             }
         }.getOrDefault(Status.UNSUPPORTED)
         _status.value = s
+        if (s == Status.READY && _modelName.value == null) {
+            _modelName.value = runCatching { model.getBaseModelName() }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
         // AICore keeps downloading after the app that asked is gone (an update, a kill). Without
         // following it again the status said "downloading" forever (4.7.1, seen on a POCO F8 Ultra:
         // 1.9 GB arrived, the screen never changed).
@@ -101,8 +139,15 @@ object OnDeviceModel {
             runCatching {
                 model.download().collect { d ->
                     when (d) {
-                        is DownloadStatus.DownloadCompleted -> _status.value = Status.READY
-                        is DownloadStatus.DownloadFailed -> _status.value = Status.DOWNLOADABLE
+                        is DownloadStatus.DownloadStarted -> {
+                            _progress.value = Progress(0L, d.bytesToDownload)
+                            if (d.bytesToDownload > 0) appContext?.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                                ?.edit()?.putLong(KEY_SIZE, d.bytesToDownload)?.apply()
+                        }
+                        is DownloadStatus.DownloadProgress ->
+                            _progress.value = Progress(d.totalBytesDownloaded, _progress.value?.total ?: 0L)
+                        is DownloadStatus.DownloadCompleted -> { _status.value = Status.READY; _progress.value = null }
+                        is DownloadStatus.DownloadFailed -> { _status.value = Status.DOWNLOADABLE; _progress.value = null }
                         else -> {}
                     }
                 }

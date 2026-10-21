@@ -690,3 +690,48 @@ internal fun FadeBetweenSongsSection(context: Context) {
         }
     }
 }
+
+/** Audio offload to the phone's DSP (4.7.1). See [com.varuna.rustify.player.AudioOffload]. */
+@Composable
+internal fun AudioOffloadSection(context: Context) {
+    var enabled by remember { mutableStateOf(com.varuna.rustify.player.AudioOffload.isEnabled(context)) }
+    val blocker = com.varuna.rustify.player.AudioOffload.blocker(
+        enabled,
+        com.varuna.rustify.player.EqualizerController.isEnabled(context),
+        com.varuna.rustify.player.TransitionFade.seconds(context)
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_offload),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { on ->
+                        enabled = on
+                        com.varuna.rustify.player.AudioOffload.setEnabled(context, on)
+                        com.varuna.rustify.player.AudioPlayerService.instance?.applyAudioOffload()
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_offload_desc), color = Color.Gray, fontSize = 12.sp)
+            when (blocker) {
+                com.varuna.rustify.player.AudioOffload.Blocker.EQUALIZER ->
+                    Text(stringResource(R.string.settings_offload_blocked_eq), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.FADE ->
+                    Text(stringResource(R.string.settings_offload_blocked_fade), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                else -> {}
+            }
+        }
+    }
+}

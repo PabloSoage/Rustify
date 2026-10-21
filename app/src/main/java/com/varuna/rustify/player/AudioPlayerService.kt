@@ -814,6 +814,18 @@ class AudioPlayerService private constructor(private val context: Context) {
         // The session the player already has, before any change is reported.
         EqualizerController.attach(context, exoPlayer.audioSessionId)
 
+        // Whether the DSP really took the song, and when the CPU sleeps for it (AudioOffload).
+        // Info level: it is the one way to tell offload is working on a given phone.
+        exoPlayer.addAudioOffloadListener(object : ExoPlayer.AudioOffloadListener {
+            override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
+                android.util.Log.i("AudioOffload", "offloaded playback: $isOffloadedPlayback")
+            }
+            override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
+                android.util.Log.i("AudioOffload", "cpu sleeping for offload: $isSleepingForOffload")
+            }
+        })
+        applyAudioOffload()
+
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -1013,7 +1025,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                     runCatching { exoPlayer.volume = baseVolume * gain }
                     applied = gain
                 }
-                delay(if (gain < 1f) 50L else 250L)
+                // With the fade off nothing here changes: look again every 2 s rather than waking the
+                // CPU four times a second for it (4.7.1).
+                delay(if (gain < 1f) 50L else if (fadeMs > 0) 250L else 2_000L)
             }
         }
 
@@ -1478,6 +1492,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     )
                 }
 
+                applyAudioOffload()
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
                 // From here on the player really holds THIS track, so its live position is meaningful.
@@ -2201,6 +2216,27 @@ class AudioPlayerService private constructor(private val context: Context) {
      * `1.0f` restores this, so the DJ's duck and the "stuck duck" safety net keep the track's level.
      */
     @Volatile private var baseVolume = 1f
+    /**
+     * Asks media3 to offload (or not) from the next track on, per [AudioOffload]. Gapless support is
+     * required so an album that runs track into track does not gain a gap.
+     */
+    fun applyAudioOffload() {
+        val blocker = AudioOffload.blocker(context)
+        val mode = if (blocker == null) androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+            else androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+        runCatching {
+            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                .setAudioOffloadPreferences(
+                    androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                        .setAudioOffloadMode(mode)
+                        .setIsGaplessSupportRequired(true)
+                        .build()
+                )
+                .build()
+        }.onFailure { android.util.Log.w("AudioOffload", "could not set preferences: ${it.message}") }
+        android.util.Log.i("AudioOffload", if (blocker == null) "requested" else "not requested: $blocker")
+    }
+
     fun duckForVoice() { isDucking = true; djDuckHandler.post { runCatching { exoPlayer.volume = 0.22f * baseVolume } } }
     fun unduckFromVoice() { isDucking = false; djDuckHandler.post { runCatching { exoPlayer.volume = baseVolume } } }
 
