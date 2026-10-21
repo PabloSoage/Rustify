@@ -43,12 +43,16 @@ class LocalDjProvider(
             return plan.copy(intro = "${plan.intro} ($why)")
         }
         val prompt = DjPrompt.systemPrompt(context) + "\n\n" + DjPrompt.userPrompt(context, request)
+        val started = android.os.SystemClock.elapsedRealtime()
         val answer = runCatching {
             // A small model on a phone: 20 s is generous, and past it the heuristic is the better DJ.
             withTimeout(20_000) { OnDeviceModel.model.generateContent(prompt) }
                 .candidates.firstOrNull()?.text.orEmpty()
         }.onFailure { Log.w(TAG, "on-device generation failed", it) }.getOrNull()
-        return answer?.let { DjPrompt.parsePlan(it) } ?: fallback.plan(context, request)
+        val plan = answer?.let { DjPrompt.parsePlan(it) }
+        Log.i(TAG, "on-device answer in ${android.os.SystemClock.elapsedRealtime() - started} ms, " +
+            "${answer?.length ?: 0} chars, ${if (plan != null) "parsed" else "not parsed: heuristic instead"}")
+        return plan ?: fallback.plan(context, request)
     }
 
     private companion object { const val TAG = "LocalDj" }
