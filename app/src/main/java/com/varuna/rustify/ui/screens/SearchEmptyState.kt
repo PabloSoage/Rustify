@@ -75,6 +75,7 @@ fun SearchEmptyState(
     bottomPadding: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
+    val columns = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 180).coerceIn(2, 6)
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = bottomPadding)) {
         if (recent.isNotEmpty()) {
             item {
@@ -131,14 +132,15 @@ fun SearchEmptyState(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
-        // Two tiles a row; a nested grid cannot live inside a LazyColumn.
-        items(searchCategories.chunked(2)) { pair ->
+        // Rows of tiles, as many as fit at ~180 dp (two on a phone, five or six on a tablet in
+        // landscape, where two stretched into bars). A nested grid cannot live inside a LazyColumn.
+        items(searchCategories.chunked(columns)) { pair ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 pair.forEach { cat -> CategoryTile(cat, onCategoryClick, Modifier.weight(1f)) }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                repeat(columns - pair.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
