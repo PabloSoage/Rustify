@@ -280,8 +280,8 @@ pub fn compute(events: &[Event], from: i64, to: i64, zone: &Zone) -> Stats {
     stats.plays_by_year = years.into_iter().map(|(year, plays)| YearPlays { year, plays }).collect();
 
     let completed = counted.iter().filter(|e| e.completed).count() as u32;
-    if stats.total_plays > 0 {
-        stats.completion_rate = completed * 100 / stats.total_plays;
+    if let Some(rate) = (completed * 100).checked_div(stats.total_plays) {
+        stats.completion_rate = rate;
     }
 
     let mut per_day: BTreeMap<i64, (i64, i64)> = BTreeMap::new();

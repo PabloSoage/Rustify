@@ -332,8 +332,7 @@ impl Body for DecryptingBody {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Err(e))) => {
                     this.finished = true;
-                    return Poll::Ready(Some(Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    return Poll::Ready(Some(Err(io::Error::other(
                         e.to_string(),
                     ))));
                 }

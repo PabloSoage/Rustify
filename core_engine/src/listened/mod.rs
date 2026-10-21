@@ -345,7 +345,7 @@ mod tests {
         // The claim the whole design rests on, as a test rather than a comment: 200 tracks all
         // marked is a 50-character string, against roughly 4 KB if these were Spotify ids.
         let mut marks = Marks::default();
-        marks.write_all(&vec![true; 200]);
+        marks.write_all(&[true; 200]);
         assert_eq!(marks.len, 200);
         assert_eq!(marks.bits.len(), 50);
         assert_eq!(marks.count(), 200);

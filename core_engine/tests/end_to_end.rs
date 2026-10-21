@@ -8,6 +8,8 @@
 // index did not survive a chunk boundary.
 //
 // So each test here crosses at least two modules and asserts something a user would notice.
+// The mock's test lock is held across awaits on purpose; see the same allow in src/lib.rs.
+#![allow(clippy::await_holding_lock)]
 
 use core_engine::env::mock::{self, MockEnv};
 use core_engine::env::Env;

@@ -110,7 +110,7 @@ pub async fn record<E: Env>(session: Session) -> Result<(), EnvError> {
         sessions.push(session);
     }
     // Newest first, then truncated: the cap is on what is kept, not on what is written.
-    sessions.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at_ms));
     sessions.truncate(MAX_SESSIONS);
     storage::set_json::<E, _>(STORAGE_KEY, Some(&sessions)).await
 }
@@ -121,7 +121,7 @@ pub async fn list<E: Env>() -> Vec<Session> {
     // Filtered on the way out as well as on the way in, because the rules can change between the
     // release that wrote an entry and the one that reads it.
     sessions.retain(Session::is_resumable);
-    sessions.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at_ms));
     sessions
 }
 

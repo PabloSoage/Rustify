@@ -7,6 +7,11 @@
 //   3. Serialize result to JSON string
 //   4. Return as Java String
 
+// Tests hold `env::mock::lock_and_reset()` for their whole body, awaits included: that guard is what
+// serialises the tests sharing the global mock. The production rule — never a lock across an
+// `.await` (CLAUDE.md) — is checked on the library, where clippy is clean.
+#![cfg_attr(test, allow(clippy::await_holding_lock))]
+
 pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
@@ -411,9 +416,9 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerTrack
         let name_str = name.mutf8_chars(env)?.to_string();
         let artists_json_str = artists_json.mutf8_chars(env)?.to_string();
         let isrc_str = isrc.mutf8_chars(env)?.to_string();
-        
+
         let artists: Vec<String> = serde_json::from_str(&artists_json_str).unwrap_or_default();
-        
+
         youtube::server::register_track_meta(id_str, name_str, artists, duration_ms as u32, isrc_str);
         Ok(())
     });
@@ -807,8 +812,8 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativ
     jni_bridge!(env_unowned, |env| {
         let mutf8 = spotify_id.mutf8_chars(env)?;
         let s_id = mutf8.to_string();
-        let alt_id = youtube::server::get_alternative_track(&s_id).unwrap_or_default();
-        alt_id
+
+        youtube::server::get_alternative_track(&s_id).unwrap_or_default()
     })
 }
 
@@ -1767,14 +1772,14 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
 ) {
     let _ = jni_bridge!(env_unowned, |env| {
         get_runtime().spawn(async {
-            <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup started..."));
+            <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup started...");
             // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
             // type parameter, so nothing has to be cloned out of the lock to make the call.
             match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
                 Ok(new_hashes) => {
                     let client = spotify::client::get_spotify_client();
                     client.update_gql_hashes(new_hashes);
-                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup completed successfully."));
+                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup completed successfully.");
                 }
                 Err(e) => {
                     <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));

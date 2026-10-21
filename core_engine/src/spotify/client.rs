@@ -445,7 +445,7 @@ impl<E: Env> SpotifyClient<E> {
         let mut nuances: Vec<TotpNuance> = serde_json::from_str(content_str)
             .map_err(|e| SpotifyError::ParseError(format!("Failed to parse nuances: {}", e)))?;
 
-        nuances.sort_by(|a, b| b.v.cmp(&a.v));
+        nuances.sort_by_key(|n| std::cmp::Reverse(n.v));
         nuances.into_iter().next()
             .ok_or(SpotifyError::ParseError("No nuances found in gist".into()))
     }
@@ -1000,12 +1000,18 @@ impl<E: Env> SpotifyClient<E> {
     }
 }
 
+impl<E: Env> Default for SpotifyClient<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // =============================================================================
 // GQL RESPONSE PARSING HELPERS
 // =============================================================================
 
 pub fn id_from_uri(uri: &str) -> Option<&str> {
-    uri.split(':').last()
+    uri.split(':').next_back()
 }
 
 pub fn parse_images_from_sources(sources: &Value) -> Vec<SpotifyImage> {

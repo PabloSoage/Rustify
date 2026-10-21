@@ -41,7 +41,7 @@ const HEX: &[u8; 16] = b"0123456789abcdef";
 /// produces audio that plays and is noise — the failure mode that does not raise anything.
 #[inline]
 pub fn stripe_is_encrypted(index: u64) -> bool {
-    index % 3 == 0
+    index.is_multiple_of(3)
 }
 
 /// The 16-byte Blowfish key for a Deezer track id.
@@ -100,13 +100,11 @@ pub fn decrypt_stripe(key: &[u8; 16], stripe: &mut [u8]) {
 /// `buffer` must begin on a stripe boundary. Returns how many stripes it covered, so a caller
 /// reading a file in windows can carry the index forward without recomputing it from an offset.
 pub fn decrypt_aligned(key: &[u8; 16], buffer: &mut [u8], first_stripe_index: u64) -> u64 {
-    let mut index = first_stripe_index;
     let mut covered = 0;
-    for stripe in buffer.chunks_mut(STRIPE) {
-        if stripe_is_encrypted(index) {
+    for (offset, stripe) in buffer.chunks_mut(STRIPE).enumerate() {
+        if stripe_is_encrypted(first_stripe_index + offset as u64) {
             decrypt_stripe(key, stripe);
         }
-        index += 1;
         covered += 1;
     }
     covered

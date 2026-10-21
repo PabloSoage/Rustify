@@ -69,8 +69,8 @@ fn golden<T: serde::Serialize>(name: &str, value: &T) -> Option<String> {
     } else {
         Some(format!(
             "{name}.json no longer matches what the core produces.\n  stored:   {}\n  produced: {}",
-            stored.replace('\n', " ").trim().to_string(),
-            produced.replace('\n', " ").trim().to_string(),
+            stored.replace('\n', " ").trim(),
+            produced.replace('\n', " ").trim(),
         ))
     }
 }

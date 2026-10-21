@@ -194,7 +194,7 @@ fn context_client(c: &ClientProfile, visitor: Option<&str>) -> Value {
     client
 }
 
-fn request<E: Env>(path: &str, c: &ClientProfile, body: &Value, visitor: Option<&str>) -> Result<HttpRequest, EnvError> {
+fn request(path: &str, c: &ClientProfile, body: &Value, visitor: Option<&str>) -> Result<HttpRequest, EnvError> {
     let mut req = HttpRequest::new(Method::Post, format!("{API}/{path}?prettyPrint=false"))
         .header("User-Agent", c.user_agent.clone())
         .header("X-YouTube-Client-Name", c.client_id.to_string())
@@ -215,7 +215,7 @@ async fn visitor<E: Env>(c: &ClientProfile) -> Option<String> {
         }
     }
     let body = json!({ "context": { "client": context_client(c, None) } });
-    let req = request::<E>("visitor_id", c, &body, None).ok()?;
+    let req = request("visitor_id", c, &body, None).ok()?;
     let res = E::fetch(req).await.ok()?;
     if !res.is_success() {
         return None;
@@ -302,7 +302,7 @@ pub async fn resolve_audio<E: Env>(video_id: &str, prefs: &AudioPrefs) -> Result
             "contentCheckOk": true,
             "racyCheckOk": true,
         });
-        let req = request::<E>("player", c, &body, visitor.as_deref()).map_err(InnertubeError::from)?;
+        let req = request("player", c, &body, visitor.as_deref()).map_err(InnertubeError::from)?;
         let res = match E::fetch(req).await {
             Ok(res) => res,
             Err(e) => {

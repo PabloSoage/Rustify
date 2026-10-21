@@ -129,7 +129,7 @@ pub fn spawn_writer<E: Env>(
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
 
     E::exec_concurrent(async move {
-        let outcome = write_stream::<E>(&cache_path, &mut rx).await;
+        let outcome = write_stream(&cache_path, &mut rx).await;
         match outcome {
             Ok(true) => {
                 E::log(
@@ -162,7 +162,7 @@ pub fn spawn_writer<E: Env>(
 /// Drains `rx` into `{cache_path}.part`, and renames it into place only on [`WritePart::Complete`].
 ///
 /// Returns whether a complete file was produced.
-async fn write_stream<E: Env>(
+async fn write_stream(
     cache_path: &str,
     rx: &mut tokio::sync::mpsc::Receiver<super::proxy::WritePart>,
 ) -> Result<bool, EnvError> {

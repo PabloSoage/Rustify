@@ -34,7 +34,7 @@ impl<E: Env> SpotifyClient<E> {
             })
             .filter_map(|section| {
                 let uri = section["uri"].as_str()?;
-                let id = uri.split(':').last()?.to_string();
+                let id = uri.split(':').next_back()?.to_string();
                 let title = section["data"]["title"]["transformedLabel"].as_str()?.to_string();
 
                 let empty_items = vec![];
@@ -49,10 +49,10 @@ impl<E: Env> SpotifyClient<E> {
                         match (wrapper_type, content_type) {
                             ("PlaylistResponseWrapper", "Playlist") => {
                                 let playlist_data = &item["content"]["data"];
-                                let pid = item["uri"].as_str()?.split(':').last()?.to_string();
+                                let pid = item["uri"].as_str()?.split(':').next_back()?.to_string();
                                 let owner_data = &playlist_data["ownerV2"]["data"];
                                 let owner_id = owner_data["uri"].as_str()
-                                    .and_then(|u| u.split(':').last())
+                                    .and_then(|u| u.split(':').next_back())
                                     .unwrap_or("").to_string();
 
                                 let images = playlist_data["images"]["items"]
@@ -92,13 +92,13 @@ impl<E: Env> SpotifyClient<E> {
                             }
                             ("AlbumResponseWrapper", "Album") => {
                                 let album_data = &item["content"]["data"];
-                                let aid = item["uri"].as_str()?.split(':').last()?.to_string();
+                                let aid = item["uri"].as_str()?.split(':').next_back()?.to_string();
 
                                 let artists = album_data["artists"]["items"]
                                     .as_array()
                                     .map(|arr| {
                                         arr.iter().filter_map(|a| {
-                                            let artist_id = a["uri"].as_str()?.split(':').last()?.to_string();
+                                            let artist_id = a["uri"].as_str()?.split(':').next_back()?.to_string();
                                             Some(SimpleArtist {
                                                 id: artist_id.clone(),
                                                 name: a["profile"]["name"].as_str()?.to_string(),

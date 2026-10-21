@@ -22,9 +22,11 @@ jobs:
       # through MockEnv and need it exposed outside cfg(test).
       #
       # Not enforced yet, and on purpose rather than forgotten: `cargo fmt --check` (the crate has
-      # never been fmt-clean — 312 hunks) and `cargo clippy -- -D warnings` (88 findings). A check
-      # that fails on every run teaches everyone to ignore the red.
+      # never been fmt-clean — 312 hunks). A check that fails on every run teaches everyone to
+      # ignore the red.
       - run: cargo test --all-targets --features mock-env
+      # Clippy is clean since 4.7 (it had 88 findings), so it is enforced from here on.
+      - run: cargo clippy --all-targets --features mock-env -- -D warnings
 
   android:
     runs-on: ubuntu-latest

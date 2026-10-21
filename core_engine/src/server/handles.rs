@@ -71,7 +71,7 @@ pub fn register<E: Env>(entry: StreamEntry) -> String {
     if let Ok(mut map) = table().lock() {
         if map.len() >= SWEEP_ABOVE {
             let now = E::now_ms();
-            map.retain(|_, e| e.expires_at_ms.map_or(true, |expiry| expiry > now));
+            map.retain(|_, e| e.expires_at_ms.is_none_or(|expiry| expiry > now));
         }
         map.insert(handle.clone(), entry);
     }

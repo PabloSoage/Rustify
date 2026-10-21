@@ -17,6 +17,11 @@ impl ByteRange {
     pub fn len(&self) -> u64 {
         self.end - self.start + 1
     }
+
+    /// A range is inclusive at both ends, so it always holds at least one byte.
+    pub fn is_empty(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

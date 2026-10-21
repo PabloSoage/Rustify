@@ -235,8 +235,16 @@ mod tests {
         *slot().lock().unwrap() = None;
     }
 
+    /// These tests share the one global session slot, and the test runner runs them in parallel: a
+    /// `clear()` from one landing between two lines of another failed it now and then. Each takes this.
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn only_the_device_being_cast_to_is_allowed() {
+        let _serial = serial();
         with_session(ip(192, 168, 1, 34), ip(192, 168, 1, 90));
         assert!(peer_is_allowed(ip(192, 168, 1, 90)));
         // The neighbour on the same wifi. This is the whole point of layer 3.
@@ -248,6 +256,7 @@ mod tests {
 
     #[test]
     fn with_no_session_nobody_is_allowed() {
+        let _serial = serial();
         // The failure mode that matters: a cleared session must answer *nobody*, not everybody.
         clear();
         assert!(!peer_is_allowed(ip(192, 168, 1, 90)));
@@ -256,6 +265,7 @@ mod tests {
 
     #[test]
     fn closing_stops_answering_before_the_listener_even_notices() {
+        let _serial = serial();
         with_session(ip(192, 168, 1, 34), ip(192, 168, 1, 90));
         assert!(peer_is_allowed(ip(192, 168, 1, 90)));
         *slot().lock().unwrap() = None;
@@ -264,6 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn binding_to_an_unspecified_address_is_refused() {
+        let _serial = serial();
         clear();
         // E11 in one assertion. If this ever passes, the server is on the whole wifi.
         let err = open::<crate::env::mock::MockEnv>(
@@ -277,6 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_loopback_device_is_refused() {
+        let _serial = serial();
         clear();
         assert!(
             open::<crate::env::mock::MockEnv>(ip(192, 168, 1, 34), ip(127, 0, 0, 1))
@@ -288,6 +300,7 @@ mod tests {
 
     #[test]
     fn a_url_is_only_produced_while_a_session_is_open() {
+        let _serial = serial();
         clear();
         assert!(url_for("abc").is_none());
     }
