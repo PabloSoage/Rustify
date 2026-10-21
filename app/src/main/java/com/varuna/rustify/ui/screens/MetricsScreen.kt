@@ -131,6 +131,9 @@ fun MetricsScreen(onBack: () -> Unit) {
         }
     }
 
+    var showRecap by remember { mutableStateOf(false) }
+    if (showRecap) RecapDialog(year = java.time.LocalDate.now().year, onDismiss = { showRecap = false })
+
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -170,6 +173,14 @@ fun MetricsScreen(onBack: () -> Unit) {
                             )
                         )
                     }
+                }
+                Spacer(Modifier.height(8.dp))
+                // "Your year" (4.7): the history as swipeable, shareable cards. See RecapDialog.
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { showRecap = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.recap_open, java.time.LocalDate.now().year), color = Color.White)
                 }
                 Spacer(Modifier.height(12.dp))
             }

@@ -718,4 +718,18 @@
     <string name="notif_mode_shuffle">シャッフル</string>
     <string name="notif_mode_repeat">リピート</string>
     <string name="auto_section_recent">最近再生した曲</string>
+    <string name="recap_open">あなたの %1$d 年の音楽</string>
+    <string name="recap_empty">%1$d 年はまだ再生がありません。</string>
+    <string name="recap_minutes_title">%1$d 年の再生時間</string>
+    <string name="recap_minutes_sub">分 · %1$s 回再生 · %2$d 組のアーティスト</string>
+    <string name="recap_top_artist">トップアーティスト</string>
+    <string name="recap_top_track">トップソング</string>
+    <string name="recap_plays">%1$d 回再生</string>
+    <string name="recap_when_title">あなたは</string>
+    <string name="recap_type_night">夜型リスナー</string>
+    <string name="recap_type_early">朝型リスナー</string>
+    <string name="recap_type_day">昼型リスナー</string>
+    <string name="recap_type_evening">夕方型リスナー</string>
+    <string name="recap_when_sub">よく聴いた月: %1$s · 曜日: %2$s · 最長連続: %3$d 日</string>
+    <string name="recap_share">共有</string>
 </resources>

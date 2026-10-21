@@ -719,4 +719,18 @@
     <string name="notif_mode_shuffle">Aleatorio</string>
     <string name="notif_mode_repeat">Repetir</string>
     <string name="auto_section_recent">Escuchado recientemente</string>
+    <string name="recap_open">Tu %1$d en música</string>
+    <string name="recap_empty">Aún no has escuchado nada en %1$d.</string>
+    <string name="recap_minutes_title">En %1$d escuchaste</string>
+    <string name="recap_minutes_sub">minutos · %1$s reproducciones · %2$d artistas</string>
+    <string name="recap_top_artist">Tu artista del año</string>
+    <string name="recap_top_track">Tu canción del año</string>
+    <string name="recap_plays">%1$d reproducciones</string>
+    <string name="recap_when_title">Eres</string>
+    <string name="recap_type_night">búho nocturno</string>
+    <string name="recap_type_early">madrugador</string>
+    <string name="recap_type_day">de escuchar de día</string>
+    <string name="recap_type_evening">de escuchar por la tarde</string>
+    <string name="recap_when_sub">Tu mes: %1$s · Tu día: %2$s · Racha más larga: %3$d días</string>
+    <string name="recap_share">Compartir</string>
 </resources>

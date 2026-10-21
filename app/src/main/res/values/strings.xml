@@ -721,4 +721,18 @@
     <string name="notif_mode_shuffle">Shuffle</string>
     <string name="notif_mode_repeat">Repeat</string>
     <string name="auto_section_recent">Recently played</string>
+    <string name="recap_open">Your %1$d in music</string>
+    <string name="recap_empty">Nothing played in %1$d yet.</string>
+    <string name="recap_minutes_title">In %1$d you listened for</string>
+    <string name="recap_minutes_sub">minutes · %1$s plays · %2$d artists</string>
+    <string name="recap_top_artist">Your top artist</string>
+    <string name="recap_top_track">Your top song</string>
+    <string name="recap_plays">%1$d plays</string>
+    <string name="recap_when_title">You are</string>
+    <string name="recap_type_night">a night owl</string>
+    <string name="recap_type_early">an early bird</string>
+    <string name="recap_type_day">a daytime listener</string>
+    <string name="recap_type_evening">an evening listener</string>
+    <string name="recap_when_sub">Your month: %1$s · Your day: %2$s · Longest streak: %3$d days</string>
+    <string name="recap_share">Share</string>
 </resources>
