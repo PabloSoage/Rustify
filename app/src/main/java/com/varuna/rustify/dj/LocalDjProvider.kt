@@ -69,7 +69,7 @@ object OnDeviceModel {
 
     /** Asks AICore where it stands. Never throws: a phone without AICore is [Status.UNSUPPORTED]. */
     suspend fun refresh(): Status {
-        if (_status.value == Status.DOWNLOADING) return Status.DOWNLOADING
+        if (following) return Status.DOWNLOADING
         val s = runCatching {
             when (model.checkStatus()) {
                 FeatureStatus.AVAILABLE -> Status.READY
@@ -79,12 +79,19 @@ object OnDeviceModel {
             }
         }.getOrDefault(Status.UNSUPPORTED)
         _status.value = s
+        // AICore keeps downloading after the app that asked is gone (an update, a kill). Without
+        // following it again the status said "downloading" forever (4.7.1, seen on a POCO F8 Ultra:
+        // 1.9 GB arrived, the screen never changed).
+        if (s == Status.DOWNLOADING) download()
         return s
     }
 
-    /** Starts the model download in the background; [status] follows it. */
+    @Volatile private var following = false
+
+    /** Starts the model download, or follows one already running; [status] tracks it. */
     fun download() {
-        if (_status.value == Status.DOWNLOADING) return
+        if (following) return
+        following = true
         _status.value = Status.DOWNLOADING
         scope.launch {
             runCatching {
@@ -96,6 +103,13 @@ object OnDeviceModel {
                     }
                 }
             }.onFailure { _status.value = Status.UNSUPPORTED }
+            following = false
+            // The flow can end without a terminal event; the model's own word settles it.
+            // A pause, so a model stuck "downloading" is asked every 30 s rather than in a tight loop.
+            if (_status.value == Status.DOWNLOADING) {
+                kotlinx.coroutines.delay(30_000)
+                refresh()
+            }
         }
     }
 }
