@@ -1509,6 +1509,27 @@ fun LyricsView(
         }
     }
     val translated = ((translation ?: partialTranslation) as? com.varuna.rustify.bridge.LyricsTranslator.Outcome.Translated)?.lines?.takeIf { translateOn }
+    // Say why nothing appeared (4.7.1): the icon only turning grey read as "the button does nothing".
+    val translateContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(translation, partialTranslation, translateOn) {
+        if (!translateOn) return@LaunchedEffect
+        fun name(code: String) = java.util.Locale.forLanguageTag(code.substringBefore('-')).displayLanguage
+        val msg = when (val o = translation ?: partialTranslation) {
+            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Downloading ->
+                translateContext.getString(R.string.lyrics_translate_downloading, name(o.language))
+            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.NotNeeded -> when {
+                o.language == "und" -> translateContext.getString(R.string.lyrics_translate_unknown)
+                o.language.endsWith("-Latn") -> translateContext.getString(R.string.lyrics_translate_romanised, name(o.language))
+                o.language == com.varuna.rustify.bridge.LyricsTranslator.targetLanguage() ->
+                    translateContext.getString(R.string.lyrics_translate_same)
+                else -> translateContext.getString(R.string.lyrics_translate_unsupported, name(o.language))
+            }
+            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Failed ->
+                translateContext.getString(R.string.lyrics_translate_failed, o.reason)
+            else -> null
+        }
+        msg?.let { android.widget.Toast.makeText(translateContext, it, android.widget.Toast.LENGTH_LONG).show() }
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()

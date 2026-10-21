@@ -750,6 +750,12 @@
     <string name="recap_type_evening">夕方型リスナー</string>
     <string name="recap_share">共有</string>
     <string name="lyrics_translate">歌詞を翻訳</string>
+    <string name="lyrics_translate_downloading">翻訳のため%1$sをダウンロード中（約30 MB、初回のみ）…</string>
+    <string name="lyrics_translate_unknown">この歌詞の言語を判別できませんでした</string>
+    <string name="lyrics_translate_romanised">この歌詞はローマ字表記の%1$sです。原文の文字でのみ翻訳できます</string>
+    <string name="lyrics_translate_same">この歌詞はすでにあなたの言語です</string>
+    <string name="lyrics_translate_unsupported">%1$sは端末上で翻訳できません</string>
+    <string name="lyrics_translate_failed">翻訳できませんでした: %1$s。タップして再試行</string>
     <plurals name="recap_plays">
         <item quantity="one">%1$d 回再生</item>
         <item quantity="other">%1$d 回再生</item>

@@ -753,6 +753,12 @@
     <string name="recap_type_evening">an evening listener</string>
     <string name="recap_share">Share</string>
     <string name="lyrics_translate">Translate lyrics</string>
+    <string name="lyrics_translate_downloading">Downloading %1$s to translate (about 30 MB, only the first time)…</string>
+    <string name="lyrics_translate_unknown">Could not tell what language these lyrics are in</string>
+    <string name="lyrics_translate_romanised">These lyrics are %1$s written in the Latin alphabet; only the original script can be translated</string>
+    <string name="lyrics_translate_same">These lyrics are already in your language</string>
+    <string name="lyrics_translate_unsupported">%1$s cannot be translated on the phone</string>
+    <string name="lyrics_translate_failed">Could not translate: %1$s. Tap to try again</string>
     <plurals name="recap_plays">
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>

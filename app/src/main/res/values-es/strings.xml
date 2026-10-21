@@ -751,6 +751,12 @@
     <string name="recap_type_evening">de escuchar por la tarde</string>
     <string name="recap_share">Compartir</string>
     <string name="lyrics_translate">Traducir letra</string>
+    <string name="lyrics_translate_downloading">Descargando %1$s para traducir (unos 30 MB, solo la primera vez)…</string>
+    <string name="lyrics_translate_unknown">No se reconoce el idioma de esta letra</string>
+    <string name="lyrics_translate_romanised">Esta letra está en %1$s escrito con alfabeto latino; solo se traduce en su escritura original</string>
+    <string name="lyrics_translate_same">Esta letra ya está en tu idioma</string>
+    <string name="lyrics_translate_unsupported">El %1$s no se puede traducir en el móvil</string>
+    <string name="lyrics_translate_failed">No se pudo traducir: %1$s. Toca para reintentar</string>
     <plurals name="recap_plays">
         <item quantity="one">%1$d reproducción</item>
         <item quantity="other">%1$d reproducciones</item>
