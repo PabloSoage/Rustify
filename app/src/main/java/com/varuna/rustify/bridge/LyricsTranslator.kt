@@ -68,6 +68,39 @@ object LyricsTranslator {
     fun targetLanguage(): String =
         TranslateLanguage.fromLanguageTag(Locale.getDefault().language) ?: TranslateLanguage.ENGLISH
 
+    /**
+     * What to translate, decided line by line (4.7.1): [source] is the language the translated lines
+     * are in, [lines] their indices, [dominant] the most common language of the song (what to name
+     * when there is nothing to translate).
+     */
+    data class Plan(val source: String?, val lines: Set<Int>, val dominant: String)
+
+    /**
+     * Guessing one language for the whole song got Spanish lyrics that open in English read as
+     * English, and the model then "translated" the Spanish into broken Spanish. So each line carries
+     * its own language: the source is the commonest one that is not [target] (and that ML Kit can
+     * translate), only its lines are translated, and lines already in [target] are left alone.
+     *
+     * [languages] has one entry per lyrics line, null for a blank one, "und" when unknown. A source
+     * on fewer than a fifth of the lines is a stray phrase, not something to translate. Unknown lines
+     * go with the source only when it is the song's main language.
+     */
+    fun plan(languages: List<String?>, target: String, translatable: (String) -> Boolean): Plan {
+        val known = languages.filterNotNull().filter { it != "und" }
+        if (known.isEmpty()) return Plan(null, emptySet(), "und")
+        val counts = known.groupingBy { it }.eachCount()
+        val dominant = counts.maxBy { it.value }.key
+        val source = counts.filterKeys { it != target && translatable(it) }.maxByOrNull { it.value }
+            ?.takeIf { it.value * 5 >= known.size }?.key
+            ?: return Plan(null, emptySet(), dominant)
+        val withUnknown = source == dominant
+        val idx = languages.indices.filter { i ->
+            val l = languages[i]
+            l == source || (withUnknown && l == "und")
+        }.toSet()
+        return Plan(source, idx, dominant)
+    }
+
     suspend fun translate(
         key: String,
         lines: List<String>,
@@ -75,41 +108,50 @@ object LyricsTranslator {
         onProgress: (Outcome) -> Unit = {},
     ): Outcome {
         cache["$key|$target"]?.let { return it }
-        val sample = lines.filter { it.isNotBlank() }.take(20).joinToString("\n")
-        if (sample.isBlank()) return Outcome.NotNeeded("und")
+        if (lines.none { it.isNotBlank() }) return Outcome.NotNeeded("und")
         val outcome = runCatching {
-            val detected = scriptLanguage(sample)
-                ?: LanguageIdentification.getClient().identifyLanguage(sample).await()
-            val source = TranslateLanguage.fromLanguageTag(detected)
-            if (detected == "und" || source == null || source == target) {
-                Outcome.NotNeeded(detected)
+            // Han without kana reads as Chinese line by line; in a song with kana it is Japanese.
+            val songScript = scriptLanguage(lines.joinToString("\n"))
+            val identifier = LanguageIdentification.getClient()
+            val byLine = HashMap<String, String>()
+            val languages = lines.map { l ->
+                if (l.isBlank()) null
+                else byLine.getOrPut(l) {
+                    when (val s = scriptLanguage(l)) {
+                        TranslateLanguage.CHINESE -> songScript ?: s
+                        null -> identifier.identifyLanguage(l).await()
+                        else -> s
+                    }
+                }
+            }
+            identifier.close()
+            val plan = plan(languages, target) { TranslateLanguage.fromLanguageTag(it) != null }
+            val source = plan.source
+            if (source == null) {
+                Outcome.NotNeeded(plan.dominant)
             } else {
                 val translator = Translation.getClient(
                     TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build()
                 )
                 try {
                     val models = RemoteModelManager.getInstance()
-                    val missing = listOf(source, target).filter { it != TranslateLanguage.ENGLISH }
-                        .any { !models.isModelDownloaded(TranslateRemoteModel.Builder(it).build()).await() }
-                    if (missing) onProgress(Outcome.Downloading(source))
+                    listOf(source, target).filter { it != TranslateLanguage.ENGLISH }
+                        .firstOrNull { !models.isModelDownloaded(TranslateRemoteModel.Builder(it).build()).await() }
+                        ?.let { onProgress(Outcome.Downloading(it)) }
                     translator.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
                     // Line by line, and shown as it goes: on a slow phone a line takes a couple of
                     // seconds, so waiting for the whole song meant minutes of a spinner. (Translating
                     // the song in one call does not help: the model splits it back into sentences.)
                     // Repeated lines — every chorus — are translated once.
-                    // Blank lines stay blank: they are the gaps between verses, not text.
                     val done = HashMap<String, String>()
                     val out = MutableList(lines.size) { "" }
-                    // Lyrics sites often interleave a romanised line under each CJK one; the model
-                    // can only echo those back (in capitals), so they get no translation.
-                    val cjk = source in setOf(TranslateLanguage.JAPANESE, TranslateLanguage.KOREAN, TranslateLanguage.CHINESE)
-                    for ((i, l) in lines.withIndex()) {
-                        if (l.isBlank() || (cjk && scriptLanguage(l) == null)) continue
+                    for (i in plan.lines.sorted()) {
+                        val l = lines[i]
                         out[i] = done.getOrPut(l) { translator.translate(l).await() }
                             .takeUnless { it.equals(l, ignoreCase = true) }.orEmpty()
-                        onProgress(Outcome.Translated(detected, out.toList()))
+                        onProgress(Outcome.Translated(source, out.toList()))
                     }
-                    Outcome.Translated(detected, out)
+                    Outcome.Translated(source, out)
                 } finally {
                     translator.close()
                 }
