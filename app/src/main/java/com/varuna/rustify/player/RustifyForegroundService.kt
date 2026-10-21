@@ -473,7 +473,7 @@ class RustifyForegroundService : MediaLibraryService() {
             val file = java.io.File(path)
             if (!file.exists()) return url
             androidx.core.content.FileProvider.getUriForFile(
-                this, "com.varuna.rustify.fileprovider", file
+                this, "${packageName}.fileprovider", file
             ).toString()
         }.getOrNull() ?: url
     }

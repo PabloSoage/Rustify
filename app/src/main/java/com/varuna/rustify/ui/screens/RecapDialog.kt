@@ -168,7 +168,7 @@ private fun RecapPager(r: Recap) {
                         val dir = File(context.cacheDir, "share").apply { mkdirs() }
                         val file = File(dir, "rustify_recap_${r.year}.png")
                         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                        FileProvider.getUriForFile(context, "com.varuna.rustify.fileprovider", file)
+                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                     }
                     val send = Intent(Intent.ACTION_SEND).apply {
                         type = "image/png"

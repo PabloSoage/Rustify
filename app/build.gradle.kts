@@ -76,6 +76,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs beside the release build instead of over it: a phone that has the real app,
+            // signed with the release key, refuses a debug-signed APK with the same id, and wiping
+            // that app to test is wiping someone's library. Things keyed by the package (the file
+            // provider) follow it; the Drive sign-in redirect scheme stays the release one's.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

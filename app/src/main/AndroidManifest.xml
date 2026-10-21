@@ -233,7 +233,7 @@
              file://). Maps covers/ to a temporary content:// URI with read permission. -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.varuna.rustify.fileprovider"
+            android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
