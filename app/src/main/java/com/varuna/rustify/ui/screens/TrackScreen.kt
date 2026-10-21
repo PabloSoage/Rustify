@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -1465,7 +1466,8 @@ fun TrackScreenControls(
                 isLoading = lyricsLoading,
                 currentPositionMs = currentPosition,
                 offsetMs = lyricOffsetMs,
-                listState = lyricsListState
+                listState = lyricsListState,
+                trackKey = track.id
             )
         }
     }
@@ -1477,9 +1479,29 @@ fun LyricsView(
     isLoading: Boolean,
     currentPositionMs: Long,
     offsetMs: Long = 0L,
-    listState: LazyListState
+    listState: LazyListState,
+    /** Identifies the track for the translation cache. */
+    trackKey: String? = null
 ) {
     val spotifyGreen = Color(0xFF1DB954)
+    // Translation (4.7): off until asked for, then one line under each line. See LyricsTranslator.
+    var translateOn by remember(trackKey) { mutableStateOf(false) }
+    var translation by remember(trackKey) { mutableStateOf<com.varuna.rustify.bridge.LyricsTranslator.Outcome?>(null) }
+    var partialTranslation by remember(trackKey) { mutableStateOf<com.varuna.rustify.bridge.LyricsTranslator.Outcome?>(null) }
+    val sourceLines = remember(lyricsResult) {
+        lyricsResult?.synced?.takeIf { it.isNotEmpty() }?.map { it.text }
+            ?: lyricsResult?.plain?.lines()
+            ?: emptyList()
+    }
+    LaunchedEffect(translateOn, sourceLines) {
+        if (translateOn && translation == null && sourceLines.isNotEmpty()) {
+            translation = com.varuna.rustify.bridge.LyricsTranslator.translate(
+                trackKey ?: sourceLines.hashCode().toString(), sourceLines,
+                onProgress = { partial -> partialTranslation = partial }
+            )
+        }
+    }
+    val translated = ((translation ?: partialTranslation) as? com.varuna.rustify.bridge.LyricsTranslator.Outcome.Translated)?.lines?.takeIf { translateOn }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1522,15 +1544,30 @@ fun LyricsView(
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = if (isActive) 8.dp else 4.dp)
+                                .padding(top = if (isActive) 8.dp else 4.dp, bottom = if (translated != null) 0.dp else if (isActive) 8.dp else 4.dp)
                         )
+                        translated?.getOrNull(index)?.takeIf { it.isNotBlank() }?.let { t ->
+                            Text(
+                                text = t,
+                                color = if (isActive) spotifyGreen else Color.Gray.copy(alpha = 0.45f),
+                                fontSize = 13.sp,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = if (isActive) 8.dp else 4.dp)
+                            )
+                        }
                     }
                 }
             }
             lyricsResult.plain != null -> {
                 val scrollState = rememberScrollState()
                 Text(
-                    text = lyricsResult.plain,
+                    text = if (translated != null) {
+                        lyricsResult.plain.lines().mapIndexed { i, l ->
+                            val t = translated.getOrNull(i).orEmpty()
+                            if (t.isBlank()) l else "$l\n($t)"
+                        }.joinToString("\n")
+                    } else lyricsResult.plain,
                     color = Color.LightGray,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
@@ -1549,6 +1586,25 @@ fun LyricsView(
                         textAlign = TextAlign.Center
                     )
                 }
+            }
+        }
+        if (sourceLines.isNotEmpty() && !isLoading) {
+            val notNeeded = translation is com.varuna.rustify.bridge.LyricsTranslator.Outcome.NotNeeded
+            val failed = translation is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Failed
+            IconButton(
+                onClick = { translateOn = !translateOn; if (failed) translation = null },
+                modifier = Modifier.align(Alignment.TopEnd).size(32.dp)
+            ) {
+                if (translateOn && translation == null) CircularProgressIndicator(color = spotifyGreen, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                else Icon(
+                    Icons.Default.Translate,
+                    contentDescription = stringResource(R.string.lyrics_translate),
+                    tint = when {
+                        translateOn && translated != null -> spotifyGreen
+                        translateOn && (notNeeded || failed) -> Color.Gray
+                        else -> Color.White.copy(alpha = 0.7f)
+                    }
+                )
             }
         }
     }

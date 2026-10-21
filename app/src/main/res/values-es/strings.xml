@@ -733,4 +733,5 @@
     <string name="recap_type_evening">de escuchar por la tarde</string>
     <string name="recap_when_sub">Tu mes: %1$s · Tu día: %2$s · Racha más larga: %3$d días</string>
     <string name="recap_share">Compartir</string>
+    <string name="lyrics_translate">Traducir letra</string>
 </resources>

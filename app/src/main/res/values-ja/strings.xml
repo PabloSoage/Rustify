@@ -732,4 +732,5 @@
     <string name="recap_type_evening">夕方型リスナー</string>
     <string name="recap_when_sub">よく聴いた月: %1$s · 曜日: %2$s · 最長連続: %3$d 日</string>
     <string name="recap_share">共有</string>
+    <string name="lyrics_translate">歌詞を翻訳</string>
 </resources>

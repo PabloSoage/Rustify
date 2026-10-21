@@ -165,6 +165,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.reorderable)
+    implementation(libs.mlkit.translate)
+    implementation(libs.mlkit.language.id)
 }
 
 // --- RUST CORE INTEGRATION ---

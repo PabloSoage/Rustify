@@ -36,7 +36,12 @@ kotlinxSerialization = "1.12.0"
 mlkitGenaiPrompt = "1.0.0-beta4"
 # 4.7 — drag-to-reorder in the queue (edge auto-scroll, animations).
 reorderable = "3.1.0"
+# 4.7 — lyrics translated on the device (no server, offline once the model is downloaded).
+mlkitTranslate = "17.0.3"
+mlkitLanguageId = "17.0.6"
 [libraries]
+mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
+mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
 mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
