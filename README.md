@@ -153,7 +153,7 @@ Taken on the Android emulator, signed out — everything shown works without a S
 ### 🪵 Developer & Diagnostics
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 298 in the Rust engine (289 unit, 9 end-to-end; clippy-clean and enforced in CI) and 77
+- **Tests** — 299 in the Rust engine (290 unit, 9 end-to-end; clippy-clean and enforced in CI) and 82
   in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
