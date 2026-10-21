@@ -476,7 +476,8 @@ fun TrackScreen(
     // a stamp-sized cover over an empty half screen. Phones in portrait keep 280.
     val coverSize = when {
         isLandscape -> minOf(config.screenHeightDp - 140, (config.screenWidthDp * 0.42f).toInt()).coerceAtLeast(180).dp
-        config.screenWidthDp >= 600 -> minOf(config.screenWidthDp - 96, (config.screenHeightDp * 0.45f).toInt()).dp
+        // 0.38 of the height leaves the lyrics panel in view under the controls on a tablet.
+        config.screenWidthDp >= 600 -> minOf(config.screenWidthDp - 96, (config.screenHeightDp * 0.38f).toInt()).dp
         else -> 280.dp
     }
 
@@ -1567,6 +1568,9 @@ fun LyricsView(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
+                    // Clear of the translate button in the top corner, on both sides to stay centred:
+                    // a long active line ran under it.
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     itemsIndexed(synced) { index, line ->
@@ -1610,6 +1614,7 @@ fun LyricsView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(scrollState)
+                        .padding(horizontal = 28.dp)
                 )
             }
             else -> {
