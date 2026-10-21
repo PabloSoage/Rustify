@@ -200,6 +200,12 @@ fun TravelScreen(
     val onMapIconColor = if (isDarkMap) Color.White else Color.Black
     // Nearly opaque: at 80 % the map showed through the suggestions and the route card (4.4).
     val scrimColor = if (isDarkMap) Color(0xF2121212) else Color(0xF7FFFFFF)
+    // Explicit segment colours: the default selected segment was dark with black text, and the
+    // other was transparent over the map (4.7).
+    val segColors = SegmentedButtonDefaults.colors(
+        activeContainerColor = green, activeContentColor = Color.Black,
+        inactiveContainerColor = scrimColor, inactiveContentColor = onMapTextColor
+    )
 
     // When the style changes from the dropdown, apply it to the already-loaded map
     // (MapView is created only once in the MapLibreView remember).
@@ -574,7 +580,10 @@ fun TravelScreen(
                 Text(
                     text = stringResource(R.string.travel_title),
                     color = titleColor,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    // One line: four action icons share the bar, and on a narrow phone the title wrapped.
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             },
             actions = {
@@ -659,11 +668,13 @@ fun TravelScreen(
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = pickMode == 0, onClick = { pickMode = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(0, 2)
+                    shape = SegmentedButtonDefaults.itemShape(0, 2),
+                    colors = segColors
                 ) { Text(stringResource(R.string.travel_pick_destination), color = if (pickMode == 0) Color.Black else onMapTextColor) }
                 SegmentedButton(
                     selected = pickMode == 1, onClick = { pickMode = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(1, 2)
+                    shape = SegmentedButtonDefaults.itemShape(1, 2),
+                    colors = segColors
                 ) { Text(stringResource(R.string.travel_pick_origin), color = if (pickMode == 1) Color.Black else onMapTextColor) }
             }
             Spacer(Modifier.height(4.dp))
@@ -785,11 +796,13 @@ fun TravelScreen(
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             SegmentedButton(
                                 selected = !useManualDuration, onClick = { useManualDuration = false },
-                                shape = SegmentedButtonDefaults.itemShape(0, 2)
+                                shape = SegmentedButtonDefaults.itemShape(0, 2),
+                                colors = segColors
                             ) { Text(stringResource(R.string.travel_route_mode), color = if (!useManualDuration) Color.Black else cardText) }
                             SegmentedButton(
                                 selected = useManualDuration, onClick = { useManualDuration = true },
-                                shape = SegmentedButtonDefaults.itemShape(1, 2)
+                                shape = SegmentedButtonDefaults.itemShape(1, 2),
+                                colors = segColors
                             ) { Text(stringResource(R.string.travel_time_mode), color = if (useManualDuration) Color.Black else cardText) }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -870,11 +883,13 @@ fun TravelScreen(
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = !manualMode, onClick = { manualMode = false },
-                            shape = SegmentedButtonDefaults.itemShape(0, 2)
+                            shape = SegmentedButtonDefaults.itemShape(0, 2),
+                            colors = segColors
                         ) { Text(stringResource(R.string.travel_mode_auto), color = if (!manualMode) Color.Black else cardText) }
                         SegmentedButton(
                             selected = manualMode, onClick = { manualMode = true; ensureCache() },
-                            shape = SegmentedButtonDefaults.itemShape(1, 2)
+                            shape = SegmentedButtonDefaults.itemShape(1, 2),
+                            colors = segColors
                         ) { Text(stringResource(R.string.travel_mode_manual), color = if (manualMode) Color.Black else cardText) }
                     }
 
