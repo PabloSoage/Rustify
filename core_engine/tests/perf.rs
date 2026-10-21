@@ -44,3 +44,31 @@ fn search_index_and_query() {
     let queried = t.elapsed().as_secs_f64();
     println!("search: build 20k in {:.3} s; 200 queries in {:.3} s ({:.2} ms each); {hits} hits", built, queried, queried * 1000.0 / 200.0);
 }
+
+#[test]
+#[ignore]
+fn json_parse_throughput() {
+    // What the core does all day: parse API responses. 5 000 track objects, the shape of a long
+    // playlist page, parsed 20 times.
+    let tracks: Vec<serde_json::Value> = (0..5_000)
+        .map(|i| {
+            serde_json::json!({
+                "id": format!("{i:022}"), "name": format!("Canción {i} (feat. Björk)"),
+                "duration_ms": 180_000 + i, "explicit": i % 7 == 0, "popularity": i % 100,
+                "artists": [{"id": "a1", "name": "Artista"}, {"id": "a2", "name": "Otra"}],
+                "album": {"id": format!("al{i}"), "name": "Álbum", "images": [
+                    {"url": "https://i.scdn.co/image/ab67616d0000b273abcdef", "width": 640, "height": 640}]}
+            })
+        })
+        .collect();
+    let text = serde_json::to_string(&serde_json::json!({ "items": tracks })).unwrap();
+    let t = Instant::now();
+    let mut n = 0;
+    for _ in 0..20 {
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        n += v["items"].as_array().unwrap().len();
+    }
+    let s = t.elapsed().as_secs_f64();
+    let mib = text.len() as f64 * 20.0 / (1024.0 * 1024.0);
+    println!("json parse: {:.1} MiB in {:.3} s = {:.1} MiB/s ({n} items)", mib, s, mib / s);
+}

@@ -46,7 +46,7 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "x86_64")
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = false
         }
     }
@@ -179,8 +179,9 @@ dependencies {
 
 // --- RUST CORE INTEGRATION ---
 
-// Define the target architectures to compile (64-bit physical devices and modern emulators)
-val targets = listOf("arm64-v8a", "x86_64")
+// Target architectures: 64-bit phones, 32-bit ARM phones (4.7.1; yt-dlp and ffmpeg ship armeabi-v7a
+// too) and x86_64 emulators/Chromebooks. 32-bit x86 is left out: no phone in use runs it.
+val targets = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
 // Detect the host operating system to invoke the correct executable file for Cargo
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")
