@@ -69,3 +69,22 @@ pub fn matches(url: &str, source_url: &str, resource_type: &str) -> bool {
     // that, so use it rather than reading the fields by hand.
     engine.check_network_request(&request).should_block()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domain_anchors_block_telemetry_and_leave_the_player_alone() {
+        // The shape of the app's built-in rules (AdblockFilters.BUILTIN): a `||host^` anchor blocks
+        // the host and its subdomains, never a sibling under the same parent.
+        assert!(load_rules("||log.spotify.com^\n||branch.io^\n"));
+        let page = "https://open.spotify.com/";
+        assert!(matches("https://log.spotify.com/v1/events", page, "xmlhttprequest"));
+        assert!(matches("https://api2.branch.io/v1/open", page, "xmlhttprequest"));
+        assert!(!matches("https://spclient.wg.spotify.com/melody/v1/check", page, "xmlhttprequest"));
+        assert!(!matches("https://audio-ak-spotify-com.akamaized.net/audio/x", page, "media"));
+        clear();
+        assert!(!matches("https://log.spotify.com/v1/events", page, "xmlhttprequest"));
+    }
+}

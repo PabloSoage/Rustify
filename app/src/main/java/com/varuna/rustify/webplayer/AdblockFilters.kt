@@ -33,6 +33,19 @@ object AdblockFilters {
         "https://ublockorigin.github.io/uAssetsCDN/thirdparties/easyprivacy.txt",
     )
 
+    /**
+     * Logging, crash-report and ad hosts the general lists do not all name (4.7). Only hosts that
+     * carry nothing the player needs: never the audio CDNs, `spclient` or the `apresolve`/`weblb`
+     * balancers, which a broader host list would also catch.
+     * Built in, so they apply even before the downloaded lists exist.
+     */
+    internal val BUILTIN = listOf(
+        "||log.spotify.com^", "||logs.spotify.com^", "||metrics.spotify.com^", "||aet.spotify.com^",
+        "||ads.spotify.com^", "||adeventtracker.spotify.com^", "||partner.spotify.com^",
+        "||crashdump.spotify.com^", "||scorecardresearch.com^", "||branch.io^", "||bs.serving-sys.com^",
+        "||live.ravelin.click^", "||zqtk.net^", "||adsrvr.org^", "||pagead2.googlesyndication.com^",
+    )
+
     private const val PREFS = "rustify_settings"
     private const val KEY_LAST_UPDATE = "adblock_lists_updated_at"
     private val MAX_AGE_MS = TimeUnit.DAYS.toMillis(5)
@@ -93,21 +106,26 @@ object AdblockFilters {
             if (forceRefresh || !hasCache(appCtx) || isStale(appCtx)) {
                 download(appCtx)
             }
-            if (!hasCache(appCtx)) return@withContext false
-            if (!forceRefresh && NativeEngine.adblockIsReadyNative()) return@withContext true
+            if (!forceRefresh && loadedWithLists && NativeEngine.adblockIsReadyNative()) return@withContext true
+            loadedWithLists = hasCache(appCtx)
 
+            // Without the downloaded lists (first run offline) the built-in rules still apply.
             val rules = buildString {
+                BUILTIN.forEach { append(it).append('\n') }
                 LISTS.forEach { url ->
                     runCatching { fileFor(appCtx, url).readText() }
                         .getOrNull()
                         ?.let { append(it).append('\n') }
                 }
             }
-            if (rules.isBlank()) false else NativeEngine.adblockLoadRulesNative(rules)
+            NativeEngine.adblockLoadRulesNative(rules)
         }
 
     /** Frees the compiled engine. Called when the web player screen goes away. */
-    fun release() = runCatching { NativeEngine.adblockClearNative() }.let { }
+    fun release() = runCatching { loadedWithLists = false; NativeEngine.adblockClearNative() }.let { }
+
+    /** Whether the engine holds the downloaded lists, or only [BUILTIN] (loaded offline). */
+    @Volatile private var loadedWithLists = false
 
     /** Last successful refresh, or 0 if never. */
     fun lastUpdatedAt(context: Context): Long =

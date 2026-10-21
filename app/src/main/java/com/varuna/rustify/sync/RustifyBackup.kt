@@ -31,6 +31,7 @@ import java.io.File
  *   "version": 1,
  *   "updatedAt": 1720000000000,
  *   "device": "<androidId>",
+ *   "deviceName": "Galaxy Tab S8",        // 4.7; the user's name for the device, for display only
  *   "mappings": { "<spotifyId>": "<youtubeId>", ... },
  *   "local":    { "playlists": [...], "favorites": ["id", ...] },
  *   "ytm":      { "version": 1, "favorites": [...], "playlists": [...], ... },
@@ -77,6 +78,7 @@ object RustifyBackup {
         root.put("version", VERSION)
         root.put("updatedAt", System.currentTimeMillis())
         root.put("device", deviceId(ctx))
+        root.put("deviceName", com.varuna.rustify.util.DeviceName.of(ctx))
 
         // mappings: flat map { spotifyId: youtubeId }
         root.put("mappings", readObject(File(dir, F_MAPPINGS)) ?: JSONObject())
@@ -202,6 +204,7 @@ object RustifyBackup {
         out.put("version", VERSION)
         out.put("updatedAt", maxOf(a.optLong("updatedAt"), b.optLong("updatedAt")))
         out.put("device", newer.optString("device"))
+        out.put("deviceName", newer.optString("deviceName"))
 
         // mappings — union; the newer container wins on conflict.
         out.put("mappings", mergeMappings(older.optJSONObject("mappings"), newer.optJSONObject("mappings")))

@@ -14,6 +14,7 @@ object DriveSyncPrefs {
     private const val K_LINKED = "drive_sync_linked"
     private const val K_AUTO = "drive_sync_auto"
     private const val K_LAST = "drive_sync_last_ms"
+    private const val K_PULLED_FROM = "drive_sync_pulled_from"
     private const val K_METHOD = "drive_auth_method"   // "play" (Play Services) | "browser" (AppAuth)
 
     /** Drive auth method: "play" (Play Services) by default, or "browser" (AppAuth). */
@@ -41,6 +42,13 @@ object DriveSyncPrefs {
 
     fun setLastSyncMs(ctx: Context, ms: Long) =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putLong(K_LAST, ms) }
+
+    /** Name of the other device whose backup the last sync merged in, or null if it was this one's. */
+    fun pulledFrom(ctx: Context): String? =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_PULLED_FROM, null)
+
+    fun setPulledFrom(ctx: Context, name: String?) =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(K_PULLED_FROM, name) }
 }
 
 /**
@@ -79,5 +87,12 @@ class DriveSyncManager(
         drive.upload(accessToken, merged, fileId)
 
         DriveSyncPrefs.setLastSyncMs(appContext, System.currentTimeMillis())
+        // Which device had written what this sync pulled in, so the screen can say that the
+        // tablet's changes arrived. A container from before 4.7 has no name: say nothing then.
+        DriveSyncPrefs.setPulledFrom(
+            appContext,
+            remote?.takeIf { it.optString("device") != RustifyBackup.deviceId(appContext) }
+                ?.optString("deviceName")?.takeIf { it.isNotBlank() }
+        )
     }
 }

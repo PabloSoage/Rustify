@@ -460,6 +460,7 @@ private fun GeneralCategory(
     var driveLinked by remember { mutableStateOf(DriveSyncPrefs.isLinked(context)) }
     var driveAutoSync by remember { mutableStateOf(DriveSyncPrefs.isAutoSync(context)) }
     var driveLastSync by remember { mutableLongStateOf(DriveSyncPrefs.lastSyncMs(context)) }
+    var drivePulledFrom by remember { mutableStateOf(DriveSyncPrefs.pulledFrom(context)) }
     var driveSyncing by remember { mutableStateOf(false) }
     var driveStatus by remember { mutableStateOf("") }
 
@@ -478,6 +479,7 @@ private fun GeneralCategory(
                 result.fold(
                     onSuccess = {
                         driveLastSync = DriveSyncPrefs.lastSyncMs(context)
+                        drivePulledFrom = DriveSyncPrefs.pulledFrom(context)
                         driveStatus = driveSyncOkMsg
                         Toast.makeText(context, driveSyncOkMsg, Toast.LENGTH_SHORT).show()
                     },
@@ -888,6 +890,12 @@ private fun GeneralCategory(
                             stringResource(R.string.settings_drive_last_sync, lastSyncText),
                             color = Color.Gray, fontSize = 12.sp
                         )
+                        drivePulledFrom?.let { from ->
+                            Text(
+                                stringResource(R.string.settings_drive_pulled_from, from),
+                                color = Color.Gray, fontSize = 12.sp
+                            )
+                        }
                         if (driveStatus.isNotBlank()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(driveStatus, color = Color.Gray, fontSize = 12.sp)

@@ -384,6 +384,7 @@
     <string name="settings_drive_auto_desc">アプリ起動時に自動で同期します。</string>
     <string name="settings_drive_never_synced">未同期</string>
     <string name="settings_drive_last_sync">最終同期: %1$s</string>
+    <string name="settings_drive_pulled_from">%1$s からの変更を取り込みました</string>
     <string name="settings_drive_linked">アカウント連携済み</string>
     <string name="settings_drive_not_linked">未連携</string>
     <string name="settings_drive_syncing">同期中…</string>

@@ -597,6 +597,7 @@
     <string name="settings_drive_auto_desc">Sincroniza automáticamente al abrir la app.</string>
     <string name="settings_drive_never_synced">Nunca sincronizado</string>
     <string name="settings_drive_last_sync">Última sync: %1$s</string>
+    <string name="settings_drive_pulled_from">Trajo cambios de %1$s</string>
     <string name="settings_drive_linked">Cuenta vinculada</string>
     <string name="settings_drive_not_linked">Sin vincular</string>
     <string name="settings_drive_syncing">Sincronizando…</string>
