@@ -8,6 +8,11 @@
 //   CARGO_PROFILE_BENCH_OPT_LEVEL=3 cargo test --release --test perf -- --ignored --nocapture
 //
 // (`cargo test --release` builds with the `bench` profile, which inherits `release`.)
+//
+// Measure on the phone, not the PC: build for arm64 with `cargo ndk -t arm64-v8a test --release
+// --test perf --no-run`, push the binary to /data/local/tmp and run it pinned to the big cores
+// (`taskset c0 ./perf-… --ignored --nocapture`). Run variants interleaved: a locked phone changes
+// clock speed between runs. That is how 4.7.1 moved the profile from "z" to "s".
 
 use std::time::Instant;
 

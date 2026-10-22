@@ -105,7 +105,11 @@ rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 
 # --- Optimizations for Android NDK (Reduces .so file size) ---
 [profile.release]
-opt-level = "z"     # Optimize for size
+# "s", not "z" (4.7.1). At "z" LLVM turns the loop vectoriser off: measured on a Snapdragon 8 Elite
+# Gen 5, the audio lab's FFT ran 7-15x slower, Deezer decryption ~25% and JSON parsing 25-50% slower
+# than at "s", for a .so only 3% smaller (8.65 vs 8.92 MB). The 4.7 check (C8) compared "z" with "3"
+# on scalar code only, which is why it saw no difference.
+opt-level = "s"
 lto = true          # Link Time Optimization: removes dead code
 codegen-units = 1   # Slower compilation, but smaller/faster binary
 strip = true        # Strips debugging symbols
