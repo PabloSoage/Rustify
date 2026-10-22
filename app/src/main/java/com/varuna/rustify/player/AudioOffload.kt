@@ -25,17 +25,21 @@ object AudioOffload {
     /** The audio lab is open: it reads the PCM, and with offload there is none in the app. */
     @Volatile var labOpen = false
 
-    /** Why offload is not used right now, or null when it is wanted. */
-    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB }
+    /** The Video tab is playing: audio has to stay in step with the picture, which offload would not. */
+    @Volatile var videoMode = false
 
-    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false): Blocker? = when {
+    /** Why offload is not used right now, or null when it is wanted. */
+    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB, VIDEO }
+
+    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false, video: Boolean = false): Blocker? = when {
         !enabled -> Blocker.SWITCHED_OFF
         labOpen -> Blocker.AUDIO_LAB
+        video -> Blocker.VIDEO
         equalizerOn -> Blocker.EQUALIZER
         fadeSeconds > 0 -> Blocker.FADE
         else -> null
     }
 
     fun blocker(context: Context): Blocker? =
-        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen)
+        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode)
 }

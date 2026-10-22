@@ -17,6 +17,12 @@ class AudioOffloadTest {
     }
 
     @Test
+    fun videoAndTheLabBlockItToo() {
+        assertEquals(AudioOffload.Blocker.VIDEO, AudioOffload.blocker(true, false, 0, labOpen = false, video = true))
+        assertEquals(AudioOffload.Blocker.AUDIO_LAB, AudioOffload.blocker(true, false, 0, labOpen = true, video = true))
+    }
+
+    @Test
     fun theSwitchWinsOverEverything() {
         assertEquals(AudioOffload.Blocker.SWITCHED_OFF, AudioOffload.blocker(false, true, 4))
     }

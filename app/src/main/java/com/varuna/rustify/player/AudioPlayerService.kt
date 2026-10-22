@@ -1504,6 +1504,8 @@ class AudioPlayerService private constructor(private val context: Context) {
                     )
                 }
 
+                // A new song is prepared audio-only; the Video tab asks for video again if it is on.
+                AudioOffload.videoMode = false
                 applyAudioOffload()
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
@@ -3224,7 +3226,9 @@ class AudioPlayerService private constructor(private val context: Context) {
             } else {
                 DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(videoItem)
             }
-            
+
+            AudioOffload.videoMode = true
+            applyAudioOffload()
             exoPlayer.setMediaSource(mediaSource)
             exoPlayer.prepare()
             exoPlayer.seekTo(pos)
@@ -3252,6 +3256,8 @@ class AudioPlayerService private constructor(private val context: Context) {
                 DefaultMediaSourceFactory(cacheDataSourceFactory)
                     .createMediaSource(item)
             }
+            AudioOffload.videoMode = false
+            applyAudioOffload()
             exoPlayer.setMediaSource(mediaSource)
             exoPlayer.prepare()
             exoPlayer.seekTo(pos)
