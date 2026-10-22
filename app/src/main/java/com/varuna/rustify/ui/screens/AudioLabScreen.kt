@@ -109,14 +109,27 @@ fun AudioLabScreen(onBack: () -> Unit) {
     val spectrogram = remember { Bitmap.createBitmap(HISTORY, BANDS, Bitmap.Config.ARGB_8888) }
     var tick by remember { mutableIntStateOf(0) }
 
-    DisposableEffect(Unit) {
-        AudioOffload.labOpen = true
-        AudioTap.listening = true
-        AudioPlayerService.instance?.applyAudioOffload()
-        onDispose {
-            AudioTap.listening = false
-            AudioOffload.labOpen = false
+    // While the screen is visible, not while it exists: leaving the app with the lab open must give
+    // offload back, or the battery pays for a screen nobody is looking at.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        fun open(on: Boolean) {
+            AudioOffload.labOpen = on
+            AudioTap.listening = on
             AudioPlayerService.instance?.applyAudioOffload()
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> open(true)
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> open(false)
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) open(true)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            open(false)
         }
     }
 

@@ -113,24 +113,27 @@ fun PlaylistScreen(
     // done the index holds the whole playlist, not the part scrolled into view; it is rebuilt each
     // time the list grows. Ids are positions, so a song the playlist repeats is found at each place.
     var findQuery by remember(playlistId) { mutableStateOf("") }
+    // Its own index name per screen: with one shared name, opening another playlist on top and
+    // coming back left this one searching an index the other had replaced and then forgotten.
+    val findIndex = remember(playlistId) { "${com.varuna.rustify.util.LocalSearch.PLAYLIST}:${java.util.UUID.randomUUID()}" }
     // A copy as the key: for a Spotify playlist `tracks` is the repo's live list, one object that
     // grows as pages arrive, so keying on it froze the index at the moment it was still empty.
     val trackSnapshot = tracks.toList()
     val indexedTracks = remember(trackSnapshot) {
         trackSnapshot.withIndex().toList().also { all ->
             com.varuna.rustify.util.LocalSearch.index(
-                com.varuna.rustify.util.LocalSearch.PLAYLIST, all, { it.index.toString() },
+                findIndex, all, { it.index.toString() },
                 { (_, t) -> listOf(t.name) + t.artists.map { a -> a.name } + listOf(t.album?.name.orEmpty()) }
             )
         }
     }
     val shownTracks = remember(indexedTracks, findQuery) {
         com.varuna.rustify.util.LocalSearch.filter(
-            com.varuna.rustify.util.LocalSearch.PLAYLIST, indexedTracks, findQuery
+            findIndex, indexedTracks, findQuery
         ) { it.index.toString() }
     }
     androidx.compose.runtime.DisposableEffect(playlistId) {
-        onDispose { com.varuna.rustify.util.LocalSearch.forget(com.varuna.rustify.util.LocalSearch.PLAYLIST) }
+        onDispose { com.varuna.rustify.util.LocalSearch.forget(findIndex) }
     }
 
     // Which of these have been heard through — point I. A row with no id gets a positional stand-in

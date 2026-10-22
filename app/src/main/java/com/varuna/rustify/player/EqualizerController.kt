@@ -62,6 +62,8 @@ object EqualizerController {
     fun setEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_ENABLED, on).apply()
         apply(context)
+        // The equaliser needs the PCM in the app, so offload has to step aside now, not next song.
+        AudioPlayerService.instance?.applyAudioOffload()
     }
 
     fun setPreset(context: Context, index: Int) {

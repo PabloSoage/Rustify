@@ -114,6 +114,6 @@ object LocalSearch {
     const val ARTISTS = "library.artists"
     const val TRACKS = "library.tracks"
     const val LOCAL = "library.local"
-    /** The playlist on screen (issue #2). One at a time: opening another replaces it. */
+    /** Prefix for a playlist screen's index (issue #2); each screen adds its own suffix. */
     const val PLAYLIST = "playlist.tracks"
 }

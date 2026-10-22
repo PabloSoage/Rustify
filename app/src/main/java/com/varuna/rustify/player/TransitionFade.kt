@@ -20,6 +20,8 @@ object TransitionFade {
     fun setSeconds(context: Context, s: Int) {
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE).edit()
             .putInt(KEY_SECONDS, s.coerceIn(0, MAX_SECONDS)).apply()
+        // The fade needs the CPU awake at the end of this song too: re-decide offload now.
+        AudioPlayerService.instance?.applyAudioOffload()
     }
 
     /**
