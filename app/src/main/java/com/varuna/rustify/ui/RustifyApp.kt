@@ -973,7 +973,23 @@ fun RustifyApp(
                     )
                 }
                 is Screen.NanoChat -> {
-                    com.varuna.rustify.ui.screens.NanoChatScreen(onBack = { navigationStack.removeAt(navigationStack.lastIndex) })
+                    com.varuna.rustify.ui.screens.NanoChatScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        spotifyRepo = spotifyRepo,
+                        nowPlaying = currentTrack,
+                        queue = playerState.queue,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
+                        onControl = { action ->
+                            when (action) {
+                                com.varuna.rustify.dj.ChatAction.Pause -> audioPlayerService.pause()
+                                com.varuna.rustify.dj.ChatAction.Resume -> audioPlayerService.play()
+                                com.varuna.rustify.dj.ChatAction.Next -> audioPlayerService.skipToNext()
+                                com.varuna.rustify.dj.ChatAction.Previous -> audioPlayerService.skipToPrevious()
+                                else -> {}
+                            }
+                        }
+                    )
                 }
                 is Screen.AudioLab -> {
                     com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { navigationStack.removeAt(navigationStack.lastIndex) })

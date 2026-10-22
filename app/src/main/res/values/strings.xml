@@ -707,7 +707,7 @@
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>
-    <string name="nano_chat_empty">Ask anything. Gemini Nano runs on this phone (AICore, on its AI hardware): no connection, nothing leaves the device. You can attach a photo; whether it reads images depends on the model.</string>
+    <string name="nano_chat_empty">Ask anything, or ask it to play, queue or find music, start a mix, pause or skip. Gemini Nano runs on this phone (AICore, on its AI hardware): the conversation never leaves the device; when it plays or finds something, only that search goes out, like any search in the app. You can attach a photo; whether it reads images depends on the model.</string>
     <string name="nano_chat_hint">Message</string>
     <string name="nano_chat_send">Send</string>
     <string name="nano_chat_attach">Attach a photo</string>
@@ -822,4 +822,15 @@
     <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
     <string name="audio_lab_key_note">From the pitch classes of the last few seconds. Key and mel bands come out of one matrix product every 16 frames, on %1$s.</string>
     <string name="audio_lab_mat_row">%1$s: %2$.1f µs per 64×4096×16 matrix product (×%3$.2f)</string>
+    <string name="nano_chat_done_playing">▶ Playing %1$s, then similar music</string>
+    <string name="nano_chat_done_queued">＋ Added to the queue: %1$s</string>
+    <string name="nano_chat_done_results">Songs for “%1$s” — tap one to play it:</string>
+    <string name="nano_chat_done_mix">▶ %1$s (%2$d songs)</string>
+    <string name="nano_chat_done_not_found">Nothing found for “%1$s”.</string>
+    <string name="nano_chat_done_paused">⏸ Paused</string>
+    <string name="nano_chat_done_resumed">▶ Playing</string>
+    <string name="nano_chat_done_next">⏭ Next song</string>
+    <string name="nano_chat_done_previous">⏮ Previous song</string>
+    <string name="nano_chat_done_failed">Could not do it: %1$s</string>
+    <string name="nano_chat_add_to_queue">Add to queue</string>
 </resources>

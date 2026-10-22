@@ -701,7 +701,7 @@
     <string name="nano_chat_title">Chat con Gemini Nano</string>
     <string name="nano_chat_on_device">en este móvil</string>
     <string name="nano_chat_clear">Borrar chat</string>
-    <string name="nano_chat_empty">Pregunta lo que quieras. Gemini Nano corre en este móvil (AICore, en su hardware de IA): sin conexión, nada sale del dispositivo. Puedes adjuntar una foto; si lee imágenes depende del modelo.</string>
+    <string name="nano_chat_empty">Pregunta lo que quieras, o pídele que ponga, añada a la cola o busque música, que haga una mezcla, que pause o que salte. Gemini Nano funciona en este móvil (AICore, en su hardware de IA): la conversación no sale del dispositivo; cuando pone o busca algo, solo sale esa búsqueda, como cualquier búsqueda de la app. Puedes adjuntar una foto; que la lea depende del modelo.</string>
     <string name="nano_chat_hint">Mensaje</string>
     <string name="nano_chat_send">Enviar</string>
     <string name="nano_chat_attach">Adjuntar una foto</string>
@@ -820,4 +820,15 @@
     <string name="audio_lab_notes">Do Do♯ Re Re♯ Mi Fa Fa♯ Sol Sol♯ La La♯ Si</string>
     <string name="audio_lab_key_note">Por las notas de los últimos segundos. La tonalidad y las bandas mel salen de un producto de matrices cada 16 fotogramas, con %1$s.</string>
     <string name="audio_lab_mat_row">%1$s: %2$.1f µs por producto de matrices 64×4096×16 (×%3$.2f)</string>
+    <string name="nano_chat_done_playing">▶ Sonando %1$s, y luego música parecida</string>
+    <string name="nano_chat_done_queued">＋ Añadida a la cola: %1$s</string>
+    <string name="nano_chat_done_results">Canciones para «%1$s»; toca una para ponerla:</string>
+    <string name="nano_chat_done_mix">▶ %1$s (%2$d canciones)</string>
+    <string name="nano_chat_done_not_found">No he encontrado nada para «%1$s».</string>
+    <string name="nano_chat_done_paused">⏸ En pausa</string>
+    <string name="nano_chat_done_resumed">▶ Sonando</string>
+    <string name="nano_chat_done_next">⏭ Siguiente canción</string>
+    <string name="nano_chat_done_previous">⏮ Canción anterior</string>
+    <string name="nano_chat_done_failed">No se pudo hacer: %1$s</string>
+    <string name="nano_chat_add_to_queue">Añadir a la cola</string>
 </resources>

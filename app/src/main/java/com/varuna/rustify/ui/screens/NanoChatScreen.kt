@@ -8,6 +8,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +69,11 @@ import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
 import androidx.compose.ui.text.withStyle
 import com.varuna.rustify.R
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.dj.ChatAction
+import com.varuna.rustify.dj.ChatActions
+import com.varuna.rustify.dj.DjEngine
 import com.varuna.rustify.dj.OnDeviceModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,17 +86,33 @@ import kotlinx.coroutines.withContext
  * The Prompt API keeps no conversation, so the recent turns are sent again with each question,
  * trimmed to the model's token limit. A photo can go with a question; whether the model reads
  * images depends on the model the phone has, and the answer says so if it cannot.
+ *
+ * Since 4.8.1 it can also act on the app — play, queue, search, start a DJ mix, pause, skip — through
+ * [ChatActions]: the model ends its answer with an action line and this screen carries it out. The
+ * conversation stays on the phone; an action that searches asks Spotify, as any search in the app.
  */
 private data class ChatMessage(
     val fromUser: Boolean,
     val text: String,
     val image: Bitmap? = null,
     val stats: String? = null,
+    /** What the app did for this answer ("Playing …"), when it asked for an action. */
+    val done: String? = null,
+    /** Songs to pick from: search results, or what an action played. */
+    val tracks: List<FullTrack> = emptyList(),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NanoChatScreen(onBack: () -> Unit) {
+fun NanoChatScreen(
+    onBack: () -> Unit,
+    spotifyRepo: SpotifyRepository,
+    nowPlaying: FullTrack?,
+    queue: List<FullTrack>,
+    onPlayTracks: (List<FullTrack>) -> Unit,
+    onEnqueueTracks: (List<FullTrack>) -> Unit,
+    onControl: (ChatAction) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val green = Color(0xFF1DB954)
@@ -101,6 +125,55 @@ fun NanoChatScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val statsTemplate = stringResource(R.string.nano_chat_stats)
     val failedTemplate = stringResource(R.string.nano_chat_failed)
+    val doneStrings = ChatDoneStrings(
+        playing = stringResource(R.string.nano_chat_done_playing),
+        queued = stringResource(R.string.nano_chat_done_queued),
+        results = stringResource(R.string.nano_chat_done_results),
+        mix = stringResource(R.string.nano_chat_done_mix),
+        notFound = stringResource(R.string.nano_chat_done_not_found),
+        paused = stringResource(R.string.nano_chat_done_paused),
+        resumed = stringResource(R.string.nano_chat_done_resumed),
+        next = stringResource(R.string.nano_chat_done_next),
+        previous = stringResource(R.string.nano_chat_done_previous),
+        failed = stringResource(R.string.nano_chat_done_failed),
+    )
+
+    /** Carries out what the model asked for; answers what to show under its reply. */
+    suspend fun perform(action: ChatAction): Pair<String, List<FullTrack>> = runCatching {
+        suspend fun first(query: String) = spotifyRepo.searchTracks(query, limit = 5).items.firstOrNull { it.id != null }
+        when (action) {
+            is ChatAction.Play -> {
+                val track = first(action.query) ?: return@runCatching String.format(doneStrings.notFound, action.query) to emptyList()
+                // A song, then music like it: "play Queen" should not stop after one track.
+                val radio = runCatching { spotifyRepo.getTrackRadio(track.id!!) }.getOrDefault(emptyList())
+                val set = (listOf(track) + radio).distinctBy { it.id }.take(30)
+                onPlayTracks(set)
+                String.format(doneStrings.playing, label(track)) to listOf(track)
+            }
+            is ChatAction.Queue -> {
+                val track = first(action.query) ?: return@runCatching String.format(doneStrings.notFound, action.query) to emptyList()
+                onEnqueueTracks(listOf(track))
+                String.format(doneStrings.queued, label(track)) to listOf(track)
+            }
+            is ChatAction.Search -> {
+                val found = spotifyRepo.searchTracks(action.query, limit = 8).items.filter { it.id != null }
+                if (found.isEmpty()) String.format(doneStrings.notFound, action.query) to emptyList()
+                else String.format(doneStrings.results, action.query) to found
+            }
+            is ChatAction.Dj -> {
+                val result = DjEngine(context, spotifyRepo).run(request = action.request, nowPlaying = nowPlaying, queue = queue)
+                if (result.tracks.isEmpty()) String.format(doneStrings.notFound, action.request) to emptyList()
+                else {
+                    onPlayTracks(result.tracks)
+                    String.format(doneStrings.mix, result.intro, result.tracks.size) to result.tracks.take(5)
+                }
+            }
+            ChatAction.Pause -> { onControl(action); doneStrings.paused to emptyList() }
+            ChatAction.Resume -> { onControl(action); doneStrings.resumed to emptyList() }
+            ChatAction.Next -> { onControl(action); doneStrings.next to emptyList() }
+            ChatAction.Previous -> { onControl(action); doneStrings.previous to emptyList() }
+        }
+    }.getOrElse { e -> String.format(doneStrings.failed, e.message ?: e.javaClass.simpleName) to emptyList() }
 
     LaunchedEffect(Unit) {
         OnDeviceModel.init(context)
@@ -130,14 +203,18 @@ fun NanoChatScreen(onBack: () -> Unit) {
             var firstTokenMs = -1L
             val answer = StringBuilder()
             val result = runCatching {
-                val prompt = buildPrompt(history, question)
+                val system = ChatActions.systemPrompt(
+                    nowPlaying?.let { label(it) },
+                    queue.dropWhile { it.id != nowPlaying?.id }.drop(1).map { label(it) }
+                )
+                val prompt = system + "\n" + buildPrompt(history, question)
                 val request = if (attached != null) generateContentRequest(ImagePart(attached), TextPart(prompt)) { temperature = 0.7f }
                     else generateContentRequest(TextPart(prompt)) { temperature = 0.7f }
                 OnDeviceModel.model.generateContent(request, object : StreamingCallback {
                     override fun onNewText(text: String) {
                         if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
                         answer.append(text)
-                        val snapshot = answer.toString()
+                        val snapshot = ChatActions.visibleText(answer.toString())
                         scope.launch { messages[answerIndex] = messages[answerIndex].copy(text = snapshot) }
                     }
                 })
@@ -154,7 +231,12 @@ fun NanoChatScreen(onBack: () -> Unit) {
                     statsTemplate,
                     firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, tokens * 1000.0 / genMs
                 )
-                messages[answerIndex] = ChatMessage(false, text, stats = stats)
+                val action = ChatActions.parse(text)
+                messages[answerIndex] = ChatMessage(false, ChatActions.visibleText(text), stats = stats)
+                if (action != null) {
+                    val (done, tracks) = perform(action)
+                    messages[answerIndex] = messages[answerIndex].copy(done = done, tracks = tracks)
+                }
             }.onFailure { e ->
                 messages[answerIndex] = ChatMessage(false, String.format(failedTemplate, e.message ?: e.javaClass.simpleName))
             }
@@ -208,7 +290,9 @@ fun NanoChatScreen(onBack: () -> Unit) {
                 if (messages.isEmpty()) {
                     item { Text(stringResource(R.string.nano_chat_empty), color = Color.Gray, fontSize = 14.sp) }
                 }
-                items(messages) { m -> Bubble(m, green) }
+                items(messages) { m ->
+                    Bubble(m, green, onPlay = { t -> onPlayTracks(listOf(t)) }, onQueue = { t -> onEnqueueTracks(listOf(t)) })
+                }
             }
             image?.let { bmp ->
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -247,7 +331,7 @@ fun NanoChatScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Bubble(m: ChatMessage, green: Color) {
+private fun Bubble(m: ChatMessage, green: Color, onPlay: (FullTrack) -> Unit, onQueue: (FullTrack) -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = if (m.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
         Column(
             Modifier
@@ -262,10 +346,38 @@ private fun Bubble(m: ChatMessage, green: Color) {
                 Spacer(Modifier.height(6.dp))
             }
             Text(if (m.fromUser) androidx.compose.ui.text.AnnotatedString(m.text) else simpleMarkdown(m.text.ifEmpty { "…" }), color = Color.White, fontSize = 15.sp)
+            m.done?.let { Text(it, color = green, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp)) }
+            m.tracks.forEach { t ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                        .clickable { onPlay(t) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = green, modifier = Modifier.size(20.dp))
+                    Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Text(t.name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                    }
+                    IconButton(onClick = { onQueue(t) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.nano_chat_add_to_queue), tint = Color.LightGray)
+                    }
+                }
+            }
             m.stats?.let { Text(it, color = green.copy(alpha = 0.8f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
         }
     }
 }
+
+/** "Song — Artist", how a track is named to the model and in what the chat says it did. */
+private fun label(t: FullTrack): String =
+    listOfNotNull(t.name.ifBlank { null }, t.artists.firstOrNull()?.name).joinToString(" — ")
+
+/** The lines that say what an action did, resolved once from resources. */
+private data class ChatDoneStrings(
+    val playing: String, val queued: String, val results: String, val mix: String, val notFound: String,
+    val paused: String, val resumed: String, val next: String, val previous: String, val failed: String,
+)
 
 /** The recent turns and the new question, as one prompt; at most six earlier turns. */
 private fun buildPrompt(history: List<ChatMessage>, question: String): String {

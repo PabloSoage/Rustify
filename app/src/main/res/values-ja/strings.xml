@@ -704,7 +704,7 @@
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>
-    <string name="nano_chat_empty">何でも聞いてください。Gemini Nano はこの端末（AICore、AI ハードウェア）で動作します。通信なし、データは端末から出ません。写真も添付できます（画像を読めるかはモデル次第）。</string>
+    <string name="nano_chat_empty">何でも質問できます。曲の再生・キューへの追加・検索、ミックスの作成、一時停止やスキップも頼めます。Gemini Nano はこの端末上（AICore、AI ハードウェア）で動作し、会話は端末から出ません。再生や検索を頼んだときは、アプリの通常の検索と同じくその検索だけが送信されます。写真を添付できます（画像を読めるかはモデル次第です）。</string>
     <string name="nano_chat_hint">メッセージ</string>
     <string name="nano_chat_send">送信</string>
     <string name="nano_chat_attach">写真を添付</string>
@@ -819,4 +819,15 @@
     <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
     <string name="audio_lab_key_note">直近数秒の音高から推定します。調とメル帯域は 16 フレームごとに 1 回の行列積で求め、%1$s を使います。</string>
     <string name="audio_lab_mat_row">%1$s: 64×4096×16 行列積あたり %2$.1f µs（×%3$.2f）</string>
+    <string name="nano_chat_done_playing">▶ %1$s を再生中、続けて似た曲を再生</string>
+    <string name="nano_chat_done_queued">＋ キューに追加：%1$s</string>
+    <string name="nano_chat_done_results">「%1$s」の曲 — タップで再生：</string>
+    <string name="nano_chat_done_mix">▶ %1$s（%2$d 曲）</string>
+    <string name="nano_chat_done_not_found">「%1$s」は見つかりませんでした。</string>
+    <string name="nano_chat_done_paused">⏸ 一時停止</string>
+    <string name="nano_chat_done_resumed">▶ 再生中</string>
+    <string name="nano_chat_done_next">⏭ 次の曲</string>
+    <string name="nano_chat_done_previous">⏮ 前の曲</string>
+    <string name="nano_chat_done_failed">実行できませんでした：%1$s</string>
+    <string name="nano_chat_add_to_queue">キューに追加</string>
 </resources>
