@@ -7,7 +7,7 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.7.0b` · core `4.7.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.8.0b` · core `4.8.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
@@ -49,6 +49,9 @@ Taken on the Android emulator, signed out — everything shown works without a S
   updates itself), then add-ons; Invidious and Deezer last and off.
 - **Sound** — Volume normalised from song to song with YouTube's loudness data, a fade between songs,
   an equaliser and a sleep timer that fades out and pauses.
+- **Battery** — On phones that support it, the audio chip (DSP) decodes the song and the processor
+  sleeps between buffers of several minutes, instead of waking every few milliseconds. It steps aside
+  by itself while the equaliser, the fade, the video or the audio lab need the processor.
 - **Stored songs** — A song you have played once is kept on the device (512 MB, oldest evicted first)
   and served to the player as an ordinary address on `127.0.0.1`, so it starts instantly and seeks
   properly. The first play is unchanged: nothing waits for a download. Local files are never copied.
@@ -88,6 +91,8 @@ Taken on the Android emulator, signed out — everything shown works without a S
   Dark Side of the Moon*. Results are ranked rather than merely filtered, and songs can be found by
   their album. One implementation, in the core, for every tab. Before you type, Search shows your
   recent searches and categories to browse (genres and moods, Spotify's own playlists first).
+- **Find in a playlist** — A search box on every playlist, over the whole of it and not just what has
+  loaded; playing a result plays the playlist from there.
 - **Pick up where you left off** — A row on Home for the albums, playlists and radios you were partway
   through, showing `4/12 · Song Name` and resuming at the track and the minute you left. It keeps
   several at once; a song you skipped past does not qualify, and something you finished disappears.
@@ -97,6 +102,8 @@ Taken on the Android emulator, signed out — everything shown works without a S
   rule-based), an external OpenAI-compatible API, and **on-device** — Gemini Nano through Android's
   AICore, on the phone's NPU where it has one: offline, no key, nothing leaves the phone. One-tap
   moods (chill, focus, party, workout, happy, sad) and "more like" your most played artists.
+  Settings shows the model's download, size and updates, and there is a **chat with Gemini Nano**
+  (with photos) that never leaves the phone.
 - **Listening metrics** — Every play kept, with no ceiling, in the core. Plays, time, streaks and
   per-artist records (bronze to platinum) by track, artist and album, against the previous period,
   with a full history. Imports Spotify's Extended and legacy `StreamingHistory*.json` exports, with
@@ -151,9 +158,14 @@ Taken on the Android emulator, signed out — everything shown works without a S
   UI and watch full-screen. The protobuf is decoded by hand in Rust, with no extra dependency.
 
 ### 🪵 Developer & Diagnostics
+- **Audio lab** — Settings → Advanced: waveform, spectrum, spectrogram (log or mel) and the **key**
+  of what is playing. The FFT and the matrix product behind them have hand-written kernels for each
+  ARM generation — NEON, SVE2, BF16 and **SME**, the matrix unit of armv9.2 — chosen at runtime by
+  what the processor reports and by which one is measured fastest on it. The lab shows them and times
+  each: on a Snapdragon 8 Elite Gen 5, SME computes the key's matrix product 9× faster than NEON.
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 299 in the Rust engine (290 unit, 9 end-to-end; clippy-clean and enforced in CI) and 82
+- **Tests** — 310 in the Rust engine (301 unit, 9 end-to-end; clippy-clean and enforced in CI) and 104
   in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
@@ -257,7 +269,7 @@ with no problem.
 - **Android NDK** — required to compile the JNI bindings.
 - **Rust toolchain** via `rustup`:
   ```bash
-  rustup target add aarch64-linux-android x86_64-linux-android
+  rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
   ```
 - **cargo-ndk**:
   ```bash
@@ -292,6 +304,9 @@ optimization. To force immediate AOT compilation, install the APK alongside its 
 # ARM64 devices
 adb install-multiple app/build/outputs/apk/release/app-arm64-v8a-release.apk app/build/outputs/apk/release/baselineProfiles/0/app-arm64-v8a-release.dm
 
+# 32-bit ARM devices
+adb install-multiple app/build/outputs/apk/release/app-armeabi-v7a-release.apk app/build/outputs/apk/release/baselineProfiles/0/app-armeabi-v7a-release.dm
+
 # x86_64 emulators
 adb install-multiple app/build/outputs/apk/release/app-x86_64-release.apk app/build/outputs/apk/release/baselineProfiles/0/app-x86_64-release.dm
 ```
@@ -307,7 +322,7 @@ adb install-multiple app/build/outputs/apk/release/app-x86_64-release.apk app/bu
 Contributions are welcome — open an Issue or a Pull Request. Two things worth knowing before you
 start:
 
-- Changes to the Rust core must compile for both `aarch64` and `x86_64`, and both suites should pass
+- Changes to the Rust core must compile for `aarch64`, `armv7` and `x86_64`, and both suites should pass
   (`pwsh scripts/test.ps1`).
 - Several contracts are deliberately stated in two languages — track ids, error kinds, the Deezer
   stripe scheme — and each is pinned by tests covering the same cases on both sides. If you change

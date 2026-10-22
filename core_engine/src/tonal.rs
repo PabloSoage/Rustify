@@ -123,7 +123,7 @@ pub struct Packed {
 impl Packed {
     /// `a` is row-major `m × k`; m a multiple of 4, k a multiple of 4.
     pub fn new(a: &[f32], m: usize, k: usize) -> Packed {
-        assert!(m % 4 == 0 && k % 4 == 0 && a.len() == m * k);
+        assert!(m.is_multiple_of(4) && k.is_multiple_of(4) && a.len() == m * k);
         let at = (0..k * m).map(|x| a[(x % m) * k + x / m]).collect();
         Packed {
             m,
@@ -166,7 +166,7 @@ fn mopa_pairs(rows: usize, k: usize, get: impl Fn(usize, usize) -> f32) -> Vec<u
 /// The bf16 kernels pack B themselves, and that is part of what they cost.
 pub fn matmul(kernel: MatKernel, a: &Packed, b: &[f32], n: usize) -> Vec<f32> {
     let (m, k) = (a.m, a.k);
-    assert!(n % 16 == 0 && b.len() == k * n);
+    assert!(n.is_multiple_of(16) && b.len() == k * n);
     let kernel = if MatKernel::available().contains(&kernel) {
         kernel
     } else {
