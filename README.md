@@ -7,7 +7,7 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.8.0b` · core `4.8.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `4.8.1b` · core `4.8.1` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
@@ -173,7 +173,7 @@ lab's SME kernels and Gemini Nano need the real hardware.
   each: on a Snapdragon 8 Elite Gen 5, SME computes the key's matrix product 9× faster than NEON.
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 310 in the Rust engine (301 unit, 9 end-to-end; clippy-clean and enforced in CI) and 104
+- **Tests** — 310 in the Rust engine (301 unit, 9 end-to-end; clippy-clean and enforced in CI) and 110
   in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
