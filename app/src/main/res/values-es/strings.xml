@@ -811,4 +811,13 @@
     <string name="playlist_find_clear">Borrar</string>
     <string name="playlist_find_none">Nada en esta playlist coincide con «%1$s»</string>
     <string name="playlist_find_loading">Aún cargando: buscado en las primeras %1$d canciones</string>
+    <string name="audio_lab_spec_log">Log</string>
+    <string name="audio_lab_spec_mel">Mel</string>
+    <string name="audio_lab_key_title">Tonalidad</string>
+    <string name="audio_lab_key_major">%1$s mayor</string>
+    <string name="audio_lab_key_minor">%1$s menor</string>
+    <string name="audio_lab_key_listening">Escuchando…</string>
+    <string name="audio_lab_notes">Do Do♯ Re Re♯ Mi Fa Fa♯ Sol Sol♯ La La♯ Si</string>
+    <string name="audio_lab_key_note">Por las notas de los últimos segundos. La tonalidad y las bandas mel salen de un producto de matrices cada 16 fotogramas, con %1$s.</string>
+    <string name="audio_lab_mat_row">%1$s: %2$.1f µs por producto de matrices 64×4096×16 (×%3$.2f)</string>
 </resources>

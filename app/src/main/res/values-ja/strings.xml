@@ -810,4 +810,13 @@
         <item quantity="one">よく聴いた月: %1$s · 曜日: %2$s · 最長連続: %3$d 日</item>
         <item quantity="other">よく聴いた月: %1$s · 曜日: %2$s · 最長連続: %3$d 日</item>
     </plurals>
+    <string name="audio_lab_spec_log">Log</string>
+    <string name="audio_lab_spec_mel">Mel</string>
+    <string name="audio_lab_key_title">調</string>
+    <string name="audio_lab_key_major">%1$s 長調</string>
+    <string name="audio_lab_key_minor">%1$s 短調</string>
+    <string name="audio_lab_key_listening">聴いています…</string>
+    <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
+    <string name="audio_lab_key_note">直近数秒の音高から推定します。調とメル帯域は 16 フレームごとに 1 回の行列積で求め、%1$s を使います。</string>
+    <string name="audio_lab_mat_row">%1$s: 64×4096×16 行列積あたり %2$.1f µs（×%3$.2f）</string>
 </resources>

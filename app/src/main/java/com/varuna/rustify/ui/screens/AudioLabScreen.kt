@@ -69,6 +69,8 @@ import org.json.JSONObject
 private const val BANDS = 64
 private const val HISTORY = 160
 private const val FLOOR_DB = -90f
+private const val MEL = 52
+private const val TONAL_FFT = 8192
 
 /**
  * The audio lab (4.7.1), under Settings: the waveform the player is sending to the speaker, its
@@ -77,6 +79,9 @@ private const val FLOOR_DB = -90f
  * The FFT is where the CPU's newer ARM extensions earn their place: the core carries the analysis
  * compiled for armv8.0, armv8.2 and armv9 (SVE2) and picks the best one this CPU reports at runtime.
  * The screen shows which ones the CPU has, lets you switch path live, and measures each.
+ *
+ * Below it, the key of what is playing and a mel spectrogram, both out of one matrix product per 16
+ * frames (filterbank × spectra) — the shape SME's outer products and BF16's BFMMLA are for.
  *
  * While it is open audio offload is paused — with offload the DSP decodes and the app never sees
  * the PCM — and it comes back on leaving.
@@ -108,6 +113,18 @@ fun AudioLabScreen(onBack: () -> Unit) {
     var benching by remember { mutableStateOf(false) }
     val spectrogram = remember { Bitmap.createBitmap(HISTORY, BANDS, Bitmap.Config.ARGB_8888) }
     var tick by remember { mutableIntStateOf(0) }
+    val matKernels = remember {
+        info?.optJSONArray("mat_kernels")?.let { a -> List(a.length()) { a.getJSONObject(it).let { k -> k.getString("id") to k.getString("name") } } }.orEmpty()
+    }
+    val matBest = remember { info?.optString("mat_best").orEmpty() }
+    var keyIndex by remember { mutableIntStateOf(-1) }
+    var keyR by remember { mutableFloatStateOf(0f) }
+    var chroma by remember { mutableStateOf(FloatArray(12)) }
+    var melMode by remember { mutableStateOf(false) }
+    // Mel columns arrive 16 at a time (one matrix product); they are drawn one per frame from here.
+    val melQueue = remember { ArrayDeque<FloatArray>() }
+    val melgram = remember { Bitmap.createBitmap(HISTORY, MEL, Bitmap.Config.ARGB_8888) }
+    var matRows by remember { mutableStateOf<List<Triple<String, String, Long>>>(emptyList()) }
 
     // While the screen is visible, not while it exists: leaving the app with the lab open must give
     // offload back, or the battery pays for a screen nobody is looking at.
@@ -136,14 +153,39 @@ fun AudioLabScreen(onBack: () -> Unit) {
     LaunchedEffect(kernel, fftSize) {
         var avgUs = 0f
         val column = IntArray(BANDS)
+        var resetTonal = true
         while (isActive) {
             val rate = AudioTap.sampleRate
             if (rate > 0) {
                 val samples = AudioTap.latest(fftSize)
-                val (out, us) = withContext(Dispatchers.Default) {
+                val tonalSamples = AudioTap.latest(TONAL_FFT)
+                val (out, us, tonal) = withContext(Dispatchers.Default) {
                     val t = System.nanoTime()
                     val r = NativeEngine.dspAnalyzeNative(samples, rate, BANDS, kernel)
-                    r to (System.nanoTime() - t) / 1000f
+                    val us = (System.nanoTime() - t) / 1000f
+                    Triple(r, us, NativeEngine.dspTonalNative(tonalSamples, rate, resetTonal))
+                }
+                resetTonal = false
+                if (tonal != null && tonal.size >= 15) {
+                    val cols = tonal[0].toInt()
+                    keyIndex = tonal[1].toInt()
+                    keyR = tonal[2]
+                    chroma = tonal.copyOfRange(3, 15)
+                    for (c in 0 until cols) {
+                        val at = 15 + c * MEL
+                        if (tonal.size >= at + MEL) melQueue.addLast(tonal.copyOfRange(at, at + MEL))
+                    }
+                    // Never let the queue lag more than a batch behind.
+                    while (melQueue.size > 32) melQueue.removeFirst()
+                }
+                melQueue.removeFirstOrNull()?.let { mel ->
+                    val px = IntArray(HISTORY * MEL)
+                    melgram.getPixels(px, 0, HISTORY, 0, 0, HISTORY, MEL)
+                    for (y in 0 until MEL) {
+                        System.arraycopy(px, y * HISTORY + 1, px, y * HISTORY, HISTORY - 1)
+                        px[y * HISTORY + HISTORY - 1] = heat((mel[MEL - 1 - y] - FLOOR_DB) / -FLOOR_DB)
+                    }
+                    melgram.setPixels(px, 0, HISTORY, 0, 0, HISTORY, MEL)
                 }
                 if (out != null && out.size == BANDS + 2) {
                     avgUs = if (avgUs == 0f) us else avgUs * 0.9f + us * 0.1f
@@ -270,14 +312,51 @@ fun AudioLabScreen(onBack: () -> Unit) {
             Text(stringResource(R.string.audio_lab_axis), color = Color.Gray, fontSize = 11.sp)
 
             // Spectrogram.
-            Text(stringResource(R.string.audio_lab_spectrogram), color = Color.White, fontSize = 14.sp)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.audio_lab_spectrogram), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                FilterChip(selected = !melMode, onClick = { melMode = false }, label = { Text(stringResource(R.string.audio_lab_spec_log)) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = green, selectedLabelColor = Color.Black, labelColor = Color.White))
+                FilterChip(selected = melMode, onClick = { melMode = true }, label = { Text(stringResource(R.string.audio_lab_spec_mel)) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = green, selectedLabelColor = Color.Black, labelColor = Color.White))
+            }
             Canvas(Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
                 @Suppress("UNUSED_EXPRESSION") tick
                 drawImage(
-                    spectrogram.asImageBitmap(),
-                    srcOffset = IntOffset.Zero, srcSize = IntSize(HISTORY, BANDS),
+                    (if (melMode) melgram else spectrogram).asImageBitmap(),
+                    srcOffset = IntOffset.Zero, srcSize = IntSize(HISTORY, if (melMode) MEL else BANDS),
                     dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                     filterQuality = FilterQuality.Low
+                )
+            }
+
+            // Key, from the chroma of the last seconds.
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1E1E1E)).padding(12.dp)) {
+                val notes = stringResource(R.string.audio_lab_notes).split(' ')
+                Text(stringResource(R.string.audio_lab_key_title), color = Color.White, fontSize = 15.sp)
+                Text(
+                    when {
+                        keyIndex in 0..11 -> stringResource(R.string.audio_lab_key_major, notes[keyIndex])
+                        keyIndex in 12..23 -> stringResource(R.string.audio_lab_key_minor, notes[keyIndex - 12])
+                        else -> stringResource(R.string.audio_lab_key_listening)
+                    } + if (keyIndex >= 0) "  ·  r = %.2f".format(keyR) else "",
+                    color = green, fontSize = 20.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Canvas(Modifier.fillMaxWidth().height(70.dp)) {
+                    val c = chroma
+                    val barW = size.width / 12
+                    for (i in 0 until 12) {
+                        val h = c[i].coerceIn(0f, 1f) * size.height
+                        val tonic = keyIndex >= 0 && i == keyIndex % 12
+                        drawRect(if (tonic) green else Color(0xFF3A6B4C), topLeft = Offset(i * barW + 2f, size.height - h), size = Size(barW - 4f, h))
+                    }
+                }
+                Row(Modifier.fillMaxWidth()) {
+                    notes.forEach { Text(it, color = Color.Gray, fontSize = 10.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                }
+                Text(
+                    stringResource(R.string.audio_lab_key_note, matKernels.firstOrNull { it.first == matBest }?.second.orEmpty()),
+                    color = Color.Gray, fontSize = 11.sp
                 )
             }
 
@@ -289,6 +368,12 @@ fun AudioLabScreen(onBack: () -> Unit) {
                         benchRows = withContext(Dispatchers.Default) {
                             runCatching {
                                 val a = JSONArray(NativeEngine.dspBenchNative(4096, 3000))
+                                List(a.length()) { a.getJSONObject(it).let { r -> Triple(r.getString("id"), r.getString("name"), r.getLong("ns")) } }
+                            }.getOrDefault(emptyList())
+                        }
+                        matRows = withContext(Dispatchers.Default) {
+                            runCatching {
+                                val a = JSONArray(NativeEngine.dspMatBenchNative(TONAL_FFT, 200))
                                 List(a.length()) { a.getJSONObject(it).let { r -> Triple(r.getString("id"), r.getString("name"), r.getLong("ns")) } }
                             }.getOrDefault(emptyList())
                         }
@@ -304,6 +389,15 @@ fun AudioLabScreen(onBack: () -> Unit) {
                 benchRows.forEach { (_, name, ns) ->
                     Text(
                         stringResource(R.string.audio_lab_bench_row, name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1)),
+                        color = Color.LightGray, fontSize = 13.sp
+                    )
+                }
+            }
+            if (matRows.isNotEmpty()) {
+                val base = matRows.first().third.coerceAtLeast(1)
+                matRows.forEach { (_, name, ns) ->
+                    Text(
+                        stringResource(R.string.audio_lab_mat_row, name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1)),
                         color = Color.LightGray, fontSize = 13.sp
                     )
                 }

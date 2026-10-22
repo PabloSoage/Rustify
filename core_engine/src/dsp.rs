@@ -90,7 +90,7 @@ impl Kernel {
 
 /// SME, read from the kernel's HWCAP2 bits: `is_aarch64_feature_detected!("sme")` is not stable yet.
 #[cfg(target_arch = "aarch64")]
-fn has_sme() -> bool {
+pub(crate) fn has_sme() -> bool {
     extern "C" {
         fn getauxval(kind: std::os::raw::c_ulong) -> std::os::raw::c_ulong;
     }
@@ -241,6 +241,34 @@ fn analyse_impl(samples: &[f32], sample_rate: u32, bands: usize, kernel: Kernel)
     }
     let rms = (sum_sq / n as f32).sqrt();
 
+    let power = power_spectrum(kernel, samples);
+    let half = n / 2;
+
+    // Log-spaced bands from 20 Hz to Nyquist; each band is the mean power of its bins.
+    let nyquist = sample_rate as f32 / 2.0;
+    let bin_hz = nyquist / half as f32;
+    let lo = 20f32.min(nyquist / 2.0);
+    let ratio = (nyquist / lo).ln() / bands as f32;
+    let mut bands_db = vec![0f32; bands];
+    for (b, out) in bands_db.iter_mut().enumerate() {
+        let f0 = lo * (ratio * b as f32).exp();
+        let f1 = lo * (ratio * (b + 1) as f32).exp();
+        let k0 = ((f0 / bin_hz) as usize).clamp(1, half - 1);
+        let k1 = ((f1 / bin_hz).ceil() as usize).clamp(k0 + 1, half);
+        let mut acc = 0f32;
+        for p in &power[k0..k1] {
+            acc += *p;
+        }
+        *out = acc / (k1 - k0) as f32;
+    }
+    to_db(&mut bands_db);
+    Analysis { bands_db, rms, peak }
+}
+
+/// Power per FFT bin (`n / 2` values) of a Hann-windowed frame, normalised so a full-scale sine
+/// reads 1.0 (0 dB) in its bin. `samples.len()` is a power of two ≥ 64 and `kernel` one the CPU has.
+pub(crate) fn power_spectrum(kernel: Kernel, samples: &[f32]) -> Vec<f32> {
+    let n = samples.len();
     TABLES.with(|t| {
         let mut slot = t.borrow_mut();
         if slot.as_ref().map(|t| t.n) != Some(n) {
@@ -256,33 +284,14 @@ fn analyse_impl(samples: &[f32], sample_rate: u32, bands: usize, kernel: Kernel)
         }
         run_fft(kernel, &mut re, &mut im, tables);
 
-        // Power per bin, normalised so a full-scale sine reads 0 dB (Hann's coherent gain is 0.5).
+        // Normalised so a full-scale sine reads 0 dB (Hann's coherent gain is 0.5).
         let half = n / 2;
         let scale = 4.0 / (n as f32 * n as f32 * 0.25);
         let mut power = vec![0f32; half];
         for k in 0..half {
             power[k] = (re[k] * re[k] + im[k] * im[k]) * scale;
         }
-
-        // Log-spaced bands from 20 Hz to Nyquist; each band is the mean power of its bins.
-        let nyquist = sample_rate as f32 / 2.0;
-        let bin_hz = nyquist / half as f32;
-        let lo = 20f32.min(nyquist / 2.0);
-        let ratio = (nyquist / lo).ln() / bands as f32;
-        let mut bands_db = vec![0f32; bands];
-        for (b, out) in bands_db.iter_mut().enumerate() {
-            let f0 = lo * (ratio * b as f32).exp();
-            let f1 = lo * (ratio * (b + 1) as f32).exp();
-            let k0 = ((f0 / bin_hz) as usize).clamp(1, half - 1);
-            let k1 = ((f1 / bin_hz).ceil() as usize).clamp(k0 + 1, half);
-            let mut acc = 0f32;
-            for p in &power[k0..k1] {
-                acc += *p;
-            }
-            *out = acc / (k1 - k0) as f32;
-        }
-        to_db(&mut bands_db);
-        Analysis { bands_db, rms, peak }
+        power
     })
 }
 
@@ -320,7 +329,7 @@ fn fft_in_place(re: &mut [f32], im: &mut [f32], twr: &[f32], twi: &[f32]) {
 /// `10·log10(x)` in place, floored at -120 dB, branch-free so it vectorises: log2 from the float's
 /// exponent plus a series on the mantissa (error under 0.001 dB).
 #[inline(always)]
-fn to_db(values: &mut [f32]) {
+pub(crate) fn to_db(values: &mut [f32]) {
     const DB_PER_LOG2: f32 = 10.0 * std::f32::consts::LOG10_2;
     for v in values.iter_mut() {
         let x = v.max(1e-12);

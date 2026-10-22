@@ -16,6 +16,7 @@ pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
 pub mod dsp;
+pub mod tonal;
 pub mod calendar;
 pub mod env;
 pub mod errors;
@@ -2499,6 +2500,8 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspInfoNative
             "best": dsp::Kernel::best().id(),
             "sve_bits": dsp::vector_lengths().0,
             "sme_bits": dsp::vector_lengths().1,
+            "mat_kernels": tonal::MatKernel::available().iter().map(|k| serde_json::json!({"id": k.id(), "name": k.name()})).collect::<Vec<_>>(),
+            "mat_best": tonal::MatKernel::best().id(),
         })
         .to_string()
     })
@@ -2517,6 +2520,75 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspBenchNativ
         let _ = &env;
         let n = (n.max(64) as usize).next_power_of_two();
         let rows: Vec<serde_json::Value> = std::panic::catch_unwind(|| dsp::bench(n, iterations.max(1) as usize))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))
+            .collect();
+        serde_json::Value::Array(rows).to_string()
+    })
+}
+
+/// The lab's key and mel analysis, kept between calls (one lab screen at a time).
+static TONAL: std::sync::Mutex<Option<tonal::Tonal>> = std::sync::Mutex::new(None);
+
+/// JNI Bridge: push one frame into the key and mel analysis. Answers `[columns, key, r, chroma×12,
+/// columns×52 mel dB]`: `columns` is 0, or 16 when this frame completed a batch (one matrix product);
+/// `key` is 0–11 major on C…B, 12–23 minor, -1 when there is none yet; `r` its correlation. Empty
+/// on unusable input. `reset` starts over (the lab opened, or the song changed).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspTonalNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    samples: jni::objects::JFloatArray<'local>,
+    sample_rate: jint,
+    reset: jboolean,
+) -> jni::sys::jfloatArray {
+    let outcome = env_unowned.with_env(|env| -> jni::errors::Result<jni::sys::jfloatArray> {
+        let n = samples.len(env)?;
+        let mut buf = vec![0f32; n];
+        samples.get_region(env, 0, &mut buf)?;
+        let values: Vec<f32> = if n >= 64 && n.is_power_of_two() && sample_rate > 0 {
+            let rate = sample_rate as u32;
+            let mut slot = TONAL.lock().unwrap_or_else(|e| e.into_inner());
+            if reset == JNI_TRUE || !slot.as_ref().is_some_and(|t| t.fits(n, rate)) {
+                *slot = Some(tonal::Tonal::new(n, rate));
+            }
+            let t = slot.as_mut().expect("set above");
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| t.push(&buf, dsp::Kernel::best(), tonal::MatKernel::best())))
+                .map(|u| {
+                    let (key, r) = u.key.map(|(k, r)| (k as f32, r)).unwrap_or((-1.0, 0.0));
+                    let mut v = vec![u.mel_db.len() as f32, key, r];
+                    v.extend_from_slice(&u.chroma);
+                    u.mel_db.iter().for_each(|c| v.extend_from_slice(c));
+                    v
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let out = env.new_float_array(values.len())?;
+        out.set_region(env, 0, &values)?;
+        Ok(out.into_raw())
+    });
+    match outcome.into_outcome() {
+        Outcome::Ok(arr) => arr,
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// JNI Bridge: nanoseconds per 64×k by k×16 matrix product (k = bins of an `n`-point FFT) for each
+/// kernel this CPU has, as JSON `[{"id","name","ns"}]`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspMatBenchNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    n: jint,
+    iterations: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let _ = &env;
+        let n = (n.max(64) as usize).next_power_of_two();
+        let rows: Vec<serde_json::Value> = std::panic::catch_unwind(|| tonal::bench(n, iterations.max(1) as usize))
             .unwrap_or_default()
             .into_iter()
             .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))

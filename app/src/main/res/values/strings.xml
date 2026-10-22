@@ -813,4 +813,13 @@
         <item quantity="one">Your month: %1$s · Your day: %2$s · Longest streak: %3$d day</item>
         <item quantity="other">Your month: %1$s · Your day: %2$s · Longest streak: %3$d days</item>
     </plurals>
+    <string name="audio_lab_spec_log">Log</string>
+    <string name="audio_lab_spec_mel">Mel</string>
+    <string name="audio_lab_key_title">Key</string>
+    <string name="audio_lab_key_major">%1$s major</string>
+    <string name="audio_lab_key_minor">%1$s minor</string>
+    <string name="audio_lab_key_listening">Listening…</string>
+    <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
+    <string name="audio_lab_key_note">From the pitch classes of the last few seconds. Key and mel bands come out of one matrix product every 16 frames, on %1$s.</string>
+    <string name="audio_lab_mat_row">%1$s: %2$.1f µs per 64×4096×16 matrix product (×%3$.2f)</string>
 </resources>

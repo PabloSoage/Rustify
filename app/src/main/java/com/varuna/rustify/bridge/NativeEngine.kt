@@ -862,6 +862,16 @@ object NativeEngine {
     /** `[{"id","name","ns"}]` — nanoseconds per [n]-sample frame for each kernel, [iterations] runs. */
     external fun dspBenchNative(n: Int, iterations: Int): String
 
+    /**
+     * Pushes one frame into the key and mel analysis: `[columns, key, r, chroma×12, columns×52 mel dB]`.
+     * `columns` is 0 or 16 (a batch went through the matrix product); `key` 0–11 major on C…B, 12–23
+     * minor, -1 for none yet. [reset] starts over. Empty on unusable input.
+     */
+    external fun dspTonalNative(samples: FloatArray, sampleRate: Int, reset: Boolean): FloatArray?
+
+    /** `[{"id","name","ns"}]` — nanoseconds per 64×k by k×16 matrix product, k = [n] / 2. */
+    external fun dspMatBenchNative(n: Int, iterations: Int): String
+
     /** Releases the compiled engine (frees its memory when the web player closes). */
     external fun adblockClearNative()
 }
