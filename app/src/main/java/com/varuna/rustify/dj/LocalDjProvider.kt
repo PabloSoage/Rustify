@@ -116,6 +116,10 @@ object OnDeviceModel {
                 FeatureStatus.DOWNLOADING -> Status.DOWNLOADING
                 else -> Status.UNSUPPORTED
             }
+        }.onFailure {
+            // Said, not swallowed: a release build whose ML Kit could not start (an R8 rule missing,
+            // 4.8.1) looked exactly like a phone without AICore.
+            Log.w("LocalDj", "AICore status check failed", it)
         }.getOrDefault(Status.UNSUPPORTED)
         _status.value = s
         if (s == Status.READY && _modelName.value == null) {

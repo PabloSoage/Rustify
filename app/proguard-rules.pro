@@ -48,3 +48,9 @@
 
 # Media3 has its own consumer rules
 # -keep class androidx.media3.** { *; }
+# ML Kit (lyrics translation, language id, Gemini Nano for the DJ and the chat) finds its components
+# by reflection: the manifest lists each ComponentRegistrar by name and ComponentDiscovery calls its
+# no-argument constructor. R8 sees no caller and removed those constructors, so in the release
+# build — never in debug, which is not minified — every ML Kit feature failed to start ("Could not
+# instantiate …CommonComponentRegistrar" in logcat) and Gemini Nano read as "no on-device AI".
+-keep class * implements com.google.firebase.components.ComponentRegistrar { public <init>(); }
