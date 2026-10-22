@@ -93,6 +93,9 @@ fun AudioLabScreen(onBack: () -> Unit) {
         info?.optJSONArray("kernels")?.let { a -> List(a.length()) { a.getJSONObject(it).let { k -> k.getString("id") to k.getString("name") } } }.orEmpty()
     }
     val best = remember { info?.optString("best").orEmpty() }
+    // Vector widths, when the CPU has the extension: SVE's, and the SME unit's in streaming mode.
+    val sveBits = remember { info?.takeIf { it.has("sve_bits") && !it.isNull("sve_bits") }?.optInt("sve_bits") }
+    val smeBits = remember { info?.takeIf { it.has("sme_bits") && !it.isNull("sme_bits") }?.optInt("sme_bits") }
 
     var kernel by remember { mutableStateOf("") } // "" = best
     var fftSize by remember { mutableIntStateOf(4096) }
@@ -184,6 +187,13 @@ fun AudioLabScreen(onBack: () -> Unit) {
                     if (features.isEmpty()) stringResource(R.string.audio_lab_no_arm) else features.joinToString("  "),
                     color = Color.LightGray, fontSize = 12.sp
                 )
+                if (sveBits != null || smeBits != null) {
+                    Text(
+                        listOfNotNull(sveBits?.let { "SVE $it bits" }, smeBits?.let { "SME (streaming) $it bits" }).joinToString(" · "),
+                        color = Color.LightGray, fontSize = 12.sp
+                    )
+                }
+                Text(stringResource(R.string.audio_lab_auto_measured), color = Color.Gray, fontSize = 11.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     val autoName = kernels.firstOrNull { it.first == best }?.second.orEmpty()

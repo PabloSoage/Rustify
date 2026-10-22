@@ -2484,7 +2484,8 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspAnalyzeNat
 }
 
 /// JNI Bridge: the CPU's ARM extensions and the analysis kernels it can run, as JSON:
-/// `{"features":[…],"kernels":[{"id","name"}],"best":"…"}`.
+/// `{"features":[…],"kernels":[{"id","name"}],"best":"…","sve_bits":n?,"sme_bits":n?}` — `best` is
+/// the fastest kernel measured on this CPU.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspInfoNative<'local>(
     mut env_unowned: EnvUnowned<'local>,
@@ -2496,6 +2497,8 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspInfoNative
             "features": dsp::cpu_features(),
             "kernels": dsp::Kernel::available().iter().map(|k| serde_json::json!({"id": k.id(), "name": k.name()})).collect::<Vec<_>>(),
             "best": dsp::Kernel::best().id(),
+            "sve_bits": dsp::vector_lengths().0,
+            "sme_bits": dsp::vector_lengths().1,
         })
         .to_string()
     })

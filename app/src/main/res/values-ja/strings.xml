@@ -716,6 +716,7 @@
     <string name="audio_lab_cpu">プロセッサ</string>
     <string name="audio_lab_no_arm">ARM プロセッサではないため、汎用パスを使います。</string>
     <string name="audio_lab_auto">自動: %1$s</string>
+    <string name="audio_lab_auto_measured">自動は、最新のものではなく、このプロセッサで計測して最速だったパスです。</string>
     <string name="audio_lab_frame">1 フレーム %1$.0f µs · %2$d Hz</string>
     <string name="audio_lab_play_something">何か再生するとここに表示されます。</string>
     <string name="audio_lab_waveform">波形</string>
@@ -725,7 +726,7 @@
     <string name="audio_lab_spectrogram">スペクトログラム</string>
     <string name="audio_lab_measure">このプロセッサで各パスを計測</string>
     <string name="audio_lab_measuring">計測中…</string>
-    <string name="audio_lab_bench_row">%1$s: 4096 点フレームあたり %2$.1f µs（×%3$.2f）</string>
+    <string name="audio_lab_bench_row">%1$s: 4096 点 FFT あたり %2$.1f µs（×%3$.2f）</string>
     <string name="queue_title">再生キュー</string>
     <string name="queue_now_playing">再生中</string>
     <string name="common_cancel">キャンセル</string>

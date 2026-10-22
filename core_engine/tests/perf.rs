@@ -72,3 +72,16 @@ fn json_parse_throughput() {
     let mib = text.len() as f64 * 20.0 / (1024.0 * 1024.0);
     println!("json parse: {:.1} MiB in {:.3} s = {:.1} MiB/s ({n} items)", mib, s, mib / s);
 }
+
+#[test]
+#[ignore]
+fn fft_kernels_on_this_cpu() {
+    // The audio lab's kernels, timed on the device (adb shell). Prints the CPU's vector lengths too.
+    let (sve, sme) = core_engine::dsp::vector_lengths();
+    println!("fft: features {:?}; SVE {:?} bits, SME {:?} bits", core_engine::dsp::cpu_features(), sve, sme);
+    for n in [1024, 4096, 16384] {
+        for (k, ns) in core_engine::dsp::bench(n, 3000) {
+            println!("fft n={n:>5} {:<26} {:>9.2} us", k.name(), ns as f64 / 1000.0);
+        }
+    }
+}

@@ -713,6 +713,7 @@
     <string name="audio_lab_cpu">Procesador</string>
     <string name="audio_lab_no_arm">No es un procesador ARM: se usa la ruta portable.</string>
     <string name="audio_lab_auto">Auto: %1$s</string>
+    <string name="audio_lab_auto_measured">Auto es la ruta que resultó más rápida al medirla en este procesador, no la más moderna.</string>
     <string name="audio_lab_frame">%1$.0f µs por fotograma · %2$d Hz</string>
     <string name="audio_lab_play_something">Reproduce algo para verlo aquí.</string>
     <string name="audio_lab_waveform">Forma de onda</string>
@@ -722,7 +723,7 @@
     <string name="audio_lab_spectrogram">Espectrograma</string>
     <string name="audio_lab_measure">Medir cada ruta en este procesador</string>
     <string name="audio_lab_measuring">Midiendo…</string>
-    <string name="audio_lab_bench_row">%1$s: %2$.1f µs por fotograma de 4096 puntos (×%3$.2f)</string>
+    <string name="audio_lab_bench_row">%1$s: %2$.1f µs por FFT de 4096 puntos (×%3$.2f)</string>
     <string name="queue_title">Cola de reproducción</string>
     <string name="queue_now_playing">Sonando ahora</string>
     <string name="common_cancel">Cancelar</string>
