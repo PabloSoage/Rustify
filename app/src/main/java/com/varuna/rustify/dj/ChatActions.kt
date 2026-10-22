@@ -63,6 +63,29 @@ object ChatActions {
         return shown.trimEnd().removeSuffix("`").trimEnd()
     }
 
+    /**
+     * Whether the user's message asks the app to do something, rather than asking a question. A
+     * small model sometimes adds an action to a plain question — asked what album a cover was from,
+     * Nano answered right and then searched for a mix of that question and the previous one — so
+     * an action is only carried out when the message itself asks for one.
+     */
+    fun isRequest(message: String): Boolean {
+        val m = message.lowercase()
+        return REQUEST_WORDS.any { w -> if (w.first().code > 0x2fff) w in m else Regex("(^|\\W)$w").containsMatchIn(m) }
+    }
+
+    private val REQUEST_WORDS = listOf(
+        // English
+        "play", "put", "queue", "add", "find", "search", "look for", "show me", "skip", "next", "previous",
+        "go back", "pause", "stop", "resume", "continue", "mix", "dj", "start",
+        // Spanish
+        "pon", "ponme", "reproduce", "toca", "añade", "agrega", "cola", "busca", "búscame", "encuentra",
+        "salta", "siguiente", "anterior", "pausa", "detén", "sigue", "continúa", "reanuda", "mezcla", "haz",
+        // Japanese
+        "再生", "かけて", "流して", "追加", "キュー", "探して", "検索", "スキップ", "次の", "前の", "止めて",
+        "一時停止", "再開", "ミックス",
+    )
+
     /** The action a finished answer asks for, or null when there is none or it cannot be read. */
     fun parse(answer: String): ChatAction? {
         val at = answer.lastIndexOf(MARKER, ignoreCase = true)

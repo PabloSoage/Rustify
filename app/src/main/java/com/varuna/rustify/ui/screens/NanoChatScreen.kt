@@ -231,7 +231,7 @@ fun NanoChatScreen(
                     statsTemplate,
                     firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, tokens * 1000.0 / genMs
                 )
-                val action = ChatActions.parse(text)
+                val action = ChatActions.parse(text)?.takeIf { ChatActions.isRequest(question) }
                 messages[answerIndex] = ChatMessage(false, ChatActions.visibleText(text), stats = stats)
                 if (action != null) {
                     val (done, tracks) = perform(action)

@@ -35,6 +35,21 @@ class ChatActionsTest {
     }
 
     @Test
+    fun onlyAMessageThatAsksForSomethingRunsAnAction() {
+        // Seen on the phone: a question about a cover came back with a search nobody asked for.
+        assertEquals(false, ChatActions.isRequest("What album is this cover from?"))
+        assertEquals(false, ChatActions.isRequest("¿Quién canta esta canción?"))
+        assertEquals(false, ChatActions.isRequest("この曲は誰が歌っていますか？"))
+        assertEquals(true, ChatActions.isRequest("Play something by Queen"))
+        assertEquals(true, ChatActions.isRequest("Can you add Hotel California to the queue?"))
+        assertEquals(true, ChatActions.isRequest("Pon algo de Queen"))
+        assertEquals(true, ChatActions.isRequest("Hazme una mezcla tranquila para estudiar"))
+        assertEquals(true, ChatActions.isRequest("クイーンの曲を再生して"))
+        // A word that only contains a request word is not one: "display" is not "play".
+        assertEquals(false, ChatActions.isRequest("Is the display on this cover a hotel?"))
+    }
+
+    @Test
     fun aHalfWrittenActionLineIsAlreadyHiddenWhileStreaming() {
         assertEquals("Here's Queen.", ChatActions.visibleText("Here's Queen.\nACTION: {\"do\": \"pl"))
         assertEquals("Here's Queen.", ChatActions.visibleText("Here's Queen.\nACTI"))

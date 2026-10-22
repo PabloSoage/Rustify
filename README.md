@@ -16,7 +16,7 @@ you pick asks for. It keeps everything it knows about you on your own device.
 ## 📸 Screenshots
 
 Taken signed out — everything shown works without a Spotify account. The first fourteen are from the
-Android emulator; the last five from a POCO F8 Ultra (Snapdragon 8 Elite Gen 5), since the audio
+Android emulator; the rest from a POCO F8 Ultra (Snapdragon 8 Elite Gen 5), since the audio
 lab's SME kernels and Gemini Nano need the real hardware.
 
 |   |   |   |   |
@@ -29,8 +29,10 @@ lab's SME kernels and Gemini Nano need the real hardware.
 | DJ — moods in one tap | Your year in music | Travel playlist | Route → playlist length |
 | <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> | <img src="assets/screenshots/search.webp" width="180" alt="Search — recent and browse"> | <img src="assets/screenshots/find-in-playlist.webp" width="180" alt="Find in a playlist"> | <img src="assets/screenshots/audio-lab.webp" width="180" alt="Audio lab — spectrum, mel and key"> |
 | Audio sources, fastest first | Search — recent and browse | Find in a playlist | Audio lab — spectrum, mel and key |
-| <img src="assets/screenshots/audio-lab-bench.webp" width="180" alt="Audio lab — every ARM path, measured"> | <img src="assets/screenshots/nano-chat.webp" width="180" alt="Chat with Gemini Nano, on the phone"> | <img src="assets/screenshots/nano-panel.webp" width="180" alt="Gemini Nano for the DJ"> |
-| Every ARM path, measured (SME 9× NEON) | Chat with Gemini Nano, on the phone | Gemini Nano for the DJ |
+| <img src="assets/screenshots/audio-lab-bench.webp" width="180" alt="Audio lab — every ARM path, measured"> | <img src="assets/screenshots/nano-chat.webp" width="180" alt="Chat with Gemini Nano, on the phone"> | <img src="assets/screenshots/nano-chat-actions.webp" width="180" alt="The chat plays, queues and skips"> | <img src="assets/screenshots/nano-chat-search.webp" width="180" alt="The chat finds songs"> |
+| Every ARM path, measured (SME 9× NEON) | Chat with Gemini Nano, on the phone | The chat plays, queues and skips | The chat finds songs |
+| <img src="assets/screenshots/nano-chat-photo.webp" width="180" alt="A photo of a cover → the album, then play it"> | <img src="assets/screenshots/nano-panel.webp" width="180" alt="Gemini Nano for the DJ"> |
+| A cover photo → the album → "play it" | Gemini Nano for the DJ |
 
 ---
 
@@ -107,7 +109,9 @@ lab's SME kernels and Gemini Nano need the real hardware.
   AICore, on the phone's NPU where it has one: offline, no key, nothing leaves the phone. One-tap
   moods (chill, focus, party, workout, happy, sad) and "more like" your most played artists.
   Settings shows the model's download, size and updates, and there is a **chat with Gemini Nano**
-  (with photos) that never leaves the phone.
+  that also drives the app: ask it to play, queue or find music, start a mix, pause or skip. Send it
+  a photo of a cover and it names the album; "play it" plays it. The conversation never leaves the
+  phone — only the search an action makes goes out, like any search in the app.
 - **Listening metrics** — Every play kept, with no ceiling, in the core. Plays, time, streaks and
   per-artist records (bronze to platinum) by track, artist and album, against the previous period,
   with a full history. Imports Spotify's Extended and legacy `StreamingHistory*.json` exports, with
