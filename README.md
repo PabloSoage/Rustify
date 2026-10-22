@@ -15,7 +15,9 @@ you pick asks for. It keeps everything it knows about you on your own device.
 
 ## 📸 Screenshots
 
-Taken on the Android emulator, signed out — everything shown works without a Spotify account.
+Taken signed out — everything shown works without a Spotify account. The first fourteen are from the
+Android emulator; the last five from a POCO F8 Ultra (Snapdragon 8 Elite Gen 5), since the audio
+lab's SME kernels and Gemini Nano need the real hardware.
 
 |   |   |   |   |
 |---|---|---|---|
@@ -25,8 +27,10 @@ Taken on the Android emulator, signed out — everything shown works without a S
 | Queue — drag to reorder | Lyrics, translated on the phone | Artist | Artist · About |
 | <img src="assets/screenshots/dj.webp" width="180" alt="DJ — moods in one tap"> | <img src="assets/screenshots/recap.webp" width="180" alt="Your year in music"> | <img src="assets/screenshots/travel-map.webp" width="180" alt="Travel playlist"> | <img src="assets/screenshots/travel-route.webp" width="180" alt="Route → playlist length"> |
 | DJ — moods in one tap | Your year in music | Travel playlist | Route → playlist length |
-| <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> | <img src="assets/screenshots/search.webp" width="180" alt="Search — recent and browse"> |
-| Audio sources, fastest first | Search — recent and browse |
+| <img src="assets/screenshots/backends.webp" width="180" alt="Audio sources, fastest first"> | <img src="assets/screenshots/search.webp" width="180" alt="Search — recent and browse"> | <img src="assets/screenshots/find-in-playlist.webp" width="180" alt="Find in a playlist"> | <img src="assets/screenshots/audio-lab.webp" width="180" alt="Audio lab — spectrum, mel and key"> |
+| Audio sources, fastest first | Search — recent and browse | Find in a playlist | Audio lab — spectrum, mel and key |
+| <img src="assets/screenshots/audio-lab-bench.webp" width="180" alt="Audio lab — every ARM path, measured"> | <img src="assets/screenshots/nano-chat.webp" width="180" alt="Chat with Gemini Nano, on the phone"> | <img src="assets/screenshots/nano-panel.webp" width="180" alt="Gemini Nano for the DJ"> |
+| Every ARM path, measured (SME 9× NEON) | Chat with Gemini Nano, on the phone | Gemini Nano for the DJ |
 
 ---
 
