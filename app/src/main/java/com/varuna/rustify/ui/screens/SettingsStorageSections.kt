@@ -798,7 +798,6 @@ internal fun HeadsetButtonSection(context: Context) {
     val hb = com.varuna.rustify.player.HeadsetButton
     var double by remember { mutableStateOf(hb.double(context)) }
     var triple by remember { mutableStateOf(hb.triple(context)) }
-    var hold by remember { mutableStateOf(hb.holdSeeks(context)) }
     @Composable
     fun label(a: com.varuna.rustify.player.HeadsetButton.Action) = stringResource(
         when (a) {
@@ -836,19 +835,6 @@ internal fun HeadsetButtonSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             choices(stringResource(R.string.settings_headset_double), double) { double = it; hb.setDouble(context, it) }
             choices(stringResource(R.string.settings_headset_triple), triple) { triple = it; hb.setTriple(context, it) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.settings_headset_hold),
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = hold,
-                    onCheckedChange = { on -> hold = on; hb.setHoldSeeks(context, on) },
-                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
-                )
-            }
         }
     }
 }

@@ -2,8 +2,6 @@ package com.varuna.rustify.player
 
 import com.varuna.rustify.player.HeadsetButton.Action
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HeadsetButtonTest {
@@ -34,18 +32,4 @@ class HeadsetButtonTest {
         assertEquals(Action.TOGGLE, presses(1))
     }
 
-    @Test
-    fun `holding seeks at a steady pace, not on every repeat`() {
-        assertTrue(b.holdRepeat(1_000))
-        assertFalse(b.holdRepeat(1_050))
-        assertFalse(b.holdRepeat(1_399))
-        assertTrue(b.holdRepeat(1_400))
-    }
-
-    @Test
-    fun `a hold is not also a press`() {
-        b.press()
-        b.holdRepeat(0)
-        assertEquals(Action.NOTHING, b.resolve(Action.NEXT, Action.PREVIOUS))
-    }
 }

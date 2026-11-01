@@ -322,17 +322,9 @@ class RustifyForegroundService : MediaLibraryService() {
                 key.keyCode != android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
             ) return false
             if (controllerInfo.controllerVersion != MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION) return false
-            if (key.action != android.view.KeyEvent.ACTION_DOWN) return true
+            if (key.action != android.view.KeyEvent.ACTION_DOWN || key.repeatCount > 0) return true
             val player = session.player
             val ctx = this@RustifyForegroundService
-            if (key.repeatCount > 0) {
-                pendingPresses?.let { headsetHandler.removeCallbacks(it) }
-                pendingPresses = null
-                if (HeadsetButton.holdSeeks(ctx) && headset.holdRepeat(android.os.SystemClock.uptimeMillis())) {
-                    player.seekTo(player.currentPosition + HeadsetButton.SEEK_MS)
-                }
-                return true
-            }
             pendingPresses?.let { headsetHandler.removeCallbacks(it) }
             val wait = headset.press()
             val task = Runnable {

@@ -719,7 +719,6 @@
     <string name="settings_headset_next">Siguiente canción</string>
     <string name="settings_headset_previous">Canción anterior</string>
     <string name="settings_headset_nothing">Nada</string>
-    <string name="settings_headset_hold">Mantener pulsado para avanzar</string>
     <string name="nano_chat_title">Chat con Gemini Nano</string>
     <string name="nano_chat_on_device">en este móvil</string>
     <string name="nano_chat_clear">Borrar chat</string>
