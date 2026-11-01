@@ -95,6 +95,24 @@ object NativeEngine {
     /** Drops one context, or every one when [id] is empty. */
     suspend fun forgetListening(id: String): String = io { forgetListeningNative(id) }
 
+    private external fun recordTrackPlaceNative(trackId: String, positionMs: Long, durationMs: Long): String
+
+    /**
+     * Keeps the place in a long track (4.9) — or drops it, once finished or barely started. The
+     * rules (how long is long, what counts as finished) are the core's: `player::bookmark`.
+     */
+    suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String =
+        io { recordTrackPlaceNative(trackId, positionMs, durationMs) }
+
+    private external fun trackPlaceNative(trackId: String): Long
+
+    /** Where to pick a long track up again, or -1 when there is no place to offer. */
+    suspend fun trackPlace(trackId: String): Long = io { trackPlaceNative(trackId) }
+
+    private external fun forgetTrackPlaceNative(trackId: String): String
+
+    /** Forgets the place in a track, because the person chose to start it over. */
+    suspend fun forgetTrackPlace(trackId: String): String = io { forgetTrackPlaceNative(trackId) }
     // =====================================================================
     // LOCAL SEARCH (point J)
     // =====================================================================

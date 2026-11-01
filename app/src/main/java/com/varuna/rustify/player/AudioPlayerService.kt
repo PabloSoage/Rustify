@@ -873,6 +873,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
                 // Every way into playback, a restored queue resumed from the notification included.
                 if (isPlaying) ensureAudioRouteWatcher()
+                // Every pause, whoever asked for it (notification, headset, car): keep the place.
+                else if (preparedTrackId == _state.value.currentTrack?.id) {
+                    rememberPlace(_state.value.currentTrack, exoPlayer.currentPosition, force = true)
+                }
                 PlaybackTileService.refresh(context)
             }
 
@@ -1268,6 +1272,10 @@ class AudioPlayerService private constructor(private val context: Context) {
         // positionMs=0 for a new play and to the saved offset for a resume, and this line runs before
         // any suspension, so it's accurate.
         val desiredStartMs = _state.value.positionMs
+        // Leaving a long track for another: keep its place. The ticker's position is the outgoing
+        // track's until this function moves on, which is why it is read here and not later.
+        _state.value.currentTrack?.takeIf { it.id != trackId }?.let { rememberPlace(it, _state.value.positionMs, force = true) }
+        if (_resumedAt.value?.first != trackId) _resumedAt.value = null
 
         // Cancel any pending auto-retry from a previous track to prevent notification/playback race conditions
         autoRetryJob?.cancel()
@@ -1538,8 +1546,17 @@ class AudioPlayerService private constructor(private val context: Context) {
                 preparedTrackId = trackId
                 // Seek to the position captured at the top of playTrack (see desiredStartMs), never to
                 // the live _state.positionMs which the ticker may have advanced meanwhile.
-                if (desiredStartMs > 0L) {
-                    exoPlayer.seekTo(desiredStartMs)
+                // A long track started from the top picks up where it was left (4.9).
+                var startAt = desiredStartMs
+                if (startAt == 0L && !isPreview && !isAutoRetry && isLong(track)) {
+                    val place = runCatching { NativeEngine.trackPlace(trackId) }.getOrDefault(-1L)
+                    if (place > 0L) {
+                        startAt = place
+                        _resumedAt.value = trackId to place
+                    }
+                }
+                if (startAt > 0L) {
+                    exoPlayer.seekTo(startAt)
                 }
                 // Never inherit a leftover DJ-duck volume onto a fresh track (a stuck 0.22 is inaudible).
                 if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
@@ -2424,6 +2441,54 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }.getOrDefault(false)
 
+    // ── The place in a long track (4.9) ─────────────────────────────────────────────────────────
+
+    /**
+     * The track that just picked up where it was left, and where: the app shows "resumed at 34:12"
+     * with a way to start over. Null when nothing was resumed.
+     *
+     * Resumed rather than asked: a question needs a screen, and a podcast started from the car or a
+     * headset has none — so the place is taken, and undoing it is one tap for whoever is looking.
+     */
+    private val _resumedAt = MutableStateFlow<Pair<String, Long>?>(null)
+    val resumedAt: StateFlow<Pair<String, Long>?> = _resumedAt
+
+    /**
+     * Below this the core keeps no place anyway (`player::bookmark::MIN_DURATION_MS`); checking here
+     * only saves a call per song, which is nearly every call.
+     */
+    private fun isLong(track: FullTrack?) = (track?.durationMs ?: 0) >= 20 * 60_000
+
+    /** The last place written, so the five-second save tick does not rewrite the file each time. */
+    private var lastPlace: Pair<String, Long>? = null
+
+    /**
+     * [force] for the moments that matter — a pause, leaving the track, finishing it. Otherwise
+     * (the save tick while playing) only every 30 s of progress: losing up to half a minute of a
+     * two-hour set to a crash is fine, rewriting the file every five seconds is not.
+     */
+    private fun rememberPlace(track: FullTrack?, positionMs: Long, force: Boolean = false) {
+        val id = track?.id ?: return
+        if (!isLong(track)) return
+        val last = lastPlace
+        if (!force && last != null && last.first == id && kotlin.math.abs(positionMs - last.second) < 30_000) return
+        lastPlace = id to positionMs
+        val duration = track.durationMs.toLong()
+        mainScope.launch { runCatching { NativeEngine.recordTrackPlace(id, positionMs, duration) } }
+    }
+
+    /** "Start over" on the resumed notice: back to zero, and the place is forgotten. */
+    fun startOver() {
+        val (id, _) = _resumedAt.value ?: return
+        _resumedAt.value = null
+        seekTo(0L)
+        mainScope.launch { runCatching { NativeEngine.forgetTrackPlace(id) } }
+    }
+
+    fun dismissResumed() {
+        _resumedAt.value = null
+    }
+
     // ── Sleep timer (4.4) ───────────────────────────────────────────────────────────────────────
 
     private var sleepJob: kotlinx.coroutines.Job? = null
@@ -2604,6 +2669,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         // say so honestly — a skip at forty seconds is not having heard it. Recorded here rather
         // than on a timer for exactly that reason.
         markCurrentAsListened(st)
+        // Finished: the place in a long track is dropped, not frozen at its last seconds.
+        rememberPlace(st.currentTrack, st.currentTrack?.durationMs?.toLong() ?: 0L, force = true)
         // Sleep timer counting songs: the last one has ended, so stop here instead of moving on.
         if (sleepTracksLeft > 0) setSleepTracks(sleepTracksLeft - 1)
         if (_sleepTimer.value == SLEEP_AT_TRACK_END && sleepTracksLeft == 0) {
@@ -3185,6 +3252,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         val st = _state.value
         if (st.isError || isResolving) return
         saveRequests.trySend(Unit)
+        // Every pause and seek ends up here, which is exactly when a place is worth writing down.
+        rememberPlace(st.currentTrack, st.positionMs)
     }
 
     /** Synchronous atomic write — use on shutdown paths where the async queue may not flush. */

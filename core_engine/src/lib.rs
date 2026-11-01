@@ -277,6 +277,66 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetListeni
     })
 }
 
+/// JNI Bridge: remember the place in a long track (4.9), or drop it once finished or barely started.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_recordTrackPlaceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+    position_ms: jlong,
+    duration_ms: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = track_id.mutf8_chars(env)?.to_string();
+        let outcome = get_runtime().block_on(player::bookmark::record::<env::android::AndroidEnv>(
+            &id,
+            position_ms.max(0) as u64,
+            duration_ms.max(0) as u64,
+        ));
+        serialize_result(outcome.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: where to offer to resume a long track, or -1 when there is no place to offer.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_trackPlaceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+) -> jlong {
+    // Same shape as `streamCacheSizeNative`: an atomic carries the answer out of `with_env`.
+    let place = std::sync::atomic::AtomicI64::new(-1);
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let id = track_id.mutf8_chars(env)?.to_string();
+        if let Some(p) = get_runtime().block_on(player::bookmark::get::<env::android::AndroidEnv>(&id)) {
+            place.store(p as jlong, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(())
+    });
+    place.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// JNI Bridge: forget the place in a long track, because the person chose to start it over.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetTrackPlaceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    track_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = track_id.mutf8_chars(env)?.to_string();
+        let outcome =
+            get_runtime().block_on(player::bookmark::forget::<env::android::AndroidEnv>(&id));
+        serialize_result(outcome.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
 // =============================================================================
 // LINKS (point F)
 // =============================================================================

@@ -662,6 +662,8 @@
     <string name="sleep_timer_songs">Tras %1$d canciones</string>
     <string name="tile_play">Reproducir</string>
     <string name="tile_pause">Pausar</string>
+    <string name="resumed_at">Retomado en %1$s</string>
+    <string name="start_over">Desde el principio</string>
     <string name="widget_previous">Anterior</string>
     <string name="widget_next">Siguiente</string>
     <string name="widget_description">Reproduce y salta canciones desde la pantalla de inicio</string>

@@ -21,6 +21,7 @@
 // Deliberately **not** here: track metadata. The queue is a list of `TrackId` strings, because that
 // is the only part Windows and iOS would agree on anyway.
 
+pub mod bookmark;
 pub mod session;
 
 use serde::{Deserialize, Serialize};

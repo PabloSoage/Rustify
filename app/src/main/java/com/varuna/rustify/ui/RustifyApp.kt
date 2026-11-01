@@ -397,6 +397,7 @@ fun RustifyApp(
         bottomBar = {
             if (isTravelScreen) return@Scaffold // Travel draws its own miniplayer over the map.
             Column(modifier = Modifier.fillMaxWidth()) {
+                ResumedNotice(audioPlayerService)
                 if (currentTrack != null && currentScreen !is Screen.TrackDetail) {
                     val queueIndex = playerState.queue.indexOfFirst { it.id == currentTrack!!.id }
 // "Previous" is never disabled: on the first track it rewinds, which is what the notification has
@@ -1140,4 +1141,45 @@ fun RustifyApp(
             }
         }
     }
+}
+
+/**
+ * "Resumed at 34:12 · Start over" (4.9), while a long track has just picked up where it was left.
+ * It goes away by itself after a few seconds; the place is kept unless "start over" is pressed.
+ */
+@Composable
+private fun ResumedNotice(audioPlayerService: AudioPlayerService) {
+    val resumed by audioPlayerService.resumedAt.collectAsState()
+    val at = resumed ?: return
+    LaunchedEffect(at) {
+        kotlinx.coroutines.delay(8_000)
+        audioPlayerService.dismissResumed()
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .background(Color(0xFF2A2A2A), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 2.dp)
+    ) {
+        Text(
+            stringResource(R.string.resumed_at, formatPlace(at.second)),
+            color = Color.White,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        androidx.compose.material3.TextButton(onClick = { audioPlayerService.startOver() }) {
+            Text(stringResource(R.string.start_over), color = Color(0xFF1DB954))
+        }
+    }
+}
+
+/** 34:12, or 1:34:12 past the hour. */
+private fun formatPlace(ms: Long): String {
+    val s = ms / 1000
+    val h = s / 3600
+    val m = (s % 3600) / 60
+    val sec = s % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }

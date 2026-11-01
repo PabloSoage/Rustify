@@ -665,6 +665,8 @@
     <string name="sleep_timer_songs">%1$d 曲後</string>
     <string name="tile_play">再生</string>
     <string name="tile_pause">一時停止</string>
+    <string name="resumed_at">%1$s から再開しました</string>
+    <string name="start_over">最初から</string>
     <string name="widget_previous">前へ</string>
     <string name="widget_next">次へ</string>
     <string name="widget_description">ホーム画面から再生や曲送りができます</string>
