@@ -698,7 +698,8 @@ internal fun AudioOffloadSection(context: Context) {
     val blocker = com.varuna.rustify.player.AudioOffload.blocker(
         enabled,
         com.varuna.rustify.player.EqualizerController.isEnabled(context),
-        com.varuna.rustify.player.TransitionFade.seconds(context)
+        com.varuna.rustify.player.TransitionFade.seconds(context),
+        speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(context)
     )
     Spacer(modifier = Modifier.height(16.dp))
     Card(
@@ -730,6 +731,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_eq), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.FADE ->
                     Text(stringResource(R.string.settings_offload_blocked_fade), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.SPEED ->
+                    Text(stringResource(R.string.settings_offload_blocked_speed), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }

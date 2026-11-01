@@ -665,6 +665,12 @@
     <string name="sleep_timer">Sleep timer</string>
     <string name="sleep_timer_minutes">%1$d minutes</string>
     <string name="sleep_timer_track_end">End of this track</string>
+    <string name="sleep_timer_songs">After %1$d songs</string>
+    <string name="playback_speed">Speed and pitch</string>
+    <string name="playback_speed_value">Speed: %1$s×</string>
+    <string name="playback_pitch_value">Pitch: %1$s semitones</string>
+    <string name="playback_speed_reset">Normal</string>
+    <string name="playback_speed_desc">Faster for podcasts and audiobooks, slower to learn a song. Pitch moves the song up or down without changing its speed. While either is changed, the audio chip is not used.</string>
     <string name="sleep_timer_off">Turn off timer</string>
     <string name="settings_equalizer">Equalizer</string>
     <string name="settings_equalizer_unavailable">Play something first: the equalizer attaches to the player.</string>
@@ -704,6 +710,7 @@
     <string name="settings_offload_desc">With the screen off, the phone\'s audio DSP decodes the music and the processor sleeps for minutes at a time. Only on phones that support it; you will not hear a difference.</string>
     <string name="settings_offload_blocked_eq">Not in use while the equalizer is on: the equalizer needs the processor.</string>
     <string name="settings_offload_blocked_fade">Not in use while fading between songs: the fade needs the processor.</string>
+    <string name="settings_offload_blocked_speed">Not in use while the speed or pitch is changed: changing them needs the processor.</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

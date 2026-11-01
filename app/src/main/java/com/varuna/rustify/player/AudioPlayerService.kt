@@ -781,6 +781,12 @@ class AudioPlayerService private constructor(private val context: Context) {
     // race where two concurrent `saveState` launches wrote the file out of order.
     private val saveRequests = Channel<Unit>(Channel.CONFLATED)
 
+    /**
+     * What [applyPlaybackSpeed] last asked for; anything else came from a controller. Declared
+     * before the init block below, which already reads it.
+     */
+    @Volatile private var requestedParameters = androidx.media3.common.PlaybackParameters.DEFAULT
+
     init {
         // Initialize the YouTube resolver cache + mappings.
         // NOTE: must be filesDir (persistent), NOT cacheDir: youtube_mappings.json holds the user's
@@ -836,7 +842,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 android.util.Log.i("AudioOffload", "cpu sleeping for offload: $isSleepingForOffload")
             }
         })
-        applyAudioOffload()
+        applyPlaybackSpeed()
 
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
@@ -863,29 +869,31 @@ class AudioPlayerService private constructor(private val context: Context) {
              * Says, out loud, whether anything ever changes the playback rate.
              *
              * Reported symptom: a song occasionally runs slightly fast or slow, so the pitch shifts
-             * and voices go out of tune. Nothing in this app asks for that — there is no
-             * `setPlaybackSpeed`, no `PlaybackParameters`, no silence-skipping and no audio offload
-             * anywhere in the source — but the session grants `COMMAND_SET_SPEED_AND_PITCH` to every
-             * controller that connects (the notification, Android Auto, Assistant, a head unit), so
-             * "nothing in this app" is not the same as "nothing".
+             * and voices go out of tune. Since 4.9 the app sets speed and pitch itself, but only
+             * through [applyPlaybackSpeed], which keeps what it asked for in [requestedParameters].
+             * The session also grants `COMMAND_SET_SPEED_AND_PITCH` to every controller that
+             * connects (the notification, Android Auto, Assistant, a head unit), so "the app did
+             * not ask" is still not the same as "nothing asked".
              *
-             * This line is what tells the two apart, because they need opposite fixes:
+             * This line is what tells them apart, because they need opposite fixes:
              *
-             *  - a `speed` that is ever not 1.0 means a controller asked, and the answer is to stop
-             *    handing that command out in `LibraryCallback.onConnect`;
-             *  - a `speed` that stays 1.0 while the pitch audibly drifts means it is below the
-             *    player — the audio sink, a device resampler, or a Bluetooth clock — and no change
-             *    here would have fixed it.
+             *  - parameters that differ from [requestedParameters] mean a controller asked, and the
+             *    answer is to stop handing that command out in `LibraryCallback.onConnect`;
+             *  - parameters that match while the pitch audibly drifts mean it is below the player —
+             *    the audio sink, a device resampler, or a Bluetooth clock — and no change here would
+             *    have fixed it.
              *
              * Logged at warn so it survives a filtered logcat: `adb logcat -s AudioPlayerService:W`.
              */
             override fun onPlaybackParametersChanged(
                 playbackParameters: androidx.media3.common.PlaybackParameters
             ) {
+                if (playbackParameters == requestedParameters) return
                 android.util.Log.w(
                     "AudioPlayerService",
                     "playback rate changed: speed=${playbackParameters.speed} " +
-                        "pitch=${playbackParameters.pitch} — nothing in Rustify asks for this"
+                        "pitch=${playbackParameters.pitch} — not what Rustify asked for " +
+                        "(speed=${requestedParameters.speed} pitch=${requestedParameters.pitch})"
                 )
             }
 
@@ -2243,6 +2251,18 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Asks media3 to offload (or not) from the next track on, per [AudioOffload]. Gapless support is
      * required so an album that runs track into track does not gain a gap.
      */
+
+    /** Speed and pitch from [PlaybackSpeed], and offload re-decided, since it cannot do either. */
+    fun applyPlaybackSpeed() {
+        val params = androidx.media3.common.PlaybackParameters(
+            PlaybackSpeed.speed(context),
+            PlaybackSpeed.pitchFactor(PlaybackSpeed.semitones(context))
+        )
+        requestedParameters = params
+        runCatching { exoPlayer.playbackParameters = params }
+        applyAudioOffload()
+    }
+
     fun applyAudioOffload() {
         val blocker = AudioOffload.blocker(context)
         val mode = if (blocker == null) androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
@@ -2396,7 +2416,11 @@ class AudioPlayerService private constructor(private val context: Context) {
     // ── Sleep timer (4.4) ───────────────────────────────────────────────────────────────────────
 
     private var sleepJob: kotlinx.coroutines.Job? = null
-    @Volatile private var sleepAtTrackEnd = false
+    /** Songs still to finish before pausing, the current one included; 0 when not counting songs. */
+    @Volatile private var sleepTracksLeft = 0
+    private val _sleepTracks = MutableStateFlow(0)
+    /** What [sleepTracksLeft] holds, for the screen: "2 songs left". */
+    val sleepTracks: StateFlow<Int> = _sleepTracks
 
     /**
      * When playback will stop: epoch ms, [SLEEP_AT_TRACK_END] for "when this track ends", or null
@@ -2412,10 +2436,10 @@ class AudioPlayerService private constructor(private val context: Context) {
      */
     fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
-        sleepAtTrackEnd = false
+        setSleepTracks(0)
         when {
             minutes == 0 -> { _sleepTimer.value = null; restoreAfterFade() }
-            minutes == SLEEP_MINUTES_TRACK_END -> { sleepAtTrackEnd = true; _sleepTimer.value = SLEEP_AT_TRACK_END }
+            minutes == SLEEP_MINUTES_TRACK_END -> setSleepAfterTracks(1)
             else -> {
                 val endsAt = System.currentTimeMillis() + minutes * 60_000L
                 _sleepTimer.value = endsAt
@@ -2434,9 +2458,26 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Pauses when [songs] songs have ended, the current one counting as the first: 1 is "at the end
+     * of this song", 3 is this one and two more. Counted where a song *ends* ([onTrackEnded]), so
+     * skipping through the queue does not use up the count.
+     */
+    fun setSleepAfterTracks(songs: Int) {
+        sleepJob?.cancel()
+        restoreAfterFade()
+        setSleepTracks(songs.coerceAtLeast(0))
+        _sleepTimer.value = if (songs > 0) SLEEP_AT_TRACK_END else null
+    }
+
+    private fun setSleepTracks(n: Int) {
+        sleepTracksLeft = n
+        _sleepTracks.value = n
+    }
+
     private fun cancelSleepTimer() {
         sleepJob?.cancel()
-        sleepAtTrackEnd = false
+        setSleepTracks(0)
         _sleepTimer.value = null
         pause()
     }
@@ -2552,8 +2593,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         // say so honestly — a skip at forty seconds is not having heard it. Recorded here rather
         // than on a timer for exactly that reason.
         markCurrentAsListened(st)
-        // Sleep timer set to "end of this track": stop here instead of moving on.
-        if (sleepAtTrackEnd) {
+        // Sleep timer counting songs: the last one has ended, so stop here instead of moving on.
+        if (sleepTracksLeft > 0) setSleepTracks(sleepTracksLeft - 1)
+        if (_sleepTimer.value == SLEEP_AT_TRACK_END && sleepTracksLeft == 0) {
             cancelSleepTimer()
             return
         }

@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -790,6 +791,7 @@ fun TrackScreen(
                                         }
                                     }
 
+                                    SpeedButton(audioPlayerService)
                                     SleepTimerButton(audioPlayerService)
                                     trackToShow.let {
                                         IconButton(onClick = { showOptionsMenu = true }) {
@@ -1787,6 +1789,7 @@ fun YouTubeVideoPlayer(videoUrlPair: Pair<String, String?>, audioPlayerService: 
 @Composable
 private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
     val endsAt by audioPlayerService.sleepTimer.collectAsState()
+    val songsLeft by audioPlayerService.sleepTracks.collectAsState()
     var open by remember { mutableStateOf(false) }
     // Ticks the label down once a minute is enough; it reads the flow's deadline each time.
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -1801,6 +1804,7 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
             val active = endsAt != null
             val left = endsAt?.takeIf { it > 0 }?.let { ((it - now) / 60_000 + 1).coerceAtLeast(1) }
             if (left != null) Text("${left}m", color = Color(0xFF1DB954), fontSize = 12.sp)
+            else if (songsLeft > 1) Text("${songsLeft}♪", color = Color(0xFF1DB954), fontSize = 12.sp)
             IconButton(onClick = { open = true }) {
                 Icon(
                     androidx.compose.material.icons.Icons.Default.Bedtime,
@@ -1816,10 +1820,17 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
         ) {
             val options = listOf(15, 30, 45, 60).map { m -> stringResource(R.string.sleep_timer_minutes, m) to m } +
                 listOf(stringResource(R.string.sleep_timer_track_end) to AudioPlayerService.SLEEP_MINUTES_TRACK_END)
+            val songOptions = listOf(2, 3, 5)
             options.forEach { (label, minutes) ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text(label, color = Color.White) },
                     onClick = { audioPlayerService.setSleepTimer(minutes); open = false }
+                )
+            }
+            songOptions.forEach { songs ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sleep_timer_songs, songs), color = Color.White) },
+                    onClick = { audioPlayerService.setSleepAfterTracks(songs); open = false }
                 )
             }
             if (endsAt != null) {
@@ -1831,3 +1842,77 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
         }
     }
 }
+
+/**
+ * Speed and pitch (4.9): a gauge beside the sleep timer, showing the speed when it is not 1×. The
+ * values live in [com.varuna.rustify.player.PlaybackSpeed]; applying them is the service's.
+ */
+@Composable
+private fun SpeedButton(audioPlayerService: AudioPlayerService) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ps = com.varuna.rustify.player.PlaybackSpeed
+    var open by remember { mutableStateOf(false) }
+    var speed by remember { mutableStateOf(ps.speed(context)) }
+    var semitones by remember { mutableStateOf(ps.semitones(context)) }
+    fun apply() {
+        ps.set(context, speed, semitones)
+        audioPlayerService.applyPlaybackSpeed()
+    }
+    val changed = !ps.isDefault(speed, semitones)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (ps.snap(speed) != 1f) Text("${formatSpeed(ps.snap(speed))}×", color = Color(0xFF1DB954), fontSize = 12.sp)
+        IconButton(onClick = { open = true }) {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = stringResource(R.string.playback_speed),
+                tint = if (changed) Color(0xFF1DB954) else Color.White
+            )
+        }
+    }
+    if (open) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { open = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text(stringResource(R.string.playback_speed), color = Color.White) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.playback_speed_value, formatSpeed(ps.snap(speed))), color = Color.White)
+                    androidx.compose.material3.Slider(
+                        value = speed,
+                        onValueChange = { speed = ps.snap(it) },
+                        onValueChangeFinished = { apply() },
+                        valueRange = ps.MIN_SPEED..ps.MAX_SPEED,
+                        steps = ((ps.MAX_SPEED - ps.MIN_SPEED) / ps.SPEED_STEP).toInt() - 1
+                    )
+                    Text(
+                        stringResource(R.string.playback_pitch_value, if (semitones > 0) "+$semitones" else "$semitones"),
+                        color = Color.White
+                    )
+                    androidx.compose.material3.Slider(
+                        value = semitones.toFloat(),
+                        onValueChange = { semitones = it.toInt() },
+                        onValueChangeFinished = { apply() },
+                        valueRange = -ps.MAX_SEMITONES.toFloat()..ps.MAX_SEMITONES.toFloat(),
+                        steps = ps.MAX_SEMITONES * 2 - 1
+                    )
+                    Text(stringResource(R.string.playback_speed_desc), color = Color.Gray, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { open = false }) {
+                    Text(stringResource(R.string.settings_close), color = Color(0xFF1DB954))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = changed,
+                    onClick = { speed = 1f; semitones = 0; apply() }
+                ) { Text(stringResource(R.string.playback_speed_reset)) }
+            }
+        )
+    }
+}
+
+/** 1.25 → "1.25", 1.5 → "1.5", 2 → "2". */
+private fun formatSpeed(speed: Float): String =
+    java.math.BigDecimal(speed.toDouble()).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()

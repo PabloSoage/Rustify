@@ -662,6 +662,12 @@
     <string name="sleep_timer">スリープタイマー</string>
     <string name="sleep_timer_minutes">%1$d 分</string>
     <string name="sleep_timer_track_end">この曲の終わり</string>
+    <string name="sleep_timer_songs">%1$d 曲後</string>
+    <string name="playback_speed">速度とピッチ</string>
+    <string name="playback_speed_value">速度: %1$s×</string>
+    <string name="playback_pitch_value">ピッチ: %1$s 半音</string>
+    <string name="playback_speed_reset">標準</string>
+    <string name="playback_speed_desc">ポッドキャストやオーディオブックは速く、曲を覚えるときは遅く。ピッチは速度を変えずに曲の高さを上げ下げします。どちらかを変えている間は、オーディオチップは使われません。</string>
     <string name="sleep_timer_off">タイマーを解除</string>
     <string name="settings_equalizer">イコライザー</string>
     <string name="settings_equalizer_unavailable">まず何か再生してください。イコライザーはプレーヤーに接続されます。</string>
@@ -701,6 +707,7 @@
     <string name="settings_offload_desc">画面オフ時は端末のオーディオDSPが音楽をデコードし、プロセッサは数分間スリープします。対応端末のみ。音の違いはありません。</string>
     <string name="settings_offload_blocked_eq">イコライザーがオンの間は使われません（イコライザーにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_fade">曲間フェードがオンの間は使われません（フェードにはプロセッサが必要です）。</string>
+    <string name="settings_offload_blocked_speed">速度やピッチを変えている間は使われません（変更にはプロセッサが必要です）。</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

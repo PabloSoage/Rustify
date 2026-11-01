@@ -659,6 +659,12 @@
     <string name="sleep_timer">Temporizador</string>
     <string name="sleep_timer_minutes">%1$d minutos</string>
     <string name="sleep_timer_track_end">Al terminar esta canción</string>
+    <string name="sleep_timer_songs">Tras %1$d canciones</string>
+    <string name="playback_speed">Velocidad y tono</string>
+    <string name="playback_speed_value">Velocidad: %1$s×</string>
+    <string name="playback_pitch_value">Tono: %1$s semitonos</string>
+    <string name="playback_speed_reset">Normal</string>
+    <string name="playback_speed_desc">Más rápido para pódcasts y audiolibros, más lento para aprender una canción. El tono sube o baja la canción sin cambiar su velocidad. Mientras alguno esté cambiado, no se usa el chip de audio.</string>
     <string name="sleep_timer_off">Quitar temporizador</string>
     <string name="settings_equalizer">Ecualizador</string>
     <string name="settings_equalizer_unavailable">Reproduce algo primero: el ecualizador se engancha al reproductor.</string>
@@ -698,6 +704,7 @@
     <string name="settings_offload_desc">Con la pantalla apagada, el DSP de audio del móvil decodifica la música y el procesador duerme minutos seguidos. Solo en móviles compatibles; no se nota al oírla.</string>
     <string name="settings_offload_blocked_eq">No se usa mientras el ecualizador esté activo: el ecualizador necesita el procesador.</string>
     <string name="settings_offload_blocked_fade">No se usa mientras haya fundido entre canciones: el fundido necesita el procesador.</string>
+    <string name="settings_offload_blocked_speed">No se usa mientras la velocidad o el tono estén cambiados: cambiarlos necesita el procesador.</string>
     <string name="settings_disconnect">Al desconectarse los auriculares</string>
     <string name="settings_disconnect_desc">La música se pausa al momento, para que nunca suene por el altavoz. Si los auriculares, el coche o el cable vuelven antes de este tiempo, sigue sola.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>
