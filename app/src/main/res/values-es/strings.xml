@@ -660,6 +660,11 @@
     <string name="sleep_timer_minutes">%1$d minutos</string>
     <string name="sleep_timer_track_end">Al terminar esta canción</string>
     <string name="sleep_timer_songs">Tras %1$d canciones</string>
+    <string name="tile_play">Reproducir</string>
+    <string name="tile_pause">Pausar</string>
+    <string name="shortcut_resume">Seguir escuchando</string>
+    <string name="shortcut_search">Buscar</string>
+    <string name="shortcut_dj">DJ</string>
     <string name="playback_speed">Velocidad y tono</string>
     <string name="playback_speed_value">Velocidad: %1$s×</string>
     <string name="playback_pitch_value">Tono: %1$s semitonos</string>

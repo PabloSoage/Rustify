@@ -196,6 +196,15 @@ internal fun navigateDeepLink(
         "playlist" -> navigationStack.add(Screen.PlaylistDetail(parts[1], "", emptyList()))
 "artist" -> navigationStack.add(Screen.ArtistDetail(parts[1]))
         // Shared Google Maps / geo: link.
+        // Launcher shortcuts (4.9) — see AppShortcuts.
+        "shortcut" -> when (parts[1]) {
+            com.varuna.rustify.util.AppShortcuts.RESUME -> {
+                if (!audioPlayerService.state.value.isPlaying) audioPlayerService.play()
+                navigateDeepLink("NOW_PLAYING", navigationStack, audioPlayerService)
+            }
+            com.varuna.rustify.util.AppShortcuts.SEARCH -> if (navigationStack.lastOrNull() != Screen.Search) navigationStack.add(Screen.Search)
+            com.varuna.rustify.util.AppShortcuts.DJ -> if (navigationStack.lastOrNull() != Screen.Dj) navigationStack.add(Screen.Dj)
+        }
         "travel" -> {
             val inner = parts[1].split(",", limit = 3)
             if (inner.size >= 2) {
@@ -461,6 +470,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        } else if (intent?.action == com.varuna.rustify.util.AppShortcuts.ACTION) {
+            return intent.getStringExtra(com.varuna.rustify.util.AppShortcuts.EXTRA_TARGET)?.let { "shortcut:$it" }
         } else if (intent?.action == "com.varuna.rustify.action.VIEW_NOW_PLAYING") {
             return "NOW_PLAYING"
         }
@@ -511,6 +522,7 @@ class MainActivity : ComponentActivity() {
         }
         
         initialDeepLink = extractDeepLink(intent)
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.varuna.rustify.util.AppShortcuts.publish(application) }
 
         
         val prefs = getSharedPreferences("rustify_settings", MODE_PRIVATE)

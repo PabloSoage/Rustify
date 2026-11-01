@@ -863,6 +863,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
                 // Every way into playback, a restored queue resumed from the notification included.
                 if (isPlaying) ensureAudioRouteWatcher()
+                PlaybackTileService.refresh(context)
             }
 
             /**

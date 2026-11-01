@@ -666,6 +666,11 @@
     <string name="sleep_timer_minutes">%1$d minutes</string>
     <string name="sleep_timer_track_end">End of this track</string>
     <string name="sleep_timer_songs">After %1$d songs</string>
+    <string name="tile_play">Play</string>
+    <string name="tile_pause">Pause</string>
+    <string name="shortcut_resume">Keep listening</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_dj">DJ</string>
     <string name="playback_speed">Speed and pitch</string>
     <string name="playback_speed_value">Speed: %1$s×</string>
     <string name="playback_pitch_value">Pitch: %1$s semitones</string>

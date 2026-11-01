@@ -663,6 +663,11 @@
     <string name="sleep_timer_minutes">%1$d 分</string>
     <string name="sleep_timer_track_end">この曲の終わり</string>
     <string name="sleep_timer_songs">%1$d 曲後</string>
+    <string name="tile_play">再生</string>
+    <string name="tile_pause">一時停止</string>
+    <string name="shortcut_resume">続きを聴く</string>
+    <string name="shortcut_search">検索</string>
+    <string name="shortcut_dj">DJ</string>
     <string name="playback_speed">速度とピッチ</string>
     <string name="playback_speed_value">速度: %1$s×</string>
     <string name="playback_pitch_value">ピッチ: %1$s 半音</string>
