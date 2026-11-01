@@ -701,6 +701,13 @@
     <string name="settings_offload_desc">画面オフ時は端末のオーディオDSPが音楽をデコードし、プロセッサは数分間スリープします。対応端末のみ。音の違いはありません。</string>
     <string name="settings_offload_blocked_eq">イコライザーがオンの間は使われません（イコライザーにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_fade">曲間フェードがオンの間は使われません（フェードにはプロセッサが必要です）。</string>
+    <string name="settings_disconnect">ヘッドホンが外れたとき</string>
+    <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
+    <string name="settings_disconnect_seconds">%1$d 秒</string>
+    <string name="settings_disconnect_minutes">%1$d 分</string>
+    <string name="settings_disconnect_never">一時停止のまま</string>
+    <string name="settings_ignore_connect_play">接続時の再生を無視</string>
+    <string name="settings_ignore_connect_play_desc">車やヘッドホンには、接続した瞬間に勝手に再生を始めるものがあります。オンにすると、最初の5秒間の再生指示を無視します。その間にハンドルの再生ボタンを押した場合も無視されます。</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>

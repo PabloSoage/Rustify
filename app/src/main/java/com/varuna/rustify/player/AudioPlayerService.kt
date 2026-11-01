@@ -855,6 +855,8 @@ class AudioPlayerService private constructor(private val context: Context) {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
+                // Every way into playback, a restored queue resumed from the notification included.
+                if (isPlaying) ensureAudioRouteWatcher()
             }
 
             /**
@@ -905,8 +907,12 @@ class AudioPlayerService private constructor(private val context: Context) {
              */
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 when {
-                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST ->
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> {
                         userPaused = !playWhenReady
+                        // The disconnection's own pause lands here before it is remembered, and its
+                        // resume after it is forgotten, so this only ever clears a person's choice.
+                        disconnectResume.onUserCommand()
+                    }
                     playWhenReady && userPaused -> {
                         android.util.Log.d(
                             "AudioPlayerService",
@@ -2308,9 +2314,48 @@ class AudioPlayerService private constructor(private val context: Context) {
     private val audioDeviceCallback = object : android.media.AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>?) {
             lastAudioRouteChangeAt = System.currentTimeMillis()
+            // Registering delivers every device already connected; that is not a connection.
+            if (!routeWatcherPrimed) { routeWatcherPrimed = true; return }
+            val sinks = added.orEmpty().filter { it.isSink }.map { it.type }
+            onDisconnectAction(disconnectResume.onOutputsAdded(System.currentTimeMillis(), sinks))
         }
         override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) {
             lastAudioRouteChangeAt = System.currentTimeMillis()
+        }
+    }
+
+    @Volatile private var routeWatcherPrimed = false
+
+    /** See [DisconnectResume]: pause when the output goes away, resume if it is back soon. */
+    val disconnectResume = DisconnectResume(
+        windowMs = { DisconnectResume.windowSeconds(context) * 1_000L },
+        ignoreConnectPlay = { DisconnectResume.ignoreConnectPlay(context) },
+    )
+
+    private val noisyReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            // Casting and the web player play somewhere else; the phone's outputs are not theirs.
+            if (isCasting || isWebServing) return
+            onDisconnectAction(disconnectResume.onNoisy(System.currentTimeMillis(), exoPlayer.isPlaying))
+        }
+    }
+
+    private fun onDisconnectAction(action: DisconnectResume.Action) {
+        when (action) {
+            DisconnectResume.Action.None -> {}
+            // Immediate, never faded: the point is that not a note comes out of the speaker.
+            DisconnectResume.Action.Pause -> {
+                android.util.Log.i("AudioPlayerService", "Output disconnected: pausing")
+                pause()
+            }
+            is DisconnectResume.Action.ResumeAfter -> mainScope.launch {
+                delay(action.delayMs)
+                if (disconnectResume.confirmResume(System.currentTimeMillis(), isInCall()) && !exoPlayer.isPlaying) {
+                    android.util.Log.i("AudioPlayerService", "Output back: resuming")
+                    play()
+                }
+            }
         }
     }
 
@@ -2325,6 +2370,13 @@ class AudioPlayerService private constructor(private val context: Context) {
             audioManager.registerAudioDeviceCallback(
                 audioDeviceCallback,
                 android.os.Handler(android.os.Looper.getMainLooper())
+            )
+            // A system broadcast reaches a not-exported receiver; nothing else can send it.
+            androidx.core.content.ContextCompat.registerReceiver(
+                context,
+                noisyReceiver,
+                android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
             )
         }.onFailure { routeWatcherRegistered.set(false) }
     }
@@ -2982,6 +3034,11 @@ class AudioPlayerService private constructor(private val context: Context) {
         context.startService(stopIntent)
         mediaControllerFuture?.cancel(true)
         mediaControllerFuture = null
+        if (routeWatcherRegistered.getAndSet(false)) {
+            runCatching { audioManager.unregisterAudioDeviceCallback(audioDeviceCallback) }
+            runCatching { context.unregisterReceiver(noisyReceiver) }
+            routeWatcherPrimed = false
+        }
         exoPlayer.release()
         exoPlayerInstance = null
         instance = null

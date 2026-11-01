@@ -137,6 +137,14 @@ class RustifyForegroundService : MediaLibraryService() {
                     AudioPlayerService.instance?.isWebServing == true
 
                 override fun play() {
+                    // A controller's PLAY (headset, car, notification) — the one a car may send by
+                    // itself on connecting. The app's own button does not come through here.
+                    if (AudioPlayerService.instance?.disconnectResume
+                            ?.shouldIgnoreControllerPlay(System.currentTimeMillis()) == true
+                    ) {
+                        android.util.Log.i("AudioPlayerService", "Ignoring a PLAY sent on connecting")
+                        return
+                    }
                     if (webMode()) AudioPlayerService.instance?.play() else super.play()
                 }
 

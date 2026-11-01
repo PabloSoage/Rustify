@@ -735,3 +735,56 @@ internal fun AudioOffloadSection(context: Context) {
         }
     }
 }
+
+/** Headphones or Bluetooth disconnecting (4.9) — see [com.varuna.rustify.player.DisconnectResume]. */
+@Composable
+internal fun DisconnectSection(context: Context) {
+    val dr = com.varuna.rustify.player.DisconnectResume
+    var window by remember { mutableIntStateOf(dr.windowSeconds(context)) }
+    var ignorePlay by remember { mutableStateOf(dr.ignoreConnectPlay(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_disconnect), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_disconnect_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                dr.WINDOW_CHOICES.forEach { s ->
+                    androidx.compose.material3.FilterChip(
+                        selected = window == s,
+                        onClick = { window = s; dr.setWindowSeconds(context, s) },
+                        label = {
+                            Text(
+                                when {
+                                    s == 0 -> stringResource(R.string.settings_disconnect_never)
+                                    s < 60 -> stringResource(R.string.settings_disconnect_seconds, s)
+                                    else -> stringResource(R.string.settings_disconnect_minutes, s / 60)
+                                },
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_ignore_connect_play),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = ignorePlay,
+                    onCheckedChange = { on -> ignorePlay = on; dr.setIgnoreConnectPlay(context, on) },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_ignore_connect_play_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
