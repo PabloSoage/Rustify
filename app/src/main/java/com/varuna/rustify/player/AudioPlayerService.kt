@@ -2811,7 +2811,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             positionMs = livePos,
             repeatOne = st.isRepeat,
             shuffle = st.isShuffle,
-            action = PlayerQueue.PREVIOUS
+            action = if (PlayerQueue.previousAlwaysGoesBack(context)) PlayerQueue.PREVIOUS_TRACK else PlayerQueue.PREVIOUS
         )
         applyQueueDecision(st, decision)
     }

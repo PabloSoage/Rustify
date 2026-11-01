@@ -730,6 +730,8 @@
     <string name="settings_headset_next">次の曲</string>
     <string name="settings_headset_previous">前の曲</string>
     <string name="settings_headset_nothing">何もしない</string>
+    <string name="settings_previous_always">「前へ」で常に前の曲へ</string>
+    <string name="settings_previous_always_desc">通常、曲の再生が10秒を過ぎてから「前へ」を押すと、その曲の最初に戻ります。オンにすると、常に前の曲に移ります。</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>

@@ -838,3 +838,32 @@ internal fun HeadsetButtonSection(context: Context) {
         }
     }
 }
+
+/** What "previous" does well into a song (4.9) — see `player::Action::PreviousTrack` in the core. */
+@Composable
+internal fun PreviousButtonSection(context: Context) {
+    var always by remember { mutableStateOf(com.varuna.rustify.player.PlayerQueue.previousAlwaysGoesBack(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_previous_always),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = always,
+                    onCheckedChange = { on -> always = on; com.varuna.rustify.player.PlayerQueue.setPreviousAlwaysGoesBack(context, on) },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_previous_always_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}

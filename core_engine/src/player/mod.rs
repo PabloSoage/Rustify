@@ -72,6 +72,9 @@ pub enum Action {
     /// Someone pressed the button. Distinct from [`Action::TrackEnded`] on purpose.
     Next,
     Previous,
+    /// "Previous" for someone who chose that it always goes back a song (4.9): no restart past
+    /// [`PREVIOUS_RESTART_THRESHOLD_MS`]. At the first song it still rewinds, as plain `Previous` does.
+    PreviousTrack,
     Seek(u64),
     /// Playback progressed. The only action that arrives without anyone doing anything.
     Tick(u64),
@@ -115,6 +118,7 @@ pub enum Effect {
 /// Total: every action has an answer for every state, including an empty queue. That is the property
 /// worth having — the caller never has to ask "can I press next right now".
 pub fn reduce(state: &mut PlayerState, action: Action) -> Vec<Effect> {
+    let action_restarts = matches!(action, Action::Previous);
     match action {
         Action::SetQueue { tracks, start } => {
             if tracks.is_empty() {
@@ -156,14 +160,14 @@ pub fn reduce(state: &mut PlayerState, action: Action) -> Vec<Effect> {
             advance(state, false)
         }
 
-        Action::Previous => {
+        Action::Previous | Action::PreviousTrack => {
             if state.is_empty() {
                 return vec![Effect::Stop];
             }
             // Well into the song: restart it. This is what every player does and what people
             // expect, and it is a seek rather than a reload — reloading would re-resolve a stream
             // that is already playing perfectly well.
-            if state.position_ms > PREVIOUS_RESTART_THRESHOLD_MS {
+            if action_restarts && state.position_ms > PREVIOUS_RESTART_THRESHOLD_MS {
                 state.position_ms = 0;
                 return vec![Effect::SeekTo(0), Effect::Persist];
             }
@@ -404,6 +408,21 @@ mod tests {
         state.repeat = Repeat::All;
         assert_eq!(played(&reduce(&mut state, Action::Previous)), Some("t2"));
         assert_eq!(state.index, 2);
+    }
+
+    #[test]
+    fn previous_track_goes_back_even_well_into_the_song() {
+        let mut state = queue_of(3);
+        state.index = 1;
+        state.position_ms = PREVIOUS_RESTART_THRESHOLD_MS * 6;
+
+        assert_eq!(played(&reduce(&mut state, Action::PreviousTrack)), Some("t0"));
+        assert_eq!(state.index, 0);
+        // At the first song there is nowhere to go back to: it rewinds, like plain Previous.
+        state.position_ms = PREVIOUS_RESTART_THRESHOLD_MS * 6;
+        let effects = reduce(&mut state, Action::PreviousTrack);
+        assert_eq!(effects.first(), Some(&Effect::SeekTo(0)));
+        assert_eq!(state.index, 0);
     }
 
     #[test]

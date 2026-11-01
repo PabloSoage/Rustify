@@ -2230,6 +2230,9 @@ fn player_action_from_json(v: &serde_json::Value) -> Option<player::Action> {
                 .unwrap_or(0) as usize,
         }),
         "next" => Some(player::Action::Next),
+        "previous" if v.get("always").and_then(serde_json::Value::as_bool) == Some(true) => {
+            Some(player::Action::PreviousTrack)
+        }
         "previous" => Some(player::Action::Previous),
         "seek" => Some(player::Action::Seek(ms)),
         "tick" => Some(player::Action::Tick(ms)),

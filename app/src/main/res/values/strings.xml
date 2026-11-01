@@ -733,6 +733,8 @@
     <string name="settings_headset_next">Next song</string>
     <string name="settings_headset_previous">Previous song</string>
     <string name="settings_headset_nothing">Nothing</string>
+    <string name="settings_previous_always">Previous always goes back a song</string>
+    <string name="settings_previous_always_desc">Normally, pressing previous more than 10 seconds into a song starts it again. With this on, it always goes to the song before.</string>
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>
