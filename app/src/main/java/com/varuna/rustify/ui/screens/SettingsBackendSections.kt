@@ -482,6 +482,7 @@ internal fun AudioBackendsSection(context: Context) {
     FadeBetweenSongsSection(context)
     AudioOffloadSection(context)
     DisconnectSection(context)
+    HeadsetButtonSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     CastingSection(context)

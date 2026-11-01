@@ -712,6 +712,14 @@
     <string name="settings_disconnect_never">Seguir en pausa</string>
     <string name="settings_ignore_connect_play">Ignorar el play al conectar</string>
     <string name="settings_ignore_connect_play_desc">Algunos coches y auriculares arrancan la música solos al conectarse. Con esto activado, se ignora un play en los primeros 5 segundos. También el botón de play del volante si se pulsa en esos segundos.</string>
+    <string name="settings_headset">Botón de los auriculares</string>
+    <string name="settings_headset_desc">Para el botón de los auriculares con cable y Bluetooth. Una pulsación siempre reproduce o pausa.</string>
+    <string name="settings_headset_double">Dos pulsaciones</string>
+    <string name="settings_headset_triple">Tres pulsaciones</string>
+    <string name="settings_headset_next">Siguiente canción</string>
+    <string name="settings_headset_previous">Canción anterior</string>
+    <string name="settings_headset_nothing">Nada</string>
+    <string name="settings_headset_hold">Mantener pulsado para avanzar</string>
     <string name="nano_chat_title">Chat con Gemini Nano</string>
     <string name="nano_chat_on_device">en este móvil</string>
     <string name="nano_chat_clear">Borrar chat</string>

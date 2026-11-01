@@ -718,6 +718,14 @@
     <string name="settings_disconnect_never">Stay paused</string>
     <string name="settings_ignore_connect_play">Ignore play on connecting</string>
     <string name="settings_ignore_connect_play_desc">Some cars and headphones start the music by themselves when they connect. With this on, a play in the first 5 seconds is ignored. The play button on a steering wheel pressed in those seconds is ignored too.</string>
+    <string name="settings_headset">Headphone button</string>
+    <string name="settings_headset_desc">For the button on wired and Bluetooth headphones. One press always plays or pauses.</string>
+    <string name="settings_headset_double">Two presses</string>
+    <string name="settings_headset_triple">Three presses</string>
+    <string name="settings_headset_next">Next song</string>
+    <string name="settings_headset_previous">Previous song</string>
+    <string name="settings_headset_nothing">Nothing</string>
+    <string name="settings_headset_hold">Hold to fast-forward</string>
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>

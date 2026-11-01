@@ -300,6 +300,55 @@ class RustifyForegroundService : MediaLibraryService() {
                 .build()
         }
 
+        private val headset = HeadsetButton()
+        private val headsetHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        private var pendingPresses: Runnable? = null
+
+        /**
+         * The headset's button — see [HeadsetButton]. Only key-downs of play/pause from outside the
+         * app (`LEGACY_CONTROLLER_VERSION`: Bluetooth, a wired headset) are taken; the notification's
+         * buttons and every other key go on to Media3 as before.
+         */
+        @UnstableApi
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent
+        ): Boolean {
+            val key = androidx.core.content.IntentCompat.getParcelableExtra(
+                intent, Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java
+            ) ?: return false
+            if (key.keyCode != android.view.KeyEvent.KEYCODE_HEADSETHOOK &&
+                key.keyCode != android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            ) return false
+            if (controllerInfo.controllerVersion != MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION) return false
+            if (key.action != android.view.KeyEvent.ACTION_DOWN) return true
+            val player = session.player
+            val ctx = this@RustifyForegroundService
+            if (key.repeatCount > 0) {
+                pendingPresses?.let { headsetHandler.removeCallbacks(it) }
+                pendingPresses = null
+                if (HeadsetButton.holdSeeks(ctx) && headset.holdRepeat(android.os.SystemClock.uptimeMillis())) {
+                    player.seekTo(player.currentPosition + HeadsetButton.SEEK_MS)
+                }
+                return true
+            }
+            pendingPresses?.let { headsetHandler.removeCallbacks(it) }
+            val wait = headset.press()
+            val task = Runnable {
+                pendingPresses = null
+                when (headset.resolve(HeadsetButton.double(ctx), HeadsetButton.triple(ctx))) {
+                    HeadsetButton.Action.TOGGLE -> if (player.playWhenReady) player.pause() else player.play()
+                    HeadsetButton.Action.NEXT -> player.seekToNext()
+                    HeadsetButton.Action.PREVIOUS -> player.seekToPrevious()
+                    HeadsetButton.Action.NOTHING -> {}
+                }
+            }
+            pendingPresses = task
+            headsetHandler.postDelayed(task, wait)
+            return true
+        }
+
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,

@@ -715,6 +715,14 @@
     <string name="settings_disconnect_never">一時停止のまま</string>
     <string name="settings_ignore_connect_play">接続時の再生を無視</string>
     <string name="settings_ignore_connect_play_desc">車やヘッドホンには、接続した瞬間に勝手に再生を始めるものがあります。オンにすると、最初の5秒間の再生指示を無視します。その間にハンドルの再生ボタンを押した場合も無視されます。</string>
+    <string name="settings_headset">ヘッドホンのボタン</string>
+    <string name="settings_headset_desc">有線・Bluetoothヘッドホンのボタンの動作。1回押すと必ず再生／一時停止します。</string>
+    <string name="settings_headset_double">2回押し</string>
+    <string name="settings_headset_triple">3回押し</string>
+    <string name="settings_headset_next">次の曲</string>
+    <string name="settings_headset_previous">前の曲</string>
+    <string name="settings_headset_nothing">何もしない</string>
+    <string name="settings_headset_hold">長押しで早送り</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>

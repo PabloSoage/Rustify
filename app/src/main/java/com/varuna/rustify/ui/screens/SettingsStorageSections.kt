@@ -791,3 +791,64 @@ internal fun DisconnectSection(context: Context) {
         }
     }
 }
+
+/** The headset's button (4.9) — see [com.varuna.rustify.player.HeadsetButton]. */
+@Composable
+internal fun HeadsetButtonSection(context: Context) {
+    val hb = com.varuna.rustify.player.HeadsetButton
+    var double by remember { mutableStateOf(hb.double(context)) }
+    var triple by remember { mutableStateOf(hb.triple(context)) }
+    var hold by remember { mutableStateOf(hb.holdSeeks(context)) }
+    @Composable
+    fun label(a: com.varuna.rustify.player.HeadsetButton.Action) = stringResource(
+        when (a) {
+            com.varuna.rustify.player.HeadsetButton.Action.NEXT -> R.string.settings_headset_next
+            com.varuna.rustify.player.HeadsetButton.Action.PREVIOUS -> R.string.settings_headset_previous
+            else -> R.string.settings_headset_nothing
+        }
+    )
+    @Composable
+    fun choices(
+        title: String,
+        selected: com.varuna.rustify.player.HeadsetButton.Action,
+        onPick: (com.varuna.rustify.player.HeadsetButton.Action) -> Unit
+    ) {
+        Text(title, color = Color.White, fontSize = 14.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            hb.CHOICES.forEach { a ->
+                androidx.compose.material3.FilterChip(
+                    selected = selected == a,
+                    onClick = { onPick(a) },
+                    label = { Text(label(a), fontSize = 12.sp) }
+                )
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_headset), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_headset_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            choices(stringResource(R.string.settings_headset_double), double) { double = it; hb.setDouble(context, it) }
+            choices(stringResource(R.string.settings_headset_triple), triple) { triple = it; hb.setTriple(context, it) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_headset_hold),
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = hold,
+                    onCheckedChange = { on -> hold = on; hb.setHoldSeeks(context, on) },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+        }
+    }
+}
