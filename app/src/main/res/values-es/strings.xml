@@ -662,6 +662,9 @@
     <string name="sleep_timer_songs">Tras %1$d canciones</string>
     <string name="tile_play">Reproducir</string>
     <string name="tile_pause">Pausar</string>
+    <string name="widget_previous">Anterior</string>
+    <string name="widget_next">Siguiente</string>
+    <string name="widget_description">Reproduce y salta canciones desde la pantalla de inicio</string>
     <string name="shortcut_resume">Seguir escuchando</string>
     <string name="shortcut_search">Buscar</string>
     <string name="shortcut_dj">DJ</string>

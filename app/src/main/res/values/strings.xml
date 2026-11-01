@@ -668,6 +668,9 @@
     <string name="sleep_timer_songs">After %1$d songs</string>
     <string name="tile_play">Play</string>
     <string name="tile_pause">Pause</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_description">Play and skip songs from the home screen</string>
     <string name="shortcut_resume">Keep listening</string>
     <string name="shortcut_search">Search</string>
     <string name="shortcut_dj">DJ</string>

@@ -201,6 +201,19 @@
             </intent-filter>
         </service>
 
+        <!-- Home-screen widget (4.9). -->
+        <receiver
+            android:name=".widget.PlayerWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/player_widget_info" />
+        </receiver>
+
         <!-- Quick Settings tile: play/pause from the shade (4.9). -->
         <service
             android:name=".player.PlaybackTileService"

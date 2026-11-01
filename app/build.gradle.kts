@@ -145,6 +145,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.coil.compose)
+    // Home-screen widget (4.9).
+    implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)

@@ -33,6 +33,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
@@ -843,6 +845,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             }
         })
         applyPlaybackSpeed()
+
+        // The home-screen widget redraws when the song or the play state changes, and only then.
+        mainScope.launch {
+            _state
+                .map { it.currentTrack?.id to it.isPlaying }
+                .distinctUntilChanged()
+                .collect { com.varuna.rustify.widget.PlayerWidget.refresh(context) }
+        }
 
         // ExoPlayer state listeners
         exoPlayer.addListener(object : Player.Listener {
