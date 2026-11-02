@@ -146,7 +146,9 @@ pub async fn find<E: Env>(cfg: &Config, title: &str, artists: &[String], duratio
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
     Ok(songs.into_iter().find(|s| matches(s, title, artists, duration_ms)).map(|s| Found {
-        stream_url: endpoint(cfg, "stream", &salt::<E>(), &format!("&id={}", urlencoding::encode(&s.id))),
+        // `format=raw`: the stored file, whatever transcoding the server sets for this client
+        // (Navidrome keeps one per player). Symfonium asks the same way.
+        stream_url: endpoint(cfg, "stream", &salt::<E>(), &format!("&id={}&format=raw", urlencoding::encode(&s.id))),
         id: s.id,
         suffix: s.suffix,
         bit_rate: s.bit_rate,
@@ -197,7 +199,7 @@ mod tests {
         let found = find::<MockEnv>(&cfg(), "Jóga", &["Björk".into()], 305_000).await.unwrap().unwrap();
         assert_eq!((found.id.as_str(), found.suffix.as_str(), found.bit_rate), ("x2", "flac", 900));
         assert!(found.stream_url.starts_with("http://nas:4533/rest/stream.view?u=pablo%20s&t="));
-        assert!(found.stream_url.ends_with("&id=x2"));
+        assert!(found.stream_url.ends_with("&id=x2&format=raw"), "the stored file, never a transcode");
         let search = mock::state().requests[0].url.clone();
         assert!(search.contains("&query=J%C3%B3ga&songCount=20"), "{search}");
     }
