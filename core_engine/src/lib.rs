@@ -346,6 +346,25 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzV
     })
 }
 
+/// JNI Bridge: the tempo of mono PCM (-1..1) at `sample_rate`, as a JSON `tempo::Estimate`, or
+/// `null` with under 6 s of audio. CPU only, no I/O; the app calls it off the main thread.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_tempoOfNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    samples: jni::objects::JFloatArray<'local>,
+    sample_rate: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let n = samples.len(env)?;
+        let mut buf = vec![0f32; n];
+        samples.get_region(env, 0, &mut buf)?;
+        let mut t = tempo::Tempo::new(sample_rate.max(1) as u32);
+        t.push(&buf);
+        serialize_result::<_, String>(Ok(t.estimate()))
+    })
+}
+
 /// JNI Bridge: the contexts to offer, newest first, as a JSON array.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listContinueListeningNative<'local>(

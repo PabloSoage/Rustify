@@ -508,6 +508,10 @@
     <string name="track_menu_go_radio">ラジオへ</string>
     <string name="track_menu_go_artist">アーティストへ</string>
     <string name="track_menu_favorite">お気に入り</string>
+    <string name="track_menu_bpm_analyse">テンポ (BPM) を解析</string>
+    <string name="track_menu_bpm_analysing">テンポを解析中…</string>
+    <string name="track_menu_bpm">%1$s BPM</string>
+    <string name="track_menu_bpm_none">はっきりしたビートが見つかりません</string>
     <string name="track_menu_unfavorite">お気に入り解除</string>
     <string name="track_alternative_changed">代替トラックを確定しました</string>
     <string name="radio_play_all">すべて再生</string>

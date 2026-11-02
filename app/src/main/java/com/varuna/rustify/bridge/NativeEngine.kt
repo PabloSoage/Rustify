@@ -87,6 +87,12 @@ object NativeEngine {
     /** The token's user name as a JSON string, or `null` when ListenBrainz says it is invalid. */
     suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
 
+    private external fun tempoOfNative(samples: FloatArray, sampleRate: Int): String
+
+    /** The tempo of mono PCM, as JSON `{bpm, confidence}` or `null`. CPU-bound, so off the main thread. */
+    suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String =
+        withContext(Dispatchers.Default) { tempoOfNative(samples, sampleRate) }
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */

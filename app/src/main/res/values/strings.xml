@@ -294,6 +294,10 @@
     <string name="local_playlist_create_confirm">Create</string>
     <string name="local_favorites_empty">No local favorites yet</string>
     <string name="track_menu_favorite">Favorite</string>
+    <string name="track_menu_bpm_analyse">Analyse tempo (BPM)</string>
+    <string name="track_menu_bpm_analysing">Analysing tempo…</string>
+    <string name="track_menu_bpm">%1$s BPM</string>
+    <string name="track_menu_bpm_none">No clear beat found</string>
     <string name="track_menu_unfavorite">Unfavorite</string>
     <string name="local_playlist_selector_title">Add to local playlist</string>
     <string name="local_playlist_added">Added to local playlist</string>

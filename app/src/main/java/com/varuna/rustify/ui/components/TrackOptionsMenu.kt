@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -452,6 +453,28 @@ fun TrackOptionsMenuBottomSheet(
                         onClick = {
                             spotifyRepo.toggleLocalFavorite(tid)
                             isFav = !isFav
+                        }
+                    )
+
+                    // Tempo (5.x): measured on demand, then remembered (BpmAnalyzer).
+                    var bpm by remember(tid) { mutableStateOf(com.varuna.rustify.audio.BpmAnalyzer.cached(context, tid)) }
+                    var analysing by remember(tid) { mutableStateOf(false) }
+                    val noBeat = stringResource(R.string.track_menu_bpm_none)
+                    MenuOptionItem(
+                        icon = Icons.Default.GraphicEq,
+                        label = when {
+                            analysing -> stringResource(R.string.track_menu_bpm_analysing)
+                            bpm != null -> stringResource(R.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))
+                            else -> stringResource(R.string.track_menu_bpm_analyse)
+                        },
+                        onClick = {
+                            if (analysing || bpm != null) return@MenuOptionItem
+                            analysing = true
+                            coroutineScope.launch {
+                                bpm = com.varuna.rustify.audio.BpmAnalyzer.analyze(context, tid, track.durationMs.toLong())
+                                analysing = false
+                                if (bpm == null) android.widget.Toast.makeText(context, noBeat, android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 }
