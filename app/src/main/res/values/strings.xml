@@ -756,6 +756,9 @@
     <string name="settings_offload_blocked_eq">Not in use while the equalizer is on: the equalizer needs the processor.</string>
     <string name="settings_offload_blocked_fade">Not in use while fading between songs: the fade needs the processor.</string>
     <string name="settings_offload_blocked_speed">Not in use while the speed or pitch is changed: changing them needs the processor.</string>
+    <string name="settings_skip_silence">Skip silence</string>
+    <string name="settings_skip_silence_desc">Jumps over long silent stretches, such as the gap before a hidden track. Turns audio offload off while on.</string>
+    <string name="settings_offload_blocked_silence">Not in use while skipping silence: finding the silence needs the processor.</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

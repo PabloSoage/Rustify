@@ -23,6 +23,11 @@ class AudioOffloadTest {
     }
 
     @Test
+    fun skippingSilenceTurnsItOff() {
+        assertEquals(AudioOffload.Blocker.SKIP_SILENCE, AudioOffload.blocker(true, false, 0, skipSilence = true))
+    }
+
+    @Test
     fun theSwitchWinsOverEverything() {
         assertEquals(AudioOffload.Blocker.SWITCHED_OFF, AudioOffload.blocker(false, true, 4))
     }

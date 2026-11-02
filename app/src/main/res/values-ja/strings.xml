@@ -753,6 +753,9 @@
     <string name="settings_offload_blocked_eq">イコライザーがオンの間は使われません（イコライザーにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_fade">曲間フェードがオンの間は使われません（フェードにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_speed">速度やピッチを変えている間は使われません（変更にはプロセッサが必要です）。</string>
+    <string name="settings_skip_silence">無音をスキップ</string>
+    <string name="settings_skip_silence_desc">隠しトラック前の空白など、長い無音部分を飛ばします。オンの間はオーディオオフロードを使いません。</string>
+    <string name="settings_offload_blocked_silence">無音スキップ中は使用されません。無音の検出にプロセッサが必要です。</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

@@ -2383,6 +2383,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun applyAudioOffload() {
+        runCatching { exoPlayer.skipSilenceEnabled = SkipSilence.enabled(context) }
         val blocker = AudioOffload.blocker(context)
         val mode = if (blocker == null) androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
             else androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED

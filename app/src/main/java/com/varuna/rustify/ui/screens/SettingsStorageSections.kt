@@ -773,6 +773,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_fade), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.SPEED ->
                     Text(stringResource(R.string.settings_offload_blocked_speed), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.SKIP_SILENCE ->
+                    Text(stringResource(R.string.settings_offload_blocked_silence), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }
@@ -933,6 +935,39 @@ internal fun PauseFadeSection(context: Context) {
                 )
             }
             Text(stringResource(R.string.settings_pause_fade_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
+
+/** Skipping silence (`18`, [com.varuna.rustify.player.SkipSilence]). */
+@Composable
+internal fun SkipSilenceSection(context: Context) {
+    var on by remember { mutableStateOf(com.varuna.rustify.player.SkipSilence.enabled(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_skip_silence),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = on,
+                    onCheckedChange = { v ->
+                        on = v
+                        com.varuna.rustify.player.SkipSilence.setEnabled(context, v)
+                        com.varuna.rustify.player.AudioPlayerService.instance?.applyAudioOffload()
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_skip_silence_desc), color = Color.Gray, fontSize = 12.sp)
         }
     }
 }

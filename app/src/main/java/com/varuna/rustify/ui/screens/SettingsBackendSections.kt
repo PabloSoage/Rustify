@@ -486,6 +486,7 @@ internal fun AudioBackendsSection(context: Context) {
     PreviousButtonSection(context)
     ShuffleSection(context)
     PauseFadeSection(context)
+    SkipSilenceSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     ListenBrainzSection(context)

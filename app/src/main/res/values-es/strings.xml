@@ -750,6 +750,9 @@
     <string name="settings_offload_blocked_eq">No se usa mientras el ecualizador esté activo: el ecualizador necesita el procesador.</string>
     <string name="settings_offload_blocked_fade">No se usa mientras haya fundido entre canciones: el fundido necesita el procesador.</string>
     <string name="settings_offload_blocked_speed">No se usa mientras la velocidad o el tono estén cambiados: cambiarlos necesita el procesador.</string>
+    <string name="settings_skip_silence">Saltar silencios</string>
+    <string name="settings_skip_silence_desc">Se salta los tramos largos sin sonido, como el hueco antes de una pista oculta. Mientras está activo no se usa el offload.</string>
+    <string name="settings_offload_blocked_silence">No se usa mientras se saltan silencios: buscarlos necesita el procesador.</string>
     <string name="settings_disconnect">Al desconectarse los auriculares</string>
     <string name="settings_disconnect_desc">La música se pausa al momento, para que nunca suene por el altavoz. Si los auriculares, el coche o el cable vuelven antes de este tiempo, sigue sola.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>
