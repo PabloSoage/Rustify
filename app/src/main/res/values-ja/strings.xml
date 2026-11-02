@@ -672,6 +672,12 @@
     <string name="backend_innertube">YouTube (直接・高速)</string>
     <string name="settings_normalize_volume">音量を均一にする</string>
     <string name="settings_normalize_volume_desc">音の大きい録音を下げて、Spotify のように全曲を同じ音量で再生します。YouTube が測定した音量を使用し、ローカルファイルはそのままです。</string>
+    <string name="settings_listenbrainz_desc">聴いた曲を ListenBrainz のプロフィールに送信します。listenbrainz.org → Settings のユーザートークンを貼り付けてください。4 分または曲の半分を聴くとカウントされます。オフライン時は保留され、後で実際の時刻で送信されます。</string>
+    <string name="settings_listenbrainz_token">ユーザートークン</string>
+    <string name="settings_listenbrainz_connect">接続</string>
+    <string name="settings_listenbrainz_disconnect">切断</string>
+    <string name="settings_listenbrainz_connected">%1$s として接続中</string>
+    <string name="settings_listenbrainz_invalid">ListenBrainz がこのトークンを受け付けなかったか、接続できませんでした。</string>
     <string name="settings_replaygain">ReplayGain（ローカルファイル）</string>
     <string name="settings_replaygain_desc">タグ付けソフトが書き込んだ ReplayGain タグでローカルファイルの音量を揃えます。アルバムモードではアルバム内の音量差を保ちます。自動ではアルバムを通して再生しているときだけ保ち、ミックスでは揃えます。タグのないファイルはそのまま再生します。</string>
     <string name="settings_replaygain_off">オフ</string>

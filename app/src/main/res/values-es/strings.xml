@@ -669,6 +669,12 @@
     <string name="backend_innertube">YouTube (directo, rápido)</string>
     <string name="settings_normalize_volume">Normalizar volumen</string>
     <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
+    <string name="settings_listenbrainz_desc">Envía lo que escuchas a tu perfil de ListenBrainz. Pega el token de usuario de listenbrainz.org → Settings. Una escucha cuenta a los 4 minutos o a la mitad de la canción; sin red espera y se envía luego con su hora real.</string>
+    <string name="settings_listenbrainz_token">Token de usuario</string>
+    <string name="settings_listenbrainz_connect">Conectar</string>
+    <string name="settings_listenbrainz_disconnect">Desconectar</string>
+    <string name="settings_listenbrainz_connected">Conectado como %1$s</string>
+    <string name="settings_listenbrainz_invalid">ListenBrainz no aceptó este token o no se pudo contactar.</string>
     <string name="settings_replaygain">ReplayGain (archivos locales)</string>
     <string name="settings_replaygain_desc">Iguala el volumen de los archivos locales con las etiquetas ReplayGain que escribió tu etiquetador. En modo álbum se respetan los cambios de volumen dentro del disco; en Auto, mientras suena un disco seguido, y en las mezclas se iguala todo. Los archivos sin etiqueta suenan tal cual.</string>
     <string name="settings_replaygain_off">No</string>

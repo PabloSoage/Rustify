@@ -965,3 +965,67 @@ internal fun ShuffleSection(context: Context) {
         }
     }
 }
+
+/**
+ * ListenBrainz (`18`): paste the token from the profile's settings page; it is checked against
+ * ListenBrainz before it is kept, and the user name shown so a wrong account is obvious.
+ */
+@Composable
+internal fun ListenBrainzSection(context: Context) {
+    val lb = com.varuna.rustify.metrics.ListenBrainz
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    var token by remember { mutableStateOf(prefs.getString(lb.PREF_TOKEN, "").orEmpty()) }
+    var user by remember { mutableStateOf(prefs.getString(lb.PREF_USER, null)) }
+    var checking by remember { mutableStateOf(false) }
+    var invalid by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Spacer(modifier = Modifier.height(24.dp))
+    Text(
+        "ListenBrainz",
+        color = Color(0xFF1DB954),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_listenbrainz_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            if (user != null) {
+                Text(stringResource(R.string.settings_listenbrainz_connected, user!!), color = Color.White, fontSize = 15.sp)
+                androidx.compose.material3.TextButton(onClick = {
+                    prefs.edit().remove(lb.PREF_TOKEN).remove(lb.PREF_USER).apply()
+                    token = ""; user = null
+                }) { Text(stringResource(R.string.settings_listenbrainz_disconnect), color = Color(0xFFCC2200)) }
+            } else {
+                androidx.compose.material3.OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it; invalid = false },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.settings_listenbrainz_token)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (invalid) Text(stringResource(R.string.settings_listenbrainz_invalid), color = Color(0xFFCC2200), fontSize = 12.sp)
+                androidx.compose.material3.TextButton(
+                    enabled = token.isNotBlank() && !checking,
+                    onClick = {
+                        checking = true
+                        scope.launch {
+                            val name = lb.validate(token)
+                            checking = false
+                            if (name == null) invalid = true
+                            else {
+                                prefs.edit().putString(lb.PREF_TOKEN, token.trim()).putString(lb.PREF_USER, name).apply()
+                                user = name
+                            }
+                        }
+                    }
+                ) { Text(stringResource(R.string.settings_listenbrainz_connect), color = Color(0xFF1DB954)) }
+            }
+        }
+    }
+}

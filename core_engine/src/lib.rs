@@ -26,6 +26,7 @@ pub mod listened;
 pub mod matcher;
 pub mod metrics;
 pub mod player;
+pub mod scrobble;
 pub mod search;
 pub mod server;
 pub mod spotify;
@@ -286,6 +287,61 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readEmbeddedL
     jni_bridge!(env_unowned, |env| {
         let path = path.mutf8_chars(env)?.to_string();
         serialize_result(audio::embedded_lyrics::read(&path))
+    })
+}
+
+/// JNI Bridge: queue one listen for ListenBrainz and send the queue. Answers a `scrobble::Report`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzSubmitNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    token: JString<'local>,
+    listen_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let token = token.mutf8_chars(env)?.to_string();
+        let raw = listen_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<scrobble::Listen>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(listen) => serialize_result(
+                get_runtime().block_on(scrobble::submit::<env::android::AndroidEnv>(&token, listen)),
+            ),
+        }
+    })
+}
+
+/// JNI Bridge: tell ListenBrainz what is playing now (best effort, never queued).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzPlayingNowNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    token: JString<'local>,
+    listen_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let token = token.mutf8_chars(env)?.to_string();
+        let raw = listen_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<scrobble::Listen>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(listen) => serialize_result(
+                get_runtime()
+                    .block_on(scrobble::playing_now::<env::android::AndroidEnv>(&token, &listen))
+                    .map(|_| spotify::models::OperationResult { success: true, error: None }),
+            ),
+        }
+    })
+}
+
+/// JNI Bridge: the ListenBrainz user a token belongs to, as a JSON string, or `null` if invalid.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzValidateNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    token: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let token = token.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(scrobble::validate::<env::android::AndroidEnv>(&token)))
     })
 }
 

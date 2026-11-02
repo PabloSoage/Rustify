@@ -675,6 +675,12 @@
     <string name="backend_innertube">YouTube (direct, fast)</string>
     <string name="settings_normalize_volume">Normalize volume</string>
     <string name="settings_normalize_volume_desc">Turns loud recordings down so every song plays at the same level, as Spotify does. Uses the loudness YouTube measures for each upload; your local files are left as they are.</string>
+    <string name="settings_listenbrainz_desc">Send what you listen to to your ListenBrainz profile. Paste the user token from listenbrainz.org → Settings. A listen counts after 4 minutes or half the song; without network it waits and is sent later with its real time.</string>
+    <string name="settings_listenbrainz_token">User token</string>
+    <string name="settings_listenbrainz_connect">Connect</string>
+    <string name="settings_listenbrainz_disconnect">Disconnect</string>
+    <string name="settings_listenbrainz_connected">Connected as %1$s</string>
+    <string name="settings_listenbrainz_invalid">ListenBrainz did not accept this token, or could not be reached.</string>
     <string name="settings_replaygain">ReplayGain (local files)</string>
     <string name="settings_replaygain_desc">Evens out local files by the ReplayGain tags your tagger wrote. Album mode keeps the loudness steps within an album; Auto does so while an album plays through and evens out mixes. Untagged files play as they are.</string>
     <string name="settings_replaygain_off">Off</string>

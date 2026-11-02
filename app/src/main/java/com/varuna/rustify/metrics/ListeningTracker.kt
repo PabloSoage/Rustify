@@ -48,7 +48,11 @@ class ListeningTracker(private val appContext: Context) {
         if (track.id == null) return
         if (cur?.track?.id == track.id) return
         flush()
-        cur = Session(track, System.currentTimeMillis())
+        val startedAt = System.currentTimeMillis()
+        cur = Session(track, startedAt)
+        if (ListenBrainz.token(appContext) != null) {
+            scope.launch { ListenBrainz.playingNow(appContext, ListenBrainz.listenOf(track, startedAt)) }
+        }
     }
 
     /**
@@ -98,6 +102,13 @@ class ListeningTracker(private val appContext: Context) {
             completed = s.completed,
             source = source
         )
+        // ListenBrainz has its own, stricter rule (4 min or half); the core queues it if offline.
+        if (!s.errored && ListenBrainz.token(appContext) != null &&
+            ListenBrainz.qualifies(s.listenedMs, s.track.durationMs.toLong())
+        ) {
+            val listen = ListenBrainz.listenOf(s.track, s.startedAt)
+            scope.launch { runCatching { ListenBrainz.submit(appContext, listen) } }
+        }
         scope.launch {
             migrateLegacyFile(appContext)
             val answer = runCatching { NativeEngine.recordPlay(RustifyJson.encodeToString(PlayEvent.serializer(), event)) }

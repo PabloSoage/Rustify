@@ -76,6 +76,17 @@ object NativeEngine {
     /** The lyrics embedded in a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
     fun readEmbeddedLyrics(path: String): String = readEmbeddedLyricsNative(path)
 
+    // ListenBrainz (scrobble::). Network, so suspend over private blocking bridges.
+    private external fun listenBrainzSubmitNative(token: String, listenJson: String): String
+    private external fun listenBrainzPlayingNowNative(token: String, listenJson: String): String
+    private external fun listenBrainzValidateNative(token: String): String
+
+    /** Queues a listen and sends the queue; answers a report (sent, pending, rejected). */
+    suspend fun listenBrainzSubmit(token: String, listenJson: String): String = io { listenBrainzSubmitNative(token, listenJson) }
+    suspend fun listenBrainzPlayingNow(token: String, listenJson: String): String = io { listenBrainzPlayingNowNative(token, listenJson) }
+    /** The token's user name as a JSON string, or `null` when ListenBrainz says it is invalid. */
+    suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */
