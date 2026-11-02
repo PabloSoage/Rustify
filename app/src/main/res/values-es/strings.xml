@@ -277,6 +277,12 @@
 <string name="local_group_playlists">Playlists</string>
 <string name="local_group_favorites">Favoritos</string>
 <string name="local_playlist_create">Nueva playlist</string>
+    <string name="m3u_import">Importar playlist M3U</string>
+    <string name="m3u_imported">%1$d canciones importadas; %2$d no están en la biblioteca local</string>
+    <string name="m3u_import_failed">No se pudo leer el archivo M3U</string>
+    <string name="m3u_export">Exportar en M3U</string>
+    <string name="m3u_exported">Playlist exportada en M3U</string>
+    <string name="m3u_export_failed">No se pudo exportar la playlist</string>
 <string name="local_playlist_name_hint">Nombre de la playlist</string>
 <string name="local_playlist_create_confirm">Crear</string>
 <string name="local_favorites_empty">Sin favoritos locales aún</string>

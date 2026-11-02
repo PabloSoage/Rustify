@@ -525,6 +525,12 @@
     <string name="local_group_favorites">お気に入り</string>
     <string name="local_favorites_empty">ローカルのお気に入りはまだありません</string>
     <string name="local_playlist_create">新しいプレイリスト</string>
+    <string name="m3u_import">M3U プレイリストをインポート</string>
+    <string name="m3u_imported">%1$d 曲をインポートしました。%2$d 曲はローカルライブラリにありません</string>
+    <string name="m3u_import_failed">M3U ファイルを読み込めませんでした</string>
+    <string name="m3u_export">M3U でエクスポート</string>
+    <string name="m3u_exported">プレイリストを M3U でエクスポートしました</string>
+    <string name="m3u_export_failed">プレイリストをエクスポートできませんでした</string>
     <string name="local_playlist_name_hint">プレイリスト名</string>
     <string name="local_playlist_create_confirm">作成</string>
     <string name="local_playlist_selector_title">ローカルプレイリストに追加</string>

@@ -707,6 +707,36 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
     }
 
+    private fun known(t: FullTrack): M3u.Known? {
+        val id = t.id ?: return null
+        return M3u.Known(id, M3u.pathOf(id), t.artists.joinToString(", ") { it.name }, t.name)
+    }
+
+    /**
+     * A new local playlist from an M3U/M3U8 file, its lines matched against the scanned library
+     * (see [M3u.resolve]). Answers the playlist and how many lines found no track.
+     */
+    fun importM3u(name: String, text: String): Pair<LocalPlaylist, Int> {
+        val resolved = M3u.resolve(M3u.parse(text), localTracks.mapNotNull { known(it) })
+        val pl = LocalPlaylist(
+            id = "localpl:${java.util.UUID.randomUUID()}",
+            name = name,
+            trackIds = resolved.ids.distinct()
+        )
+        localPlaylists.add(pl)
+        saveLocalPlaylists()
+        com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged()
+        return pl to resolved.missing.size
+    }
+
+    /** A local playlist as M3U8, or null when it does not exist. */
+    fun exportM3u(playlistId: String): String? {
+        val pl = localPlaylists.firstOrNull { it.id == playlistId } ?: return null
+        val tracks = localPlaylistTracks(playlistId)
+        val rows = tracks.mapNotNull { t -> known(t)?.let { it to (t.durationMs / 1000) } }
+        return M3u.write(pl.name, rows.map { it.first }, rows.map { it.second })
+    }
+
     /** Resolves "local:" ids to live FullTrack objects (with cover/duration). Ignores orphans. */
     fun localPlaylistTracks(playlistId: String): List<FullTrack> {
         val byId = localTracks.associateBy { it.id }

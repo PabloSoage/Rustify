@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -1071,6 +1072,30 @@ fun LibraryLocalMusic(
                 var newPlaylistName by remember { mutableStateOf("") }
                 var pendingDelete by remember { mutableStateOf<LocalPlaylist?>(null) }
                 val deletedMsg = stringResource(R.string.local_playlist_deleted)
+                val m3uContext = androidx.compose.ui.platform.LocalContext.current
+                val m3uScope = rememberCoroutineScope()
+                val importM3u = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    if (uri == null) return@rememberLauncherForActivityResult
+                    m3uScope.launch {
+                        val outcome = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching {
+                                val text = m3uContext.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+                                val name = androidx.documentfile.provider.DocumentFile.fromSingleUri(m3uContext, uri)?.name
+                                    ?.substringBeforeLast('.')?.ifBlank { null } ?: "M3U"
+                                text to name
+                            }.getOrNull()
+                        }
+                        val msg = if (outcome == null) {
+                            m3uContext.getString(R.string.m3u_import_failed)
+                        } else {
+                            val (pl, missing) = spotifyRepo.importM3u(outcome.second, outcome.first)
+                            m3uContext.getString(R.string.m3u_imported, pl.trackIds.size, missing)
+                        }
+                        android.widget.Toast.makeText(m3uContext, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
@@ -1090,6 +1115,22 @@ fun LibraryLocalMusic(
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     stringResource(R.string.local_playlist_create),
+                                    color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        item(key = "import_m3u") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.FileOpen, contentDescription = null, tint = Color(0xFF1DB954))
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    stringResource(R.string.m3u_import),
                                     color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium
                                 )
                             }

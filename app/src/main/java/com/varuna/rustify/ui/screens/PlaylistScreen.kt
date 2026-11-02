@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
@@ -150,6 +151,17 @@ fun PlaylistScreen(
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteLocalDialog by remember { mutableStateOf(false) }
+    val exportM3u = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        val text = uri?.let { spotifyRepo.exportM3u(playlistId) } ?: return@rememberLauncherForActivityResult
+        val ok = runCatching {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+        }.getOrDefault(false)
+        android.widget.Toast.makeText(
+            context, if (ok) R.string.m3u_exported else R.string.m3u_export_failed, android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
     var showRenameLocalDialog by remember { mutableStateOf(false) }
     var meId by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -685,6 +697,12 @@ fun PlaylistScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isLocal) {
+                        IconButton(onClick = {
+                            val name = spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name ?: playlistName
+                            exportM3u.launch("${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.m3u8")
+                        }) {
+                            Icon(Icons.Default.IosShare, contentDescription = stringResource(R.string.m3u_export), tint = Color.White)
+                        }
                         IconButton(onClick = { showRenameLocalDialog = true }) {
                             Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.local_playlist_rename), tint = Color.White)
                         }
