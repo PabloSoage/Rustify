@@ -494,6 +494,7 @@ internal fun AudioBackendsSection(context: Context) {
     DataExportSection(context)
     ListenBrainzSection(context)
     LastFmSection(context)
+    JamSection(context)
     CastingSection(context)
 }
 

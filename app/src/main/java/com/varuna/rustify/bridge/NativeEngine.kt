@@ -87,6 +87,22 @@ object NativeEngine {
     /** The token's user name as a JSON string, or `null` when ListenBrainz says it is invalid. */
     suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
 
+    // Jam (jam::). Network, so suspend over private blocking bridges; the code is memory only.
+    external fun jamNewCode(): String
+    private external fun jamJoinNative(configJson: String): String
+    private external fun jamPollNative(timeoutMs: Int): String
+    private external fun jamPublishStateNative(stateJson: String): String
+    private external fun jamSendNative(commandJson: String): String
+    private external fun jamKickNative(id: String): String
+    private external fun jamLeaveNative(): String
+    suspend fun jamJoin(configJson: String): String = io { jamJoinNative(configJson) }
+    /** Waits up to [timeoutMs] for the room to say something; an IO thread, never the main one. */
+    suspend fun jamPoll(timeoutMs: Int): String = io { jamPollNative(timeoutMs) }
+    suspend fun jamPublishState(stateJson: String): String = io { jamPublishStateNative(stateJson) }
+    suspend fun jamSend(commandJson: String): String = io { jamSendNative(commandJson) }
+    suspend fun jamKick(id: String): String = io { jamKickNative(id) }
+    suspend fun jamLeave(): String = io { jamLeaveNative() }
+
     // Last.fm (scrobble::lastfm). Network, so suspend over private blocking bridges.
     private external fun lastFmLoginNative(apiKey: String, secret: String, user: String, password: String): String
     private external fun lastFmSubmitNative(credentialsJson: String, listenJson: String): String

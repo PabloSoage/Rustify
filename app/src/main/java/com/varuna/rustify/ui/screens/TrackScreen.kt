@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.DragHandle
@@ -935,6 +936,17 @@ fun QueueBottomSheet(
                 IconButton(onClick = { showSavedQueues = true }) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_saved), tint = Color.White)
                 }
+                // Jam (`23` §4): green while in one.
+                val jam by com.varuna.rustify.player.Jam.ui.collectAsState()
+                var showJam by remember { mutableStateOf(false) }
+                IconButton(onClick = { showJam = true }) {
+                    Icon(
+                        Icons.Default.Groups,
+                        contentDescription = stringResource(R.string.jam_title),
+                        tint = if (jam.role != com.varuna.rustify.player.Jam.Role.NONE) Color(0xFF1DB954) else Color.White
+                    )
+                }
+                if (showJam) com.varuna.rustify.ui.components.JamDialog(onDismiss = { showJam = false })
             }
             if (showSaveQueue) {
                 val defaultPrefix = stringResource(R.string.queue_default_name)

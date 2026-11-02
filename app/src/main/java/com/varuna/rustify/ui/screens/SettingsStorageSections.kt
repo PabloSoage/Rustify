@@ -1313,3 +1313,44 @@ internal fun LastFmSection(context: Context) {
         }
     }
 }
+
+/** Jam (`23` §4): the broker it goes through and the name others see. See [com.varuna.rustify.player.Jam]. */
+@Composable
+internal fun JamSection(context: Context) {
+    val jam = com.varuna.rustify.player.Jam
+    var broker by remember { mutableStateOf(jam.broker(context)) }
+    var port by remember { mutableStateOf(jam.port(context).toString()) }
+    var name by remember { mutableStateOf(jam.name(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.jam_title), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_jam_desc), color = Color.Gray, fontSize = 12.sp)
+            androidx.compose.material3.OutlinedTextField(
+                value = name, onValueChange = { name = it; jam.setName(context, it) }, singleLine = true,
+                label = { Text(stringResource(R.string.settings_jam_name)) }, modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = broker, onValueChange = { broker = it }, singleLine = true,
+                label = { Text(stringResource(R.string.settings_jam_broker)) }, modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = port, onValueChange = { port = it.filter(Char::isDigit).take(5) }, singleLine = true,
+                label = { Text(stringResource(R.string.settings_jam_port)) }, modifier = Modifier.fillMaxWidth()
+            )
+            Row {
+                androidx.compose.material3.TextButton(onClick = {
+                    jam.setBroker(context, broker, port.toIntOrNull() ?: jam.DEFAULT_PORT)
+                }) { Text(stringResource(R.string.settings_jam_save), color = Color(0xFF1DB954)) }
+                androidx.compose.material3.TextButton(onClick = {
+                    broker = jam.DEFAULT_BROKER; port = jam.DEFAULT_PORT.toString()
+                    jam.setBroker(context, broker, jam.DEFAULT_PORT)
+                }) { Text(stringResource(R.string.settings_jam_default), color = Color.Gray) }
+            }
+        }
+    }
+}

@@ -386,7 +386,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val playingId = _state.value.currentTrack?.id
                 if (ended && playingId != null && playingId != lastWebEndedTrackId) {
                     lastWebEndedTrackId = playingId
-                    skipToNext()
+                    nextTrack()
                 }
                 delay(1000.milliseconds)
             }
@@ -614,7 +614,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 val playingId = _state.value.currentTrack?.id
                 if (finished && playingId != null && playingId != lastCastEndedTrackId) {
                     lastCastEndedTrackId = playingId
-                    skipToNext()
+                    nextTrack()
                 }
                 delay(1000.milliseconds)
             }
@@ -2936,7 +2936,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         if (decision.exhausted) {
             // Same end-of-queue answer as the next button: on Android this is the radio, not a stop.
-            skipToNext()
+            nextTrack()
             return
         }
         applyQueueDecision(st, decision)
@@ -2994,11 +2994,18 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         mainScope.launch {
             delay(2000.milliseconds)
-            skipToNext()
+            nextTrack()
         }
     }
 
+    /** Next, as the user asks for it. A Jam guest asks the host instead (Jam.forward). */
     fun skipToNext() {
+        if (Jam.forward(Jam.next())) return
+        nextTrack()
+    }
+
+    /** Next, as the player itself moves on: never forwarded. */
+    private fun nextTrack() {
         // Not delegated to the page: opening a track URL leaves Spotify's own context holding that
         // single track, so its next button has nowhere to go. Rustify's queue is the one that
         // advances, and the next track is then opened in the page below.
@@ -3046,7 +3053,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             // just the slow path, because the round trip happens with nothing playing.
             radioJob?.cancel()
             radioJob = mainScope.launch {
-                if (appendRadioTracks(st.currentTrack.id)) skipToNext()
+                if (appendRadioTracks(st.currentTrack.id)) nextTrack()
             }
         }
     }
@@ -3121,6 +3128,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     fun skipToPrevious() {
+        if (Jam.forward(Jam.previous())) return
         // Same reasoning as skipToNext(): Rustify's queue navigates, the page just gets told what to
         // open. seekTo(0) below is already routed to whichever engine is playing.
         val st = _state.value
@@ -3207,6 +3215,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         val st = _state.value
         val idx = queueIndex?.takeIf { it in st.queue.indices && st.queue[it].id == trackId }
             ?: st.queue.indexOfFirst { it.id == trackId }
+        // A Jam guest choosing a song in the shared queue asks the host, so everyone moves.
+        if (idx >= 0 && Jam.forward(Jam.jumpTo(idx))) return
         val track = st.queue.getOrNull(idx)
         if (track != null) {
             currentQueueIndex = idx
