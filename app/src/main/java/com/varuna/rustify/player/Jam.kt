@@ -63,7 +63,7 @@ object Jam {
     private fun prefs(c: Context) = c.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
     fun broker(c: Context): String = prefs(c).getString("jam_broker", DEFAULT_BROKER).orEmpty().ifBlank { DEFAULT_BROKER }
     fun port(c: Context): Int = prefs(c).getInt("jam_port", DEFAULT_PORT)
-    fun name(c: Context): String = prefs(c).getString("jam_name", null)?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL
+    fun name(c: Context): String = prefs(c).getString("jam_name", null)?.takeIf { it.isNotBlank() } ?: com.varuna.rustify.util.DeviceName.of(c)
     fun setBroker(c: Context, host: String, port: Int) = prefs(c).edit().putString("jam_broker", host.trim()).putInt("jam_port", port).apply()
     fun setName(c: Context, name: String) = prefs(c).edit().putString("jam_name", name.trim()).apply()
 
@@ -106,11 +106,15 @@ object Jam {
             return why
         }
         revision = 0; lastApplied = -1
-        _ui.value = Ui(role = if (host) Role.HOST else Role.GUEST, code = code, connected = true)
+        _ui.value = Ui(role = if (host) Role.HOST else Role.GUEST, code = pretty(code), connected = true)
         jobs += scope.launch { pollLoop(context) }
         if (host) jobs += scope.launch { publishLoop(context) }
         return null
     }
+
+    /** "h2bt7xc9p3xa" → "H2BT-7XC9-P3XA", for showing; the core reads either. */
+    fun pretty(code: String): String =
+        code.filter { it.isLetterOrDigit() }.uppercase().chunked(4).joinToString("-")
 
     fun leave() {
         jobs.forEach { it.cancel() }

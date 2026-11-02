@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NewReleases
@@ -116,6 +117,9 @@ fun HomeScreen(
             val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
             var menuOpen by remember { mutableStateOf(false) }
+            // Jam is reachable from the queue sheet too, but a guest joins before playing anything.
+            var showJam by remember { mutableStateOf(false) }
+            if (showJam) com.varuna.rustify.ui.components.JamDialog(onDismiss = { showJam = false })
             val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
 
             PullToRefreshBox(
@@ -156,6 +160,7 @@ fun HomeScreen(
                         val webPlayerLabel = stringResource(R.string.web_player_title)
                         val downloadsLabel = stringResource(R.string.home_downloads)
                         val settingsLabel = stringResource(R.string.home_settings)
+                        val jamLabel = stringResource(R.string.jam_title)
 
                         // Hamburger icon opens a small context menu, with icons and labels
                         // aligned via DropdownMenuItem's leadingIcon slot.
@@ -190,6 +195,11 @@ fun HomeScreen(
                                     text = { Text(travelLabel, color = Color.White) },
                                     leadingIcon = { Icon(Icons.Default.Map, contentDescription = null, tint = Color.White) },
                                     onClick = { menuOpen = false; onTravelClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(jamLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; showJam = true }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(newReleasesLabel, color = Color.White) },

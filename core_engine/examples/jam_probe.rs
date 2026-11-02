@@ -41,10 +41,16 @@ async fn main() {
 
     if role == "host" {
         let state = State {
-            tracks: vec![
-                serde_json::json!({"id": "spotify:track:1", "name": "Usseewa"}),
-                serde_json::json!({"id": "spotify:track:2", "name": "Odo"}),
-            ],
+            // As big as a real queue: 200 songs of about 1 KB each, well past rumqttc's 10 KiB default.
+            tracks: (0..200)
+                .map(|i| {
+                    serde_json::json!({
+                        "id": format!("spotify:track:{i}"),
+                        "name": format!("Song {i}"),
+                        "album": {"images": [{"url": "x".repeat(900)}]},
+                    })
+                })
+                .collect(),
             index: 0,
             playing: true,
             position_ms: 12_000,

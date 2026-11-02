@@ -23,6 +23,9 @@ const KEEP_ALIVE: Duration = Duration::from_secs(30);
 /// Retried this often while the broker cannot be reached; rumqttc reconnects on the next poll.
 const RETRY: Duration = Duration::from_secs(3);
 const MAX_EVENTS: usize = 256;
+/// rumqttc's default is 10 KiB each way, and a fifty-song queue as JSON is several times that: the
+/// host's publish broke its own connection and the guest would have refused the state anyway.
+const MAX_PACKET: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,6 +166,7 @@ pub async fn join(cfg: Config) -> Result<(), String> {
     );
     opts.set_keep_alive(KEEP_ALIVE);
     opts.set_clean_session(true);
+    opts.set_max_packet_size(MAX_PACKET, MAX_PACKET);
     opts.set_last_will(LastWill::new(
         format!("{}/presence/{}", room.topic, cfg.id),
         Vec::<u8>::new(),
