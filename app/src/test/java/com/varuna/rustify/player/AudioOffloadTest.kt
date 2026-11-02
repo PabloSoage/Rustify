@@ -28,6 +28,11 @@ class AudioOffloadTest {
     }
 
     @Test
+    fun anAutoEqProfileTurnsItOff() {
+        assertEquals(AudioOffload.Blocker.AUTOEQ, AudioOffload.blocker(true, false, 0, autoEq = true))
+    }
+
+    @Test
     fun theSwitchWinsOverEverything() {
         assertEquals(AudioOffload.Blocker.SWITCHED_OFF, AudioOffload.blocker(false, true, 4))
     }

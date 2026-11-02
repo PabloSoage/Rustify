@@ -773,6 +773,16 @@
     <string name="settings_skip_silence">Skip silence</string>
     <string name="settings_skip_silence_desc">Jumps over long silent stretches, such as the gap before a hidden track. Turns audio offload off while on.</string>
     <string name="settings_offload_blocked_silence">Not in use while skipping silence: finding the silence needs the processor.</string>
+    <string name="settings_autoeq">AutoEq for this output</string>
+    <string name="settings_autoeq_desc">Corrects your headphones to a neutral sound with their measured AutoEq profile (about 8,800 models). Each output keeps its own: it switches when you connect another one. Turns audio offload off while active.</string>
+    <string name="settings_autoeq_no_device">No headphones, USB or Bluetooth output connected. Connect them to set their profile.</string>
+    <string name="settings_autoeq_device">Output: %1$s</string>
+    <string name="settings_autoeq_using">Using %1$s (%2$s)</string>
+    <string name="settings_autoeq_remove">Remove profile</string>
+    <string name="settings_autoeq_search">Headphone model, e.g. Sony WH-1000XM4</string>
+    <string name="settings_autoeq_find">Search AutoEq</string>
+    <string name="settings_autoeq_failed">Could not download the profile</string>
+    <string name="settings_offload_blocked_autoeq">Not in use while AutoEq corrects this output: the correction needs the processor.</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

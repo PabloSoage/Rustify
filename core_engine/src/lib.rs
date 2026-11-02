@@ -15,6 +15,7 @@
 pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
+pub mod autoeq;
 pub mod dsp;
 pub mod tempo;
 pub mod tonal;
@@ -405,6 +406,46 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_subsonicFindN
                 duration_ms,
             ))),
         }
+    })
+}
+
+/// JNI Bridge: AutoEq profiles whose name holds every word of `query`, as `[{name, path, source}]`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_autoEqSearchNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    query: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let query = query.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(autoeq::search_online::<env::android::AndroidEnv>(&query, 30)))
+    })
+}
+
+/// JNI Bridge: the parametric EQ text of the AutoEq profile at `path`, as a JSON string.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_autoEqProfileNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(autoeq::fetch_profile::<env::android::AndroidEnv>(&path)))
+    })
+}
+
+/// JNI Bridge: a parametric EQ as `n` bands `[{cutoffHz, gainDb}]` for `DynamicsProcessing`. Pure.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_autoEqBandsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    peq_text: JString<'local>,
+    n: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let text = peq_text.mutf8_chars(env)?.to_string();
+        serialize_result(autoeq::parse(&text).map(|peq| autoeq::bands(&peq, n.max(2) as usize)))
     })
 }
 

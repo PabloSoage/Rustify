@@ -775,6 +775,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_speed), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.SKIP_SILENCE ->
                     Text(stringResource(R.string.settings_offload_blocked_silence), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.AUTOEQ ->
+                    Text(stringResource(R.string.settings_offload_blocked_autoeq), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }
@@ -1060,6 +1062,78 @@ internal fun ListenBrainzSection(context: Context) {
                         }
                     }
                 ) { Text(stringResource(R.string.settings_listenbrainz_connect), color = Color(0xFF1DB954)) }
+            }
+        }
+    }
+}
+
+/**
+ * AutoEq per output device (`21`): find the headphones in AutoEq's index, and their correction is
+ * applied whenever music goes to this output. One profile per device.
+ */
+@Composable
+internal fun AutoEqSection(context: Context) {
+    val ae = com.varuna.rustify.player.AutoEqController
+    var device by remember { mutableStateOf(ae.currentOutput(context)) }
+    var profiles by remember { mutableStateOf(ae.profiles(context)) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<com.varuna.rustify.player.AutoEqController.Entry>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val failed = stringResource(R.string.settings_autoeq_failed)
+    LaunchedEffect(Unit) { device = ae.currentOutput(context) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_autoeq), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_autoeq_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            val d = device
+            if (d == null) {
+                Text(stringResource(R.string.settings_autoeq_no_device), color = Color(0xFFFFB74D), fontSize = 13.sp)
+            } else {
+                val key = ae.keyOf(d)
+                val current = profiles[key]
+                Text(stringResource(R.string.settings_autoeq_device, d.productName.toString()), color = Color.White, fontSize = 14.sp)
+                if (current != null) {
+                    Text(stringResource(R.string.settings_autoeq_using, current.name, current.source), color = Color(0xFF1DB954), fontSize = 13.sp)
+                    androidx.compose.material3.TextButton(onClick = {
+                        ae.setProfile(context, key, null); profiles = ae.profiles(context)
+                    }) { Text(stringResource(R.string.settings_autoeq_remove), color = Color(0xFFCC2200)) }
+                }
+                androidx.compose.material3.OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.settings_autoeq_search)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.TextButton(enabled = query.isNotBlank() && !busy, onClick = {
+                    busy = true
+                    scope.launch { results = ae.search(query); busy = false }
+                }) { Text(stringResource(R.string.settings_autoeq_find), color = Color(0xFF1DB954)) }
+                results.forEach { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                            busy = true
+                            scope.launch {
+                                val p = ae.download(entry)
+                                busy = false
+                                if (p == null) android.widget.Toast.makeText(context, failed, android.widget.Toast.LENGTH_SHORT).show()
+                                else { ae.setProfile(context, key, p); profiles = ae.profiles(context); results = emptyList(); query = "" }
+                            }
+                        }.padding(vertical = 6.dp)
+                    ) {
+                        Column {
+                            Text(entry.name, color = Color.White, fontSize = 14.sp)
+                            Text(entry.source, color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                }
             }
         }
     }

@@ -855,6 +855,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         // The session the player already has, before any change is reported.
         EqualizerController.attach(context, exoPlayer.audioSessionId)
+        AutoEqController.attach(context, exoPlayer.audioSessionId)
 
         // Whether the DSP really took the song, and when the CPU sleeps for it (AudioOffload).
         // Info level: it is the one way to tell offload is working on a given phone.
@@ -881,6 +882,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 // The equaliser lives on the audio session; a new session needs it bound again.
                 EqualizerController.attach(context, audioSessionId)
+                AutoEqController.attach(context, audioSessionId)
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -2458,9 +2460,11 @@ class AudioPlayerService private constructor(private val context: Context) {
             if (!routeWatcherPrimed) { routeWatcherPrimed = true; return }
             val sinks = added.orEmpty().filter { it.isSink }.map { it.type }
             onDisconnectAction(disconnectResume.onOutputsAdded(System.currentTimeMillis(), sinks))
+            AutoEqController.refresh(context)
         }
         override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) {
             lastAudioRouteChangeAt = System.currentTimeMillis()
+            AutoEqController.refresh(context)
         }
     }
 

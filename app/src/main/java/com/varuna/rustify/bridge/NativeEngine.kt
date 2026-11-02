@@ -103,6 +103,16 @@ object NativeEngine {
     suspend fun subsonicFind(configJson: String, title: String, artistsJson: String, durationMs: Long): String =
         io { subsonicFindNative(configJson, title, artistsJson, durationMs) }
 
+    // AutoEq (autoeq::). Search and profile touch the network; bands is pure arithmetic.
+    private external fun autoEqSearchNative(query: String): String
+    private external fun autoEqProfileNative(path: String): String
+    private external fun autoEqBandsNative(peqText: String, n: Int): String
+
+    suspend fun autoEqSearch(query: String): String = io { autoEqSearchNative(query) }
+    suspend fun autoEqProfile(path: String): String = io { autoEqProfileNative(path) }
+    /** Memory only: parses a parametric EQ and evaluates it at [n] bands. */
+    fun autoEqBands(peqText: String, n: Int): String = autoEqBandsNative(peqText, n)
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */

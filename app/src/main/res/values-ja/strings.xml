@@ -770,6 +770,16 @@
     <string name="settings_skip_silence">無音をスキップ</string>
     <string name="settings_skip_silence_desc">隠しトラック前の空白など、長い無音部分を飛ばします。オンの間はオーディオオフロードを使いません。</string>
     <string name="settings_offload_blocked_silence">無音スキップ中は使用されません。無音の検出にプロセッサが必要です。</string>
+    <string name="settings_autoeq">この出力の AutoEq</string>
+    <string name="settings_autoeq_desc">測定済みの AutoEq プロファイル (約 8800 機種) でヘッドホンをニュートラルな音に補正します。出力ごとに記憶し、別の出力に接続すると切り替わります。有効な間はオーディオオフロードを使いません。</string>
+    <string name="settings_autoeq_no_device">ヘッドホン、USB、Bluetooth の出力が接続されていません。接続してからプロファイルを選んでください。</string>
+    <string name="settings_autoeq_device">出力: %1$s</string>
+    <string name="settings_autoeq_using">%1$s (%2$s) を使用中</string>
+    <string name="settings_autoeq_remove">プロファイルを削除</string>
+    <string name="settings_autoeq_search">ヘッドホンの機種 (例: Sony WH-1000XM4)</string>
+    <string name="settings_autoeq_find">AutoEq で検索</string>
+    <string name="settings_autoeq_failed">プロファイルをダウンロードできませんでした</string>
+    <string name="settings_offload_blocked_autoeq">AutoEq がこの出力を補正している間は使用されません。補正にプロセッサが必要です。</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

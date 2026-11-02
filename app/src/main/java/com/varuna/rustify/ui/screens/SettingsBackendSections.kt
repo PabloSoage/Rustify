@@ -479,6 +479,7 @@ internal fun AudioBackendsSection(context: Context) {
     AutoplayRadioSection(context)
     NormalizeVolumeSection(context)
     EqualizerSection(context)
+    AutoEqSection(context)
     FadeBetweenSongsSection(context)
     AudioOffloadSection(context)
     DisconnectSection(context)
