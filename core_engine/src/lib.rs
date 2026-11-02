@@ -241,6 +241,27 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_playStatsNati
     })
 }
 
+/// JNI Bridge: the whole ranking of `[from, to)` as CSV. `kind` is `tracks`, `artists` or `albums`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_topCsvNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    from_ms: jlong,
+    to_ms: jlong,
+    kind: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let kind_raw = kind.mutf8_chars(env)?.to_string();
+        match serde_json::from_value::<metrics::stats::TopKind>(serde_json::Value::String(kind_raw)) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(kind) => {
+                let events = get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>());
+                serialize_result(events.map(|events| metrics::stats::top_csv(&events, from_ms, to_ms, kind)))
+            }
+        }
+    })
+}
+
 /// JNI Bridge: the contexts to offer, newest first, as a JSON array.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listContinueListeningNative<'local>(

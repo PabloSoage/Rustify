@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GetApp
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -112,6 +113,26 @@ fun MetricsScreen(onBack: () -> Unit) {
         }
     }
 
+    val csvKinds = listOf("tracks", "artists", "albums")
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val (from, to) = rangeToFrom(selectedRange)
+        val kind = csvKinds[selectedTopTab]
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val csv = ListeningTracker.topCsv(context, from, to, kind)
+                    context.contentResolver.openOutputStream(uri, "w")?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+                    withContext(Dispatchers.Main) { Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show() }
+                }.onFailure { e ->
+                    withContext(Dispatchers.Main) { Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show() }
+                }
+            }
+        }
+    }
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -144,6 +165,11 @@ fun MetricsScreen(onBack: () -> Unit) {
                 actions = {
                     IconButton(onClick = { exportLauncher.launch("rustify_metrics_export.json") }) {
                         Icon(Icons.Default.GetApp, contentDescription = stringResource(R.string.metrics_export), tint = Color.White)
+                    }
+                    IconButton(onClick = {
+                        csvLauncher.launch("rustify_top_${csvKinds[selectedTopTab]}_${selectedRange.name.lowercase()}.csv")
+                    }) {
+                        Icon(Icons.Default.TableChart, contentDescription = stringResource(R.string.metrics_export_csv), tint = Color.White)
                     }
                     IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
                         Icon(Icons.Default.FileUpload, contentDescription = stringResource(R.string.metrics_import), tint = Color.White)

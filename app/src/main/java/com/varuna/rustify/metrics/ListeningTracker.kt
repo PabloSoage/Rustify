@@ -165,6 +165,14 @@ class ListeningTracker(private val appContext: Context) {
             return RustifyJson.decodeFromString(PlayStats.serializer(), json)
         }
 
+        /** Every row of one "top" list for `[fromMs, toMs)` as CSV — tracks, artists or albums. */
+        suspend fun topCsv(context: Context, fromMs: Long, toMs: Long, kind: String): String {
+            migrateLegacyFile(context)
+            val json = NativeEngine.topCsv(fromMs, toMs, kind)
+            if (failed(json)) throw IllegalStateException(errorOf(json))
+            return RustifyJson.decodeFromString(kotlinx.serialization.serializer<String>(), json)
+        }
+
         /**
          * The device zone as the offsets it has had, `[[fromMs, offsetMs], …]`, from 1970 to two
          * years ahead — what the core needs to put each play in its local hour and day, with DST.

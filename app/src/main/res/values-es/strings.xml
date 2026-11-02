@@ -338,6 +338,7 @@
     <string name="dow_sat">Sáb</string>
     <string name="dow_sun">Dom</string>
     <string name="metrics_export">Exportar métricas (Spotify/stats.fm)</string>
+    <string name="metrics_export_csv">Exportar este ranking a CSV</string>
     <string name="metrics_export_done">Métricas exportadas</string>
     <string name="metrics_export_empty">No hay métricas que exportar</string>
     <string name="metrics_import">Importar historial de escucha</string>

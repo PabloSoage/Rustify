@@ -222,14 +222,83 @@ impl Acc {
     }
 }
 
-fn top(map: HashMap<String, Acc>) -> Vec<TopRow> {
+fn top(map: HashMap<String, Acc>, limit: usize) -> Vec<TopRow> {
     let mut rows: Vec<TopRow> = map
         .into_iter()
         .map(|(key, a)| TopRow { key, name: a.name, subtitle: a.subtitle, image_url: a.image_url, plays: a.plays, ms: a.ms })
         .collect();
     rows.sort_by(|a, b| b.plays.cmp(&a.plays).then(b.ms.cmp(&a.ms)).then(a.name.cmp(&b.name)));
-    rows.truncate(TOP_LIMIT);
+    rows.truncate(limit);
     rows
+}
+
+/// Which list of the "top" tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TopKind {
+    Tracks,
+    Artists,
+    Albums,
+}
+
+/// Counted plays grouped by track, artist or album.
+fn tally(counted: &[&Event], ids: &Identities, kind: TopKind) -> HashMap<String, Acc> {
+    let mut map: HashMap<String, Acc> = HashMap::new();
+    for e in counted {
+        match kind {
+            TopKind::Tracks => map.entry(ids.track(e)).or_default().add(e, &e.track_name, e.artist_names.join(", ")),
+            TopKind::Artists => {
+                for (key, name) in ids.artists(e) {
+                    let mut no_cover = (*e).clone();
+                    no_cover.image_url.clear();
+                    map.entry(key).or_default().add(&no_cover, name, String::new());
+                }
+            }
+            TopKind::Albums => {
+                if let Some(key) = Identities::album(e) {
+                    map.entry(key).or_default().add(e, &e.album_name, e.artist_names.join(", "));
+                }
+            }
+        }
+    }
+    map
+}
+
+/// The whole ranking of `[from, to)` as CSV (3.8): every row, not the screen's first 50, for a
+/// spreadsheet. RFC 4180 quoting, CRLF, and a BOM so Excel reads the UTF-8 (Japanese titles).
+pub fn top_csv(events: &[Event], from: i64, to: i64, kind: TopKind) -> String {
+    let ids = Identities::of(events);
+    let counted: Vec<&Event> =
+        events.iter().filter(|e| e.counted && e.started_at >= from && e.started_at < to).collect();
+    let rows = top(tally(&counted, &ids, kind), usize::MAX);
+    let header = match kind {
+        TopKind::Tracks => "rank,track,artists,plays,minutes,id",
+        TopKind::Artists => "rank,artist,plays,minutes,id",
+        TopKind::Albums => "rank,album,artists,plays,minutes,id",
+    };
+    let mut out = format!("\u{feff}{header}\r\n");
+    for (i, r) in rows.iter().enumerate() {
+        // A name-only key ("n:…") is internal; only real ids are worth a column.
+        let id = if r.key.starts_with("n:") { "" } else { r.key.as_str() };
+        let mut cells = vec![(i + 1).to_string(), csv_cell(&r.name)];
+        if kind != TopKind::Artists {
+            cells.push(csv_cell(&r.subtitle));
+        }
+        cells.extend([r.plays.to_string(), (r.ms / 60_000).to_string(), csv_cell(id)]);
+        out.push_str(&cells.join(","));
+        out.push_str("\r\n");
+    }
+    out
+}
+
+fn csv_cell(s: &str) -> String {
+    // A leading = + - @ is a formula to a spreadsheet: a title is text, never something to run.
+    let s = if s.starts_with(['=', '+', '-', '@']) { format!("'{s}") } else { s.to_string() };
+    if s.contains([',', '"', '\r', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
+    }
 }
 
 /// Statistics for `[from, to)` over `events` (oldest first, as [`super::load_all`] returns them).
@@ -301,23 +370,9 @@ pub fn compute(events: &[Event], from: i64, to: i64, zone: &Zone) -> Stats {
         stats.cumulative_plays.push(plays);
     }
 
-    let mut tracks: HashMap<String, Acc> = HashMap::new();
-    let mut artists: HashMap<String, Acc> = HashMap::new();
-    let mut albums: HashMap<String, Acc> = HashMap::new();
-    for e in &counted {
-        tracks.entry(ids.track(e)).or_default().add(e, &e.track_name, e.artist_names.join(", "));
-        for (key, name) in ids.artists(e) {
-            let mut no_cover = (*e).clone();
-            no_cover.image_url.clear();
-            artists.entry(key).or_default().add(&no_cover, name, String::new());
-        }
-        if let Some(key) = Identities::album(e) {
-            albums.entry(key).or_default().add(e, &e.album_name, String::new());
-        }
-    }
-    stats.top_tracks = top(tracks);
-    stats.top_artists = top(artists);
-    stats.top_albums = top(albums);
+    stats.top_tracks = top(tally(&counted, &ids, TopKind::Tracks), TOP_LIMIT);
+    stats.top_artists = top(tally(&counted, &ids, TopKind::Artists), TOP_LIMIT);
+    stats.top_albums = top(tally(&counted, &ids, TopKind::Albums), TOP_LIMIT);
 
     stats.recent = events.iter().rev().take(RECENT_LIMIT).cloned().collect();
 
@@ -440,6 +495,22 @@ mod tests {
         assert_eq!(stats.milestones.len(), 1);
         assert_eq!(stats.milestones[0].tier, "silver");
         assert_eq!(stats.milestones[0].plays, 260);
+    }
+
+    #[test]
+    fn the_csv_has_every_row_quoted_and_no_formulas() {
+        let mut events: Vec<Event> = (0..60).map(|i| play(&format!("t{i}"), ("x", "X"), i)).collect();
+        let mut odd = play("q", ("y", "Earth, Wind & Fire"), 100);
+        odd.track_name = "=HYPERLINK(\"a\")".into();
+        events.push(odd.clone());
+        events.push(odd);
+        let csv = top_csv(&events, 0, i64::MAX, TopKind::Tracks);
+        let lines: Vec<&str> =
+            csv.trim_start_matches('\u{feff}').split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 62, "header + 61 tracks, past the screen's 50");
+        assert_eq!(lines[1], "1,\"'=HYPERLINK(\"\"a\"\")\",\"Earth, Wind & Fire\",2,6,q");
+        let artists = top_csv(&events, 0, i64::MAX, TopKind::Artists);
+        assert!(artists.contains("\r\n1,X,60,180,x\r\n"), "{artists}");
     }
 
     #[test]

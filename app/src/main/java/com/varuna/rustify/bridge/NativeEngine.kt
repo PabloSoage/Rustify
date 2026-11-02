@@ -66,6 +66,11 @@ object NativeEngine {
     suspend fun playStats(fromMs: Long, toMs: Long, zoneJson: String): String =
         io { playStatsNative(fromMs, toMs, zoneJson) }
 
+    private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
+
+    /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */
+    suspend fun topCsv(fromMs: Long, toMs: Long, kind: String): String = io { topCsvNative(fromMs, toMs, kind) }
+
     // =====================================================================
     // CONTINUE LISTENING
     // =====================================================================

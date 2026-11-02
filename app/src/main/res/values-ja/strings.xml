@@ -172,6 +172,7 @@
 
     <!-- E70 extras -->
     <string name="metrics_export">メトリクスをエクスポート (Spotify/stats.fm)</string>
+    <string name="metrics_export_csv">このランキングを CSV でエクスポート</string>
     <string name="metrics_export_done">メトリクスをエクスポートしました</string>
     <string name="metrics_export_empty">エクスポートするメトリクスがありません</string>
     <string name="metrics_import">再生履歴をインポート</string>

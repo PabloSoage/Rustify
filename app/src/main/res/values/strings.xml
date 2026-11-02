@@ -343,6 +343,7 @@
     <string name="dow_sat">Sat</string>
     <string name="dow_sun">Sun</string>
     <string name="metrics_export">Export metrics (Spotify stats.fm)</string>
+    <string name="metrics_export_csv">Export this ranking as CSV</string>
     <string name="metrics_export_done">Metrics exported</string>
     <string name="metrics_export_empty">No metrics to export</string>
     <string name="metrics_import">Import listening history</string>
