@@ -16,6 +16,7 @@ pub mod adblock_engine;
 pub mod addon;
 pub mod audio;
 pub mod dsp;
+pub mod tempo;
 pub mod tonal;
 pub mod calendar;
 pub mod env;
