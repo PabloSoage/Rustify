@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -105,12 +106,17 @@ class AudioSourceChain(
                     // result means "not available for this track" -> skip quietly (no error).
                     val budget = p.capabilities.resolveTimeoutMs ?: perProviderTimeoutMs
                     val startedAt = System.currentTimeMillis()
-                    val r = runCatching {
-                        withTimeout(budget) {
-                            if (!p.isAvailableFor(track)) null
-                            else p.resolveStreamUrl(track, hint).getOrThrow()
-                        }
+                    // The work is awaited rather than run under withTimeout directly. A provider
+                    // blocked inside a native call (InnerTube's JNI resolve, in withContext(IO)) has
+                    // no suspension point for withTimeout to act on, so the budget used to fire only
+                    // when the call returned by itself: 40-90 s against 12 s with the network cut.
+                    // await() is cancellable; the abandoned call finishes on its own thread.
+                    val work = racing.async {
+                        if (!p.isAvailableFor(track)) null
+                        else p.resolveStreamUrl(track, hint).getOrThrow()
                     }
+                    val r = runCatching { withTimeout(budget) { work.await() } }
+                    if (r.isFailure) work.cancel()
                     // Logged whatever happens, because "it timed out" on its own says nothing about
                     // whether the ceiling was too low or the provider was hung.
                     android.util.Log.d(

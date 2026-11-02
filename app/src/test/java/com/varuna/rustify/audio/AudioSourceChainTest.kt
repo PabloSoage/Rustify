@@ -53,6 +53,30 @@ class AudioSourceChainTest {
     }
 
     @Test
+    fun `a provider blocked inside a native call still gets only its budget`() = runBlocking {
+        // InnerTube's JNI call sits in withContext(IO), where withTimeout cannot interrupt it: with
+        // the network cut it took 40-90 s against a 12 s budget (WSA, 4.10).
+        val blocked = object : AudioSourceProvider {
+            override val capabilities = AudioSourceCapabilities(
+                id = "blocked", displayNameRes = 0, canStream = true, canDownload = false,
+                resolveTimeoutMs = 300, honoursYoutubeHint = true
+            )
+            override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> =
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    Thread.sleep(3_000)
+                    Result.success(StreamInfo(uri = "late"))
+                }
+            override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit) =
+                Result.failure<File>(UnsupportedOperationException())
+        }
+        val started = System.currentTimeMillis()
+        val result = AudioSourceChain(listOf(blocked), hedgeAfterMs = 10_000).resolveStreamUrl(track)
+        val took = System.currentTimeMillis() - started
+        assertTrue(result.isFailure)
+        assertTrue("took $took ms", took < 1_500)
+    }
+
+    @Test
     fun `a healthy first provider answers alone`() = runBlocking {
         val first = Fake("first", delayMs = 50, answer = "first-url")
         val second = Fake("second", delayMs = 50, answer = "second-url")
