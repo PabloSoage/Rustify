@@ -39,7 +39,7 @@ data class InnertubeAudio(
  * the emulator, and the stream downloads at over 100× real time. The clients it impersonates, and
  * why only visionOS, are in `core_engine/src/youtube/innertube.rs`.
  *
- * Streaming only. Downloads stay on yt-dlp, which converts to the MP3 the download pipeline names
+ * Streaming only. Downloads stay on yt-dlp, which tags and (optionally) converts what the download pipeline names
  * its files after; this hands back WebM/MP4 as YouTube serves it.
  */
 class InnertubeAudioSource(private val appContext: Context) : AudioSourceProvider {

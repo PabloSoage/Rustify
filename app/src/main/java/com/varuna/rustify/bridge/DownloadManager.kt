@@ -48,7 +48,11 @@ object DownloadManager {
         downloadUriStr: String,
         // Unused by processDownload (resolution lives in AudioSourceRegistry.downloadChain); kept
         // optional so callers without a repository handy (e.g. the YouTube Music rows) can enqueue.
-        @Suppress("UNUSED_PARAMETER") spotifyRepo: SpotifyRepository? = null
+        @Suppress("UNUSED_PARAMETER") spotifyRepo: SpotifyRepository? = null,
+        // The track as the screen has it. Without it the download was resolved from the name alone,
+        // with no duration and no ISRC to tell the song from its 7-second trailer — which is
+        // exactly what yt-dlp downloaded for ADÉLA's "Nicole Kidman" before 4.9.
+        track: FullTrack? = null
     ) {
         val currentList = _downloads.value
         if (currentList.any { it.id == trackId && it.status in listOf(DownloadStatus.QUEUED, DownloadStatus.RESOLVING, DownloadStatus.DOWNLOADING) }) {
@@ -66,7 +70,7 @@ object DownloadManager {
         updateActiveCount()
 
         scope.launch {
-            processDownload(context.applicationContext, trackId, trackName, trackArtist, downloadUriStr)
+            processDownload(context.applicationContext, trackId, trackName, trackArtist, downloadUriStr, track)
         }
     }
 
@@ -93,7 +97,8 @@ object DownloadManager {
         trackId: String,
         trackName: String,
         trackArtist: String,
-        downloadUriStr: String
+        downloadUriStr: String,
+        full: FullTrack?
     ) {
         updateStatus(trackId, DownloadStatus.RESOLVING)
 
@@ -107,13 +112,14 @@ object DownloadManager {
             val safeName = "${trackArtist.replace("/", "_")} - ${trackName.replace("/", "_")}"
             val tempDir = java.io.File(context.cacheDir, "downloads")
             tempDir.mkdirs()
-            val tempFile = java.io.File(tempDir, "$safeName.mp3")
+            // No extension yet: what the file is gets read from it once it exists.
+            val tempFile = java.io.File(tempDir, "$safeName.download")
 
             updateStatus(trackId, DownloadStatus.DOWNLOADING)
 
             // Rebuild a FullTrack for the provider contract from the primitives DownloadManager
             // handles (artist as a comma-separated string).
-            val track = FullTrack(
+            val track = full?.takeIf { it.id == trackId } ?: FullTrack(
                 id = trackId, name = trackName, externalUri = "", explicit = false,
                 durationMs = 0, isrc = "",
                 artists = if (trackArtist.isBlank()) emptyList()
@@ -137,7 +143,18 @@ object DownloadManager {
                 // Copy the temporary file into a SAF tree.
                 val treeUri = downloadUriStr.toUri()
                 val docFile = DocumentFile.fromTreeUri(context, treeUri)
-                val newFile = docFile?.createFile("audio/mpeg", "$safeName.mp3")
+                // The bytes decide, not the provider: until 4.9 a Deezer FLAC or an Invidious webm
+                // was saved as `.mp3`. The extension yt-dlp chose is the fallback.
+                val ext = com.varuna.rustify.audio.DownloadFormat.sniff(f)?.extension
+                    ?: f.extension.takeIf { it.isNotBlank() && it != "download" }
+                    ?: "mp3"
+                // SAF appends an extension when the name's does not match the MIME type, so the
+                // type is the one Android itself pairs with that extension — or `x.opus` would be
+                // saved as `x.opus.ogg`.
+                val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                    ?: com.varuna.rustify.audio.DownloadFormat.sniff(f)?.mime
+                    ?: "audio/mpeg"
+                val newFile = docFile?.createFile(mime, "$safeName.$ext")
                 if (newFile != null) {
                     context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
                         java.io.FileInputStream(f).use { inputStream ->

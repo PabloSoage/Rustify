@@ -796,7 +796,7 @@ loadLocalTracksFromCache()
                 }
 
                 val existingTracks = localTracks.associateBy { it.id }
-                val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "webm", "aac")
+                val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "opus", "webm", "aac")
                 val coversDir = java.io.File(appCtx.filesDir, "covers").also { it.mkdirs() }
                 // Covers are deduplicated per album (see below). Resolution mode: full-res (default,
                 // sharpest) vs downscaled 512px (smaller). Wipe & rebuild covers when the mode changes —

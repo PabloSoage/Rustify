@@ -659,7 +659,8 @@ fun TrackOptionsMenuBottomSheet(
                                 trackName = trackName,
                                 trackArtist = trackArtist,
                                 spotifyRepo = spotifyRepo,
-                                downloadUriStr = downloadUriStr
+                                downloadUriStr = downloadUriStr,
+                                track = track
                             )
                             
                             Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()

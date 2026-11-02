@@ -675,7 +675,8 @@ fun YtmTrackListItem(
                             trackId = full.id ?: return@DropdownMenuItem,
                             trackName = full.name,
                             trackArtist = full.artists.joinToString(", ") { it.name },
-                            downloadUriStr = downloadUriStr
+                            downloadUriStr = downloadUriStr,
+                            track = full
                         )
                         Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
                     },

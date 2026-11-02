@@ -114,6 +114,8 @@
     <string name="settings_download_dir">Directorio de Descargas</string>
     <string name="settings_no_dir_configured">No configurado</string>
     <string name="settings_select_folder">Seleccionar Carpeta</string>
+    <string name="settings_download_mp3">Convertir a MP3</string>
+    <string name="settings_download_mp3_desc">Desactivado: las descargas guardan el audio tal como llega (Opus o M4A), más pequeño y sin perder calidad. Activado: MP3 a 320 kbps para reproductores que no leen otra cosa.</string>
     <string name="settings_local_music">Música Local</string>
     <string name="settings_enable_local_music">Habilitar Música Local</string>
     <string name="settings_enable_local_music_desc">Muestra la pestaña en tu biblioteca</string>

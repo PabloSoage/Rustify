@@ -140,39 +140,57 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             require(ytId.isNotBlank()) { "resolver returned empty YouTube id" }
 
             awaitReady()
-            if (dst.exists()) dst.delete()
             val downloadId = trackId // for YoutubeDL cancellation
+            // yt-dlp picks the extension (`.opus`, `.m4a`, `.mp3`), so it gets a template and the
+            // file it produced is looked up afterwards. Writing to `dst` as given is what saved an
+            // m4a under a `.mp3` name whenever the conversion failed.
+            val dir = dst.parentFile ?: error("download target has no folder")
+            val base = dst.nameWithoutExtension
+            fun produced() = dir.listFiles()
+                ?.filter { it.name.startsWith("$base.") && it.extension !in setOf("part", "ytdl", "webp", "jpg", "png") }
+                ?.maxByOrNull { it.lastModified() }
+            fun clear() = dir.listFiles()?.filter { it.name.startsWith("$base.") }?.forEach { it.delete() }
+            clear()
 
-            try {
-                val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$ytId").apply {
+            val mp3 = DownloadFormat.convertToMp3(appContext)
+            // Each attempt asks for less: the chosen format with cover and tags, then without the
+            // cover (embedding one into Ogg needs a module the bundled Python may lack), then the
+            // audio as served.
+            val attempts = listOf(true, false).map { cover ->
+                YoutubeDLRequest("https://music.youtube.com/watch?v=$ytId").apply {
                     addOption("-f", "bestaudio")
                     addOption("-x")
-                    addOption("--audio-format", "mp3")
-                    addOption("--audio-quality", "320K")
-                    addOption("--embed-thumbnail")
+                    if (mp3) {
+                        addOption("--audio-format", "mp3")
+                        addOption("--audio-quality", "320K")
+                    }
+                    if (cover) addOption("--embed-thumbnail")
                     addOption("--add-metadata")
-                    addOption("-o", dst.absolutePath)
+                    addOption("-o", "${dir.absolutePath}/$base.%(ext)s")
                     addOption("--no-check-certificate")
                     addOption("--no-warnings")
                 }
-                YoutubeDL.getInstance().execute(request, downloadId) { progress, _, _ ->
-                    onProgress(progress.toInt())
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "FFmpeg mp3 extraction failed, falling back to m4a", e)
-                if (dst.exists()) dst.delete()
-                val fallback = YoutubeDLRequest("https://music.youtube.com/watch?v=$ytId").apply {
-                    addOption("-f", "bestaudio[ext=m4a]/bestaudio")
-                    addOption("-o", dst.absolutePath)
-                    addOption("--no-check-certificate")
-                    addOption("--no-warnings")
-                }
-                YoutubeDL.getInstance().execute(fallback, downloadId) { progress, _, _ ->
-                    onProgress(progress.toInt())
-                }
+            } + YoutubeDLRequest("https://music.youtube.com/watch?v=$ytId").apply {
+                addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+                addOption("-o", "${dir.absolutePath}/$base.%(ext)s")
+                addOption("--no-check-certificate")
+                addOption("--no-warnings")
             }
-            require(dst.exists()) { "Temporary file not found after download" }
-            dst
+
+            var lastError: Exception? = null
+            for ((i, request) in attempts.withIndex()) {
+                try {
+                    YoutubeDL.getInstance().execute(request, downloadId) { progress, _, _ ->
+                        onProgress(progress.toInt())
+                    }
+                    produced()?.takeIf { it.length() > 0 }?.let { return@runCatching it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "yt-dlp download attempt ${i + 1}/${attempts.size} failed", e)
+                    lastError = e
+                }
+                clear()
+            }
+            throw lastError ?: IllegalStateException("yt-dlp produced no file")
         }
     }
 

@@ -213,11 +213,23 @@ pub async fn resolve_youtube_id<E: Env>(track_id: &str, cache_dir: &str) -> Opti
     let best_match = match_best_track(&meta, &results)?;
     log_info!("[Resolver] Best match: id={} title='{}'", best_match.id, best_match.title);
 
-    // Cache the mapping in memory and storage
-    set_alternative_track::<E>(track_id.to_string(), best_match.id.clone());
+    // Cache the mapping in memory and storage — but only a match made knowing the duration. The
+    // store is read before any search and never second-guessed, so a guess made from the name alone
+    // became permanent: a download that came in without the duration matched ADÉLA's "Nicole
+    // Kidman" to its 7-second trailer, and from then on both downloads and playback got the trailer.
+    if should_remember_match(&meta) {
+        set_alternative_track::<E>(track_id.to_string(), best_match.id.clone());
+    } else {
+        log_info!("[Resolver] Not remembering a match made without a duration for {}", track_id);
+    }
 
     log_info!("[Resolver] resolve_youtube_id finished successfully");
     Some(best_match.id)
+}
+
+/// Only a match that could check the length is worth keeping for good.
+fn should_remember_match(meta: &SpotifyTrackMeta) -> bool {
+    meta.duration_ms > 0
 }
 
 fn match_best_track(meta: &SpotifyTrackMeta, results: &[YouTubeTrack]) -> Option<YouTubeTrack> {
@@ -460,6 +472,18 @@ mod tests {
         );
         let answer = resolve_youtube_id_direct::<MockEnv>("spotify-manual", None, "/tmp").await;
         assert_eq!(answer.as_deref(), Some("CHOSEN_BY_HAND"));
+    }
+
+    #[test]
+    fn a_match_made_without_a_duration_is_not_kept() {
+        let meta = |duration_ms| SpotifyTrackMeta {
+            name: "Nicole Kidman".into(),
+            artists: vec!["ADÉLA".into()],
+            duration_ms,
+            isrc: String::new(),
+        };
+        assert!(!should_remember_match(&meta(0)));
+        assert!(should_remember_match(&meta(181_000)));
     }
 
     #[test]

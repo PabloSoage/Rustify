@@ -469,6 +469,11 @@ internal fun DownloadFolderSection(context: Context) {
             Button(onClick = { picker.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
                 Text(stringResource(R.string.settings_select_folder), color = Color.White)
             }
+            Spacer(Modifier.height(12.dp))
+            var mp3 by remember { mutableStateOf(com.varuna.rustify.audio.DownloadFormat.convertToMp3(context)) }
+            SettingSwitchRow(stringResource(R.string.settings_download_mp3), stringResource(R.string.settings_download_mp3_desc), mp3) {
+                mp3 = it; com.varuna.rustify.audio.DownloadFormat.setConvertToMp3(context, it)
+            }
         }
     }
 }
