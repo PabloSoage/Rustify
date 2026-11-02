@@ -29,6 +29,7 @@ pub mod matcher;
 pub mod metrics;
 pub mod player;
 pub mod scrobble;
+pub mod jam;
 pub mod search;
 pub mod server;
 pub mod spotify;
@@ -412,6 +413,106 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_lastFmNowPlay
                     .map(|_| spotify::models::OperationResult { success: true, error: None }),
             ),
         }
+    })
+}
+
+fn ok_result() -> spotify::models::OperationResult {
+    spotify::models::OperationResult { success: true, error: None }
+}
+
+/// JNI Bridge: a new Jam room code. Memory only.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamNewCode<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| serialize_result::<_, String>(Ok(jam::new_code())))
+}
+
+/// JNI Bridge: join or open a Jam (`jam::session::Config` as JSON); blocks until the broker answers.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamJoinNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    config_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = config_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<jam::session::Config>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(jam::session::join(cfg)).map(|_| ok_result())),
+        }
+    })
+}
+
+/// JNI Bridge: the room's events since the last call, waiting up to `timeout_ms` for one.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamPollNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    timeout_ms: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serialize_result::<_, String>(Ok(get_runtime().block_on(jam::session::poll(timeout_ms.max(0) as u64))))
+    })
+}
+
+/// JNI Bridge: host publishes the queue (`jam::State` as JSON).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamPublishStateNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    state_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = state_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<jam::State>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(state) => {
+                serialize_result(get_runtime().block_on(jam::session::publish_state(&state)).map(|_| ok_result()))
+            }
+        }
+    })
+}
+
+/// JNI Bridge: guest asks the host for something (`jam::Command` as JSON).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamSendNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    command_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = command_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<jam::Command>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cmd) => serialize_result(get_runtime().block_on(jam::session::send(cmd)).map(|_| ok_result())),
+        }
+    })
+}
+
+/// JNI Bridge: host removes a guest.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamKickNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let id = id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(jam::session::kick(&id)).map(|_| ok_result()))
+    })
+}
+
+/// JNI Bridge: leave the Jam.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_jamLeaveNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        get_runtime().block_on(jam::session::leave());
+        serialize_result::<_, String>(Ok(ok_result()))
     })
 }
 

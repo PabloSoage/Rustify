@@ -86,6 +86,12 @@ rustypipe = { version = "0.11", default-features = false, features = ["rustls-tl
 # browser extensions — we reuse uBO's filter LISTS instead of its runtime.
 adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 lofty = "0.25.5"
+webpki-roots = "1.0.11"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rumqttc = { version = "0.25.1", default-features = false, features = ["use-rustls-no-provider"] }
 
 # --- Android only ---
 [target.'cfg(target_os = "android")'.dependencies]
