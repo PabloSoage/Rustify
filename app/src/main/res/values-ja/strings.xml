@@ -522,6 +522,15 @@
     <string name="local_group_albums">アルバム</string>
     <string name="local_group_artists">アーティスト</string>
     <string name="local_group_playlists">プレイリスト</string>
+    <string name="settings_excluded_folders">除外したフォルダ</string>
+    <string name="settings_restore_folder">戻す</string>
+    <string name="settings_min_duration">最小の長さ</string>
+    <string name="settings_min_duration_desc">ボイスメモなどの短いファイルを除外します</string>
+    <string name="settings_min_duration_off">オフ</string>
+    <string name="local_group_folders">フォルダ</string>
+    <string name="local_folder_exclude">フォルダを除外</string>
+    <string name="local_folder_exclude_msg">%1$s とそのサブフォルダをライブラリから除外しますか？設定から戻せます。</string>
+    <string name="local_folder_exclude_confirm">除外</string>
     <string name="local_group_favorites">お気に入り</string>
     <string name="local_favorites_empty">ローカルのお気に入りはまだありません</string>
     <string name="local_playlist_create">新しいプレイリスト</string>

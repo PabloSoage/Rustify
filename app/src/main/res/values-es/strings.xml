@@ -275,6 +275,15 @@
 <string name="local_group_albums">Álbumes</string>
 <string name="local_group_artists">Artistas</string>
 <string name="local_group_playlists">Playlists</string>
+    <string name="settings_excluded_folders">Carpetas excluidas</string>
+    <string name="settings_restore_folder">Restaurar</string>
+    <string name="settings_min_duration">Duración mínima</string>
+    <string name="settings_min_duration_desc">Deja fuera los archivos más cortos, como las notas de voz</string>
+    <string name="settings_min_duration_off">No</string>
+    <string name="local_group_folders">Carpetas</string>
+    <string name="local_folder_exclude">Excluir carpeta</string>
+    <string name="local_folder_exclude_msg">¿Dejar %1$s y sus subcarpetas fuera de la biblioteca? Puedes recuperarla en Ajustes.</string>
+    <string name="local_folder_exclude_confirm">Excluir</string>
 <string name="local_group_favorites">Favoritos</string>
 <string name="local_playlist_create">Nueva playlist</string>
     <string name="m3u_import">Importar playlist M3U</string>

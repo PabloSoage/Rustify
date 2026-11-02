@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,9 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -91,7 +95,9 @@ import androidx.core.content.edit
 import coil.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LocalFolders
 import com.varuna.rustify.bridge.LocalPlaylist
+import com.varuna.rustify.bridge.M3u
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
@@ -905,6 +911,7 @@ fun LibraryLocalMusic(
         stringResource(R.string.local_group_tracks) to "Tracks",
         stringResource(R.string.local_group_albums) to "Albums",
         stringResource(R.string.local_group_artists) to "Artists",
+        stringResource(R.string.local_group_folders) to "Folders",
         stringResource(R.string.local_group_playlists) to "Playlists",
         stringResource(R.string.local_group_favorites) to "Favorites"
     )
@@ -1213,6 +1220,92 @@ fun LibraryLocalMusic(
             }
 
             // Local favorites: "local:" tracks marked as favorites.
+            "Folders" -> {
+                val pathById = remember(filteredTracks) {
+                    filteredTracks.associate { (it.id ?: "") to it.id?.let { id -> M3u.pathOf(id) } }
+                }
+                val root = remember(pathById) { LocalFolders.root(pathById.values.filterNotNull()) }
+                var folderAt by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+                val at = folderAt?.takeIf { LocalFolders.isUnder(it, root) } ?: root
+                val level = remember(pathById, at) { LocalFolders.level(filteredTracks, { pathById[it.id ?: ""] }, at) }
+                var pendingExclude by remember { mutableStateOf<LocalFolders.Folder?>(null) }
+                androidx.activity.compose.BackHandler(enabled = at != root) {
+                    folderAt = at.substringBeforeLast('/')
+                }
+                val foldersLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                LazyColumn(
+                    state = foldersLazyListState,
+                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item(key = "folder_header") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = at != root) { folderAt = at.substringBeforeLast('/') }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (at != root) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.Gray)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(
+                                at.removePrefix("/storage/emulated/0").ifEmpty { "/" },
+                                color = Color.Gray, fontSize = 13.sp, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    items(level.folders, key = { "folder_${it.path}" }) { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { folderAt = folder.path }
+                                .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = Color(0xFF1DB954), modifier = Modifier.size(40.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(folder.name, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(pluralStringResource(R.plurals.track_count, folder.trackCount, folder.trackCount), color = Color.Gray, fontSize = 13.sp)
+                            }
+                            IconButton(onClick = { pendingExclude = folder }) {
+                                Icon(Icons.Default.VisibilityOff, contentDescription = stringResource(R.string.local_folder_exclude), tint = Color.Gray)
+                            }
+                        }
+                    }
+                    itemsIndexed(level.tracks, key = { index, t -> t.id ?: "folder_track_$index" }) { index, track ->
+                        TrackRowItem(
+                            index = index + 1,
+                            track = track,
+                            fallbackCoverUrl = track.externalUri.takeIf { it.isNotBlank() },
+                            onClick = { onTrackClick(level.tracks, index) },
+                            isLiked = track.id?.let { spotifyRepo.isLocalFavorite(it) } ?: false,
+                            isCurrentTrack = track.id == currentTrackId,
+                            onLikeToggle = { track.id?.let { spotifyRepo.toggleLocalFavorite(it) } },
+                            onMoreClick = { selectedTrackForMenu = track }
+                        )
+                    }
+                }
+                pendingExclude?.let { folder ->
+                    AlertDialog(
+                        onDismissRequest = { pendingExclude = null },
+                        title = { Text(stringResource(R.string.local_folder_exclude)) },
+                        text = { Text(stringResource(R.string.local_folder_exclude_msg, folder.name)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                spotifyRepo.excludeLocalFolder(folder.path)
+                                pendingExclude = null
+                            }) { Text(stringResource(R.string.local_folder_exclude_confirm)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingExclude = null }) { Text(stringResource(android.R.string.cancel)) }
+                        }
+                    )
+                }
+            }
             "Favorites" -> {
                 val favsLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
                 // No remember: localFavoriteTracks() reads the observable localTracks and localFavoriteIds.

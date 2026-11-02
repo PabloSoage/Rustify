@@ -270,6 +270,15 @@
     <string name="local_group_albums">Albums</string>
     <string name="local_group_artists">Artists</string>
     <string name="local_group_playlists">Playlists</string>
+    <string name="settings_excluded_folders">Excluded folders</string>
+    <string name="settings_restore_folder">Restore</string>
+    <string name="settings_min_duration">Minimum length</string>
+    <string name="settings_min_duration_desc">Leave out shorter files, such as voice notes</string>
+    <string name="settings_min_duration_off">Off</string>
+    <string name="local_group_folders">Folders</string>
+    <string name="local_folder_exclude">Exclude folder</string>
+    <string name="local_folder_exclude_msg">Leave %1$s and its sub-folders out of the library? You can bring it back in Settings.</string>
+    <string name="local_folder_exclude_confirm">Exclude</string>
     <string name="local_group_favorites">Favorites</string>
     <string name="local_playlist_create">New playlist</string>
     <string name="m3u_import">Import M3U playlist</string>

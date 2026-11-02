@@ -69,6 +69,11 @@ class SpotifyRepository(context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_EXPIRATION = "expiration_timestamp"
 
+        /** In `rustify_settings`: absolute folder paths the local scan skips. */
+        const val LOCAL_EXCLUDED_FOLDERS = "local_excluded_folders"
+        /** In `rustify_settings`: local files shorter than this many seconds are left out (0 = none). */
+        const val LOCAL_MIN_DURATION_S = "local_min_duration_s"
+
         /**
          * How much life a stored token needs before [ensureSession] will trust it without
          * refreshing. Deliberately longer than the engine's own 30 s refusal margin, so this side is
@@ -729,6 +734,16 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         return pl to resolved.missing.size
     }
 
+    /** Leaves [folder] (an absolute path) and everything below it out of the library, and rescans. */
+    fun excludeLocalFolder(folder: String) {
+        val prefs = appCtx.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+        val set = prefs.getStringSet(LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty() + folder
+        prefs.edit().putStringSet(LOCAL_EXCLUDED_FOLDERS, set).apply()
+        // Out of sight at once; the rescan makes it stick.
+        localTracks.removeAll { t -> t.id?.let { M3u.pathOf(it) }?.let { LocalFolders.isUnder(it, folder) } == true }
+        scanLocalMusic()
+    }
+
     /** A local playlist as M3U8, or null when it does not exist. */
     fun exportM3u(playlistId: String): String? {
         val pl = localPlaylists.firstOrNull { it.id == playlistId } ?: return null
@@ -826,6 +841,9 @@ loadLocalTracksFromCache()
                 }
 
                 val existingTracks = localTracks.associateBy { it.id }
+                // Folder view (4.10): folders the user excluded, and a floor for voice notes.
+                val excludedFolders = settingsPrefs.getStringSet(LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty()
+                val minDurationMs = settingsPrefs.getInt(LOCAL_MIN_DURATION_S, 0) * 1000L
                 val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "opus", "webm", "aac")
                 val coversDir = java.io.File(appCtx.filesDir, "covers").also { it.mkdirs() }
                 // Covers are deduplicated per album (see below). Resolution mode: full-res (default,
@@ -944,7 +962,8 @@ loadLocalTracksFromCache()
                                     
                                     for (file in files) {
                                         if (file.isDirectory) {
-                                            subdirs.add(file)
+                                            val path = M3u.pathOf("local:${file.uri}")
+                                            if (path == null || excludedFolders.none { LocalFolders.isUnder(path, it) }) subdirs.add(file)
                                         } else {
                                             val mime = file.type
                                             val fname = file.name?.lowercase() ?: ""
@@ -983,7 +1002,8 @@ loadLocalTracksFromCache()
                             dirTracks
                         }
                     }.awaitAll().forEach { dirTracks ->
-                        newLocalTracks.addAll(dirTracks)
+                        // A duration of 0 is unknown, not short: keep it.
+                        newLocalTracks.addAll(dirTracks.filter { it.durationMs <= 0 || it.durationMs >= minDurationMs })
                     }
                 }
 

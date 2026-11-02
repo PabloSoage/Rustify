@@ -379,6 +379,8 @@ internal fun LocalMusicSection(context: Context) {
     var enableYtmMusic by remember { mutableStateOf(prefs.getBoolean("enable_ytm_music", true)) }
     var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
     var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
+    var excludedFolders by remember { mutableStateOf(prefs.getStringSet(SpotifyRepository.LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty()) }
+    var minDurationS by remember { mutableIntStateOf(prefs.getInt(SpotifyRepository.LOCAL_MIN_DURATION_S, 0)) }
     val addDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -437,6 +439,40 @@ internal fun LocalMusicSection(context: Context) {
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = { addDirLauncher.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
                     Text(stringResource(R.string.settings_add_folder), color = Color.White)
+                }
+                if (excludedFolders.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(stringResource(R.string.settings_excluded_folders), color = Color.Gray, fontSize = 12.sp)
+                    excludedFolders.sorted().forEach { path ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(path.removePrefix("/storage/emulated/0"), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text(stringResource(R.string.settings_restore_folder), color = green, fontSize = 12.sp, modifier = Modifier.clickable {
+                                val newSet = excludedFolders - path
+                                excludedFolders = newSet
+                                prefs.edit { putStringSet(SpotifyRepository.LOCAL_EXCLUDED_FOLDERS, newSet) }
+                                SpotifyRepository.instance?.scanLocalMusic()
+                            }.padding(8.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.settings_min_duration), color = Color.White, fontSize = 16.sp)
+                Text(stringResource(R.string.settings_min_duration_desc), color = Color.Gray, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    listOf(0, 10, 30, 60).forEach { s ->
+                        androidx.compose.material3.FilterChip(
+                            selected = minDurationS == s,
+                            onClick = {
+                                minDurationS = s
+                                prefs.edit { putInt(SpotifyRepository.LOCAL_MIN_DURATION_S, s) }
+                                SpotifyRepository.instance?.scanLocalMusic()
+                            },
+                            label = { Text(if (s == 0) stringResource(R.string.settings_min_duration_off) else "$s s") },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = green, selectedLabelColor = Color.White
+                            )
+                        )
+                    }
                 }
             }
         }
