@@ -17,6 +17,16 @@ class LocalReplayGainTest {
     }
 
     @Test
+    fun `auto uses the album gain only inside a run of that album`() {
+        assertEquals(0.631f, LocalReplayGain.volumeFor(loud, Mode.AUTO, 4, inAlbumRun = true), 0.001f)
+        assertEquals(0.501f, LocalReplayGain.volumeFor(loud, Mode.AUTO, 4, inAlbumRun = false), 0.001f)
+        assertEquals(true, LocalReplayGain.inAlbumRun("a", "a", "b"))
+        assertEquals(true, LocalReplayGain.inAlbumRun(null, "a", "a"))
+        assertEquals(false, LocalReplayGain.inAlbumRun("b", "a", "c"))
+        assertEquals(false, LocalReplayGain.inAlbumRun("", "", ""))
+    }
+
+    @Test
     fun `untagged, off, or a quiet master is played as it is`() {
         assertEquals(1f, LocalReplayGain.volumeFor(null, Mode.TRACK, 4))
         assertEquals(1f, LocalReplayGain.volumeFor(Tags(), Mode.TRACK, 4))

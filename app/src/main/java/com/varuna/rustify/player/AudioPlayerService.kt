@@ -1595,7 +1595,11 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Loudness normalisation (4.2); local files by their own ReplayGain tags (4.10).
                 baseVolume = withContext(Dispatchers.IO) {
                     if (TrackRef.isLocal(trackId)) com.varuna.rustify.audio.LocalReplayGain.run {
-                        volumeFor(read(context, trackId), mode(context), preampDb(context))
+                        val st = _state.value
+                        val at = currentQueuePosition(st)
+                        val albumOf = { i: Int -> st.queue.getOrNull(i)?.album?.id }
+                        val run = at >= 0 && inAlbumRun(albumOf(at - 1), albumOf(at), albumOf(at + 1))
+                        volumeFor(read(context, trackId), mode(context), preampDb(context), run)
                     }
                     else if (!com.varuna.rustify.audio.LoudnessStore.isEnabled(context)) 1f
                     else com.varuna.rustify.audio.LoudnessStore.gainFor(

@@ -607,6 +607,7 @@ internal fun NormalizeVolumeSection(context: Context) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 listOf(
                     com.varuna.rustify.audio.LocalReplayGain.Mode.OFF to R.string.settings_replaygain_off,
+                    com.varuna.rustify.audio.LocalReplayGain.Mode.AUTO to R.string.settings_replaygain_auto,
                     com.varuna.rustify.audio.LocalReplayGain.Mode.TRACK to R.string.settings_replaygain_track,
                     com.varuna.rustify.audio.LocalReplayGain.Mode.ALBUM to R.string.settings_replaygain_album
                 ).forEach { (mode, label) ->
