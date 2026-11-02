@@ -796,6 +796,12 @@
     <string name="audio_lab_measuring">Measuring…</string>
     <string name="audio_lab_bench_row">%1$s: %2$.1f µs per 4096-point FFT (×%3$.2f)</string>
     <string name="queue_title">Queue</string>
+    <string name="queue_save_as">Save queue as…</string>
+    <string name="queue_default_name">Queue</string>
+    <string name="queue_save">Save</string>
+    <string name="queue_saved">Saved queues</string>
+    <string name="queue_saved_empty">No saved queues yet. Save this one to come back to it later.</string>
+    <string name="queue_saved_delete">Delete saved queue</string>
     <string name="queue_now_playing">Now playing</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_no_tracks">No tracks found</string>

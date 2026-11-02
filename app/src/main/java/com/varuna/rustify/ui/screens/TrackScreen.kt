@@ -42,6 +42,8 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
@@ -102,6 +104,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -121,6 +124,7 @@ import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
+import com.varuna.rustify.player.SavedQueues
 import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
@@ -908,11 +912,100 @@ fun QueueBottomSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.queue_title),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            // Saved queues (4.10): save this one under a name, or switch to another.
+            val savedQueues by audioPlayerService.savedQueues.collectAsState()
+            val activeQueue by audioPlayerService.activeSavedQueue.collectAsState()
+            var showSaveQueue by remember { mutableStateOf(false) }
+            var showSavedQueues by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { audioPlayerService.refreshSavedQueues() }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.queue_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    activeQueue?.let { Text(it, color = Color(0xFF1DB954), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+                IconButton(onClick = { showSaveQueue = true }, enabled = playerState.queue.isNotEmpty()) {
+                    Icon(Icons.Default.Save, contentDescription = stringResource(R.string.queue_save_as), tint = Color.White)
+                }
+                IconButton(onClick = { showSavedQueues = true }) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_saved), tint = Color.White)
+                }
+            }
+            if (showSaveQueue) {
+                val defaultPrefix = stringResource(R.string.queue_default_name)
+                var name by remember { mutableStateOf(activeQueue.orEmpty()) }
+                AlertDialog(
+                    onDismissRequest = { showSaveQueue = false },
+                    title = { Text(stringResource(R.string.queue_save_as)) },
+                    text = {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            singleLine = true,
+                            placeholder = { Text(SavedQueues.defaultName(savedQueues, defaultPrefix)) }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            audioPlayerService.saveQueueAs(name, defaultPrefix)
+                            showSaveQueue = false
+                        }) { Text(stringResource(R.string.queue_save)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSaveQueue = false }) { Text(stringResource(android.R.string.cancel)) }
+                    }
+                )
+            }
+            if (showSavedQueues) {
+                AlertDialog(
+                    onDismissRequest = { showSavedQueues = false },
+                    title = { Text(stringResource(R.string.queue_saved)) },
+                    text = {
+                        if (savedQueues.isEmpty()) {
+                            Text(stringResource(R.string.queue_saved_empty), color = Color.Gray)
+                        } else {
+                            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                                items(savedQueues.size, key = { savedQueues[it].name }) { i ->
+                                    val q = savedQueues[i]
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                audioPlayerService.switchToSavedQueue(q.name)
+                                                showSavedQueues = false
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                q.name,
+                                                color = if (q.name == activeQueue) Color(0xFF1DB954) else Color.White,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                pluralStringResource(R.plurals.track_count, q.tracks.size, q.tracks.size),
+                                                color = Color.Gray, fontSize = 12.sp
+                                            )
+                                        }
+                                        IconButton(onClick = { audioPlayerService.deleteSavedQueue(q.name) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.queue_saved_delete), tint = Color.Gray)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showSavedQueues = false }) { Text(stringResource(android.R.string.ok)) }
+                    }
+                )
+            }
 
             // Current Track Section
             Text(

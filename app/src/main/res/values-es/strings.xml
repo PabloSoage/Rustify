@@ -790,6 +790,12 @@
     <string name="audio_lab_measuring">Midiendo…</string>
     <string name="audio_lab_bench_row">%1$s: %2$.1f µs por FFT de 4096 puntos (×%3$.2f)</string>
     <string name="queue_title">Cola de reproducción</string>
+    <string name="queue_save_as">Guardar cola como…</string>
+    <string name="queue_default_name">Cola</string>
+    <string name="queue_save">Guardar</string>
+    <string name="queue_saved">Colas guardadas</string>
+    <string name="queue_saved_empty">Aún no hay colas guardadas. Guarda esta para volver a ella más tarde.</string>
+    <string name="queue_saved_delete">Borrar cola guardada</string>
     <string name="queue_now_playing">Sonando ahora</string>
     <string name="common_cancel">Cancelar</string>
     <string name="common_no_tracks">No hay canciones</string>

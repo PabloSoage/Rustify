@@ -793,6 +793,12 @@
     <string name="audio_lab_measuring">計測中…</string>
     <string name="audio_lab_bench_row">%1$s: 4096 点 FFT あたり %2$.1f µs（×%3$.2f）</string>
     <string name="queue_title">再生キュー</string>
+    <string name="queue_save_as">キューに名前を付けて保存…</string>
+    <string name="queue_default_name">キュー</string>
+    <string name="queue_save">保存</string>
+    <string name="queue_saved">保存したキュー</string>
+    <string name="queue_saved_empty">保存したキューはまだありません。このキューを保存すると後で戻れます。</string>
+    <string name="queue_saved_delete">保存したキューを削除</string>
     <string name="queue_now_playing">再生中</string>
     <string name="common_cancel">キャンセル</string>
     <string name="common_no_tracks">曲が見つかりません</string>

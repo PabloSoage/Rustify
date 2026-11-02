@@ -2582,6 +2582,65 @@ class AudioPlayerService private constructor(private val context: Context) {
     // position tick would overshoot B by up to half a second, which on a two-second phrase is a lot.
     private val _abRepeat = MutableStateFlow(AbRepeat.NONE)
     val abRepeat: StateFlow<AbRepeat> = _abRepeat
+
+    // Saved queues (4.10), see [SavedQueues]. The one the queue came from is re-saved, with where it
+    // got to, when another is loaded: switching away and back resumes it.
+    private val _savedQueues = MutableStateFlow<List<SavedQueues.SavedQueue>>(emptyList())
+    val savedQueues: StateFlow<List<SavedQueues.SavedQueue>> = _savedQueues
+    private val _activeSavedQueue = MutableStateFlow<String?>(null)
+    val activeSavedQueue: StateFlow<String?> = _activeSavedQueue
+
+    fun refreshSavedQueues() {
+        mainScope.launch { _savedQueues.value = withContext(Dispatchers.IO) { SavedQueues.load(context) } }
+    }
+
+    private fun snapshot(name: String): SavedQueues.SavedQueue? {
+        val st = _state.value
+        if (st.queue.isEmpty()) return null
+        return SavedQueues.SavedQueue(
+            name = name,
+            tracks = st.queue,
+            index = currentQueuePosition(st).coerceAtLeast(0),
+            positionMs = if (st.currentTrack != null) exoPlayer.currentPosition.coerceAtLeast(0L) else 0L,
+            savedAt = System.currentTimeMillis()
+        )
+    }
+
+    private suspend fun persistSaved(update: (List<SavedQueues.SavedQueue>) -> List<SavedQueues.SavedQueue>) {
+        _savedQueues.value = withContext(Dispatchers.IO) {
+            update(SavedQueues.load(context)).also { SavedQueues.store(context, it) }
+        }
+    }
+
+    /** Saves the current queue as [name] (blank: "Queue N") and makes it the active one. */
+    fun saveQueueAs(name: String, defaultPrefix: String) {
+        mainScope.launch {
+            val chosen = name.trim().ifEmpty { SavedQueues.defaultName(_savedQueues.value, defaultPrefix) }
+            val snap = snapshot(chosen) ?: return@launch
+            persistSaved { SavedQueues.upsert(it, snap) }
+            _activeSavedQueue.value = chosen
+        }
+    }
+
+    /** Plays saved queue [name] from where it was, keeping the one being left where it got to. */
+    fun switchToSavedQueue(name: String) {
+        mainScope.launch {
+            val leaving = _activeSavedQueue.value
+            if (leaving != null && !leaving.equals(name, ignoreCase = true)) {
+                snapshot(leaving)?.let { snap -> persistSaved { SavedQueues.upsert(it, snap) } }
+            }
+            val target = _savedQueues.value.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: return@launch
+            _activeSavedQueue.value = target.name
+            loadPlaylist(target.tracks, target.index, startPositionMs = target.positionMs)
+        }
+    }
+
+    fun deleteSavedQueue(name: String) {
+        mainScope.launch {
+            persistSaved { SavedQueues.remove(it, name) }
+            if (_activeSavedQueue.value.equals(name, ignoreCase = true)) _activeSavedQueue.value = null
+        }
+    }
     private var abWatcher: kotlinx.coroutines.Job? = null
 
     /** The A-B button: mark A, mark B (the loop starts), clear. */
