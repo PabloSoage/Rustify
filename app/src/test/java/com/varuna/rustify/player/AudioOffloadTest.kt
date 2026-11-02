@@ -33,6 +33,11 @@ class AudioOffloadTest {
     }
 
     @Test
+    fun bitPerfectUsbTurnsItOffBeforeTheEffects() {
+        assertEquals(AudioOffload.Blocker.BIT_PERFECT, AudioOffload.blocker(true, true, 4, bitPerfect = true))
+    }
+
+    @Test
     fun theSwitchWinsOverEverything() {
         assertEquals(AudioOffload.Blocker.SWITCHED_OFF, AudioOffload.blocker(false, true, 4))
     }

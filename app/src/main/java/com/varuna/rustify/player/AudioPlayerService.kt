@@ -764,12 +764,15 @@ class AudioPlayerService private constructor(private val context: Context) {
                     context: android.content.Context,
                     enableFloatOutput: Boolean,
                     enableAudioTrackPlaybackParams: Boolean
-                ): androidx.media3.exoplayer.audio.AudioSink =
+                ): androidx.media3.exoplayer.audio.AudioSink = BitPerfect.Sink(
+                    context,
                     androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                         .setEnableFloatOutput(enableFloatOutput)
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                         .setAudioProcessors(arrayOf(AudioTap.processor))
-                        .build()
+                        .build(),
+                    enableFloatOutput
+                )
             }.setEnableDecoderFallback(true)
         )
         // Keep the CPU and the Wi-Fi radio alive *while playing*. Without this the player defaults to
@@ -1595,8 +1598,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                 ensureForegroundServiceBound()
 
                 // Loudness normalisation (4.2); local files by their own ReplayGain tags (4.10).
+                // Bit-perfect to a USB DAC (`22`): no gain, or the samples are no longer the file's.
                 baseVolume = withContext(Dispatchers.IO) {
-                    if (TrackRef.isLocal(trackId)) com.varuna.rustify.audio.LocalReplayGain.run {
+                    if (BitPerfect.active(context)) 1f
+                    else if (TrackRef.isLocal(trackId)) com.varuna.rustify.audio.LocalReplayGain.run {
                         val st = _state.value
                         val at = currentQueuePosition(st)
                         val albumOf = { i: Int -> st.queue.getOrNull(i)?.album?.id }
@@ -2461,10 +2466,12 @@ class AudioPlayerService private constructor(private val context: Context) {
             val sinks = added.orEmpty().filter { it.isSink }.map { it.type }
             onDisconnectAction(disconnectResume.onOutputsAdded(System.currentTimeMillis(), sinks))
             AutoEqController.refresh(context)
+            if (BitPerfect.isEnabled(context)) applyAudioOffload()
         }
         override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) {
             lastAudioRouteChangeAt = System.currentTimeMillis()
             AutoEqController.refresh(context)
+            if (BitPerfect.isEnabled(context)) applyAudioOffload()
         }
     }
 

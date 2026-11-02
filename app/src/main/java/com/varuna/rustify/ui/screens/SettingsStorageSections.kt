@@ -739,7 +739,10 @@ internal fun AudioOffloadSection(context: Context) {
         enabled,
         com.varuna.rustify.player.EqualizerController.isEnabled(context),
         com.varuna.rustify.player.TransitionFade.seconds(context),
-        speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(context)
+        speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(context),
+        skipSilence = com.varuna.rustify.player.SkipSilence.enabled(context),
+        autoEq = com.varuna.rustify.player.AutoEqController.isActive(),
+        bitPerfect = com.varuna.rustify.player.BitPerfect.active(context)
     )
     Spacer(modifier = Modifier.height(16.dp))
     Card(
@@ -777,6 +780,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_silence), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.AUTOEQ ->
                     Text(stringResource(R.string.settings_offload_blocked_autoeq), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.BIT_PERFECT ->
+                    Text(stringResource(R.string.settings_offload_blocked_bitperfect), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }
@@ -1134,6 +1139,71 @@ internal fun AutoEqSection(context: Context) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Bit-perfect USB output (`22`). See [com.varuna.rustify.player.BitPerfect]. */
+@Composable
+internal fun BitPerfectSection(context: Context) {
+    val bp = com.varuna.rustify.player.BitPerfect
+    var enabled by remember { mutableStateOf(bp.isEnabled(context)) }
+    var status by remember { mutableStateOf(bp.status) }
+    var usb by remember { mutableStateOf(bp.usbOutput(context)?.productName?.toString()) }
+    // The status changes on the playback thread at each song; a light poll while the card is shown.
+    LaunchedEffect(Unit) {
+        while (true) {
+            status = bp.status
+            usb = bp.usbOutput(context)?.productName?.toString()
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    val spoilerName = when (status.spoiler) {
+        com.varuna.rustify.player.BitPerfect.Spoiler.EQUALIZER -> stringResource(R.string.settings_bitperfect_spoiler_eq)
+        com.varuna.rustify.player.BitPerfect.Spoiler.AUTOEQ -> stringResource(R.string.settings_bitperfect_spoiler_autoeq)
+        com.varuna.rustify.player.BitPerfect.Spoiler.FADE -> stringResource(R.string.settings_bitperfect_spoiler_fade)
+        com.varuna.rustify.player.BitPerfect.Spoiler.SPEED -> stringResource(R.string.settings_bitperfect_spoiler_speed)
+        com.varuna.rustify.player.BitPerfect.Spoiler.SKIP_SILENCE -> stringResource(R.string.settings_bitperfect_spoiler_silence)
+        null -> ""
+    }
+    val pcm = status.pcm
+    val format = if (pcm == null) "" else "${pcm.sampleRate} Hz, " +
+        (if (pcm.encoding == androidx.media3.common.C.ENCODING_PCM_FLOAT) "32-bit float" else "16-bit")
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_bitperfect), color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = enabled,
+                    enabled = bp.supported,
+                    onCheckedChange = { on ->
+                        enabled = on
+                        bp.setEnabled(context, on)
+                        com.varuna.rustify.player.AudioPlayerService.instance?.applyAudioOffload()
+                    },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_bitperfect_desc), color = Color.Gray, fontSize = 12.sp)
+            val warn = Color(0xFFFFB74D)
+            val good = Color(0xFF1DB954)
+            when {
+                !bp.supported -> Text(stringResource(R.string.settings_bitperfect_old_android), color = warn, fontSize = 12.sp)
+                !enabled -> {}
+                usb == null -> Text(stringResource(R.string.settings_bitperfect_no_usb), color = warn, fontSize = 12.sp)
+                status.state == com.varuna.rustify.player.BitPerfect.State.ACTIVE ->
+                    Text(stringResource(R.string.settings_bitperfect_active, status.device ?: usb.orEmpty(), format), color = good, fontSize = 13.sp)
+                status.state == com.varuna.rustify.player.BitPerfect.State.SPOILED ->
+                    Text(stringResource(R.string.settings_bitperfect_spoiled, spoilerName), color = warn, fontSize = 12.sp)
+                status.state == com.varuna.rustify.player.BitPerfect.State.NO_MATCH ->
+                    Text(stringResource(R.string.settings_bitperfect_no_match, status.device ?: usb.orEmpty(), format), color = warn, fontSize = 12.sp)
+                else -> Text(stringResource(R.string.settings_bitperfect_next_song), color = Color.Gray, fontSize = 12.sp)
             }
         }
     }
