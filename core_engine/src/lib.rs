@@ -276,6 +276,19 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readReplayGai
     })
 }
 
+/// JNI Bridge: the lyrics embedded in a local file (`/proc/self/fd/N`), as a JSON string or `null`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readEmbeddedLyricsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::embedded_lyrics::read(&path))
+    })
+}
+
 /// JNI Bridge: the contexts to offer, newest first, as a JSON array.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listContinueListeningNative<'local>(

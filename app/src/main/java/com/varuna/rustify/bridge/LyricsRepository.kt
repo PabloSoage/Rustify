@@ -33,6 +33,17 @@ object LyricsRepository {
     ): LyricsResult? {
         cache[trackId]?.let { return it }
 
+        // The user's own file first: a .lrc beside it or the lyrics tag inside it (LocalLyrics).
+        if (TrackRef.isLocal(trackId)) {
+            val own = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { LocalLyrics.read(context, trackId) }.getOrNull()
+            }
+            if (own != null) {
+                cache[trackId] = own
+                return own
+            }
+        }
+
         // Clean the query the same way for every provider (strip feat/parenthetical, first artist).
         val cleanTitle = title.replace(Regex("\\(.*?\\)|\\[.*?]"), "").trim()
         val cleanArtist = artist.split(",").firstOrNull()?.trim() ?: artist

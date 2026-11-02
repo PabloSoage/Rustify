@@ -57,17 +57,32 @@ internal object LyricsHttp {
     } catch (e: Exception) { null }
 }
 
-/** Shared LRC parser: `[mm:ss.xx] text`. */
+/**
+ * Shared LRC parser: `[mm:ss.xx] text`.
+ *
+ * Also what files made by hand or by taggers carry (`17` §4, after Gramophone): several stamps on
+ * one line for a repeated chorus (`[00:12.00][01:30.00]text`), stamps without a fraction
+ * (`[01:02]`), a one-digit minute, and the enhanced-LRC per-word stamps (`<00:12.50> word`), which
+ * are dropped — the screen highlights lines — instead of being shown as text. Tag lines such as
+ * `[ar:…]` have no time and are skipped.
+ */
 internal fun parseLrcText(lrc: String): List<LyricLine> {
     val lines = mutableListOf<LyricLine>()
-    val pattern = Regex("""^\[(\d{2}):(\d{2})\.(\d{2,3})]\s*(.*)$""")
-    for (line in lrc.lines()) {
-        val m = pattern.matchEntire(line.trim()) ?: continue
-        val (mm, ss, cs, text) = m.destructured
-        val min = mm.toLongOrNull() ?: continue
-        val sec = ss.toLongOrNull() ?: continue
-        val centi = cs.padEnd(3, '0').take(3).toLongOrNull() ?: continue
-        lines.add(LyricLine(min * 60_000 + sec * 1_000 + centi, text.trim()))
+    val stamp = Regex("""^\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
+    val wordStamp = Regex("""<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>""")
+    for (raw in lrc.lines()) {
+        var rest = raw.trim()
+        val times = mutableListOf<Long>()
+        while (true) {
+            val m = stamp.find(rest) ?: break
+            val (mm, ss, frac) = m.destructured
+            val ms = frac.takeIf { it.isNotEmpty() }?.padEnd(3, '0')?.toLongOrNull() ?: 0L
+            times += mm.toLong() * 60_000 + ss.toLong() * 1_000 + ms
+            rest = rest.substring(m.value.length)
+        }
+        if (times.isEmpty()) continue
+        val text = rest.replace(wordStamp, "").replace(Regex("\\s+"), " ").trim()
+        times.forEach { lines.add(LyricLine(it, text)) }
     }
     return lines.sortedBy { it.timeMs }
 }

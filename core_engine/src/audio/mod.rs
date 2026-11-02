@@ -9,4 +9,5 @@
 // a way that sounds like white noise rather than like an error.
 
 pub mod deezer;
+pub mod embedded_lyrics;
 pub mod replaygain;

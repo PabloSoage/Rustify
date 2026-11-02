@@ -71,6 +71,11 @@ object NativeEngine {
     /** The ReplayGain tags of a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
     fun readReplayGain(path: String): String = readReplayGainNative(path)
 
+    private external fun readEmbeddedLyricsNative(path: String): String
+
+    /** The lyrics embedded in a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
+    fun readEmbeddedLyrics(path: String): String = readEmbeddedLyricsNative(path)
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */
