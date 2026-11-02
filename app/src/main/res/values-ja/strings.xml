@@ -512,6 +512,7 @@
     <string name="track_menu_bpm_analysing">テンポを解析中…</string>
     <string name="track_menu_bpm">%1$s BPM</string>
     <string name="track_menu_bpm_none">はっきりしたビートが見つかりません</string>
+    <string name="track_menu_bpm_fix">テンポが倍または半分で検出された場合は、ここで補正してください。</string>
     <string name="track_menu_unfavorite">お気に入り解除</string>
     <string name="track_alternative_changed">代替トラックを確定しました</string>
     <string name="radio_play_all">すべて再生</string>

@@ -303,6 +303,7 @@
     <string name="track_menu_bpm_analysing">Analizando el tempo…</string>
     <string name="track_menu_bpm">%1$s BPM</string>
     <string name="track_menu_bpm_none">No se encontró un pulso claro</string>
+    <string name="track_menu_bpm_fix">Si el tempo sale al doble o a la mitad, corrígelo aquí.</string>
 <string name="track_menu_unfavorite">Quitar favorito</string>
 <string name="local_playlist_selector_title">Añadir a playlist local</string>
 <string name="local_playlist_added">Añadido a la playlist local</string>

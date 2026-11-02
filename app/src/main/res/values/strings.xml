@@ -298,6 +298,7 @@
     <string name="track_menu_bpm_analysing">Analysing tempo…</string>
     <string name="track_menu_bpm">%1$s BPM</string>
     <string name="track_menu_bpm_none">No clear beat found</string>
+    <string name="track_menu_bpm_fix">If the tempo is read at double or half speed, correct it here.</string>
     <string name="track_menu_unfavorite">Unfavorite</string>
     <string name="local_playlist_selector_title">Add to local playlist</string>
     <string name="local_playlist_added">Added to local playlist</string>

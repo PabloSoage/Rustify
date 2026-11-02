@@ -16,6 +16,7 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.roundToInt
 
 /**
  * The tempo of a local file (`19`, 5.x §3): decoded here with MediaCodec, measured by the core
@@ -136,6 +137,17 @@ object BpmAnalyzer {
             runCatching { codec?.release() }
             extractor.release()
         }
+    }
+
+    /**
+     * The user's correction of an octave error (`19` §3: jive and quickstep read at half speed, as
+     * every tracker does sometimes): doubles or halves the stored tempo, as Mixxx's ×2 and ÷2.
+     */
+    fun scale(context: Context, trackId: String, factor: Float): Float? {
+        val bpm = cached(context, trackId) ?: return null
+        val scaled = ((bpm * factor) * 10f).roundToInt() / 10f
+        put(context, trackId, scaled)
+        return scaled
     }
 
     private fun put(context: Context, trackId: String, bpm: Float) {

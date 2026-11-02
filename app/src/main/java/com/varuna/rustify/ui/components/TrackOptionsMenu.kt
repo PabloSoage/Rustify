@@ -459,6 +459,24 @@ fun TrackOptionsMenuBottomSheet(
                     // Tempo (5.x): measured on demand, then remembered (BpmAnalyzer).
                     var bpm by remember(tid) { mutableStateOf(com.varuna.rustify.audio.BpmAnalyzer.cached(context, tid)) }
                     var analysing by remember(tid) { mutableStateOf(false) }
+                    var showBpmFix by remember(tid) { mutableStateOf(false) }
+                    if (showBpmFix && bpm != null) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showBpmFix = false },
+                            title = { Text(stringResource(R.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))) },
+                            text = { Text(stringResource(R.string.track_menu_bpm_fix)) },
+                            confirmButton = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    bpm = com.varuna.rustify.audio.BpmAnalyzer.scale(context, tid, 2f); showBpmFix = false
+                                }) { Text("×2") }
+                            },
+                            dismissButton = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    bpm = com.varuna.rustify.audio.BpmAnalyzer.scale(context, tid, 0.5f); showBpmFix = false
+                                }) { Text("÷2") }
+                            }
+                        )
+                    }
                     val noBeat = stringResource(R.string.track_menu_bpm_none)
                     MenuOptionItem(
                         icon = Icons.Default.GraphicEq,
@@ -468,7 +486,8 @@ fun TrackOptionsMenuBottomSheet(
                             else -> stringResource(R.string.track_menu_bpm_analyse)
                         },
                         onClick = {
-                            if (analysing || bpm != null) return@MenuOptionItem
+                            if (bpm != null) { showBpmFix = true; return@MenuOptionItem }
+                            if (analysing) return@MenuOptionItem
                             analysing = true
                             coroutineScope.launch {
                                 bpm = com.varuna.rustify.audio.BpmAnalyzer.analyze(context, tid, track.durationMs.toLong())
