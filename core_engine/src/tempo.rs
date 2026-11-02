@@ -17,12 +17,17 @@
 //!    closer to how people tap wins. The search runs from [`MIN_BPM`] to [`MAX_BPM`].
 //!
 //! The answer carries a confidence: how far the winning score stands above the average one.
+//!
+//! **Measured** on the ISMIR 2004 Ballroom set (698 excerpts, `examples/tempo_eval.rs`): Acc1 63.2 %,
+//! Acc2 88.3 %, 146 ms per 30 s excerpt on the PC — level with the 2004 contest winner (63.2 / 90.9).
+//! Most misses are octave errors (quickstep and jive read at half speed) and waltzes. A separate
+//! triple-metre comb was tried and dropped: Acc1 64.2 % but Acc2 84.5 %, waltzes worse (`19` §2).
 
 use crate::dsp::{self, Kernel};
 
 pub const HOP_SECS: f32 = 0.01161;
 pub const MIN_BPM: f32 = 60.0;
-pub const MAX_BPM: f32 = 200.0;
+pub const MAX_BPM: f32 = 240.0;
 /// Where the Rayleigh prior peaks.
 const PRIOR_BPM: f32 = 120.0;
 /// Multiples of the period summed by the comb.
