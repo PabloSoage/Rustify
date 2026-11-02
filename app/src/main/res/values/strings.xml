@@ -672,6 +672,12 @@
     <string name="backend_innertube">YouTube (direct, fast)</string>
     <string name="settings_normalize_volume">Normalize volume</string>
     <string name="settings_normalize_volume_desc">Turns loud recordings down so every song plays at the same level, as Spotify does. Uses the loudness YouTube measures for each upload; your local files are left as they are.</string>
+    <string name="settings_replaygain">ReplayGain (local files)</string>
+    <string name="settings_replaygain_desc">Evens out local files by the ReplayGain tags your tagger wrote. Album mode keeps the loudness steps within an album. Untagged files play as they are.</string>
+    <string name="settings_replaygain_off">Off</string>
+    <string name="settings_replaygain_track">Track</string>
+    <string name="settings_replaygain_album">Album</string>
+    <string name="settings_replaygain_preamp">Pre-amp</string>
     <string name="lyrics_provider_spotify">Spotify (official, needs an account)</string>
     <string name="metrics_vs_previous">%1$s plays vs the period before (%2$d)</string>
     <string name="metrics_streak_current">Day streak</string>

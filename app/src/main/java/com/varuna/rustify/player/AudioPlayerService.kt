@@ -1594,9 +1594,12 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // (before a slow resolution) caused a foreground-service ANR with Invidious/Deezer.
                 ensureForegroundServiceBound()
 
-                // Loudness normalisation (4.2). Local files are the user's own masters: left alone.
+                // Loudness normalisation (4.2); local files by their own ReplayGain tags (4.10).
                 baseVolume = withContext(Dispatchers.IO) {
-                    if (TrackRef.isLocal(trackId) || !com.varuna.rustify.audio.LoudnessStore.isEnabled(context)) 1f
+                    if (TrackRef.isLocal(trackId)) com.varuna.rustify.audio.LocalReplayGain.run {
+                        volumeFor(read(context, trackId), mode(context), preampDb(context))
+                    }
+                    else if (!com.varuna.rustify.audio.LoudnessStore.isEnabled(context)) 1f
                     else com.varuna.rustify.audio.LoudnessStore.gainFor(
                         com.varuna.rustify.audio.LoudnessStore.get(context, trackId)
                     )

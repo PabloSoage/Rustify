@@ -592,6 +592,45 @@ internal fun NormalizeVolumeSection(context: Context) {
             }
             Spacer(Modifier.height(6.dp))
             Text(stringResource(R.string.settings_normalize_volume_desc), color = Color.Gray, fontSize = 12.sp)
+
+            // ReplayGain for local files (4.10): the tags the user's tagger wrote.
+            val rg = com.varuna.rustify.audio.LocalReplayGain
+            val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+            var rgMode by remember { mutableStateOf(rg.mode(context)) }
+            var preamp by remember { mutableStateOf(rg.preampDb(context)) }
+            val chipColors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                selectedContainerColor = Color(0xFF1DB954), selectedLabelColor = Color.White
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.settings_replaygain), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_replaygain_desc), color = Color.Gray, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                listOf(
+                    com.varuna.rustify.audio.LocalReplayGain.Mode.OFF to R.string.settings_replaygain_off,
+                    com.varuna.rustify.audio.LocalReplayGain.Mode.TRACK to R.string.settings_replaygain_track,
+                    com.varuna.rustify.audio.LocalReplayGain.Mode.ALBUM to R.string.settings_replaygain_album
+                ).forEach { (mode, label) ->
+                    androidx.compose.material3.FilterChip(
+                        selected = rgMode == mode,
+                        onClick = { rgMode = mode; prefs.edit().putString(rg.PREF_MODE, mode.name).apply() },
+                        label = { Text(stringResource(label)) },
+                        colors = chipColors
+                    )
+                }
+            }
+            if (rgMode != com.varuna.rustify.audio.LocalReplayGain.Mode.OFF) {
+                Text(stringResource(R.string.settings_replaygain_preamp), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 2, 4, 6).forEach { db ->
+                        androidx.compose.material3.FilterChip(
+                            selected = preamp == db,
+                            onClick = { preamp = db; prefs.edit().putInt(rg.PREF_PREAMP_DB, db).apply() },
+                            label = { Text("+$db dB") },
+                            colors = chipColors
+                        )
+                    }
+                }
+            }
         }
     }
 }

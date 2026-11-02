@@ -669,6 +669,12 @@
     <string name="backend_innertube">YouTube (直接・高速)</string>
     <string name="settings_normalize_volume">音量を均一にする</string>
     <string name="settings_normalize_volume_desc">音の大きい録音を下げて、Spotify のように全曲を同じ音量で再生します。YouTube が測定した音量を使用し、ローカルファイルはそのままです。</string>
+    <string name="settings_replaygain">ReplayGain（ローカルファイル）</string>
+    <string name="settings_replaygain_desc">タグ付けソフトが書き込んだ ReplayGain タグでローカルファイルの音量を揃えます。アルバムモードではアルバム内の音量差を保ちます。タグのないファイルはそのまま再生します。</string>
+    <string name="settings_replaygain_off">オフ</string>
+    <string name="settings_replaygain_track">トラック</string>
+    <string name="settings_replaygain_album">アルバム</string>
+    <string name="settings_replaygain_preamp">プリアンプ</string>
     <string name="lyrics_provider_spotify">Spotify（公式・アカウント必要）</string>
     <string name="metrics_vs_previous">前の期間と比べて再生 %1$s（%2$d）</string>
     <string name="metrics_streak_current">連続日数</string>

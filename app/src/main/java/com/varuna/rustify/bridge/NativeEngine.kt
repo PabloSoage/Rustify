@@ -66,6 +66,11 @@ object NativeEngine {
     suspend fun playStats(fromMs: Long, toMs: Long, zoneJson: String): String =
         io { playStatsNative(fromMs, toMs, zoneJson) }
 
+    private external fun readReplayGainNative(path: String): String
+
+    /** The ReplayGain tags of a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
+    fun readReplayGain(path: String): String = readReplayGainNative(path)
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */

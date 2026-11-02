@@ -262,6 +262,20 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_topCsvNative<
     })
 }
 
+/// JNI Bridge: the ReplayGain tags of a local file. `path` is `/proc/self/fd/N` of an open SAF
+/// descriptor. Answers a `ReplayGain`, every field null when the file has no tag.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readReplayGainNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::replaygain::read(&path))
+    })
+}
+
 /// JNI Bridge: the contexts to offer, newest first, as a JSON array.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listContinueListeningNative<'local>(

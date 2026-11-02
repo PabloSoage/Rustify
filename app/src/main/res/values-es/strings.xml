@@ -666,6 +666,12 @@
     <string name="backend_innertube">YouTube (directo, rápido)</string>
     <string name="settings_normalize_volume">Normalizar volumen</string>
     <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
+    <string name="settings_replaygain">ReplayGain (archivos locales)</string>
+    <string name="settings_replaygain_desc">Iguala el volumen de los archivos locales con las etiquetas ReplayGain que escribió tu etiquetador. En modo álbum se respetan los cambios de volumen dentro del disco. Los archivos sin etiqueta suenan tal cual.</string>
+    <string name="settings_replaygain_off">No</string>
+    <string name="settings_replaygain_track">Pista</string>
+    <string name="settings_replaygain_album">Álbum</string>
+    <string name="settings_replaygain_preamp">Preamplificador</string>
     <string name="lyrics_provider_spotify">Spotify (oficiales, requiere cuenta)</string>
     <string name="metrics_vs_previous">%1$s escuchas frente al periodo anterior (%2$d)</string>
     <string name="metrics_streak_current">Días seguidos</string>
