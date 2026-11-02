@@ -348,6 +348,73 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzV
     })
 }
 
+/// JNI Bridge: log in to Last.fm with the user's own API key; answers a `scrobble::lastfm::Session`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_lastFmLoginNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    api_key: JString<'local>,
+    secret: JString<'local>,
+    user: JString<'local>,
+    password: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let api_key = api_key.mutf8_chars(env)?.to_string();
+        let secret = secret.mutf8_chars(env)?.to_string();
+        let user = user.mutf8_chars(env)?.to_string();
+        let password = password.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(scrobble::lastfm::login::<env::android::AndroidEnv>(
+            &api_key, &secret, &user, &password,
+        )))
+    })
+}
+
+/// JNI Bridge: queue one listen for Last.fm and send the queue. Answers a `scrobble::Report`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_lastFmSubmitNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    credentials_json: JString<'local>,
+    listen_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let creds = credentials_json.mutf8_chars(env)?.to_string();
+        let raw = listen_json.mutf8_chars(env)?.to_string();
+        let parsed = serde_json::from_str::<scrobble::lastfm::Credentials>(&creds)
+            .and_then(|c| serde_json::from_str::<scrobble::Listen>(&raw).map(|l| (c, l)));
+        match parsed {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok((c, listen)) => serialize_result(
+                get_runtime().block_on(scrobble::lastfm::submit::<env::android::AndroidEnv>(&c, listen)),
+            ),
+        }
+    })
+}
+
+/// JNI Bridge: tell Last.fm what is playing now (best effort, never queued).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_lastFmNowPlayingNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    credentials_json: JString<'local>,
+    listen_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let creds = credentials_json.mutf8_chars(env)?.to_string();
+        let raw = listen_json.mutf8_chars(env)?.to_string();
+        let parsed = serde_json::from_str::<scrobble::lastfm::Credentials>(&creds)
+            .and_then(|c| serde_json::from_str::<scrobble::Listen>(&raw).map(|l| (c, l)));
+        match parsed {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok((c, listen)) => serialize_result(
+                get_runtime()
+                    .block_on(scrobble::lastfm::now_playing::<env::android::AndroidEnv>(&c, &listen))
+                    .map(|_| spotify::models::OperationResult { success: true, error: None }),
+            ),
+        }
+    })
+}
+
 /// JNI Bridge: the tempo of mono PCM (-1..1) at `sample_rate`, as a JSON `tempo::Estimate`, or
 /// `null` with under 6 s of audio. CPU only, no I/O; the app calls it off the main thread.
 #[no_mangle]

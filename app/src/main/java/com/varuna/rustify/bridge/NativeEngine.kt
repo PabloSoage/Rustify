@@ -87,6 +87,15 @@ object NativeEngine {
     /** The token's user name as a JSON string, or `null` when ListenBrainz says it is invalid. */
     suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
 
+    // Last.fm (scrobble::lastfm). Network, so suspend over private blocking bridges.
+    private external fun lastFmLoginNative(apiKey: String, secret: String, user: String, password: String): String
+    private external fun lastFmSubmitNative(credentialsJson: String, listenJson: String): String
+    private external fun lastFmNowPlayingNative(credentialsJson: String, listenJson: String): String
+    suspend fun lastFmLogin(apiKey: String, secret: String, user: String, password: String): String =
+        io { lastFmLoginNative(apiKey, secret, user, password) }
+    suspend fun lastFmSubmit(credentialsJson: String, listenJson: String): String = io { lastFmSubmitNative(credentialsJson, listenJson) }
+    suspend fun lastFmNowPlaying(credentialsJson: String, listenJson: String): String = io { lastFmNowPlayingNative(credentialsJson, listenJson) }
+
     private external fun tempoOfNative(samples: FloatArray, sampleRate: Int): String
 
     /** The tempo of mono PCM, as JSON `{bpm, confidence}` or `null`. CPU-bound, so off the main thread. */

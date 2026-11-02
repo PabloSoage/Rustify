@@ -803,6 +803,11 @@
     <string name="settings_blocklist_empty">ブロックしたものはありません。</string>
     <string name="settings_blocklist_artist">アーティスト: %1$s</string>
     <string name="settings_blocklist_unblock">許可</string>
+    <string name="settings_lastfm_desc">聴いた曲を Last.fm のプロフィールに送信します。ListenBrainz と同じ条件 (4 分または曲の半分) で、オフライン時はキューに保存します。Rustify には独自の Last.fm キーがないため、last.fm/api/account/create で作成し、API キーと共有シークレットを入力してください。パスワードはログインに一度だけ使い、保存しません。</string>
+    <string name="settings_lastfm_api_key">API キー</string>
+    <string name="settings_lastfm_secret">共有シークレット</string>
+    <string name="settings_lastfm_user">Last.fm ユーザー</string>
+    <string name="settings_lastfm_password">パスワード</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

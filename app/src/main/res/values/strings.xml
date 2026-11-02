@@ -806,6 +806,11 @@
     <string name="settings_blocklist_empty">Nothing blocked.</string>
     <string name="settings_blocklist_artist">Artist: %1$s</string>
     <string name="settings_blocklist_unblock">Allow</string>
+    <string name="settings_lastfm_desc">Sends what you listen to to your Last.fm profile, with the same rule as ListenBrainz (4 minutes or half the song) and an offline queue. Rustify has no Last.fm key of its own: create one at last.fm/api/account/create and enter its API key and shared secret. The password is used once to log in and is not stored.</string>
+    <string name="settings_lastfm_api_key">API key</string>
+    <string name="settings_lastfm_secret">Shared secret</string>
+    <string name="settings_lastfm_user">Last.fm user</string>
+    <string name="settings_lastfm_password">Password</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

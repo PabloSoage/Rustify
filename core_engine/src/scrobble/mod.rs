@@ -20,6 +20,8 @@
 //   Anything else (no network, 429, 5xx) keeps the queue for next time.
 // - **Bounded.** At most [MAX_QUEUE] listens wait; past that the oldest go first.
 
+pub mod lastfm;
+
 use crate::env::{storage, Env, EnvError, HttpRequest, LogLevel};
 use serde::{Deserialize, Serialize};
 use serde_json::json;

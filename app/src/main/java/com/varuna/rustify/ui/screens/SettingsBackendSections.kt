@@ -493,6 +493,7 @@ internal fun AudioBackendsSection(context: Context) {
     StreamCacheSection(context)
     DataExportSection(context)
     ListenBrainzSection(context)
+    LastFmSection(context)
     CastingSection(context)
 }
 

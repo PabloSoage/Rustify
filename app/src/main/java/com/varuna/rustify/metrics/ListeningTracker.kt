@@ -53,6 +53,9 @@ class ListeningTracker(private val appContext: Context) {
         if (ListenBrainz.token(appContext) != null) {
             scope.launch { ListenBrainz.playingNow(appContext, ListenBrainz.listenOf(track, startedAt)) }
         }
+        if (LastFm.credentials(appContext) != null) {
+            scope.launch { LastFm.nowPlaying(appContext, ListenBrainz.listenOf(track, startedAt)) }
+        }
     }
 
     /**
@@ -102,12 +105,16 @@ class ListeningTracker(private val appContext: Context) {
             completed = s.completed,
             source = source
         )
-        // ListenBrainz has its own, stricter rule (4 min or half); the core queues it if offline.
-        if (!s.errored && ListenBrainz.token(appContext) != null &&
-            ListenBrainz.qualifies(s.listenedMs, s.track.durationMs.toLong())
-        ) {
+        // ListenBrainz and Last.fm share their own, stricter rule (4 min or half); the core queues
+        // each if offline.
+        if (!s.errored && ListenBrainz.qualifies(s.listenedMs, s.track.durationMs.toLong())) {
             val listen = ListenBrainz.listenOf(s.track, s.startedAt)
-            scope.launch { runCatching { ListenBrainz.submit(appContext, listen) } }
+            if (ListenBrainz.token(appContext) != null) {
+                scope.launch { runCatching { ListenBrainz.submit(appContext, listen) } }
+            }
+            if (LastFm.credentials(appContext) != null) {
+                scope.launch { runCatching { LastFm.submit(appContext, listen) } }
+            }
         }
         scope.launch {
             migrateLegacyFile(appContext)
