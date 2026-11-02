@@ -70,8 +70,18 @@ class DisconnectResume(
         return now - at <= windowMs() + SETTLE_MS
     }
 
-    /** The person chose: play, pause, skip, a new queue. Their choice wins over a pending resume. */
-    fun onUserCommand() {
+    /**
+     * The person chose: play, pause, skip, a new queue. Their choice wins over a pending resume.
+     *
+     * Except for the first [OWN_PAUSE_ECHO_MS]: the disconnection's own pause goes through
+     * `Player.pause()` too and comes straight back here as a user request, after [onNoisy] has
+     * already remembered it. Taken as a choice, it cancelled every resume (seen on WSA with a faked
+     * headset). Nobody decides anything that fast, and a real tap that fast changes nothing anyway:
+     * a pause leaves it paused, and a play makes the resume a no-op.
+     */
+    fun onUserCommand(now: Long) {
+        val at = pausedAt ?: return
+        if (now - at < OWN_PAUSE_ECHO_MS) return
         pausedAt = null
     }
 
@@ -92,6 +102,7 @@ class DisconnectResume(
     companion object {
         const val SETTLE_MS = 1_500L
         const val CONNECT_PLAY_WINDOW_MS = 5_000L
+        const val OWN_PAUSE_ECHO_MS = 1_000L
 
         /** Outputs a person wears or plugs in. The speaker, the earpiece and HDMI are not. */
         val EXTERNAL_OUTPUTS = setOf(

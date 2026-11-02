@@ -932,9 +932,9 @@ class AudioPlayerService private constructor(private val context: Context) {
                 when {
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> {
                         userPaused = !playWhenReady
-                        // The disconnection's own pause lands here before it is remembered, and its
-                        // resume after it is forgotten, so this only ever clears a person's choice.
-                        disconnectResume.onUserCommand()
+                        // The disconnection's own pause lands here too; DisconnectResume tells it
+                        // apart by timing. Its resume comes after the place is forgotten.
+                        disconnectResume.onUserCommand(System.currentTimeMillis())
                     }
                     playWhenReady && userPaused -> {
                         android.util.Log.d(

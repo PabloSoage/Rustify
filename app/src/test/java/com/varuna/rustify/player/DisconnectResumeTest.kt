@@ -39,15 +39,22 @@ class DisconnectResumeTest {
     @Test
     fun `a choice made in between wins`() {
         dr.onNoisy(0, isPlaying = true)
-        dr.onUserCommand()
+        dr.onUserCommand(3_000)
         assertEquals(Action.None, dr.onOutputsAdded(5_000, bt))
+    }
+
+    @Test
+    fun `the echo of its own pause does not cancel the resume`() {
+        dr.onNoisy(0, isPlaying = true)
+        dr.onUserCommand(5)
+        assertEquals(Action.ResumeAfter(DisconnectResume.SETTLE_MS), dr.onOutputsAdded(5_000, bt))
     }
 
     @Test
     fun `a tap during the settling delay cancels the resume`() {
         dr.onNoisy(0, isPlaying = true)
         dr.onOutputsAdded(5_000, bt)
-        dr.onUserCommand()
+        dr.onUserCommand(5_500)
         assertFalse(dr.confirmResume(6_500, inCall = false))
     }
 
