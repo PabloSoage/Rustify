@@ -40,7 +40,8 @@ object AudioSourceRegistry {
                 InnertubeAudioSource(appContext),
                 YtDlpAudioSource(appContext),
                 InvidiousAudioSource(appContext),
-                DeezerAudioSource(appContext)
+                DeezerAudioSource(appContext),
+                SubsonicAudioSource(appContext)
             )
             providers = built
             knownIds = built.map { it.capabilities.id }

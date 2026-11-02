@@ -416,6 +416,15 @@
     <string name="backend_ytdlp">yt-dlp（YouTube）</string>
     <string name="backend_invidious">Invidious（YouTube）</string>
     <string name="backend_deezer">Deezer（HiFi / FLAC）</string>
+    <string name="backend_subsonic">Subsonic / Navidrome (自分のサーバー)</string>
+    <string name="settings_subsonic">自分の音楽サーバー (Subsonic)</string>
+    <string name="settings_subsonic_desc">Navidrome、Gonic、Airsonic など Subsonic 互換サーバー (NAS 上など)。サーバーにある曲は自分のファイルからその音質で再生し、ない曲は次のソースに回します。接続後、オーディオソース一覧で「Subsonic」をオンにしてください。</string>
+    <string name="settings_subsonic_server">サーバーのアドレス (http://192.168.1.10:4533)</string>
+    <string name="settings_subsonic_user">ユーザー</string>
+    <string name="settings_subsonic_password">パスワード</string>
+    <string name="settings_subsonic_test">保存してテスト</string>
+    <string name="settings_subsonic_ok">接続しました: %1$s</string>
+    <string name="settings_subsonic_failed">接続できませんでした: %1$s</string>
     <string name="backend_addon">アドオン</string>
     <string name="settings_addons">アドオン</string>
     <string name="settings_addons_desc">音声バックエンドをURLからインストールします。上のリストに加わるので、他と同じように並べ替えたり無効にしたりできます。</string>

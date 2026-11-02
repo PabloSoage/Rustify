@@ -31,6 +31,7 @@ pub mod scrobble;
 pub mod search;
 pub mod server;
 pub mod spotify;
+pub mod subsonic;
 pub mod types;
 pub mod youtube;
 
@@ -362,6 +363,48 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_tempoOfNative
         let mut t = tempo::Tempo::new(sample_rate.max(1) as u32);
         t.push(&buf);
         serialize_result::<_, String>(Ok(t.estimate()))
+    })
+}
+
+/// JNI Bridge: check a Subsonic server and its credentials; answers its name and version.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_subsonicPingNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    config_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = config_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<subsonic::Config>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(subsonic::ping::<env::android::AndroidEnv>(&cfg))),
+        }
+    })
+}
+
+/// JNI Bridge: the Subsonic server's copy of a track, as a `subsonic::Found`, or `null`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_subsonicFindNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    config_json: JString<'local>,
+    title: JString<'local>,
+    artists_json: JString<'local>,
+    duration_ms: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = config_json.mutf8_chars(env)?.to_string();
+        let title = title.mutf8_chars(env)?.to_string();
+        let artists: Vec<String> = serde_json::from_str(&artists_json.mutf8_chars(env)?.to_string()).unwrap_or_default();
+        match serde_json::from_str::<subsonic::Config>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(subsonic::find::<env::android::AndroidEnv>(
+                &cfg,
+                &title,
+                &artists,
+                duration_ms,
+            ))),
+        }
     })
 }
 

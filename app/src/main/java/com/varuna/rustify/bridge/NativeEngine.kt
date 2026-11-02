@@ -93,6 +93,16 @@ object NativeEngine {
     suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String =
         withContext(Dispatchers.Default) { tempoOfNative(samples, sampleRate) }
 
+    // Subsonic / OpenSubsonic (subsonic::). Network, so suspend over private blocking bridges.
+    private external fun subsonicPingNative(configJson: String): String
+    private external fun subsonicFindNative(configJson: String, title: String, artistsJson: String, durationMs: Long): String
+
+    /** The server's name and version as a JSON string, or the failure envelope. */
+    suspend fun subsonicPing(configJson: String): String = io { subsonicPingNative(configJson) }
+    /** The server's copy of a track (`{id, streamUrl, suffix, bitRate}`), `null`, or the failure envelope. */
+    suspend fun subsonicFind(configJson: String, title: String, artistsJson: String, durationMs: Long): String =
+        io { subsonicFindNative(configJson, title, artistsJson, durationMs) }
+
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */

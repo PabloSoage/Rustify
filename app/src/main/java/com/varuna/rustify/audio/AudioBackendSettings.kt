@@ -63,8 +63,13 @@ object AudioBackendSettings {
      * 9. **Deezer** — needs an ARL, which expires, and decrypting through the proxy.
      *
      * The last two ship **off**. Unknown ids (add-ons) rank as add-ons.
+     *
+     * -1. **Subsonic** — the user's own server (`20`): their own files at their own quality, and a
+     *    track it does not have is passed over at once. Ships off, like everything that needs setup;
+     *    once on, it is asked first.
      */
     internal fun defaultRank(id: String): Int = when (id) {
+        SubsonicAudioSource.ID -> -1
         InnertubeAudioSource.ID -> 0
         YtDlpAudioSource.ID -> 1
         InvidiousAudioSource.ID -> 8

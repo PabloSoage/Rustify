@@ -493,3 +493,53 @@ internal fun AudioBackendsSection(context: Context) {
     CastingSection(context)
 }
 
+
+/** The user's own Subsonic server (`20`): address, user, password, checked with `ping`. */
+@Composable
+internal fun SubsonicBackendSection(context: Context) {
+    val ss = com.varuna.rustify.audio.SubsonicSettings
+    val initial = remember { ss.load(context) }
+    var server by remember { mutableStateOf(initial.server) }
+    var user by remember { mutableStateOf(initial.user) }
+    var password by remember { mutableStateOf(initial.password) }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val okTemplate = stringResource(R.string.settings_subsonic_ok)
+    val failTemplate = stringResource(R.string.settings_subsonic_failed)
+    Spacer(Modifier.height(24.dp))
+    Text(stringResource(R.string.settings_subsonic), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_subsonic_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = server, onValueChange = { server = it }, singleLine = true,
+                label = { Text(stringResource(R.string.settings_subsonic_server)) }, modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = user, onValueChange = { user = it }, singleLine = true,
+                label = { Text(stringResource(R.string.settings_subsonic_user)) }, modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = password, onValueChange = { password = it }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                label = { Text(stringResource(R.string.settings_subsonic_password)) }, modifier = Modifier.fillMaxWidth()
+            )
+            androidx.compose.material3.TextButton(
+                enabled = !busy && server.isNotBlank() && user.isNotBlank(),
+                onClick = {
+                    val config = com.varuna.rustify.audio.SubsonicSettings.Config(server.trim(), user.trim(), password)
+                    ss.save(context, config)
+                    busy = true
+                    scope.launch {
+                        val r = ss.ping(config)
+                        busy = false
+                        status = r.fold({ okTemplate.format(it) }, { failTemplate.format(it.message ?: "") })
+                    }
+                }
+            ) { Text(stringResource(R.string.settings_subsonic_test), color = Color(0xFF1DB954)) }
+            if (status.isNotEmpty()) Text(status, color = Color.LightGray, fontSize = 12.sp)
+        }
+    }
+}

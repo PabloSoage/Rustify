@@ -231,6 +231,7 @@ fun SettingsScreen(
                 WebPlayerSection(context)
                 InvidiousBackendSection(context)
                 DeezerBackendSection(context)
+                SubsonicBackendSection(context)
             }
             "downloads" -> DownloadsCategory(context, onNavigateCustomDownload)
             "integrations" -> {

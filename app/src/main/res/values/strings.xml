@@ -26,6 +26,15 @@
     <string name="backend_ytdlp">yt-dlp (YouTube)</string>
     <string name="backend_invidious">Invidious (YouTube)</string>
     <string name="backend_deezer">Deezer (HiFi / FLAC)</string>
+    <string name="backend_subsonic">Subsonic / Navidrome (own server)</string>
+    <string name="settings_subsonic">Own music server (Subsonic)</string>
+    <string name="settings_subsonic_desc">Navidrome, Gonic, Airsonic or any Subsonic-compatible server, for example on a NAS. A song the server has plays from your own file at its quality; one it lacks goes to the next source. Turn on “Subsonic” in the audio sources list after connecting.</string>
+    <string name="settings_subsonic_server">Server address (http://192.168.1.10:4533)</string>
+    <string name="settings_subsonic_user">User</string>
+    <string name="settings_subsonic_password">Password</string>
+    <string name="settings_subsonic_test">Save and test</string>
+    <string name="settings_subsonic_ok">Connected: %1$s</string>
+    <string name="settings_subsonic_failed">Could not connect: %1$s</string>
     <string name="backend_addon">Add-on</string>
     <string name="settings_addons">Add-ons</string>
     <string name="settings_addons_desc">Install an audio backend by URL. It joins the lists above, so you can order it and turn it off like any other.</string>
