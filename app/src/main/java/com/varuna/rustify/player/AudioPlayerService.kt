@@ -734,6 +734,24 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+        // Load the whole song, not Media3's default 50 s ahead (4.9). Reported from the car: a song
+        // loaded and paused before driving into a garage played its 50 s, ran dry with no signal,
+        // and the failure skipped the queue. A song is 3–5 MB; holding all of it also leaves no idle
+        // connection for the server to close while offload lets the CPU sleep, which is the likely
+        // source of songs ending a few seconds early since 4.8.0. 32 MB caps it: twenty minutes of
+        // Opus, and a minute and a half of the Video tab's 720p rather than the default's 131 MB.
+        .setLoadControl(
+            androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 20 * 60_000,
+                    /* maxBufferMs = */ 20 * 60_000,
+                    androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                    androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                )
+                .setTargetBufferBytes(32 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+        )
         // Decoder fallback matters for the Video tab. The default picks the single best-matching
         // decoder and gives up if it fails to initialise; with fallback on, media3 tries the next
         // one (typically the software decoder) instead. Vendor video decoders do fail on unusual
