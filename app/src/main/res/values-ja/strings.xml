@@ -737,6 +737,8 @@
     <string name="settings_headset_nothing">何もしない</string>
     <string name="settings_previous_always">「前へ」で常に前の曲へ</string>
     <string name="settings_previous_always_desc">通常、曲の再生が10秒を過ぎてから「前へ」を押すと、その曲の最初に戻ります。オンにすると、常に前の曲に移ります。</string>
+    <string name="settings_shuffle_albums">アルバム単位でシャッフル</string>
+    <string name="settings_shuffle_albums_desc">曲を混ぜる代わりに、アルバム全体をランダムな順番で、各アルバムは元の曲順で再生します。現在のアルバムの残りが先に再生されます。</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>

@@ -2146,7 +2146,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
         val shuffle = keepShuffle && _state.value.isShuffle
         val baseQueue = if (shuffle) {
-            val remaining = tracks.filterIndexed { i, _ -> i != idx }.shuffled()
+            val remaining = shuffleRest(tracks.filterIndexed { i, _ -> i != idx }, selected)
             listOf(selected) + remaining
         } else {
             tracks
@@ -2205,6 +2205,16 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
+    /**
+     * The tracks after [current] in shuffled order: song by song, or album by album when that is
+     * chosen ([AlbumShuffle]) — then what is left of [current]'s album plays on before the rest.
+     */
+    private fun shuffleRest(rest: List<FullTrack>, current: FullTrack?): List<FullTrack> {
+        if (!AlbumShuffle.enabled(context)) return rest.shuffled()
+        val albumOf: (FullTrack) -> String? = { t -> t.album?.id?.takeIf { it.isNotBlank() } ?: t.album?.name }
+        return AlbumShuffle.arrange(rest, albumOf, firstAlbum = current?.let(albumOf))
+    }
+
     fun cyclePlaybackMode() {
         val st = _state.value
         reconcileUserQueue(st)
@@ -2223,9 +2233,9 @@ class AudioPlayerService private constructor(private val context: Context) {
             // Drop the current track by POSITION, not by id: filtering by id also removed the other
             // copies of a song a playlist legitimately repeats.
             val remaining = if (curIdx >= 0) {
-                st.queue.filterIndexed { i, _ -> i != curIdx && (i < curIdx || i >= manualEnd) }.shuffled()
+                shuffleRest(st.queue.filterIndexed { i, _ -> i != curIdx && (i < curIdx || i >= manualEnd) }, current)
             } else {
-                st.queue.filter { it.id != current?.id }.shuffled()
+                shuffleRest(st.queue.filter { it.id != current?.id }, current)
             }
             val newQueue = if (current != null) listOf(current) + manual + remaining
                            else manual + remaining

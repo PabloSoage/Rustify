@@ -867,3 +867,32 @@ internal fun PreviousButtonSection(context: Context) {
         }
     }
 }
+
+/** Shuffle song by song, or album by album (4.10, [com.varuna.rustify.player.AlbumShuffle]). */
+@Composable
+internal fun ShuffleSection(context: Context) {
+    var byAlbum by remember { mutableStateOf(com.varuna.rustify.player.AlbumShuffle.enabled(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_shuffle_albums),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = byAlbum,
+                    onCheckedChange = { on -> byAlbum = on; com.varuna.rustify.player.AlbumShuffle.setEnabled(context, on) },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_shuffle_albums_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
