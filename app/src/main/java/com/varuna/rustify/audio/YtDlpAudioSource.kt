@@ -61,8 +61,8 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 YoutubeDL.getInstance().init(appContext)
-                com.yausername.ffmpeg.FFmpeg.getInstance().init(appContext)
-                Log.d(TAG, "YoutubeDL and FFmpeg initialized successfully.")
+                dropUnpackedFfmpeg()
+                Log.d(TAG, "YoutubeDL initialized successfully.")
                 ready.complete(true)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize YoutubeDL", e)
@@ -73,6 +73,17 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
             }
             autoUpdate()
         }
+    }
+
+    /**
+     * ffmpeg and ffprobe are now Rustify's own static audio-only build (`tools/ffmpeg/build.sh`,
+     * 4.9), run straight from `nativeLibraryDir` as before. The AAR they replace shipped 184 shared
+     * libraries in a zip that its init unpacked into `no_backup` — 78 MB that nothing deletes once
+     * the AAR is gone, so it is deleted here, once.
+     */
+    private fun dropUnpackedFfmpeg() {
+        val dir = java.io.File(appContext.noBackupFilesDir, "youtubedl-android/packages/ffmpeg")
+        if (dir.exists() && dir.deleteRecursively()) Log.i(TAG, "Removed the old unpacked FFmpeg libraries")
     }
 
     /** Auto-update in the background; downloads wait for it (see [DownloadManager.initDeferred]). */

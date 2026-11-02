@@ -24,11 +24,9 @@
 -keep class com.varuna.rustify.bridge.** { *; }
 -keepclassmembers class com.varuna.rustify.bridge.** { *; }
 
-# YoutubeDL-android and FFmpeg
+# YoutubeDL-android
 -keep class com.yausername.youtubedl_android.** { *; }
--keep class com.yausername.ffmpeg.** { *; }
 -keepclassmembers class com.yausername.youtubedl_android.** { *; }
--keepclassmembers class com.yausername.ffmpeg.** { *; }
 
 # Jackson (Used by YoutubeDL-android)
 -keep class com.fasterxml.jackson.** { *; }

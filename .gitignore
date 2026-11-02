@@ -42,3 +42,6 @@ docs/
 # the one file there that is tracked on purpose, so it is named back in.
 app/release/*
 !app/release/output-metadata.json
+
+# Rustify's own ffmpeg/ffprobe (tools/ffmpeg/build.sh) is checked in
+!app/src/main/ffmpeg/**/*.so

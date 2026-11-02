@@ -61,8 +61,6 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            keepDebugSymbols.add("**/libffmpeg.zip.so")
-            keepDebugSymbols.add("**/libffprobe.zip.so")
             keepDebugSymbols.add("**/libytdlp.zip.so")
             keepDebugSymbols.add("**/libpython.zip.so")
         }
@@ -116,6 +114,9 @@ android {
     sourceSets {
         getByName("main") {
             jniLibs.directories.add("src/main/jniLibs")
+            // Rustify's own audio-only ffmpeg/ffprobe for yt-dlp, built by tools/ffmpeg/build.sh
+            // and checked in (jniLibs above is the Rust core's build output, and is not).
+            jniLibs.directories.add("src/main/ffmpeg")
         }
     }
 
@@ -158,9 +159,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // YouTubeDL Android (JunkFood02 Fork - actively maintained, yt-dlp)
     implementation(libs.youtubedl.android)
-    // FFmpeg AAR tells youtubedl-android to look for native ffmpeg/ffprobe.
-    // Static replacements in jniLibs/ override the AAR's dynamic libs.
-    implementation(libs.youtubedl.ffmpeg)
+    // No FFmpeg AAR since 4.9: yt-dlp runs Rustify's own static audio-only build from
+    // src/main/ffmpeg (tools/ffmpeg/build.sh) — 35.6 MB per ABI less in the APK.
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.profileinstaller)
