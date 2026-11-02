@@ -744,6 +744,9 @@
     <string name="settings_shuffle_albums_desc">Shuffle plays whole albums in random order, each one in its own order, instead of mixing songs. The rest of the current album plays first.</string>
     <string name="settings_pause_fade">Fade on pause and resume</string>
     <string name="settings_pause_fade_desc">A 300 ms fade instead of cutting mid-note. Pausing because the headphones or car disconnect is always immediate.</string>
+    <string name="ab_repeat_set_a">A-B repeat: mark the start (A)</string>
+    <string name="ab_repeat_set_b">A-B repeat: mark the end (B)</string>
+    <string name="ab_repeat_clear">A-B repeat: stop looping</string>
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>

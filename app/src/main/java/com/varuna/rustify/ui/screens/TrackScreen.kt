@@ -103,6 +103,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -791,6 +793,7 @@ fun TrackScreen(
                                         }
                                     }
 
+                                    AbRepeatButton(audioPlayerService)
                                     SpeedButton(audioPlayerService)
                                     SleepTimerButton(audioPlayerService)
                                     trackToShow.let {
@@ -1840,6 +1843,38 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
                 )
             }
         }
+    }
+}
+
+/**
+ * A-B repeat (4.10): "A-B" in grey, "A…" once A is marked, "A-B" in green while it loops. The
+ * cycling lives in [com.varuna.rustify.player.AbRepeat]; the loop in the service.
+ */
+@Composable
+private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
+    val ab by audioPlayerService.abRepeat.collectAsState()
+    val label = when {
+        ab.isLooping -> "A-B"
+        ab.a != null -> "A…"
+        else -> "A-B"
+    }
+    val description = stringResource(
+        when {
+            ab.isLooping -> R.string.ab_repeat_clear
+            ab.a != null -> R.string.ab_repeat_set_b
+            else -> R.string.ab_repeat_set_a
+        }
+    )
+    IconButton(
+        onClick = { audioPlayerService.pressAbRepeat() },
+        modifier = Modifier.semantics { contentDescription = description }
+    ) {
+        Text(
+            label,
+            color = if (ab.a != null) Color(0xFF1DB954) else Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

@@ -741,6 +741,9 @@
     <string name="settings_shuffle_albums_desc">曲を混ぜる代わりに、アルバム全体をランダムな順番で、各アルバムは元の曲順で再生します。現在のアルバムの残りが先に再生されます。</string>
     <string name="settings_pause_fade">一時停止と再開でフェード</string>
     <string name="settings_pause_fade_desc">音の途中で切らずに300 msでフェードします。ヘッドホンや車の接続が切れたときの一時停止は常に即時です。</string>
+    <string name="ab_repeat_set_a">A-Bリピート: 開始点(A)を設定</string>
+    <string name="ab_repeat_set_b">A-Bリピート: 終了点(B)を設定</string>
+    <string name="ab_repeat_clear">A-Bリピート: リピートを解除</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>

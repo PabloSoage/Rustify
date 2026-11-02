@@ -1340,6 +1340,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         // track's until this function moves on, which is why it is read here and not later.
         _state.value.currentTrack?.takeIf { it.id != trackId }?.let { rememberPlace(it, _state.value.positionMs, force = true) }
         if (_resumedAt.value?.first != trackId) _resumedAt.value = null
+        _abRepeat.value = _abRepeat.value.onTrack(trackId)
 
         // Cancel any pending auto-retry from a previous track to prevent notification/playback race conditions
         autoRetryJob?.cancel()
@@ -2572,6 +2573,29 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     fun dismissResumed() {
         _resumedAt.value = null
+    }
+
+    // A-B repeat (AbRepeat). The watcher runs only while a loop is set, at 100 ms: the half-second
+    // position tick would overshoot B by up to half a second, which on a two-second phrase is a lot.
+    private val _abRepeat = MutableStateFlow(AbRepeat.NONE)
+    val abRepeat: StateFlow<AbRepeat> = _abRepeat
+    private var abWatcher: kotlinx.coroutines.Job? = null
+
+    /** The A-B button: mark A, mark B (the loop starts), clear. */
+    fun pressAbRepeat() {
+        val pos = if (preparedTrackId == _state.value.currentTrack?.id) exoPlayer.currentPosition else _state.value.positionMs
+        val next = _abRepeat.value.press(_state.value.currentTrack?.id, pos)
+        _abRepeat.value = next
+        abWatcher?.cancel()
+        if (!next.isLooping) return
+        abWatcher = mainScope.launch {
+            while (_abRepeat.value.isLooping) {
+                val ab = _abRepeat.value
+                val id = _state.value.currentTrack?.id
+                if (preparedTrackId == id) ab.jumpFrom(id, exoPlayer.currentPosition)?.let { seekTo(it) }
+                delay(100L)
+            }
+        }
     }
 
     // ── Sleep timer (4.4) ───────────────────────────────────────────────────────────────────────
