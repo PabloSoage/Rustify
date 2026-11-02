@@ -481,6 +481,7 @@ internal fun AudioBackendsSection(context: Context) {
     NormalizeVolumeSection(context)
     EqualizerSection(context)
     AutoEqSection(context)
+    StereoToolsSection(context)
     BitPerfectSection(context)
     FadeBetweenSongsSection(context)
     AudioOffloadSection(context)

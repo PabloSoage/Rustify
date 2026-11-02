@@ -48,20 +48,21 @@ object BitPerfect {
     data class Offer(val pcm: Pcm, val bitPerfect: Boolean)
 
     /** Something the user turned on that changes the samples. */
-    enum class Spoiler { EQUALIZER, AUTOEQ, FADE, SPEED, SKIP_SILENCE }
+    enum class Spoiler { EQUALIZER, AUTOEQ, FADE, SPEED, SKIP_SILENCE, STEREO }
 
-    fun spoiler(equalizerOn: Boolean, autoEq: Boolean, fadeSeconds: Int, speedChanged: Boolean, skipSilence: Boolean): Spoiler? = when {
+    fun spoiler(equalizerOn: Boolean, autoEq: Boolean, fadeSeconds: Int, speedChanged: Boolean, skipSilence: Boolean, stereo: Boolean = false): Spoiler? = when {
         equalizerOn -> Spoiler.EQUALIZER
         autoEq -> Spoiler.AUTOEQ
         fadeSeconds > 0 -> Spoiler.FADE
         speedChanged -> Spoiler.SPEED
         skipSilence -> Spoiler.SKIP_SILENCE
+        stereo -> Spoiler.STEREO
         else -> null
     }
 
     fun spoiler(context: Context): Spoiler? = spoiler(
         EqualizerController.isEnabled(context), AutoEqController.isActive(), TransitionFade.seconds(context),
-        !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context)
+        !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), StereoTools.settings.active
     )
 
     /** The offer for exactly this PCM: same rate, same encoding, same channels. Anything else is a conversion. */

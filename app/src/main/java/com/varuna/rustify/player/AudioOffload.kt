@@ -29,9 +29,9 @@ object AudioOffload {
     @Volatile var videoMode = false
 
     /** Why offload is not used right now, or null when it is wanted. */
-    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB, VIDEO, SPEED, SKIP_SILENCE, AUTOEQ, BIT_PERFECT }
+    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB, VIDEO, SPEED, SKIP_SILENCE, AUTOEQ, BIT_PERFECT, STEREO }
 
-    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false, video: Boolean = false, speedChanged: Boolean = false, skipSilence: Boolean = false, autoEq: Boolean = false, bitPerfect: Boolean = false): Blocker? = when {
+    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false, video: Boolean = false, speedChanged: Boolean = false, skipSilence: Boolean = false, autoEq: Boolean = false, bitPerfect: Boolean = false, stereo: Boolean = false): Blocker? = when {
         !enabled -> Blocker.SWITCHED_OFF
         labOpen -> Blocker.AUDIO_LAB
         video -> Blocker.VIDEO
@@ -42,9 +42,10 @@ object AudioOffload {
         speedChanged -> Blocker.SPEED
         skipSilence -> Blocker.SKIP_SILENCE
         autoEq -> Blocker.AUTOEQ
+        stereo -> Blocker.STEREO
         else -> null
     }
 
     fun blocker(context: Context): Blocker? =
-        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context))
+        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context), StereoTools.settings.active)
 }

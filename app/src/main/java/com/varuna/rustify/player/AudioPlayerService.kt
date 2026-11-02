@@ -769,7 +769,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                         .setEnableFloatOutput(enableFloatOutput)
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                        .setAudioProcessors(arrayOf(AudioTap.processor))
+                        .setAudioProcessors(arrayOf(StereoTools.processor, AudioTap.processor))
                         .build(),
                     enableFloatOutput
                 )
@@ -857,6 +857,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
 
         // The session the player already has, before any change is reported.
+        StereoTools.load(context)
         EqualizerController.attach(context, exoPlayer.audioSessionId)
         AutoEqController.attach(context, exoPlayer.audioSessionId)
         ExternalEffects.announce(context, exoPlayer.audioSessionId)

@@ -830,6 +830,16 @@
     <string name="settings_jam_port">ポート (8883 = TLS)</string>
     <string name="settings_jam_save">保存</string>
     <string name="settings_jam_default">既定</string>
+    <string name="settings_stereo">ステレオツール</string>
+    <string name="settings_stereo_desc">ヘッドホン向け。すべてオフの状態から有効にした場合は次の曲から適用されます。いずれかが有効な間はオフロードを使いません。</string>
+    <string name="settings_stereo_crossfeed">クロスフィード</string>
+    <string name="settings_stereo_crossfeed_desc">部屋のスピーカーのように、各チャンネルを少しだけ反対側の耳にも送ります。左右に極端に振られた古い録音で疲れにくくなります。</string>
+    <string name="settings_stereo_mono">モノラル</string>
+    <string name="settings_stereo_mono_desc">両方のチャンネルを両耳に。片耳だけで聴くときに。</string>
+    <string name="settings_stereo_voice">ボーカル低減</string>
+    <string name="settings_stereo_voice_desc">中央にある音 (通常はボーカル) を打ち消し、低音は残します。カラオケ向けで、スタジオミックスで効果的です。</string>
+    <string name="settings_stereo_balance">バランス: %1$d</string>
+    <string name="settings_offload_blocked_stereo">ステレオツールが有効な間は使用されません。アプリ内で音声を処理します。</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

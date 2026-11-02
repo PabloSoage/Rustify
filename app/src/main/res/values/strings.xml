@@ -833,6 +833,16 @@
     <string name="settings_jam_port">Port (8883 = TLS)</string>
     <string name="settings_jam_save">Save</string>
     <string name="settings_jam_default">Default</string>
+    <string name="settings_stereo">Stereo tools</string>
+    <string name="settings_stereo_desc">For headphones and earbuds. Turning one on from all off applies from the next song; offload is not used while any is on.</string>
+    <string name="settings_stereo_crossfeed">Crossfeed</string>
+    <string name="settings_stereo_crossfeed_desc">A little of each channel in the other ear, as with speakers in a room: less tiring for old hard-panned records.</string>
+    <string name="settings_stereo_mono">Mono</string>
+    <string name="settings_stereo_mono_desc">Both channels in both ears, for listening with one earbud.</string>
+    <string name="settings_stereo_voice">Voice reduction</string>
+    <string name="settings_stereo_voice_desc">Cancels what is in the centre (usually the voice) and keeps the bass. For karaoke; works best on studio mixes.</string>
+    <string name="settings_stereo_balance">Balance: %1$d</string>
+    <string name="settings_offload_blocked_stereo">Not in use while a stereo tool is on: it processes the audio in the app.</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

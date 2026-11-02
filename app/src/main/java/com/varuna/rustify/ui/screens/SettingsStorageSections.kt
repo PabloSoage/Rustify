@@ -743,7 +743,8 @@ internal fun AudioOffloadSection(context: Context) {
         speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(context),
         skipSilence = com.varuna.rustify.player.SkipSilence.enabled(context),
         autoEq = com.varuna.rustify.player.AutoEqController.isActive(),
-        bitPerfect = com.varuna.rustify.player.BitPerfect.active(context)
+        bitPerfect = com.varuna.rustify.player.BitPerfect.active(context),
+        stereo = com.varuna.rustify.player.StereoTools.load(context).active
     )
     Spacer(modifier = Modifier.height(16.dp))
     Card(
@@ -783,6 +784,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_autoeq), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.BIT_PERFECT ->
                     Text(stringResource(R.string.settings_offload_blocked_bitperfect), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.STEREO ->
+                    Text(stringResource(R.string.settings_offload_blocked_stereo), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }
@@ -1166,6 +1169,7 @@ internal fun BitPerfectSection(context: Context) {
         com.varuna.rustify.player.BitPerfect.Spoiler.FADE -> stringResource(R.string.settings_bitperfect_spoiler_fade)
         com.varuna.rustify.player.BitPerfect.Spoiler.SPEED -> stringResource(R.string.settings_bitperfect_spoiler_speed)
         com.varuna.rustify.player.BitPerfect.Spoiler.SKIP_SILENCE -> stringResource(R.string.settings_bitperfect_spoiler_silence)
+        com.varuna.rustify.player.BitPerfect.Spoiler.STEREO -> stringResource(R.string.settings_stereo)
         null -> ""
     }
     val pcm = status.pcm
@@ -1351,6 +1355,51 @@ internal fun JamSection(context: Context) {
                     jam.setBroker(context, broker, jam.DEFAULT_PORT)
                 }) { Text(stringResource(R.string.settings_jam_default), color = Color.Gray) }
             }
+        }
+    }
+}
+
+/** Crossfeed, balance, mono and voice reduction (`22` §7). See [com.varuna.rustify.player.StereoTools]. */
+@Composable
+internal fun StereoToolsSection(context: Context) {
+    val st = com.varuna.rustify.player.StereoTools
+    var s by remember { mutableStateOf(st.load(context)) }
+    fun update(n: com.varuna.rustify.player.StereoTools.Settings) {
+        s = n
+        st.save(context, n)
+        com.varuna.rustify.player.AudioPlayerService.instance?.applyAudioOffload()
+    }
+    @Composable
+    fun toggle(label: Int, desc: Int, on: Boolean, set: (Boolean) -> Unit) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(label), color = Color.White, fontSize = 14.sp)
+                Text(stringResource(desc), color = Color.Gray, fontSize = 12.sp)
+            }
+            Switch(checked = on, onCheckedChange = set, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_stereo), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_stereo_desc), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            toggle(R.string.settings_stereo_crossfeed, R.string.settings_stereo_crossfeed_desc, s.crossfeed) { update(s.copy(crossfeed = it)) }
+            toggle(R.string.settings_stereo_mono, R.string.settings_stereo_mono_desc, s.mono) { update(s.copy(mono = it)) }
+            toggle(R.string.settings_stereo_voice, R.string.settings_stereo_voice_desc, s.voiceReduction) { update(s.copy(voiceReduction = it)) }
+            Text(stringResource(R.string.settings_stereo_balance, s.balance), color = Color.White, fontSize = 14.sp)
+            androidx.compose.material3.Slider(
+                value = s.balance.toFloat(),
+                onValueChange = { update(s.copy(balance = (it / 5).toInt() * 5)) },
+                valueRange = -100f..100f,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFF1DB954), activeTrackColor = Color(0xFF1DB954))
+            )
         }
     }
 }

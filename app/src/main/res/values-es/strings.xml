@@ -827,6 +827,16 @@
     <string name="settings_jam_port">Puerto (8883 = TLS)</string>
     <string name="settings_jam_save">Guardar</string>
     <string name="settings_jam_default">Por defecto</string>
+    <string name="settings_stereo">Herramientas estéreo</string>
+    <string name="settings_stereo_desc">Para auriculares. Si estaban todas apagadas, al encender una se aplica desde la próxima canción; con alguna activa no se usa el offload.</string>
+    <string name="settings_stereo_crossfeed">Crossfeed</string>
+    <string name="settings_stereo_crossfeed_desc">Un poco de cada canal en el otro oído, como con altavoces en una sala: cansa menos en discos antiguos con el estéreo muy separado.</string>
+    <string name="settings_stereo_mono">Mono</string>
+    <string name="settings_stereo_mono_desc">Los dos canales en los dos oídos, para escuchar con un solo auricular.</string>
+    <string name="settings_stereo_voice">Reducir la voz</string>
+    <string name="settings_stereo_voice_desc">Cancela lo que está en el centro (normalmente la voz) y conserva el bajo. Para karaoke; funciona mejor con mezclas de estudio.</string>
+    <string name="settings_stereo_balance">Balance: %1$d</string>
+    <string name="settings_offload_blocked_stereo">No se usa con una herramienta estéreo activa: procesa el audio en la app.</string>
     <string name="settings_disconnect">Al desconectarse los auriculares</string>
     <string name="settings_disconnect_desc">La música se pausa al momento, para que nunca suene por el altavoz. Si los auriculares, el coche o el cable vuelven antes de este tiempo, sigue sola.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>
