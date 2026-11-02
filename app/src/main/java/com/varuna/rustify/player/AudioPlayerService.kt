@@ -719,6 +719,10 @@ class AudioPlayerService private constructor(private val context: Context) {
         })
 
     private val retryCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    // Network failures, counted apart: they set the backoff and never make a track be skipped.
+    private val networkRetryCount = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    // Resumes after a stream that stopped before its declared end, per track (PlaybackRecovery).
+    private val prematureResumes = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private var autoRetryJob: kotlinx.coroutines.Job? = null
 
     // Hoisted so refreshAudioFocus() can re-apply the exact same attributes when resetting the focus
@@ -953,7 +957,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                     }
                     Player.STATE_READY -> {
                         _state.value = _state.value.copy(isBuffering = false, isError = false)
-                        _state.value.currentTrack?.id?.let { retryCountMap.remove(it) }
+                        _state.value.currentTrack?.id?.let {
+                            retryCountMap.remove(it)
+                            networkRetryCount.remove(it)
+                        }
                         // Safety net against silent playback: once the audio is ready, restore full
                         // volume unless the DJ is actively ducking. Prevents a stuck ducking/zero volume
                         // from leaving the track playing muted.
@@ -961,9 +968,27 @@ class AudioPlayerService private constructor(private val context: Context) {
                         requestSave()
                     }
                     Player.STATE_ENDED -> {
-                        _state.value = _state.value.copy(isBuffering = false)
-                        listenerTracker.onEnded()
-                        onTrackEnded()
+                        val endedId = _state.value.currentTrack?.id
+                        val pos = exoPlayer.currentPosition
+                        val declared = exoPlayer.duration.coerceAtLeast(0L)
+                        val resumes = endedId?.let { prematureResumes[it] } ?: 0
+                        if (endedId != null && preparedTrackId == endedId && !isCasting &&
+                            PlaybackRecovery.isPrematureEnd(pos, declared, resumes)
+                        ) {
+                            // A cut, not an ending (PlaybackRecovery): pick it up where it stopped.
+                            prematureResumes[endedId] = resumes + 1
+                            android.util.Log.w(
+                                "AudioPlayerService",
+                                "Stream for $endedId stopped at ${pos}ms of ${declared}ms; resuming there"
+                            )
+                            _state.value = _state.value.copy(positionMs = pos, isBuffering = true)
+                            mainScope.launch { retryCurrentTrack(isAutoRetry = true) }
+                        } else {
+                            endedId?.let { prematureResumes.remove(it) }
+                            _state.value = _state.value.copy(isBuffering = false)
+                            listenerTracker.onEnded()
+                            onTrackEnded()
+                        }
                     }
                     Player.STATE_IDLE -> {
                         if (!_state.value.isError && !isResolving) {
@@ -1022,12 +1047,25 @@ class AudioPlayerService private constructor(private val context: Context) {
                     resolvedStreamUrls.remove(currentTrackId)
                     preResolvedUrls.remove(currentTrackId)
                     val retries = retryCountMap[currentTrackId] ?: 0
-                    if (retries < 2) {
-                        retryCountMap[currentTrackId] = retries + 1
+                    val networkError = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+                    // Network failures back off on their own count, which never leads to a skip.
+                    val netRetries = networkRetryCount[currentTrackId] ?: 0
+                    val decision = PlaybackRecovery.onFailure(
+                        isNetworkUp(), networkError, if (networkError) netRetries else retries, isExpiredUrl
+                    )
+                    if (networkError) networkRetryCount[currentTrackId] = netRetries + 1
+                    if (decision is PlaybackRecovery.Decision.WaitForNetwork) {
+                        // See PlaybackRecovery: no network says nothing about the song. Stay on it,
+                        // at this position; the network callback retries it when the signal is back.
+                        android.util.Log.i("AudioPlayerService", "No network: holding $currentTrackId until it returns")
+                        _state.value = _state.value.copy(errorMessage = context.getString(com.varuna.rustify.R.string.playback_waiting_network))
+                    } else if (decision is PlaybackRecovery.Decision.Retry) {
+                        // A network error is not counted against the song: it is retried, never skipped.
+                        if (!networkError) retryCountMap[currentTrackId] = retries + 1
                         isRetrying = true
-                        // Exponential backoff + jitter for transient errors; fast re-resolve for expired URLs.
-                        val delayMs = if (isExpiredUrl) 100L else (500L shl retries).coerceAtMost(8000L) + Random.nextLong(0, 500)
-                        android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}/2) in ${delayMs}ms")
+                        val delayMs = decision.delayMs + if (isExpiredUrl) 0L else Random.nextLong(0, 500)
+                        android.util.Log.d("AudioPlayerService", "Auto-retrying track $currentTrackId (attempt ${retries + 1}, network=$networkError) in ${delayMs}ms")
                         autoRetryJob?.cancel()
                         autoRetryJob = mainScope.launch {
                             delay(delayMs.milliseconds)
@@ -1039,7 +1077,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                             isRetrying = false
                         }
                     } else {
-                        android.util.Log.e("AudioPlayerService", "Track $currentTrackId failed after 2 retries, skipping.")
+                        android.util.Log.e("AudioPlayerService", "Track $currentTrackId failed after ${PlaybackRecovery.MAX_RETRIES} retries, skipping.")
                         retryCountMap.remove(currentTrackId)
                         mainScope.launch {
                             delay(2000.milliseconds)
@@ -1157,6 +1195,14 @@ class AudioPlayerService private constructor(private val context: Context) {
             android.util.Log.w("AudioPlayerService", "NetworkCallback registration failed: ${e.message}")
         }
     }
+
+    /** A validated default network: what "online" means for whether to wait or to skip. */
+    private fun isNetworkUp(): Boolean = runCatching {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return@runCatching false
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }.getOrDefault(true)
 
     private fun maybeRetryOnReconnect() {
         val st = _state.value
@@ -1644,7 +1690,18 @@ class AudioPlayerService private constructor(private val context: Context) {
     private fun scheduleExtractionRetry(track: FullTrack, youtubeId: String?) {
         val id = track.id ?: return
         val n = retryCountMap[id] ?: 0
-        if (n >= 2) {
+        // Resolving needs the network more than anything; without it every song in the queue fails
+        // here in turn. Hold this one instead (see PlaybackRecovery) and let reconnect retry it.
+        if (PlaybackRecovery.onFailure(isNetworkUp(), networkError = false, retries = n) is PlaybackRecovery.Decision.WaitForNetwork) {
+            android.util.Log.i("AudioPlayerService", "No network while resolving: holding $id until it returns")
+            isRetrying = false
+            _state.value = _state.value.copy(
+                isBuffering = false, isPlaying = false, isError = true,
+                errorMessage = context.getString(com.varuna.rustify.R.string.playback_waiting_network)
+            )
+            return
+        }
+        if (n >= PlaybackRecovery.MAX_RETRIES) {
             retryCountMap.remove(id)
             // Include the concrete chain failure (e.g. "resolver returned empty YouTube id",
             // yt-dlp error) instead of a bare "no source" banner.
