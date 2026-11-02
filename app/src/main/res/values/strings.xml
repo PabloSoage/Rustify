@@ -742,6 +742,8 @@
     <string name="settings_previous_always_desc">Normally, pressing previous more than 10 seconds into a song starts it again. With this on, it always goes to the song before.</string>
     <string name="settings_shuffle_albums">Shuffle by album</string>
     <string name="settings_shuffle_albums_desc">Shuffle plays whole albums in random order, each one in its own order, instead of mixing songs. The rest of the current album plays first.</string>
+    <string name="settings_pause_fade">Fade on pause and resume</string>
+    <string name="settings_pause_fade_desc">A 300 ms fade instead of cutting mid-note. Pausing because the headphones or car disconnect is always immediate.</string>
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>

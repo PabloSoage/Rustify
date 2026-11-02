@@ -868,6 +868,35 @@ internal fun PreviousButtonSection(context: Context) {
     }
 }
 
+/** A short fade on pause and resume (4.10, [com.varuna.rustify.player.PauseFade]). */
+@Composable
+internal fun PauseFadeSection(context: Context) {
+    var on by remember { mutableStateOf(com.varuna.rustify.player.PauseFade.enabled(context)) }
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.settings_pause_fade),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = on,
+                    onCheckedChange = { v -> on = v; com.varuna.rustify.player.PauseFade.setEnabled(context, v) },
+                    colors = com.varuna.rustify.ui.theme.RustifySwitch.colors()
+                )
+            }
+            Text(stringResource(R.string.settings_pause_fade_desc), color = Color.Gray, fontSize = 12.sp)
+        }
+    }
+}
+
 /** Shuffle song by song, or album by album (4.10, [com.varuna.rustify.player.AlbumShuffle]). */
 @Composable
 internal fun ShuffleSection(context: Context) {

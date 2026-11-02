@@ -2480,7 +2480,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             // Immediate, never faded: the point is that not a note comes out of the speaker.
             DisconnectResume.Action.Pause -> {
                 android.util.Log.i("AudioPlayerService", "Output disconnected: pausing")
-                pause()
+                pause(immediate = true)
             }
             is DisconnectResume.Action.ResumeAfter -> mainScope.launch {
                 delay(action.delayMs)
@@ -2648,11 +2648,60 @@ class AudioPlayerService private constructor(private val context: Context) {
         if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
     }
 
-    fun pause() {
+    /** @param immediate no fade: the disconnection's pause must not reach the speaker at all. */
+    fun pause(immediate: Boolean = false) {
         if (isCasting) { pauseOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
-        exoPlayer.pause()
+        pauseExo(immediate)
         requestSave()
+    }
+
+    // The pause/resume fade (PauseFade). One job for both directions, so a play that arrives while
+    // a pause is still fading takes over from the volume it reached instead of jumping.
+    private var pauseFadeJob: kotlinx.coroutines.Job? = null
+    private val fadingOut get() = pauseFadeJob?.isActive == true && fadeDirectionOut
+    private var fadeDirectionOut = false
+
+    private fun pauseExo(immediate: Boolean = false) {
+        pauseFadeJob?.cancel()
+        fadeDirectionOut = true
+        if (immediate || isDucking || !exoPlayer.isPlaying || !PauseFade.enabled(context)) {
+            exoPlayer.pause()
+            if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
+            return
+        }
+        val from = exoPlayer.volume
+        pauseFadeJob = mainScope.launch {
+            for (v in PauseFade.ramp(from, 0f)) {
+                runCatching { exoPlayer.volume = v }
+                delay(PauseFade.STEP_MS)
+            }
+            exoPlayer.pause()
+            // Back to the track's level while paused, so nothing that resumes without this fade
+            // starts silent.
+            if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
+        }
+    }
+
+    private fun playExo() {
+        val midFadeOut = fadingOut
+        pauseFadeJob?.cancel()
+        fadeDirectionOut = false
+        if (isDucking || (exoPlayer.isPlaying && !midFadeOut) || !PauseFade.enabled(context)) {
+            if (!isDucking) runCatching { exoPlayer.volume = baseVolume }
+            exoPlayer.play()
+            return
+        }
+        val from = if (midFadeOut) exoPlayer.volume else 0f
+        runCatching { exoPlayer.volume = from }
+        exoPlayer.play()
+        pauseFadeJob = mainScope.launch {
+            for (v in PauseFade.ramp(from, baseVolume)) {
+                if (isDucking) break
+                runCatching { exoPlayer.volume = v }
+                delay(PauseFade.STEP_MS)
+            }
+        }
     }
 
     /**
@@ -2683,8 +2732,9 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.togglePlayPause(); return }
         val currentTrack = _state.value.currentTrack ?: return
-        if (exoPlayer.isPlaying) {
-            exoPlayer.pause()
+        // Still playing while a pause fades out, but a second tap then means "play".
+        if (exoPlayer.isPlaying && !fadingOut) {
+            pauseExo()
         } else {
             if (exoPlayer.playbackState == Player.STATE_IDLE) {
                 playTrack(currentTrack)
@@ -2692,7 +2742,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 // Manual resume also clears any stuck focus-duck multiplier, so pressing play reliably
                 // restores sound if a track ever went silent-but-advancing.
                 refreshAudioFocus()
-                exoPlayer.play()
+                playExo()
             }
         }
         requestSave()

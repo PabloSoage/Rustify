@@ -736,6 +736,8 @@
     <string name="settings_previous_always_desc">Normalmente, si pulsas anterior pasados 10 segundos, la canción vuelve a empezar. Con esto activado, siempre va a la canción de antes.</string>
     <string name="settings_shuffle_albums">Aleatorio por álbumes</string>
     <string name="settings_shuffle_albums_desc">El aleatorio pone álbumes enteros en orden al azar, cada uno en su orden, en vez de mezclar canciones. Primero suena lo que queda del álbum actual.</string>
+    <string name="settings_pause_fade">Fundido al pausar y reanudar</string>
+    <string name="settings_pause_fade_desc">Un fundido de 300 ms en vez de cortar a mitad de nota. La pausa al desconectarse los cascos o el coche es siempre inmediata.</string>
     <string name="nano_chat_title">Chat con Gemini Nano</string>
     <string name="nano_chat_on_device">en este móvil</string>
     <string name="nano_chat_clear">Borrar chat</string>

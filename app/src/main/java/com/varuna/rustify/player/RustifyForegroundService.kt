@@ -132,10 +132,8 @@ class RustifyForegroundService : MediaLibraryService() {
 
                 // In experimental web-player mode the audio comes from the WebView, not from this
                 // player, so notification / lockscreen / headset / Android Auto transport has to be
-                // forwarded there instead of reaching ExoPlayer.
-                private fun webMode() =
-                    AudioPlayerService.instance?.isWebServing == true
-
+                // forwarded there instead of reaching ExoPlayer — which the service's play() and
+                // pause() already do.
                 override fun play() {
                     // A controller's PLAY (headset, car, notification) — the one a car may send by
                     // itself on connecting. The app's own button does not come through here.
@@ -145,11 +143,13 @@ class RustifyForegroundService : MediaLibraryService() {
                         android.util.Log.i("AudioPlayerService", "Ignoring a PLAY sent on connecting")
                         return
                     }
-                    if (webMode()) AudioPlayerService.instance?.play() else super.play()
+                    // Through the service, as the app's own button does: web mode, and the
+                    // pause/resume fade (PauseFade) for the notification, a headset and the car too.
+                    AudioPlayerService.instance?.play() ?: super.play()
                 }
 
                 override fun pause() {
-                    if (webMode()) AudioPlayerService.instance?.pause() else super.pause()
+                    AudioPlayerService.instance?.pause() ?: super.pause()
                 }
             }
 

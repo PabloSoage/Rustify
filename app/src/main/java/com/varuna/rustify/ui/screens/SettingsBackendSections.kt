@@ -485,6 +485,7 @@ internal fun AudioBackendsSection(context: Context) {
     HeadsetButtonSection(context)
     PreviousButtonSection(context)
     ShuffleSection(context)
+    PauseFadeSection(context)
     StreamCacheSection(context)
     DataExportSection(context)
     CastingSection(context)
