@@ -18,8 +18,10 @@ import kotlin.coroutines.resumeWithException
  * Lyrics in your language (4.7), translated on the phone with ML Kit: no account, no server, and
  * no network once the language's model (~30 MB, once per language) is on the device.
  *
- * Line by line, so a translation sits under the line it translates and follows the synced
- * highlight. Kept in memory per track and language for the session.
+ * One translation per line, so it sits under the line it translates and follows the synced
+ * highlight. Since 4.9 the lines are translated with the whole song as context by Gemini Nano where
+ * the phone has it ([LyricsInContext]); ML Kit, which only ever sees one sentence, translates what is
+ * left. Kept in memory per track and language for the session.
  */
 object LyricsTranslator {
 
@@ -130,35 +132,90 @@ object LyricsTranslator {
             if (source == null) {
                 Outcome.NotNeeded(plan.dominant)
             } else {
-                val translator = Translation.getClient(
-                    TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build()
-                )
-                try {
-                    val models = RemoteModelManager.getInstance()
-                    listOf(source, target).filter { it != TranslateLanguage.ENGLISH }
-                        .firstOrNull { !models.isModelDownloaded(TranslateRemoteModel.Builder(it).build()).await() }
-                        ?.let { onProgress(Outcome.Downloading(it)) }
-                    translator.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
-                    // Line by line, and shown as it goes: on a slow phone a line takes a couple of
-                    // seconds, so waiting for the whole song meant minutes of a spinner. (Translating
-                    // the song in one call does not help: the model splits it back into sentences.)
-                    // Repeated lines — every chorus — are translated once.
-                    val done = HashMap<String, String>()
-                    val out = MutableList(lines.size) { "" }
-                    for (i in plan.lines.sorted()) {
-                        val l = lines[i]
-                        out[i] = done.getOrPut(l) { translator.translate(l).await() }
-                            .takeUnless { it.equals(l, ignoreCase = true) }.orEmpty()
-                        onProgress(Outcome.Translated(source, out.toList()))
+                val out = MutableList(lines.size) { "" }
+                val wanted = plan.lines.sorted().filter { lines[it].isNotBlank() }
+                // Repeated lines — every chorus — are translated once, at their first appearance.
+                val firsts = LinkedHashMap<String, Int>().apply { wanted.forEach { putIfAbsent(lines[it], it) } }
+                val done = HashMap<String, String>()
+                fun publish() {
+                    for (i in wanted) done[lines[i]]?.let { t ->
+                        out[i] = t.takeUnless { it.equals(lines[i], ignoreCase = true) }.orEmpty()
                     }
-                    Outcome.Translated(source, out)
-                } finally {
-                    translator.close()
+                    onProgress(Outcome.Translated(source, out.toList()))
                 }
+
+                // With the whole song in view first (LyricsInContext), then ML Kit for whatever is
+                // left: all of it on a phone without Nano, the odd line Nano did not give back.
+                inContext(source, target, lines, firsts.values.toList()) { got ->
+                    got.forEach { (i, t) -> done[lines[i]] = t }
+                    publish()
+                }
+
+                val missing = firsts.keys.filter { it !in done }
+                if (missing.isNotEmpty()) {
+                    val translator = Translation.getClient(
+                        TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target).build()
+                    )
+                    try {
+                        val models = RemoteModelManager.getInstance()
+                        listOf(source, target).filter { it != TranslateLanguage.ENGLISH }
+                            .firstOrNull { !models.isModelDownloaded(TranslateRemoteModel.Builder(it).build()).await() }
+                            ?.let { onProgress(Outcome.Downloading(it)) }
+                        translator.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
+                        // Line by line, and shown as it goes: on a slow phone a line takes a couple
+                        // of seconds, so waiting for the whole song meant minutes of a spinner.
+                        for (l in missing) {
+                            done[l] = translator.translate(l).await()
+                            publish()
+                        }
+                    } finally {
+                        translator.close()
+                    }
+                }
+                publish()
+                Outcome.Translated(source, out)
             }
         }.getOrElse { Outcome.Failed(it.message ?: it.javaClass.simpleName) }
         if (outcome !is Outcome.Failed) cache["$key|$target"] = outcome
         return outcome
+    }
+
+    /**
+     * Translates the lines at [indices] with Gemini Nano, a block at a time, each block reading the
+     * whole song. Does nothing on a phone where the model is not ready, and stops at the first
+     * failed block: what is left goes to ML Kit.
+     */
+    private suspend fun inContext(
+        source: String,
+        target: String,
+        lines: List<String>,
+        indices: List<Int>,
+        onBlock: (Map<Int, String>) -> Unit,
+    ) {
+        val nano = com.varuna.rustify.dj.OnDeviceModel
+        if (nano.refresh() != com.varuna.rustify.dj.OnDeviceModel.Status.READY) return
+        val song = lines.filter { it.isNotBlank() }
+        for (block in indices.chunked(LyricsInContext.BLOCK_LINES)) {
+            val prompt = LyricsInContext.prompt(source, target, song, block.map { it to lines[it] })
+            val started = android.os.SystemClock.elapsedRealtime()
+            val answer = runCatching {
+                kotlinx.coroutines.withTimeout(30_000) {
+                    nano.model.generateContent(
+                        com.google.mlkit.genai.prompt.generateContentRequest(com.google.mlkit.genai.prompt.TextPart(prompt)) {
+                            temperature = 0.2f
+                            maxOutputTokens = 256
+                        }
+                    )
+                }.candidates.firstOrNull()?.text.orEmpty()
+            }.onFailure { android.util.Log.w("LyricsTranslator", "on-device block failed: ${it.message}") }
+                .getOrNull() ?: return
+            val got = LyricsInContext.parse(answer, block.toSet())
+            android.util.Log.i(
+                "LyricsTranslator",
+                "on-device block: ${got.size}/${block.size} lines in ${android.os.SystemClock.elapsedRealtime() - started} ms"
+            )
+            onBlock(got)
+        }
     }
 
     private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { c ->
