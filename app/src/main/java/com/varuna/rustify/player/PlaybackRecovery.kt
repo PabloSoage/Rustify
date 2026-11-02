@@ -48,6 +48,19 @@ object PlaybackRecovery {
         else -> Decision.Skip
     }
 
+    /**
+     * Tracks in a row that may fail before playback stops on the last one instead of skipping on.
+     *
+     * Seen on WSA in 4.10: googlevideo answered 403 to every URL from that IP, so every song was a
+     * "the track is the problem" failure, and two retries and a skip each emptied the queue in
+     * seconds. Three songs failing in a row is not three bad songs; it is the source, and the rest of
+     * the queue would fail the same way. Any track that reaches READY resets the count.
+     */
+    const val MAX_FAILED_IN_A_ROW = 3
+
+    /** After the [failedInARow]-th consecutive failed track: stop here rather than skip again? */
+    fun shouldStopSkipping(failedInARow: Int): Boolean = failedInARow >= MAX_FAILED_IN_A_ROW
+
     private fun backoff(retries: Int, capMs: Long): Long =
         (500L shl retries.coerceAtMost(10)).coerceAtMost(capMs)
 

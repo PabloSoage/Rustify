@@ -117,6 +117,7 @@
     <string name="settings_download_mp3">Convert to MP3</string>
     <string name="settings_download_mp3_desc">Off: downloads keep the audio as served (Opus or M4A), smaller and with no quality lost. On: 320 kbps MP3 for players that read nothing else.</string>
     <string name="playback_waiting_network">No connection — it will continue here when the network is back</string>
+    <string name="playback_failing_in_a_row">Several songs in a row would not play, so playback stopped here instead of skipping through the queue. Press play to try again.</string>
     <string name="settings_local_music">Local Music</string>
     <string name="settings_enable_local_music">Enable Local Music</string>
     <string name="settings_enable_local_music_desc">Shows the tab in your library</string>

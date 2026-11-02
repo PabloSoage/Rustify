@@ -28,6 +28,7 @@
     <string name="settings_download_mp3">MP3に変換</string>
     <string name="settings_download_mp3_desc">オフ: 配信されたままの音声（OpusまたはM4A）で保存。小さく、音質の劣化もありません。オン: 他の形式を読めないプレーヤー向けに320 kbpsのMP3で保存します。</string>
     <string name="playback_waiting_network">接続なし — ネットワークが戻るとここから再開します</string>
+    <string name="playback_failing_in_a_row">続けて何曲も再生できなかったため、キューを飛ばし続けずにここで停止しました。再生を押すと再試行します。</string>
     <string name="settings_local_music">ローカル音楽</string>
     <string name="settings_enable_local_music">ローカル音楽を有効にする</string>
     <string name="settings_enable_local_music_desc">ライブラリにタブを表示します</string>

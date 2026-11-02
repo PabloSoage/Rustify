@@ -979,6 +979,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                             retryCountMap.remove(it)
                             networkRetryCount.remove(it)
                         }
+                        failedInARow = 0
                         // Safety net against silent playback: once the audio is ready, restore full
                         // volume unless the DJ is actively ducking. Prevents a stuck ducking/zero volume
                         // from leaving the track playing muted.
@@ -1097,10 +1098,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     } else {
                         android.util.Log.e("AudioPlayerService", "Track $currentTrackId failed after ${PlaybackRecovery.MAX_RETRIES} retries, skipping.")
                         retryCountMap.remove(currentTrackId)
-                        mainScope.launch {
-                            delay(2000.milliseconds)
-                            skipToNext()
-                        }
+                        skipAfterFailure()
                     }
                 }
             }
@@ -1734,7 +1732,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                 errorMessage = if (reason != null) "No se encontró una fuente reproducible: $reason"
                                else "No se encontró una fuente reproducible"
             )
-            mainScope.launch { delay(2000.milliseconds); skipToNext() }
+            skipAfterFailure()
             return
         }
         retryCountMap[id] = n + 1
@@ -2954,6 +2952,27 @@ class AudioPlayerService private constructor(private val context: Context) {
         notifyQueueChanged(tracks)
         requestSave()
         preBufferNextTrack()
+    }
+
+    /** Tracks that failed one after another with none reaching READY; see [PlaybackRecovery]. */
+    @Volatile private var failedInARow = 0
+
+    /** A track is given up on: skip to the next one, unless the last few failed too. */
+    private fun skipAfterFailure() {
+        failedInARow++
+        if (PlaybackRecovery.shouldStopSkipping(failedInARow)) {
+            android.util.Log.w("AudioPlayerService", "$failedInARow tracks failed in a row; stopping instead of skipping on")
+            failedInARow = 0
+            _state.value = _state.value.copy(
+                isBuffering = false, isPlaying = false, isError = true,
+                errorMessage = context.getString(com.varuna.rustify.R.string.playback_failing_in_a_row)
+            )
+            return
+        }
+        mainScope.launch {
+            delay(2000.milliseconds)
+            skipToNext()
+        }
     }
 
     fun skipToNext() {

@@ -42,6 +42,13 @@ class PlaybackRecoveryTest {
     }
 
     @Test
+    fun `the third track failing in a row stops playback instead of skipping on`() {
+        assertFalse(PlaybackRecovery.shouldStopSkipping(1))
+        assertFalse(PlaybackRecovery.shouldStopSkipping(2))
+        assertTrue(PlaybackRecovery.shouldStopSkipping(3))
+    }
+
+    @Test
     fun `without a declared duration or after two resumes the end is believed`() {
         assertFalse(PlaybackRecovery.isPrematureEnd(150_000, 0, 0))
         assertFalse(PlaybackRecovery.isPrematureEnd(150_000, 200_000, 2))

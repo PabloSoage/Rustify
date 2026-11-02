@@ -117,6 +117,7 @@
     <string name="settings_download_mp3">Convertir a MP3</string>
     <string name="settings_download_mp3_desc">Desactivado: las descargas guardan el audio tal como llega (Opus o M4A), más pequeño y sin perder calidad. Activado: MP3 a 320 kbps para reproductores que no leen otra cosa.</string>
     <string name="playback_waiting_network">Sin conexión: seguirá aquí cuando vuelva la red</string>
+    <string name="playback_failing_in_a_row">Varias canciones seguidas no se pudieron reproducir, así que se ha parado aquí en vez de saltar toda la cola. Pulsa play para reintentar.</string>
     <string name="settings_local_music">Música Local</string>
     <string name="settings_enable_local_music">Habilitar Música Local</string>
     <string name="settings_enable_local_music_desc">Muestra la pestaña en tu biblioteca</string>
