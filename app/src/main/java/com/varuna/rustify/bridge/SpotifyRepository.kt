@@ -73,6 +73,8 @@ class SpotifyRepository(context: Context) {
         const val LOCAL_EXCLUDED_FOLDERS = "local_excluded_folders"
         /** In `rustify_settings`: local files shorter than this many seconds are left out (0 = none). */
         const val LOCAL_MIN_DURATION_S = "local_min_duration_s"
+        /** In `rustify_settings`: the artist separators the cached local tracks were split with. */
+        private const val SEPARATORS_APPLIED = "local_artist_separators_applied"
 
         /**
          * How much life a stored token needs before [ensureSession] will trust it without
@@ -844,6 +846,10 @@ loadLocalTracksFromCache()
                 // Folder view (4.10): folders the user excluded, and a floor for voice notes.
                 val excludedFolders = settingsPrefs.getStringSet(LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty()
                 val minDurationMs = settingsPrefs.getInt(LOCAL_MIN_DURATION_S, 0) * 1000L
+                // A change of artist separators re-reads every file once: the cached track holds the
+                // artists already split, not the tag they came from.
+                val separators = settingsPrefs.getString(ArtistSeparators.PREF, ArtistSeparators.DEFAULT).orEmpty()
+                val resplit = settingsPrefs.getString(SEPARATORS_APPLIED, null) != separators
                 val supportedExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "opus", "webm", "aac")
                 val coversDir = java.io.File(appCtx.filesDir, "covers").also { it.mkdirs() }
                 // Covers are deduplicated per album (see below). Resolution mode: full-res (default,
@@ -868,7 +874,7 @@ loadLocalTracksFromCache()
                     val name = file.name ?: return null
 
                     // Fast path: unchanged existing track with valid cover
-                    if (existingTrack != null && existingTrack.addedAt == lastModifiedStr) {
+                    if (existingTrack != null && existingTrack.addedAt == lastModifiedStr && !resplit) {
                         val existingCoverPath = existingTrack.externalUri.removePrefix("file://")
                         if (existingCoverPath.isBlank() || java.io.File(existingCoverPath).exists()) {
                             return existingTrack
@@ -923,7 +929,8 @@ loadLocalTracksFromCache()
                         FullTrack(
                             id = trackId,
                             name = title,
-                            artists = listOf(SimpleArtist("local_artist:$artist", artist, "", emptyList())),
+                            artists = ArtistSeparators.split(artist, separators).ifEmpty { listOf(artist) }
+                                .map { SimpleArtist("local_artist:$it", it, "", emptyList()) },
                             album = SimpleAlbum(
                                 "local_album:$album", album, "", null, null, 
                                 if (coverUri.isNotBlank()) listOf(SpotifyImage(coverUri, null, null)) else emptyList(), 
@@ -1020,6 +1027,7 @@ loadLocalTracksFromCache()
                     localTracks.addAll(newLocalTracks)
                 }
                 saveLocalTracksToCache(newLocalTracks)
+                settingsPrefs.edit().putString(SEPARATORS_APPLIED, separators).apply()
 
             } catch (e: Exception) {
                 e.printStackTrace()

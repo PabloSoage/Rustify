@@ -528,6 +528,8 @@
     <string name="settings_min_duration">最小の長さ</string>
     <string name="settings_min_duration_desc">ボイスメモなどの短いファイルを除外します</string>
     <string name="settings_min_duration_off">オフ</string>
+    <string name="settings_artist_separators">アーティストの区切り文字</string>
+    <string name="settings_artist_separators_desc">1 つのタグ内で複数のアーティストを区切る文字です。曲はそれぞれのアーティストに表示されます。スラッシュ、アンパサンド、カンマ、プラスは AC/DC のような名前も分割します。タグに AC\\/DC と書くと分割されません。</string>
     <string name="local_group_folders">フォルダ</string>
     <string name="local_folder_exclude">フォルダを除外</string>
     <string name="local_folder_exclude_msg">%1$s とそのサブフォルダをライブラリから除外しますか？設定から戻せます。</string>
@@ -671,8 +673,9 @@
     <string name="settings_normalize_volume">音量を均一にする</string>
     <string name="settings_normalize_volume_desc">音の大きい録音を下げて、Spotify のように全曲を同じ音量で再生します。YouTube が測定した音量を使用し、ローカルファイルはそのままです。</string>
     <string name="settings_replaygain">ReplayGain（ローカルファイル）</string>
-    <string name="settings_replaygain_desc">タグ付けソフトが書き込んだ ReplayGain タグでローカルファイルの音量を揃えます。アルバムモードではアルバム内の音量差を保ちます。タグのないファイルはそのまま再生します。</string>
+    <string name="settings_replaygain_desc">タグ付けソフトが書き込んだ ReplayGain タグでローカルファイルの音量を揃えます。アルバムモードではアルバム内の音量差を保ちます。自動ではアルバムを通して再生しているときだけ保ち、ミックスでは揃えます。タグのないファイルはそのまま再生します。</string>
     <string name="settings_replaygain_off">オフ</string>
+    <string name="settings_replaygain_auto">自動</string>
     <string name="settings_replaygain_track">トラック</string>
     <string name="settings_replaygain_album">アルバム</string>
     <string name="settings_replaygain_preamp">プリアンプ</string>

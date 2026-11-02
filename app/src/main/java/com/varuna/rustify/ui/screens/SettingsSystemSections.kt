@@ -381,6 +381,9 @@ internal fun LocalMusicSection(context: Context) {
     var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
     var excludedFolders by remember { mutableStateOf(prefs.getStringSet(SpotifyRepository.LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty()) }
     var minDurationS by remember { mutableIntStateOf(prefs.getInt(SpotifyRepository.LOCAL_MIN_DURATION_S, 0)) }
+    var separators by remember {
+        mutableStateOf(prefs.getString(com.varuna.rustify.bridge.ArtistSeparators.PREF, com.varuna.rustify.bridge.ArtistSeparators.DEFAULT).orEmpty())
+    }
     val addDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -468,6 +471,25 @@ internal fun LocalMusicSection(context: Context) {
                                 SpotifyRepository.instance?.scanLocalMusic()
                             },
                             label = { Text(if (s == 0) stringResource(R.string.settings_min_duration_off) else "$s s") },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = green, selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.settings_artist_separators), color = Color.White, fontSize = 16.sp)
+                Text(stringResource(R.string.settings_artist_separators_desc), color = Color.Gray, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    com.varuna.rustify.bridge.ArtistSeparators.CHOICES.forEach { c ->
+                        androidx.compose.material3.FilterChip(
+                            selected = c in separators,
+                            onClick = {
+                                separators = if (c in separators) separators.replace(c.toString(), "") else separators + c
+                                prefs.edit { putString(com.varuna.rustify.bridge.ArtistSeparators.PREF, separators) }
+                                SpotifyRepository.instance?.scanLocalMusic()
+                            },
+                            label = { Text(c.toString()) },
                             colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = green, selectedLabelColor = Color.White
                             )

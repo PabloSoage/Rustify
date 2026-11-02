@@ -276,6 +276,8 @@
     <string name="settings_min_duration">Minimum length</string>
     <string name="settings_min_duration_desc">Leave out shorter files, such as voice notes</string>
     <string name="settings_min_duration_off">Off</string>
+    <string name="settings_artist_separators">Artist separators</string>
+    <string name="settings_artist_separators_desc">Characters that separate several artists in one tag, so a song is filed under each. Slash, ampersand, comma and plus also split names like AC/DC; write AC\\/DC in the tag to keep one.</string>
     <string name="local_group_folders">Folders</string>
     <string name="local_folder_exclude">Exclude folder</string>
     <string name="local_folder_exclude_msg">Leave %1$s and its sub-folders out of the library? You can bring it back in Settings.</string>
@@ -674,8 +676,9 @@
     <string name="settings_normalize_volume">Normalize volume</string>
     <string name="settings_normalize_volume_desc">Turns loud recordings down so every song plays at the same level, as Spotify does. Uses the loudness YouTube measures for each upload; your local files are left as they are.</string>
     <string name="settings_replaygain">ReplayGain (local files)</string>
-    <string name="settings_replaygain_desc">Evens out local files by the ReplayGain tags your tagger wrote. Album mode keeps the loudness steps within an album. Untagged files play as they are.</string>
+    <string name="settings_replaygain_desc">Evens out local files by the ReplayGain tags your tagger wrote. Album mode keeps the loudness steps within an album; Auto does so while an album plays through and evens out mixes. Untagged files play as they are.</string>
     <string name="settings_replaygain_off">Off</string>
+    <string name="settings_replaygain_auto">Auto</string>
     <string name="settings_replaygain_track">Track</string>
     <string name="settings_replaygain_album">Album</string>
     <string name="settings_replaygain_preamp">Pre-amp</string>

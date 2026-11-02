@@ -901,7 +901,10 @@ fun LibraryLocalMusic(
 
     val albumGroups: List<Pair<String, List<FullTrack>>> = filteredTracks.groupBy { it.album?.name ?: "Unknown Album" }
         .toList().sortedBy { it.first.lowercase().trim() }
-    val artistGroups: List<Pair<String, List<FullTrack>>> = filteredTracks.groupBy { it.artists.firstOrNull()?.name ?: "Unknown Artist" }
+    // Every artist of a track, not just the first: "A; B" is filed under both (ArtistSeparators).
+    val artistGroups: List<Pair<String, List<FullTrack>>> = filteredTracks
+        .flatMap { t -> t.artists.map { it.name }.ifEmpty { listOf("Unknown Artist") }.distinct().map { it to t } }
+        .groupBy({ it.first }, { it.second })
         .toList().sortedBy { it.first.lowercase().trim() }
 
     val config = LocalConfiguration.current

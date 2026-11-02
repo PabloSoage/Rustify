@@ -281,6 +281,8 @@
     <string name="settings_min_duration">Duración mínima</string>
     <string name="settings_min_duration_desc">Deja fuera los archivos más cortos, como las notas de voz</string>
     <string name="settings_min_duration_off">No</string>
+    <string name="settings_artist_separators">Separadores de artistas</string>
+    <string name="settings_artist_separators_desc">Caracteres que separan varios artistas en una etiqueta, para que la canción salga en cada uno. La barra, el ampersand, la coma y el más también parten nombres como AC/DC; escribe AC\\/DC en la etiqueta para conservarlo.</string>
     <string name="local_group_folders">Carpetas</string>
     <string name="local_folder_exclude">Excluir carpeta</string>
     <string name="local_folder_exclude_msg">¿Dejar %1$s y sus subcarpetas fuera de la biblioteca? Puedes recuperarla en Ajustes.</string>
@@ -668,8 +670,9 @@
     <string name="settings_normalize_volume">Normalizar volumen</string>
     <string name="settings_normalize_volume_desc">Baja las grabaciones más fuertes para que todas las canciones suenen al mismo nivel, como hace Spotify. Usa la sonoridad que YouTube mide de cada vídeo; tus archivos locales no se tocan.</string>
     <string name="settings_replaygain">ReplayGain (archivos locales)</string>
-    <string name="settings_replaygain_desc">Iguala el volumen de los archivos locales con las etiquetas ReplayGain que escribió tu etiquetador. En modo álbum se respetan los cambios de volumen dentro del disco. Los archivos sin etiqueta suenan tal cual.</string>
+    <string name="settings_replaygain_desc">Iguala el volumen de los archivos locales con las etiquetas ReplayGain que escribió tu etiquetador. En modo álbum se respetan los cambios de volumen dentro del disco; en Auto, mientras suena un disco seguido, y en las mezclas se iguala todo. Los archivos sin etiqueta suenan tal cual.</string>
     <string name="settings_replaygain_off">No</string>
+    <string name="settings_replaygain_auto">Auto</string>
     <string name="settings_replaygain_track">Pista</string>
     <string name="settings_replaygain_album">Álbum</string>
     <string name="settings_replaygain_preamp">Preamplificador</string>
