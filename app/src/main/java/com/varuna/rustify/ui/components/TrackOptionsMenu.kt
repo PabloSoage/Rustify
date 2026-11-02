@@ -27,6 +27,8 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
@@ -709,6 +711,31 @@ fun TrackOptionsMenuBottomSheet(
                             onDismiss()
                         }
                     )
+                }
+
+                // Blocklist (`23` §2): never from the radio, stepped over in the queue.
+                if (!track.id.isNullOrBlank()) {
+                    val blocked by com.varuna.rustify.player.Blocklist.lists.collectAsState()
+                    androidx.compose.runtime.LaunchedEffect(Unit) { com.varuna.rustify.player.Blocklist.current(context) }
+                    val songBlocked = blocked.blocksTrack(track.id)
+                    MenuOptionItem(
+                        icon = Icons.Default.Block,
+                        label = stringResource(if (songBlocked) R.string.track_menu_unblock_song else R.string.track_menu_block_song),
+                        iconColor = if (songBlocked) Color.White else Color(0xFFCC2200),
+                        onClick = { com.varuna.rustify.player.Blocklist.toggleTrack(context, track) }
+                    )
+                    track.artists.filter { it.id.isNotBlank() }.forEach { artist ->
+                        val artistBlocked = blocked.blocksArtist(artist.id)
+                        MenuOptionItem(
+                            icon = Icons.Default.Block,
+                            label = stringResource(
+                                if (artistBlocked) R.string.track_menu_unblock_artist else R.string.track_menu_block_artist,
+                                artist.name
+                            ),
+                            iconColor = if (artistBlocked) Color.White else Color(0xFFCC2200),
+                            onClick = { com.varuna.rustify.player.Blocklist.toggleArtist(context, artist.id, artist.name) }
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

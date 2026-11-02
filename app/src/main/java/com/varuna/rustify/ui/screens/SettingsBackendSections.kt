@@ -477,6 +477,7 @@ internal fun AudioBackendsSection(context: Context) {
 
     AddonsSection(context, onAddonsChanged = { backendsRevision++ })
     AutoplayRadioSection(context)
+    BlocklistSection(context)
     NormalizeVolumeSection(context)
     EqualizerSection(context)
     AutoEqSection(context)

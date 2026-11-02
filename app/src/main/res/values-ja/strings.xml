@@ -794,6 +794,15 @@
     <string name="settings_bitperfect_spoiler_speed">再生速度の変更</string>
     <string name="settings_bitperfect_spoiler_silence">無音のスキップ</string>
     <string name="settings_offload_blocked_bitperfect">ビットパーフェクト USB 出力が有効な間は使用されません。デコードした音声が必要です。</string>
+    <string name="track_menu_block_song">この曲を再生しない</string>
+    <string name="track_menu_unblock_song">この曲を再び許可</string>
+    <string name="track_menu_block_artist">%1$s を再生しない</string>
+    <string name="track_menu_unblock_artist">%1$s を再び許可</string>
+    <string name="settings_blocklist">ブロックした曲とアーティスト</string>
+    <string name="settings_blocklist_desc">ラジオには追加されず、キューではスキップされます。手動で選んだ場合は再生されます。曲のメニューからブロックできます。</string>
+    <string name="settings_blocklist_empty">ブロックしたものはありません。</string>
+    <string name="settings_blocklist_artist">アーティスト: %1$s</string>
+    <string name="settings_blocklist_unblock">許可</string>
     <string name="settings_disconnect">ヘッドホンが外れたとき</string>
     <string name="settings_disconnect_desc">すぐに一時停止するので、スピーカーから音が出ることはありません。この時間内にヘッドホン、車、ケーブルが戻れば、自動で再開します。</string>
     <string name="settings_disconnect_seconds">%1$d 秒</string>

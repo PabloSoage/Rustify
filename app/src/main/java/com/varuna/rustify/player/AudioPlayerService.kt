@@ -2878,8 +2878,13 @@ class AudioPlayerService private constructor(private val context: Context) {
             return
         }
         if (!decision.play) return
-        val target = st.queue.getOrNull(decision.index) ?: return
-        currentQueueIndex = decision.index
+        // Moving on by itself or with next/previous steps over what the user blocked (Blocklist),
+        // in the direction it was going. All blocked from there on: nothing more plays.
+        val blocklist = Blocklist.current(context)
+        val step = if (decision.index >= currentIndexIn(st)) 1 else -1
+        val index = Blocklist.firstAllowed(st.queue.size, decision.index, step) { blocklist.blocks(st.queue[it]) } ?: return
+        val target = st.queue.getOrNull(index) ?: return
+        currentQueueIndex = index
         _state.value = _state.value.copy(
             currentTrack = target,
             isPlaying = false,
@@ -3070,7 +3075,8 @@ class AudioPlayerService private constructor(private val context: Context) {
         // in flight.
         val live = _state.value
         val liveIds = live.queue.mapNotNull { it.id }.toSet()
-        val fresh = fetched.filter { it.id != null && it.id !in liveIds }
+        val blocklist = Blocklist.current(context)
+        val fresh = fetched.filter { it.id != null && it.id !in liveIds && !blocklist.blocks(it) }
         if (fresh.isEmpty()) return false
 
         val newQueue = live.queue + fresh

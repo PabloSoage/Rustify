@@ -797,6 +797,15 @@
     <string name="settings_bitperfect_spoiler_speed">a changed speed</string>
     <string name="settings_bitperfect_spoiler_silence">skipping silence</string>
     <string name="settings_offload_blocked_bitperfect">Not in use while bit-perfect USB output is on: it needs the decoded audio.</string>
+    <string name="track_menu_block_song">Never play this song</string>
+    <string name="track_menu_unblock_song">Allow this song again</string>
+    <string name="track_menu_block_artist">Never play %1$s</string>
+    <string name="track_menu_unblock_artist">Allow %1$s again</string>
+    <string name="settings_blocklist">Blocked songs and artists</string>
+    <string name="settings_blocklist_desc">The radio never adds them and the queue steps over them. Choosing one by hand still plays it. Block from the menu of any song.</string>
+    <string name="settings_blocklist_empty">Nothing blocked.</string>
+    <string name="settings_blocklist_artist">Artist: %1$s</string>
+    <string name="settings_blocklist_unblock">Allow</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

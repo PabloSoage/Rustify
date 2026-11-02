@@ -78,6 +78,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -1204,6 +1205,49 @@ internal fun BitPerfectSection(context: Context) {
                 status.state == com.varuna.rustify.player.BitPerfect.State.NO_MATCH ->
                     Text(stringResource(R.string.settings_bitperfect_no_match, status.device ?: usb.orEmpty(), format), color = warn, fontSize = 12.sp)
                 else -> Text(stringResource(R.string.settings_bitperfect_next_song), color = Color.Gray, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/** What the user blocked (`23` §2), to look at and take back. See [com.varuna.rustify.player.Blocklist]. */
+@Composable
+internal fun BlocklistSection(context: Context) {
+    val bl = com.varuna.rustify.player.Blocklist
+    LaunchedEffect(Unit) { bl.current(context) }
+    val lists by bl.lists.collectAsState()
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.settings_blocklist), color = Color.White, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_blocklist_desc), color = Color.Gray, fontSize = 12.sp)
+            if (lists.tracks.isEmpty() && lists.artists.isEmpty()) {
+                Text(stringResource(R.string.settings_blocklist_empty), color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            lists.artists.forEach { a ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.settings_blocklist_artist, a.name), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = { bl.toggleArtist(context, a.id, a.name) }) {
+                        Text(stringResource(R.string.settings_blocklist_unblock), color = Color(0xFF1DB954))
+                    }
+                }
+            }
+            lists.tracks.forEach { t ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(t.name, color = Color.White, fontSize = 14.sp)
+                        if (t.detail.isNotBlank()) Text(t.detail, color = Color.Gray, fontSize = 12.sp)
+                    }
+                    androidx.compose.material3.TextButton(onClick = {
+                        bl.toggleTrack(context, com.varuna.rustify.bridge.FullTrack(id = t.id, name = t.name))
+                    }) {
+                        Text(stringResource(R.string.settings_blocklist_unblock), color = Color(0xFF1DB954))
+                    }
+                }
             }
         }
     }
