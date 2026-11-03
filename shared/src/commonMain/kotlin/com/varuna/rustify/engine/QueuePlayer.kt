@@ -226,7 +226,7 @@ class QueuePlayer(
      * as that video, anything else goes through the core's resolver, as on the phone. Tracks with no
      * id (a local file on Android) cannot play here and are dropped.
      */
-    fun playAll(list: List<FullTrack>, start: Int) {
+    fun playAll(list: List<FullTrack>, start: Int, startMs: Long = 0) {
         val playable = list.filter { it.id != null }
         val first = list.getOrNull(start)?.let { playable.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         tracks = playable
@@ -236,12 +236,38 @@ class QueuePlayer(
             put("type", "set_queue")
             put("tracks", JsonArray(playable.map { JsonPrimitive(it.id.orEmpty()) }))
             put("start", first)
-        })
+        }, startMs = startMs)
     }
 
-    fun next() = reduce(buildJsonObject { put("type", "next") })
+    /**
+     * Asked before "next" and "previous" act; answering true means someone else took them — a Jam
+     * guest sends them to the host instead of moving on alone.
+     */
+    var intercept: ((String) -> Boolean)? = null
 
-    fun previous() = reduce(buildJsonObject { put("type", "previous") })
+    fun next() {
+        if (intercept?.invoke("next") == true) return
+        reduce(buildJsonObject { put("type", "next") })
+    }
+
+    fun previous() {
+        if (intercept?.invoke("previous") == true) return
+        reduce(buildJsonObject { put("type", "previous") })
+    }
+
+    /** Plays the queue's [index]-th song from the start (or [startMs]). */
+    fun jumpTo(index: Int, startMs: Long = 0) {
+        if (index !in tracks.indices) return
+        playAll(tracks, index, startMs)
+    }
+
+    fun play() {
+        if (!_ui.value.playing) togglePause()
+    }
+
+    fun pause() {
+        if (_ui.value.playing) togglePause()
+    }
 
     fun togglePause() {
         when {
@@ -280,15 +306,18 @@ class QueuePlayer(
     // The reducer
     // ---------------------------------------------------------------------------------------------
 
-    /** Runs [action] through `player::reduce` and applies its effects. [skipPlay] drops a `Play`. */
-    private fun reduce(action: JsonObject, skipPlay: Boolean = false) {
+    /**
+     * Runs [action] through `player::reduce` and applies its effects. [skipPlay] drops a `Play`;
+     * [startMs] is where a `Play` the action causes starts, when the caller knows better than 0.
+     */
+    private fun reduce(action: JsonObject, skipPlay: Boolean = false, startMs: Long = 0) {
         val answer = runReducer(state, action) ?: return
         state = answer.state
         _ui.update { it.copy(index = state.index) }
         for (effect in answer.effects) {
             when (effect["type"]?.jsonPrimitive?.content) {
                 "play" -> if (!skipPlay) {
-                    load(state.index, effect["positionMs"]?.jsonPrimitive?.long ?: 0)
+                    load(state.index, (effect["positionMs"]?.jsonPrimitive?.long ?: 0).takeIf { it > 0 } ?: startMs)
                 }
                 "seek" -> backend.send(EngineCommand.Seek(effect["positionMs"]?.jsonPrimitive?.long ?: 0))
                 "stop" -> {
@@ -393,7 +422,9 @@ class QueuePlayer(
         failuresInARow++
         Log.w(TAG, "playback failed ($failuresInARow in a row): $message")
         _ui.update { it.copy(loading = false, error = message) }
-        if (failuresInARow < 3) next() else backend.send(EngineCommand.Stop)
+        // Straight to the reducer, not next(): a failure is not someone pressing a button, and a Jam
+        // guest must not send the host on because its own copy failed to load.
+        if (failuresInARow < 3) reduce(buildJsonObject { put("type", "next") }) else backend.send(EngineCommand.Stop)
     }
 
     private suspend fun resolve(track: FullTrack): ResolvedAudio? {

@@ -41,6 +41,8 @@ extern "C" {
  *   searchYtMusic {query}              getYtmAlbum {id}  getYtmArtist {id}  getYtmPlaylist {id}
  *   resolveInnertubeAudio {videoId, prefs}
  *   registerTrackMetadata {id, name, artists, durationMs, isrc}   resolveYouTubeId {spotifyId, youtubeId}
+ *   jamNewCode {}  jamJoin {config}  jamPoll {timeoutMs}  jamPublishState {state}
+ *   jamSend {command}  jamKick {id}  jamLeave {}
  *   startLocalServer {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}
  *

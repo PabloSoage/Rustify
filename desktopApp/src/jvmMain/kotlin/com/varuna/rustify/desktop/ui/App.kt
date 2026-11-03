@@ -57,6 +57,7 @@ import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.decodeWire
 import com.varuna.rustify.engine.PlayerUi
 import com.varuna.rustify.engine.QueuePlayer
+import com.varuna.rustify.jam.JamSession
 import com.varuna.rustify.spotify.SpotifyLibrary
 import kotlinx.coroutines.launch
 
@@ -72,7 +73,8 @@ fun RustifyTheme(content: @Composable () -> Unit) {
 }
 
 private enum class Section(val label: String) {
-    HOME("Home"), SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), METRICS("Metrics"), ACCOUNT("Account"),
+    HOME("Home"), SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), METRICS("Metrics"), JAM("Jam"),
+    ACCOUNT("Account"),
 }
 
 /** Something on Home that opens into a list of songs. */
@@ -84,7 +86,7 @@ private data class Opened(val key: String, val title: String, val load: suspend 
  * albums come as the Android screens' logic moves to the shared module (docs 25 §7).
  */
 @Composable
-fun App(player: QueuePlayer, spotify: SpotifyLibrary) {
+fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession) {
     val ui by player.ui.collectAsState()
     var section by remember { mutableStateOf(Section.HOME) }
     var user by remember { mutableStateOf<SpotifyUser?>(null) }
@@ -104,6 +106,7 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary) {
                 Section.LIKED -> SignedIn(user) { LikedSection(player, ui, spotify) }
                 Section.PLAYLISTS -> SignedIn(user) { PlaylistsSection(player, ui, spotify) }
                 Section.METRICS -> MetricsSection()
+                Section.JAM -> JamSection(jam)
                 Section.ACCOUNT -> AccountSection(spotify, user) { user = it }
             }
         }

@@ -16,6 +16,8 @@ import com.varuna.rustify.desktop.ui.App
 import com.varuna.rustify.desktop.ui.RustifyTheme
 import com.varuna.rustify.engine.JvmPlayerBackend
 import com.varuna.rustify.engine.QueuePlayer
+import com.varuna.rustify.jam.JamSession
+import com.varuna.rustify.jam.JvmJamCore
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.PreferencesStore
@@ -43,6 +45,12 @@ fun main() {
             )
         }
 
+        // The computer's name is what the others in a Jam see, unless one is set in the Jam tab.
+        val jam = remember {
+            val host = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()
+            JamSession(scope, JvmJamCore, player, PreferencesStore(), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
+        }
+
         // The screens wait for the core's start-up: restoring the Spotify session before the client
         // knows its cache folder would work, and then forget what it learned.
         var ready by remember { mutableStateOf(false) }
@@ -57,6 +65,7 @@ fun main() {
 
         Window(
             onCloseRequest = {
+                jam.leave()
                 player.shutdown()
                 exitApplication()
             },
@@ -77,7 +86,7 @@ fun main() {
                 )
             }
             RustifyTheme {
-                if (ready) App(player, spotify)
+                if (ready) App(player, spotify, jam)
             }
         }
     }

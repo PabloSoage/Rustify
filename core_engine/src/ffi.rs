@@ -23,7 +23,7 @@ use std::ffi::{c_char, CStr, CString};
 use serde_json::Value;
 
 use crate::{
-    env, get_runtime, links, metrics, player, search, serialize_result, server, spotify, youtube,
+    env, get_runtime, jam, links, metrics, player, search, serialize_result, server, spotify, youtube,
 };
 
 /// Calls `method` with `args_json` (a JSON object) and answers JSON. Free the answer with
@@ -145,6 +145,13 @@ pub const METHODS: &[&str] = &[
     "resolveInnertubeAudio",
     "registerTrackMetadata",
     "resolveYouTubeId",
+    "jamNewCode",
+    "jamJoin",
+    "jamPoll",
+    "jamPublishState",
+    "jamSend",
+    "jamKick",
+    "jamLeave",
     "startLocalServer",
     "engineStart",
     "engineSend",
@@ -465,6 +472,39 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 &cache_dir,
             ));
             Value::String(found.unwrap_or_default()).to_string()
+        }
+
+        // jamNewCode — the code as a JSON string.
+        "jamNewCode" => serialize_result::<_, String>(Ok(jam::new_code())),
+        // jamJoinNative — `config` is a `jam::session::Config`; blocks until the broker answers.
+        "jamJoin" => match serde_json::from_value::<jam::session::Config>(args["config"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(jam::session::join(cfg)).map(|_| crate::ok_result())),
+        },
+        // jamPollNative — every event that arrived within `timeoutMs`, as a JSON array.
+        "jamPoll" => serialize_result::<_, String>(Ok(get_runtime().block_on(jam::session::poll(
+            int(args, "timeoutMs", 0).max(0) as u64,
+        )))),
+        // jamPublishStateNative — `state` is a `jam::State`.
+        "jamPublishState" => match serde_json::from_value::<jam::State>(args["state"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(state) => serialize_result(
+                get_runtime().block_on(jam::session::publish_state(&state)).map(|_| crate::ok_result()),
+            ),
+        },
+        // jamSendNative — `command` is a `jam::Command`.
+        "jamSend" => match serde_json::from_value::<jam::Command>(args["command"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cmd) => serialize_result(get_runtime().block_on(jam::session::send(cmd)).map(|_| crate::ok_result())),
+        },
+        // jamKickNative
+        "jamKick" => serialize_result(
+            get_runtime().block_on(jam::session::kick(&text(args, "id"))).map(|_| crate::ok_result()),
+        ),
+        // jamLeaveNative
+        "jamLeave" => {
+            get_runtime().block_on(jam::session::leave());
+            serialize_result::<_, String>(Ok(crate::ok_result()))
         }
 
         // startLocalServerNative
