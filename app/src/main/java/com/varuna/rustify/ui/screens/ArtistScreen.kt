@@ -55,7 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullArtist
 import com.varuna.rustify.bridge.FullTrack

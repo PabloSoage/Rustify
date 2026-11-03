@@ -9,7 +9,8 @@ lifecycleRuntimeCompose = "2.11.0"
 activityCompose = "1.13.0"
 kotlin = "2.4.21"
 composeBom = "2026.09.00"
-coilCompose = "2.7.0"
+# Coil 3: multiplatform, so the screens in :sharedUi load images the same way on the desktop.
+coilCompose = "3.6.3"
 glance = "1.1.1"
 # Glance 1.1.1 alone resolves WorkManager 2.7.1 + Room 2.2.5, whose WorkDatabase_Impl R8 full mode
 # strips: the minified build crashed at start (found 4.9 on the tablet). Pinned to a current one.
@@ -70,7 +71,9 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
-coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coilCompose" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coilCompose" }
+# Coil 3 fetches nothing by itself; OkHttp is a JVM library, so the same fetcher serves Android and the desktop.
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coilCompose" }
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }

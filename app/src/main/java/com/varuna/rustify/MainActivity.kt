@@ -87,7 +87,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
@@ -563,21 +563,23 @@ class MainActivity : ComponentActivity() {
         // Configure Coil image loading with a persistent disk cache. Size is configurable in Settings
         // (pref cache_max_mb, default 500 MB); it takes effect on app restart.
         val cacheMaxMb = prefs.getInt("cache_max_mb", 500).coerceIn(100, 8192).toLong()
-        val imageLoader = coil.ImageLoader.Builder(this)
-            .memoryCache {
-                coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
-                    .build()
-            }
-            .diskCache {
-                coil.disk.DiskCache.Builder()
-                    .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(cacheMaxMb * 1024 * 1024)
-                    .build()
-            }
-            .respectCacheHeaders(false)
-            .build()
-        coil.Coil.setImageLoader(imageLoader)
+        // Coil 3 ignores the servers' cache headers by default, as respectCacheHeaders(false) did in 2.
+        val activity = this
+        coil3.SingletonImageLoader.setSafe {
+            coil3.ImageLoader.Builder(activity)
+                .memoryCache {
+                    coil3.memory.MemoryCache.Builder()
+                        .maxSizePercent(activity, 0.25)
+                        .build()
+                }
+                .diskCache {
+                    coil3.disk.DiskCache.Builder()
+                        .directory(okio.Path.Companion.run { cacheDir.resolve("image_cache").toOkioPath() })
+                        .maxSizeBytes(cacheMaxMb * 1024 * 1024)
+                        .build()
+                }
+                .build()
+        }
 
         enableEdgeToEdge()
         setContent {

@@ -69,7 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist

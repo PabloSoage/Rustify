@@ -161,6 +161,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     // Home-screen widget (4.9).
     implementation(libs.androidx.glance.appwidget)
     // Glance alone would bring WorkManager 2.7.1, which crashes the minified build (see the catalog).

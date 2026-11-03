@@ -45,7 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.SimpleAlbum
 import com.varuna.rustify.bridge.SpotifyImage

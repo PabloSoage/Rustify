@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.varuna.rustify.R
 import com.varuna.rustify.metrics.ListenerType
 import com.varuna.rustify.metrics.ListeningTracker

@@ -189,7 +189,7 @@ internal fun AndroidAutoPreviewSection(context: Context) {
                             contentAlignment = Alignment.Center
                         ) {
                             if (!art.isNullOrBlank()) {
-                                coil.compose.AsyncImage(
+                                coil3.compose.AsyncImage(
                                     model = art, contentDescription = null,
                                     modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
                                 )

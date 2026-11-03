@@ -1,5 +1,7 @@
 package com.varuna.rustify.widget
 
+import coil3.request.allowHardware
+import coil3.toBitmap
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.LaunchedEffect
@@ -126,12 +128,12 @@ class PlayerWidget : GlanceAppWidget() {
 
     /** Small, software and once per change: a widget's bitmap travels through a Binder. */
     private suspend fun loadCover(context: Context, url: String): Bitmap? = runCatching {
-        val request = coil.request.ImageRequest.Builder(context)
+        val request = coil3.request.ImageRequest.Builder(context)
             .data(url)
             .size(192)
             .allowHardware(false)
             .build()
-        coil.Coil.imageLoader(context).execute(request).drawable?.toBitmap(192, 192)
+        coil3.SingletonImageLoader.get(context).execute(request).image?.toBitmap(192, 192)
     }.getOrNull()
 
     companion object {
