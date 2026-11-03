@@ -56,17 +56,17 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @SuppressLint("StaticFieldLeak")
-class AudioPlayerService private constructor(private val context: Context) {
+class AudioPlayerService private constructor(private val context: Context) : PlayerController {
     private val _state = MutableStateFlow(AudioPlayerState())
-    val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
+    override val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
 
     private val listenerTracker = ListeningTracker(context.applicationContext)
 
     // Preloaded lyrics for the current track
     private val _preloadedLyrics = MutableStateFlow<com.varuna.rustify.bridge.LyricsResult?>(null)
-    val preloadedLyrics: StateFlow<com.varuna.rustify.bridge.LyricsResult?> = _preloadedLyrics.asStateFlow()
+    override val preloadedLyrics: StateFlow<com.varuna.rustify.bridge.LyricsResult?> = _preloadedLyrics.asStateFlow()
     @Volatile
-    var preloadedLyricsTrackId: String? = null
+    override var preloadedLyricsTrackId: String? = null
         private set
 
     companion object {
@@ -197,7 +197,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Position of the current track inside [st]'s queue, for UI that needs to slice the queue (e.g.
      * "Next Up"). Derived from the passed state so Compose recomposes with it.
      */
-    fun currentQueuePosition(st: AudioPlayerState): Int = currentIndexIn(st)
+    override fun currentQueuePosition(st: AudioPlayerState): Int = currentIndexIn(st)
 
     // -------------------------------------------------------------------
     // Web player mode (experimental) — audio comes from the Spotify web page in a WebView while
@@ -218,7 +218,10 @@ class AudioPlayerService private constructor(private val context: Context) {
      * True while the *preference* is on. It only says the web player gets first refusal on each
      * track — not that it is the thing currently making sound, which is [isWebServing].
      */
-    val isWebPlayerMode: Boolean get() = webPlayerMode
+    /** Android's player is the one every feature was built on: it can do all of them. */
+    override fun can(feature: PlayerFeature): Boolean = true
+
+    override val isWebPlayerMode: Boolean get() = webPlayerMode
 
     /**
      * True while the page — not ExoPlayer — is producing the audio for the track playing right now.
@@ -259,7 +262,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Enters or leaves web-player mode. Entering stops ExoPlayer so the two never overlap; leaving
      * stops the page for the same reason.
      */
-    fun setWebPlayerMode(enabled: Boolean) {
+    override fun setWebPlayerMode(enabled: Boolean) {
         if (webPlayerMode == enabled) return
         webPlayerMode = enabled
         if (enabled) {
@@ -2002,7 +2005,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * shape read `currentTrack` and ignored the id it was handed, so previewing from any screen that
      * was not the playing track previewed the wrong song entirely.
      */
-    fun playPreview(track: FullTrack, youtubeVideoId: String) {
+    override fun playPreview(track: FullTrack, youtubeVideoId: String) {
         playTrack(track, youtubeVideoId, isPreview = true)
     }
 
@@ -2122,7 +2125,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         playTrack(track)
     }
 
-    fun loadAndPlay(track: FullTrack) {
+    override fun loadAndPlay(track: FullTrack) {
         // The foreground service is bound inside playTrack() right before playback starts, NOT here —
         // binding it eagerly started the OS's 5s startForeground() clock while a slow backend
         // (Invidious/Deezer) was still resolving, which fired a foreground-service ANR (with the UI
@@ -2167,12 +2170,12 @@ class AudioPlayerService private constructor(private val context: Context) {
      *   asynchronous, so at that moment ExoPlayer is not holding this track yet, and the position it
      *   later starts from was already captured as zero.
      */
-    fun loadPlaylist(
+    override fun loadPlaylist(
         tracks: List<FullTrack>,
-        initialIndex: Int = 0,
-        keepShuffle: Boolean = false,
-        context: PlaybackContext? = null,
-        startPositionMs: Long = 0L
+        initialIndex: Int,
+        keepShuffle: Boolean,
+        context: PlaybackContext?,
+        startPositionMs: Long
     ) {
         if (tracks.isEmpty()) return
         // Set before anything plays, and **cleared when absent**: a queue started from somewhere
@@ -2237,7 +2240,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Start playback of [tracks] in shuffle mode from a random first track (not index 0).
      * Forces isShuffle ON before delegating to loadPlaylist (which honours _state.isShuffle).
      */
-    fun shufflePlay(tracks: List<FullTrack>) {
+    override fun shufflePlay(tracks: List<FullTrack>) {
         if (tracks.isEmpty()) return
         _state.value = _state.value.copy(isShuffle = true, isRepeat = false)
         loadPlaylist(tracks, tracks.indices.random(), keepShuffle = true)
@@ -2254,7 +2257,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         return AlbumShuffle.arrange(rest, albumOf, firstAlbum = current?.let(albumOf))
     }
 
-    fun cyclePlaybackMode() {
+    override fun cyclePlaybackMode() {
         val st = _state.value
         reconcileUserQueue(st)
         // Each branch swaps the whole queue, so the cached position has to be recomputed against the
@@ -2312,7 +2315,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         saveNow()
     }
 
-    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    override fun moveQueueItem(fromIndex: Int, toIndex: Int) {
         val st = _state.value
         if (fromIndex !in st.queue.indices || toIndex !in st.queue.indices) return
         val list = st.queue.toMutableList()
@@ -2335,7 +2338,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    fun removeFromQueue(index: Int) {
+    override fun removeFromQueue(index: Int) {
         val st = _state.value
         if (index !in st.queue.indices) return
 
@@ -2369,7 +2372,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    fun play() {
+    override fun play() {
         if (isCasting) { resumeOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.play(); return }
         val currentTrack = _state.value.currentTrack
@@ -2405,7 +2408,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      */
 
     /** Speed and pitch from [PlaybackSpeed], and offload re-decided, since it cannot do either. */
-    fun applyPlaybackSpeed() {
+    override fun applyPlaybackSpeed() {
         val params = androidx.media3.common.PlaybackParameters(
             PlaybackSpeed.speed(context),
             PlaybackSpeed.pitchFactor(PlaybackSpeed.semitones(context))
@@ -2580,7 +2583,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * headset has none — so the place is taken, and undoing it is one tap for whoever is looking.
      */
     private val _resumedAt = MutableStateFlow<Pair<String, Long>?>(null)
-    val resumedAt: StateFlow<Pair<String, Long>?> = _resumedAt
+    override val resumedAt: StateFlow<Pair<String, Long>?> = _resumedAt
 
     /**
      * Below this the core keeps no place anyway (`player::bookmark::MIN_DURATION_MS`); checking here
@@ -2607,30 +2610,30 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** "Start over" on the resumed notice: back to zero, and the place is forgotten. */
-    fun startOver() {
+    override fun startOver() {
         val (id, _) = _resumedAt.value ?: return
         _resumedAt.value = null
         seekTo(0L)
         mainScope.launch { runCatching { NativeEngine.forgetTrackPlace(id) } }
     }
 
-    fun dismissResumed() {
+    override fun dismissResumed() {
         _resumedAt.value = null
     }
 
     // A-B repeat (AbRepeat). The watcher runs only while a loop is set, at 100 ms: the half-second
     // position tick would overshoot B by up to half a second, which on a two-second phrase is a lot.
     private val _abRepeat = MutableStateFlow(AbRepeat.NONE)
-    val abRepeat: StateFlow<AbRepeat> = _abRepeat
+    override val abRepeat: StateFlow<AbRepeat> = _abRepeat
 
     // Saved queues (4.10), see [SavedQueues]. The one the queue came from is re-saved, with where it
     // got to, when another is loaded: switching away and back resumes it.
     private val _savedQueues = MutableStateFlow<List<SavedQueues.SavedQueue>>(emptyList())
-    val savedQueues: StateFlow<List<SavedQueues.SavedQueue>> = _savedQueues
+    override val savedQueues: StateFlow<List<SavedQueues.SavedQueue>> = _savedQueues
     private val _activeSavedQueue = MutableStateFlow<String?>(null)
-    val activeSavedQueue: StateFlow<String?> = _activeSavedQueue
+    override val activeSavedQueue: StateFlow<String?> = _activeSavedQueue
 
-    fun refreshSavedQueues() {
+    override fun refreshSavedQueues() {
         mainScope.launch { _savedQueues.value = withContext(Dispatchers.IO) { SavedQueues.load(context.filesDir) } }
     }
 
@@ -2653,7 +2656,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** Saves the current queue as [name] (blank: "Queue N") and makes it the active one. */
-    fun saveQueueAs(name: String, defaultPrefix: String) {
+    override fun saveQueueAs(name: String, defaultPrefix: String) {
         mainScope.launch {
             val chosen = name.trim().ifEmpty { SavedQueues.defaultName(_savedQueues.value, defaultPrefix) }
             val snap = snapshot(chosen) ?: return@launch
@@ -2663,7 +2666,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** Plays saved queue [name] from where it was, keeping the one being left where it got to. */
-    fun switchToSavedQueue(name: String) {
+    override fun switchToSavedQueue(name: String) {
         mainScope.launch {
             val leaving = _activeSavedQueue.value
             if (leaving != null && !leaving.equals(name, ignoreCase = true)) {
@@ -2675,7 +2678,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    fun deleteSavedQueue(name: String) {
+    override fun deleteSavedQueue(name: String) {
         mainScope.launch {
             persistSaved { SavedQueues.remove(it, name) }
             if (_activeSavedQueue.value.equals(name, ignoreCase = true)) _activeSavedQueue.value = null
@@ -2684,7 +2687,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     private var abWatcher: kotlinx.coroutines.Job? = null
 
     /** The A-B button: mark A, mark B (the loop starts), clear. */
-    fun pressAbRepeat() {
+    override fun pressAbRepeat() {
         val pos = if (preparedTrackId == _state.value.currentTrack?.id) exoPlayer.currentPosition else _state.value.positionMs
         val next = _abRepeat.value.press(_state.value.currentTrack?.id, pos)
         _abRepeat.value = next
@@ -2707,21 +2710,21 @@ class AudioPlayerService private constructor(private val context: Context) {
     @Volatile private var sleepTracksLeft = 0
     private val _sleepTracks = MutableStateFlow(0)
     /** What [sleepTracksLeft] holds, for the screen: "2 songs left". */
-    val sleepTracks: StateFlow<Int> = _sleepTracks
+    override val sleepTracks: StateFlow<Int> = _sleepTracks
 
     /**
      * When playback will stop: epoch ms, [SLEEP_AT_TRACK_END] for "when this track ends", or null
      * when no timer is set. The screen counts down from it.
      */
     private val _sleepTimer = MutableStateFlow<Long?>(null)
-    val sleepTimer: StateFlow<Long?> = _sleepTimer
+    override val sleepTimer: StateFlow<Long?> = _sleepTimer
 
     /**
      * Pauses after [minutes], fading the last ten seconds out; `0` cancels, [SLEEP_MINUTES_TRACK_END]
      * stops when the current track ends. A pause, not a stop: the queue and position stay, so
      * picking up the next morning is one tap.
      */
-    fun setSleepTimer(minutes: Int) {
+    override fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
         setSleepTracks(0)
         when {
@@ -2750,7 +2753,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * of this song", 3 is this one and two more. Counted where a song *ends* ([onTrackEnded]), so
      * skipping through the queue does not use up the count.
      */
-    fun setSleepAfterTracks(songs: Int) {
+    override fun setSleepAfterTracks(songs: Int) {
         sleepJob?.cancel()
         restoreAfterFade()
         setSleepTracks(songs.coerceAtLeast(0))
@@ -2775,7 +2778,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** @param immediate no fade: the disconnection's pause must not reach the speaker at all. */
-    fun pause(immediate: Boolean = false) {
+    override fun pause(immediate: Boolean) {
         if (isCasting) { pauseOnCastDevice(); return }
         if (isWebServing) { com.varuna.rustify.webplayer.WebPlayerController.pause(); return }
         pauseExo(immediate)
@@ -2851,7 +2854,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         mainScope.launch { com.varuna.rustify.cast.CastSession.pause() }
     }
 
-    fun togglePlayPause() {
+    override fun togglePlayPause() {
         if (isCasting) {
             if (_state.value.isPlaying) pauseOnCastDevice() else resumeOnCastDevice()
             return
@@ -2874,7 +2877,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    fun seekTo(positionMs: Long) {
+    override fun seekTo(positionMs: Long) {
         if (isCasting) {
             _state.value = _state.value.copy(positionMs = positionMs)
             mainScope.launch { com.varuna.rustify.cast.CastSession.seekTo(positionMs) }
@@ -3023,7 +3026,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** Next, as the user asks for it. A Jam guest asks the host instead (Jam.forward). */
-    fun skipToNext() {
+    override fun skipToNext() {
         if (Jam.forward(Jam.next())) return
         nextTrack()
     }
@@ -3151,7 +3154,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    fun skipToPrevious() {
+    override fun skipToPrevious() {
         if (Jam.forward(Jam.previous())) return
         // Same reasoning as skipToNext(): Rustify's queue navigates, the page just gets told what to
         // open. seekTo(0) below is already routed to whichever engine is playing.
@@ -3179,7 +3182,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         applyQueueDecision(st, decision)
     }
 
-    fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null, isAutoRetry: Boolean = false) {
+    override fun retryCurrentTrack(youtubeId: String?, fallbackTrackId: String?, isAutoRetry: Boolean) {
         val st = _state.value
         val track = if (fallbackTrackId != null) {
             st.queue.find { it.id == fallbackTrackId } ?: st.currentTrack
@@ -3235,7 +3238,7 @@ class AudioPlayerService private constructor(private val context: Context) {
      * Play a track already in the queue. [queueIndex] disambiguates when the same id appears more
      * than once (tapping the second copy of a repeated song must play *that* row, not the first).
      */
-    fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null, queueIndex: Int? = null) {
+    override fun playSpecificTrackInQueue(trackId: String, youtubeId: String?, queueIndex: Int?) {
         val st = _state.value
         val idx = queueIndex?.takeIf { it in st.queue.indices && st.queue[it].id == trackId }
             ?: st.queue.indexOfFirst { it.id == trackId }
@@ -3375,7 +3378,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         return result
     }
 
-    fun enqueue(track: FullTrack) {
+    override fun enqueue(track: FullTrack) {
         val st = _state.value
         reconcileUserQueue(st)
         // Snapshot before adding: the insertion point is "after what was already queued by hand".
@@ -3390,7 +3393,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         requestSave()
     }
 
-    fun enqueueAll(tracks: List<FullTrack>) {
+    override fun enqueueAll(tracks: List<FullTrack>) {
         val st = _state.value
         reconcileUserQueue(st)
         var currentQueue = st.queue
@@ -3475,7 +3478,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     // Invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
     // stale URL. Covers both the in-memory map (backed by stream_url_cache.json) and the legacy
     // SharedPreferences "cached_url_$id" entry.
-    fun removeCachedStreamUrl(trackId: String) {
+    override fun removeCachedStreamUrl(trackId: String) {
         persistedUrlCache.remove(trackId)
         urlExpiryCache.remove(trackId)   // drop the tracked expiry alongside the URL
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
@@ -3557,7 +3560,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     }
 
     /** Synchronous atomic write — use on shutdown paths where the async queue may not flush. */
-    internal fun saveNow() {
+    override fun saveNow() {
         writeStateAtomically(_state.value)
     }
 
@@ -3690,7 +3693,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         )
     }
 
-    fun switchToVideoStream(videoUrl: String, audioUrl: String? = null) {
+    override fun switchToVideoStream(videoUrl: String, audioUrl: String?) {
         mainScope.launch {
             val pos = exoPlayer.currentPosition
             val isPlaying = exoPlayer.playWhenReady
@@ -3716,7 +3719,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         }
     }
 
-    fun switchToAudioStream() {
+    override fun switchToAudioStream() {
         mainScope.launch {
             val trackId = _state.value.currentTrack?.id ?: return@launch
             val audioUrl = resolvedStreamUrls[trackId] ?: return@launch
