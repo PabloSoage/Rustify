@@ -26,7 +26,7 @@ pub mod ring;
 pub mod source;
 
 use std::fmt;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -212,10 +212,8 @@ impl Engine {
     /// The next event, waiting up to `timeout`. One caller at a time (the app's event loop).
     pub fn poll(&self, timeout: Duration) -> Option<Event> {
         let rx = self.events.lock().ok()?;
-        match rx.recv_timeout(timeout) {
-            Ok(event) => Some(event),
-            Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected) => None,
-        }
+        // A timeout and a stopped engine both mean "no event"; the caller polls again or stops.
+        rx.recv_timeout(timeout).ok()
     }
 }
 

@@ -169,7 +169,7 @@ fn pausing_holds_the_position() {
 #[test]
 fn something_undecodable_is_an_unsupported_error_for_that_token() {
     let path = std::env::temp_dir().join(format!("rustify-engine-{}-junk.bin", std::process::id()));
-    std::fs::write(&path, vec![0x42u8; 8192]).expect("temp file");
+    std::fs::write(&path, [0x42u8; 8192]).expect("temp file");
     let engine = engine(NullOutput::new(Pace::Instant));
     engine.send(load(9, path.to_string_lossy().into_owned(), true));
     let events = collect_until(&engine, |e| matches!(e, Event::Error { .. }));

@@ -166,8 +166,8 @@ mod cpal_output {
             for range in ranges {
                 if range.channels() as usize == wanted.channels
                     && range.sample_format() == cpal::SampleFormat::F32
-                    && range.min_sample_rate().0 <= wanted.sample_rate
-                    && wanted.sample_rate <= range.max_sample_rate().0
+                    && (range.min_sample_rate().0..=range.max_sample_rate().0)
+                        .contains(&wanted.sample_rate)
                 {
                     return Ok(range.with_sample_rate(cpal::SampleRate(wanted.sample_rate)));
                 }

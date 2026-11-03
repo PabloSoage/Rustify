@@ -100,7 +100,9 @@ pub(crate) struct Player<E: Env> {
     volume: f32,
     fade_ms: u32,
     last_position: Instant,
-    _env: std::marker::PhantomData<E>,
+    // `fn() -> E` rather than `E`: the player is moved to its own thread, and `Env` does not ask
+    // implementors to be `Send` (they are unit structs; this keeps it from mattering).
+    _env: std::marker::PhantomData<fn() -> E>,
 }
 
 impl<E: Env> Player<E> {
@@ -459,7 +461,10 @@ impl<E: Env> Player<E> {
                             position_ms: landed,
                         });
                     }
-                    Err(e) => self.emit(Event::error(Some(track.token), &e)),
+                    Err(e) => {
+                        let token = track.token;
+                        self.emit(Event::error(Some(token), &e));
+                    }
                 }
             }
         }

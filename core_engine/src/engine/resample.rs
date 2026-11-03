@@ -243,10 +243,10 @@ mod tests {
     fn reset_forgets_the_previous_signal() {
         let mut r = Resampler::new(44_100, 48_000, 1);
         let mut out = Vec::new();
-        r.process(&vec![1.0; 4410], &mut out);
+        r.process(&[1.0; 4410], &mut out);
         r.reset();
         out.clear();
-        r.process(&vec![0.0; 4410], &mut out);
+        r.process(&[0.0; 4410], &mut out);
         assert!(out.iter().all(|x| x.abs() < 1e-6), "no ringing from before the reset");
     }
 
