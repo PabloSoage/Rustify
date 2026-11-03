@@ -184,6 +184,32 @@ object AudioBackendSettings {
         }
     }
 
+    /** Bumped by [enable], so the order shown in Settings reloads when a section below turns one on. */
+    val enabledElsewhere = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /**
+     * Turns [id] on in both orders, keeping its place; adds it if it is not there yet.
+     *
+     * For a source that only works once configured (Subsonic): a server set up and answering is the
+     * opt-in, as installing an add-on is. Leaving it off after "Connected" made the server look
+     * ignored — found on the tablet, where a track the server had kept playing from YouTube.
+     */
+    fun enable(context: Context, id: String) {
+        enabledElsewhere.value++
+        adoptNewProviders(context, listOf(id))
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        for (key in listOf(KEY_STREAM, KEY_DOWNLOAD)) {
+            val raw = prefs.getString(key, null) ?: continue
+            val arr = runCatching { JSONArray(raw) }.getOrNull() ?: continue
+            val entries = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                .map { BackendEntry(it.optString("id", ""), it.optBoolean("enabled", false)) }
+                .filter { it.id.isNotBlank() }
+            if (entries.any { it.id == id && !it.enabled }) {
+                saveOrder(context, key, entries.map { if (it.id == id) it.copy(enabled = true) else it })
+            }
+        }
+    }
+
     fun saveOrder(context: Context, key: String, entries: List<BackendEntry>) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val arr = JSONArray()

@@ -77,6 +77,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -446,6 +447,8 @@ internal fun AudioBackendsSection(context: Context) {
     // from the order lists until the screen was left and reopened — which reads as "installing did
     // nothing".
     var backendsRevision by remember { mutableIntStateOf(0) }
+    val enabledElsewhere by com.varuna.rustify.audio.AudioBackendSettings.enabledElsewhere.collectAsState()
+    LaunchedEffect(enabledElsewhere) { if (enabledElsewhere > 0) backendsRevision++ }
 
     val knownIds = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
     val catalog = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
@@ -541,6 +544,9 @@ internal fun SubsonicBackendSection(context: Context) {
                     scope.launch {
                         val r = ss.ping(config)
                         busy = false
+                        if (r.isSuccess) com.varuna.rustify.audio.AudioBackendSettings.enable(
+                            context, com.varuna.rustify.audio.SubsonicAudioSource.ID
+                        )
                         status = r.fold({ okTemplate.format(it) }, { failTemplate.format(it.message ?: "") })
                     }
                 }
