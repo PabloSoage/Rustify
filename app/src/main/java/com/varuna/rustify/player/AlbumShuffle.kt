@@ -9,7 +9,7 @@ import kotlin.random.Random
  * shuffle scatters exactly what makes them worth hearing.
  *
  * Kotlin, like the song shuffle it sits next to: the order is Rustify's own (the hand-queued block
- * keeps its place), and the core's reducer deliberately holds no random source (`CLAUDE.md`).
+ * keeps its place), and the core's reducer deliberately holds no random source.
  * Pure, so it is tested on the JVM; [AudioPlayerService] decides when it applies.
  */
 object AlbumShuffle {

@@ -9,7 +9,7 @@
 
 // Tests hold `env::mock::lock_and_reset()` for their whole body, awaits included: that guard is what
 // serialises the tests sharing the global mock. The production rule — never a lock across an
-// `.await` (CLAUDE.md) — is checked on the library, where clippy is clean.
+// `.await` — is checked on the library, where clippy is clean.
 #![cfg_attr(test, allow(clippy::await_holding_lock))]
 
 pub mod adblock_engine;
