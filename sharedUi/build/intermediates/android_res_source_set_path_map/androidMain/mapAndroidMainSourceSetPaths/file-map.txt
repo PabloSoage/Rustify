@@ -1,0 +1,5 @@
+com.varuna.rustify.ui.sharedUi-androidMain-0 D:\Repos\Rustify-mp\sharedUi\build\generated\updated_navigation_xml\androidMain\res
+com.varuna.rustify.ui.sharedUi-packageAndroidMainResources-1 D:\Repos\Rustify-mp\sharedUi\build\intermediates\incremental\androidMain\packageAndroidMainResources\merged.dir
+com.varuna.rustify.ui.sharedUi-packageAndroidMainResources-2 D:\Repos\Rustify-mp\sharedUi\build\intermediates\incremental\androidMain\packageAndroidMainResources\stripped.dir
+com.varuna.rustify.ui.sharedUi-packageAndroidMainResources-3 D:\Repos\Rustify-mp\sharedUi\build\intermediates\packaged_res\androidMain\packageAndroidMainResources\res
+gradleHome-0 C:\Users\pablo\.gradle

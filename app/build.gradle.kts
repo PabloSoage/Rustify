@@ -149,6 +149,8 @@ dependencies {
     // Models, pure logic and NativeEngine, shared with the desktop app and iOS (docs 24/25). Same
     // packages as before the move, so no import in the app changed.
     implementation(project(":shared"))
+    // The interface, shared with the desktop (docs serie-4.x/26).
+    implementation(project(":sharedUi"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

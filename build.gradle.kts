@@ -6,4 +6,6 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    // Compose Multiplatform for :sharedUi (the APK's interface too, docs serie-4.x/26) and :desktopApp.
+    alias(libs.plugins.compose.multiplatform) apply false
 }

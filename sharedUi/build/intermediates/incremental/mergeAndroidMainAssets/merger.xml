@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merger version="3"><dataSet config="assets-copyAndroidMainComposeResourcesToAndroidAssets" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="D:\Repos\Rustify-mp\sharedUi\build\generated\assets\copyAndroidMainComposeResourcesToAndroidAssets"/></dataSet><dataSet config="androidMain" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="D:\Repos\Rustify-mp\sharedUi\src\androidMain\assets"/></dataSet></merger>

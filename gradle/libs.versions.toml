@@ -46,10 +46,11 @@ mlkitLanguageId = "17.0.6"
 # Multiplatform (docs 24/25). The shared module uses the Kotlin version above; coroutines is declared
 # for it explicitly rather than borrowed from the app's graph, where lifecycle brings it in.
 kotlinxCoroutines = "1.10.2"
-# Compose Multiplatform for the desktop app only — the Android app keeps Jetpack Compose and the BOM.
+# Compose Multiplatform for :sharedUi, the interface the APK and the desktop share (docs serie-4.x/26),
+# and the desktop app. 1.12 rather than 1.9: 1.9's resources plugin calls an AGP API that 9.4 changed.
 # Written without a Gradle sync: if this version does not resolve, take the newest
 # org.jetbrains.compose release that supports Kotlin 2.4 (docs 25 §4, first thing to check).
-composeMultiplatform = "1.9.0"
+composeMultiplatform = "1.12.2"
 [libraries]
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }

@@ -25,6 +25,7 @@ kotlin {
     sourceSets {
         jvmMain.dependencies {
             implementation(project(":shared"))
+            implementation(project(":sharedUi"))
             implementation(compose.desktop.currentOs)
             implementation(compose.material3)
             // The player's icons (skip, pause, repeat...): the same Material set the phone draws.
