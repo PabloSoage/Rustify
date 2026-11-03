@@ -71,10 +71,6 @@ class SpotifyRepository(private val platform: AppPlatform, private val scanner: 
         // reads the live repo to build its browsable tree.
         var instance: SpotifyRepository? = null
 
-        /** Called when the library changes (Android sets it to refresh the Android Auto tree). */
-        @Volatile
-        var onLibraryChanged: () -> Unit = {}
-
         // Local music bridge: temporary storage for local album/artist tracks
         // Used to pass local track data to AlbumScreen/ArtistScreen without API calls
 val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
@@ -634,7 +630,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         if (!TrackRef.isLocal(id)) return
         localFavoriteIds[id] = localFavoriteIds[id] != true
         saveLocalFavorites()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
     }
 
     /** Local tracks marked as favorites (live, with cover/duration). Ignores orphans. */
@@ -649,7 +645,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylists.add(pl)
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
         return pl
     }
 
@@ -667,7 +663,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
     }
 
     fun removeFromLocalPlaylist(playlistId: String, trackId: String) {
@@ -679,14 +675,14 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
     }
 
     fun deleteLocalPlaylist(playlistId: String) {
         localPlaylists.removeAll { it.id == playlistId }
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
     }
 
     fun renameLocalPlaylist(playlistId: String, newName: String) {
@@ -697,7 +693,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         if (pl.name == trimmed) return
         localPlaylists[i] = pl.copy(name = trimmed, updatedAt = System.currentTimeMillis())
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
     }
 
     private fun known(t: FullTrack): M3u.Known? {
@@ -718,7 +714,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         )
         localPlaylists.add(pl)
         saveLocalPlaylists()
-        onLibraryChanged()
+        LibraryChanges.notifyChanged()
         return pl to resolved.missing.size
     }
 
@@ -1089,7 +1085,7 @@ loadLocalTracksFromCache()
                     likedTracks.add(0, newTrack)
                 }
                 saveLikedTracksToCache()
-                onLibraryChanged()
+                LibraryChanges.notifyChanged()
             }
         }
         result
@@ -1109,7 +1105,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (saved) savedAlbums.removeAll { it.id == id }
             else if (savedAlbums.none { it.id == id }) savedAlbums.add(0, album)
-            onLibraryChanged()
+            LibraryChanges.notifyChanged()
         }
         result
     }
@@ -1122,7 +1118,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (followed) followedArtists.removeAll { it.id == id }
             else if (followedArtists.none { it.id == id }) followedArtists.add(0, artist)
-            onLibraryChanged()
+            LibraryChanges.notifyChanged()
         }
         result
     }
@@ -1135,7 +1131,7 @@ loadLocalTracksFromCache()
         if (result.success) withContext(Dispatchers.Main) {
             if (followed) savedPlaylists.removeAll { it.id == id }
             else if (savedPlaylists.none { it.id == id }) savedPlaylists.add(0, playlist)
-            onLibraryChanged()
+            LibraryChanges.notifyChanged()
         }
         result
     }

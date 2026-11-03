@@ -282,7 +282,7 @@ fun LibraryScreen(
                 )
                 LibraryTab.YTMUSIC -> {
                     // Fallback repo when the caller didn't hoist one (keeps preview/testing simple).
-                    val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+                    val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
                     YtMusicLibraryContent(
                         repo = repo,
                         searchQuery = globalSearchQuery,
@@ -456,7 +456,7 @@ fun LibraryScreen(
         // ── YTM: playlist selector dialog (uses YTM playlists, not local) ──
         if (ytmPendingPlaylistTrack != null) {
             val track = ytmPendingPlaylistTrack!!
-            val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+            val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
             AlertDialog(
                 onDismissRequest = { ytmPendingPlaylistTrack = null },
                 title = { Text(stringResource(R.string.local_playlist_selector_title)) },
@@ -500,7 +500,7 @@ fun LibraryScreen(
             )
         }
         if (showYtmCreatePlaylistDialog) {
-            val repo = ytmRepo ?: remember { YtMusicRepository(context.applicationContext) }
+            val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
             AlertDialog(
                 onDismissRequest = { showYtmCreatePlaylistDialog = false; ytmNewPlaylistName = "" },
                 title = { Text(stringResource(R.string.local_playlist_create)) },

@@ -53,7 +53,7 @@ class RustifyForegroundService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
     private var webSessionPlayer: WebSessionPlayer? = null
-    private val ytmRepo by lazy { YtMusicRepository(applicationContext) }
+    private val ytmRepo by lazy { YtMusicRepository(filesDir) }
     // Scope for resolving Android Auto tree branches that require network (playlists/albums).
     private val autoScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 

@@ -31,6 +31,8 @@ object MediaBrowserNotifier {
 
     fun bind(session: MediaLibrarySession?) {
         sessionRef = session?.let { java.lang.ref.WeakReference(it) }
+        // The repositories are shared code and announce changes rather than call in here.
+        com.varuna.rustify.bridge.LibraryChanges.listener = { notifyLibraryChanged() }
     }
 
     fun unbind() {

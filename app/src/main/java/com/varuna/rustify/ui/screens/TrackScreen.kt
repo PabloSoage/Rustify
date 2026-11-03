@@ -1332,7 +1332,7 @@ fun TrackScreenControls(
                 val vid = TrackRef.youtubeVideoIdOf(track.id) ?: ""
                 val ctx = LocalContext.current
                 val effectiveYtmRepo = ytmRepo ?: remember(ctx) {
-                    com.varuna.rustify.bridge.YtMusicRepository(ctx.applicationContext)
+                    com.varuna.rustify.bridge.YtMusicRepository(ctx.filesDir)
                 }
                 var ytmFav by remember(vid) { mutableStateOf(effectiveYtmRepo.isFavorite(vid)) }
                 SpotifyLikeButton(

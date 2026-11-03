@@ -140,11 +140,10 @@ fun RustifyApp(
     val context = LocalContext.current
     val spotifyRepo = remember {
         SpotifyRepository(com.varuna.rustify.ui.AndroidAppPlatform(context), com.varuna.rustify.bridge.AndroidLocalMusicScanner(context))
-            .also { SpotifyRepository.onLibraryChanged = { com.varuna.rustify.player.MediaBrowserNotifier.notifyLibraryChanged() } }
     }
     // Single shared YTM repository so favorites/playlists stay consistent across the library tab
     // and all first-class YTM screens.
-    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
+    val ytmRepo = remember { YtMusicRepository(context.filesDir) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val audioPlayerService = remember { AudioPlayerService.getInstance(context) }

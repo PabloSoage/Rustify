@@ -142,7 +142,7 @@ import java.io.File
 internal fun AndroidAutoPreviewSection(context: Context) {
     val prefs = remember { context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE) }
     var enabled by remember { mutableStateOf(prefs.getBoolean("debug_auto_preview", false)) }
-    val ytmRepo = remember { YtMusicRepository(context.applicationContext) }
+    val ytmRepo = remember { YtMusicRepository(context.filesDir) }
     var path by remember { mutableStateOf(listOf("root")) }
 
     Spacer(modifier = Modifier.height(24.dp))

@@ -28,7 +28,7 @@ object TrackFavorites {
 
     private fun ytm(context: Context): YtMusicRepository =
         ytmRepo ?: synchronized(this) {
-            ytmRepo ?: YtMusicRepository(context.applicationContext).also { ytmRepo = it }
+            ytmRepo ?: YtMusicRepository(context.filesDir).also { ytmRepo = it }
         }
 
     /**
