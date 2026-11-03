@@ -66,7 +66,7 @@ impl MatKernel {
     pub fn available() -> Vec<MatKernel> {
         #[allow(unused_mut)] // pushed to on aarch64 only
         let mut v = vec![MatKernel::Baseline];
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         {
             v.push(MatKernel::Neon);
             if std::arch::is_aarch64_feature_detected!("bf16") {
@@ -93,7 +93,7 @@ impl MatKernel {
     }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(rustify_arm_kernels)]
 extern "C" {
     fn rf_mm_neon(at: *const f32, b: *const f32, c: *mut f32, m: usize, n: usize, k: usize);
     fn rf_mm_bf16(ap: *const u16, bp: *const u16, c: *mut f32, m: usize, n: usize, k: usize);
@@ -108,7 +108,7 @@ fn bf16(x: f32) -> u16 {
 }
 
 /// A row-major `rows × k` matrix packed once for every kernel's layout.
-#[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))] // the bf16 layouts are read on ARM only
+#[cfg_attr(not(rustify_arm_kernels), allow(dead_code))] // the bf16 layouts are read on ARM only
 pub struct Packed {
     m: usize,
     k: usize,
@@ -174,19 +174,19 @@ pub fn matmul(kernel: MatKernel, a: &Packed, b: &[f32], n: usize) -> Vec<f32> {
     };
     let mut c = vec![0f32; m * n];
     match kernel {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: shapes asserted above; each kernel reads m·k + k·n values and writes m·n.
         MatKernel::Neon => unsafe { rf_mm_neon(a.at.as_ptr(), b.as_ptr(), c.as_mut_ptr(), m, n, k) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above, and the CPU has BF16.
         MatKernel::Bf16 => {
             let bp = mmla_panels(n, k, |j, p| b[p * n + j]);
             unsafe { rf_mm_bf16(a.panels.as_ptr(), bp.as_ptr(), c.as_mut_ptr(), m, n, k) }
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above, and the CPU has SME.
         MatKernel::Sme => unsafe { rf_mm_sme(a.at.as_ptr(), b.as_ptr(), c.as_mut_ptr(), m, n, k) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above, and the CPU has SME.
         MatKernel::SmeBf16 => {
             let bp = mopa_pairs(n, k, |j, p| b[p * n + j]);

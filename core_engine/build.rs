@@ -1,10 +1,22 @@
 // Compiles the audio lab's hand-written ARM kernels (native/fft_kernels.c, native/matmul_kernels.c)
-// for 64-bit ARM only. Elsewhere — the host running the tests, armv7, x86_64 — there is nothing to
-// build: the Rust side declares the kernels under the same `target_arch` and never names them.
+// for 64-bit ARM Android only, and says so with the `rustify_arm_kernels` cfg, which is what the Rust
+// side declares the kernels under. Elsewhere — the host running the tests, armv7, x86_64 — there is
+// nothing to build and nothing is named.
+//
+// Not plain `target_arch = "aarch64"` since the desktop and iOS builds (docs `24`): Apple Silicon,
+// iOS, Windows on ARM and aarch64 Linux are aarch64 too, and the kernels assume three things only the
+// NDK guarantees — `getauxval` to read the SME bit, clang's SME attributes (`__arm_new("za")`) and
+// clang's own runtime for the SME ABI routines. Those targets get the portable FFT and matrix product,
+// which is what x86_64 already runs. On the phone nothing changes: every APK ABI that set the cfg
+// before (arm64-v8a) sets it now. Turning it on for aarch64 Linux is a measured decision for later.
 fn main() {
     println!("cargo:rerun-if-changed=native/fft_kernels.c");
     println!("cargo:rerun-if-changed=native/matmul_kernels.c");
-    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {
+    println!("cargo::rustc-check-cfg=cfg(rustify_arm_kernels)");
+    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if arch == "aarch64" && os == "android" {
+        println!("cargo:rustc-cfg=rustify_arm_kernels");
         let mut build = cc::Build::new();
         build
             .file("native/fft_kernels.c")
