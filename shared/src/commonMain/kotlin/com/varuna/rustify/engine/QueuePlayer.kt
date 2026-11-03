@@ -1,13 +1,11 @@
-// desktopApp/src/jvmMain/kotlin/com/varuna/rustify/desktop/DesktopPlayer.kt
-package com.varuna.rustify.desktop
+// shared/src/commonMain/kotlin/com/varuna/rustify/engine/QueuePlayer.kt
+package com.varuna.rustify.engine
 
-import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.YtmTrack
-import com.varuna.rustify.engine.EngineCommand
-import com.varuna.rustify.engine.EngineEvent
-import com.varuna.rustify.engine.RustAudioEngine
 import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,37 +23,65 @@ import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 
 /**
- * The desktop's player: `player::reduce` decides, the core's engine plays.
+ * What a [QueuePlayer] needs from the platform: the core's reducer and resolver, and its audio engine.
+ *
+ * Two implementations, one per way of reaching the core: `JvmPlayerBackend` (desktop, JNI) and
+ * `IosPlayerBackend` (C ABI). Everything they answer is the core's own JSON.
+ */
+interface PlayerBackend {
+    /** Opens the output device; `{"success":true}` or a failure. */
+    suspend fun startEngine(): String
+
+    /** Queues a command; never waits. */
+    fun send(command: EngineCommand)
+
+    /** The engine's events, for as long as they are collected. */
+    fun events(): Flow<EngineEvent>
+
+    /** `player::reduce` over JSON: `{"state":…,"effects":[…]}`. Memory only, fast. */
+    fun reduce(stateJson: String, actionJson: String): String
+
+    /** `youtube::innertube::resolve_audio` for [videoId] with [prefsJson]; the core's JSON. */
+    suspend fun resolveAudio(videoId: String, prefsJson: String): String
+}
+
+/** What a screen shows. Top-level rather than nested so Swift sees it as `PlayerUi`. */
+data class PlayerUi(
+    val queue: List<YtmTrack> = emptyList(),
+    val index: Int = -1,
+    val playing: Boolean = false,
+    val loading: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long? = null,
+    val volume: Float = 1f,
+    val error: String? = null,
+) {
+    val current: YtmTrack? get() = queue.getOrNull(index)
+}
+
+/**
+ * A player for the platforms that play through the core's engine (desktop, iOS): `player::reduce`
+ * decides, the engine plays.
  *
  * The same split Android has between `PlayerQueue` and ExoPlayer, without the Android: every
- * "what next" goes through `NativeEngine.playerReduceNative`, so repeat, "previous restarts after
- * ten seconds" and the end of the queue behave exactly as on the phone. This class only turns the
- * reducer's effects into engine commands and the engine's events back into actions.
+ * "what next" goes through the core's reducer, so repeat, "previous restarts after ten seconds" and
+ * the end of the queue behave exactly as on the phone. This class only turns the reducer's effects
+ * into engine commands and the engine's events back into actions.
  *
  * Gapless: when a track is ready, the one the reducer would play next is resolved and preloaded.
  * When the engine moves on to it by itself (`Transitioned`), the reducer is told the track ended and
  * the `Play` it answers is not sent — the engine is already playing it.
  *
- * Runs on one thread (the scope's, the Swing main thread): no locks, and events and clicks cannot
- * interleave in the middle of a reduce.
+ * Runs on one thread — the scope's, which must be single-threaded (the desktop's Swing main thread,
+ * iOS's main queue): no locks, and events and clicks cannot interleave in the middle of a reduce.
  */
-class DesktopPlayer(private val scope: CoroutineScope) {
+class QueuePlayer(private val scope: CoroutineScope, private val backend: PlayerBackend) {
 
-    data class Ui(
-        val queue: List<YtmTrack> = emptyList(),
-        val index: Int = -1,
-        val playing: Boolean = false,
-        val loading: Boolean = false,
-        val positionMs: Long = 0,
-        val durationMs: Long? = null,
-        val volume: Float = 1f,
-        val error: String? = null,
-    ) {
-        val current: YtmTrack? get() = queue.getOrNull(index)
-    }
+    private val _ui = MutableStateFlow(PlayerUi())
+    val ui: StateFlow<PlayerUi> = _ui.asStateFlow()
 
-    private val _ui = MutableStateFlow(Ui())
-    val ui: StateFlow<Ui> = _ui.asStateFlow()
+    /** For callers without coroutines (Swift): [onChange] on every change, until the job is cancelled. */
+    fun observe(onChange: (PlayerUi) -> Unit): Job = scope.launch { ui.collect { onChange(it) } }
 
     /** The reducer's state, as `player::PlayerState` serialises it. */
     @Serializable
@@ -96,12 +122,12 @@ class DesktopPlayer(private val scope: CoroutineScope) {
 
     fun start() {
         scope.launch {
-            val started = RustAudioEngine.start()
+            val started = backend.startEngine()
             if (!started.contains("\"success\":true")) {
                 _ui.update { it.copy(error = "Audio output: $started") }
                 return@launch
             }
-            RustAudioEngine.events().collect { onEvent(it) }
+            backend.events().collect { onEvent(it) }
         }
     }
 
@@ -125,7 +151,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
     fun previous() = reduce(buildJsonObject { put("type", "previous") })
 
     fun togglePause() {
-        RustAudioEngine.send(if (_ui.value.playing) EngineCommand.Pause else EngineCommand.Play)
+        backend.send(if (_ui.value.playing) EngineCommand.Pause else EngineCommand.Play)
     }
 
     fun seek(positionMs: Long) = reduce(buildJsonObject {
@@ -135,7 +161,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
 
     fun setVolume(volume: Float) {
         _ui.update { it.copy(volume = volume) }
-        RustAudioEngine.send(EngineCommand.SetVolume(volume))
+        backend.send(EngineCommand.SetVolume(volume))
     }
 
     fun setRepeat(mode: String) = reduce(buildJsonObject {
@@ -144,7 +170,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
     })
 
     fun shutdown() {
-        RustAudioEngine.send(EngineCommand.Stop)
+        backend.send(EngineCommand.Stop)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -161,9 +187,9 @@ class DesktopPlayer(private val scope: CoroutineScope) {
                 "play" -> if (!skipPlay) {
                     load(state.index, effect["positionMs"]?.jsonPrimitive?.long ?: 0)
                 }
-                "seek" -> RustAudioEngine.send(EngineCommand.Seek(effect["positionMs"]?.jsonPrimitive?.long ?: 0))
+                "seek" -> backend.send(EngineCommand.Seek(effect["positionMs"]?.jsonPrimitive?.long ?: 0))
                 "stop" -> {
-                    RustAudioEngine.send(EngineCommand.Stop)
+                    backend.send(EngineCommand.Stop)
                     _ui.update { it.copy(playing = false) }
                 }
                 // No radio on the desktop yet (Android extends the queue here): the queue just ends.
@@ -175,7 +201,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
     }
 
     private fun runReducer(from: QueueState, action: JsonObject): ReduceAnswer? = runCatching {
-        val raw = NativeEngine.playerReduceNative(json.encodeToString(QueueState.serializer(), from), action.toString())
+        val raw = backend.reduce(json.encodeToString(QueueState.serializer(), from), action.toString())
         json.decodeFromString(ReduceAnswer.serializer(), raw)
     }.onFailure { Log.w(TAG, "reduce failed", it) }.getOrNull()
 
@@ -190,7 +216,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
         currentToken = token
         preloadedToken = 0
         preloadedIndex = -1
-        RustAudioEngine.send(EngineCommand.ClearNext)
+        backend.send(EngineCommand.ClearNext)
         _ui.update { it.copy(loading = true, positionMs = startMs, durationMs = null, error = null) }
         scope.launch {
             val audio = resolve(track)
@@ -199,7 +225,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
                 failed("Could not resolve \"${track.title}\"")
                 return@launch
             }
-            RustAudioEngine.send(EngineCommand.Load(token, audio.url, startMs, gainOf(audio), play = true))
+            backend.send(EngineCommand.Load(token, audio.url, startMs, gainOf(audio), play = true))
         }
     }
 
@@ -219,7 +245,7 @@ class DesktopPlayer(private val scope: CoroutineScope) {
         scope.launch {
             val audio = resolve(track) ?: return@launch
             if (token != preloadedToken) return@launch
-            RustAudioEngine.send(EngineCommand.Preload(token, audio.url, gainOf(audio)))
+            backend.send(EngineCommand.Preload(token, audio.url, gainOf(audio)))
         }
     }
 
@@ -257,12 +283,12 @@ class DesktopPlayer(private val scope: CoroutineScope) {
         failuresInARow++
         Log.w(TAG, "playback failed ($failuresInARow in a row): $message")
         _ui.update { it.copy(loading = false, error = message) }
-        if (failuresInARow < 3) next() else RustAudioEngine.send(EngineCommand.Stop)
+        if (failuresInARow < 3) next() else backend.send(EngineCommand.Stop)
     }
 
     private suspend fun resolve(track: YtmTrack): ResolvedAudio? {
         // AAC (itag 140): the engine's decoder has no Opus (core_engine/src/engine/decode.rs).
-        val raw = NativeEngine.resolveInnertubeAudio(track.videoId, """{"prefer":"aac","maxKbps":0}""")
+        val raw = backend.resolveAudio(track.videoId, """{"prefer":"aac","maxKbps":0}""")
         val audio = runCatching { json.decodeFromString(ResolvedAudio.serializer(), raw) }.getOrNull()
         return audio?.takeIf { it.success != false && it.url.isNotBlank() }
     }
@@ -274,6 +300,6 @@ class DesktopPlayer(private val scope: CoroutineScope) {
     }
 
     private companion object {
-        const val TAG = "DesktopPlayer"
+        const val TAG = "QueuePlayer"
     }
 }

@@ -1,0 +1,47 @@
+# Rustify for iOS — an XcodeGen description rather than a checked-in .xcodeproj, which is a generated
+# file nobody can review. On a Mac with Xcode:
+#
+#   brew install xcodegen
+#   ../tools/ios/build-core.sh          # the core as a static library (once per core change)
+#   xcodegen generate                   # writes Rustify.xcodeproj next to this file
+#   open Rustify.xcodeproj
+#
+# The Kotlin side (RustifyShared.framework, from :shared) is built by Xcode itself through the
+# pre-build script below — Kotlin's standard embedAndSignAppleFrameworkForXcode task.
+name: Rustify
+options:
+  bundleIdPrefix: com.varuna
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Rustify:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Rustify
+        CFBundleShortVersionString: "5.0.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        # Keeps playing with the screen off or the app in the background.
+        UIBackgroundModes: [audio]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.varuna.rustify
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        # The framework is static and carries the Rust core inside it (cinterop's staticLibraries);
+        # these are what that core links against.
+        OTHER_LDFLAGS: "$(inherited) -framework RustifyShared -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -lc++"
+        ENABLE_BITCODE: NO
+        # Sideloaded (AltStore/SideStore) with a free or paid Apple ID; set your team in Xcode.
+        CODE_SIGN_STYLE: Automatic
+    preBuildScripts:
+      - name: Build RustifyShared (Kotlin)
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode

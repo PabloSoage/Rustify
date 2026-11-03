@@ -11,6 +11,8 @@ import androidx.compose.ui.window.rememberWindowState
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.desktop.ui.App
 import com.varuna.rustify.desktop.ui.RustifyTheme
+import com.varuna.rustify.engine.JvmPlayerBackend
+import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.defaultLanguage
 
@@ -20,7 +22,7 @@ fun main() {
 
     application {
         val scope = rememberCoroutineScope()
-        val player = remember { DesktopPlayer(scope) }
+        val player = remember { QueuePlayer(scope, JvmPlayerBackend) }
 
         LaunchedEffect(Unit) {
             // The same start-up the Android app does, with the desktop's folders.

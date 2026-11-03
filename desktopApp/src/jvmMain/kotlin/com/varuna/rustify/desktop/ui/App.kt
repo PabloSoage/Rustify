@@ -45,7 +45,8 @@ import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.YtmTrack
 import com.varuna.rustify.bridge.decodeWire
-import com.varuna.rustify.desktop.DesktopPlayer
+import com.varuna.rustify.engine.PlayerUi
+import com.varuna.rustify.engine.QueuePlayer
 import kotlinx.coroutines.launch
 
 /** The same green the Android app's dark theme is built on, so the two read as one product. */
@@ -65,7 +66,7 @@ fun RustifyTheme(content: @Composable () -> Unit) {
  * repositories move to the shared module (docs 25 §5).
  */
 @Composable
-fun App(player: DesktopPlayer) {
+fun App(player: QueuePlayer) {
     val ui by player.ui.collectAsState()
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<YtmTrack>>(emptyList()) }
@@ -157,7 +158,7 @@ private fun TrackRow(track: YtmTrack, current: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NowPlayingBar(ui: DesktopPlayer.Ui, player: DesktopPlayer) {
+private fun NowPlayingBar(ui: PlayerUi, player: QueuePlayer) {
     // While dragging, the slider shows the finger, not the engine; the seek goes on release.
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableFloatStateOf(0f) }
