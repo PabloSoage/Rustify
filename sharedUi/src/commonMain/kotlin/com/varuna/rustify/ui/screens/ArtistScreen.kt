@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,12 +52,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullArtist
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
@@ -99,7 +99,7 @@ fun ArtistScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
 
     fun loadData() {
         coroutineScope.launch {
@@ -174,7 +174,7 @@ fun ArtistScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { loadData() }) { Text(stringResource(R.string.general_retry)) }
+                    Button(onClick = { loadData() }) { Text(stringResource(Res.string.general_retry)) }
                 }
                 }
             } else {
@@ -226,7 +226,7 @@ fun ArtistScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = stringResource(R.string.artist_followers, java.text.NumberFormat.getIntegerInstance().format(artist.followersTotal ?: 0)),
+                                text = stringResource(Res.string.artist_followers, java.text.NumberFormat.getIntegerInstance().format(artist.followersTotal ?: 0)),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Gray
                             )
@@ -244,7 +244,7 @@ fun ArtistScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                             ) {
-                                Text(stringResource(R.string.artist_all_songs), color = Color.White)
+                                Text(stringResource(Res.string.artist_all_songs), color = Color.White)
                             }
                         }
                     }
@@ -259,7 +259,7 @@ fun ArtistScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = stringResource(R.string.artist_top_tracks),
+                                    text = stringResource(Res.string.artist_top_tracks),
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     color = Color.White
                                 )
@@ -307,7 +307,7 @@ fun ArtistScreen(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Shuffle,
-                                                contentDescription = stringResource(R.string.cd_shuffle_play),
+                                                contentDescription = stringResource(Res.string.cd_shuffle_play),
                                                 tint = Color.Black,
                                                 modifier = Modifier.size(28.dp)
                                             )
@@ -328,7 +328,7 @@ fun ArtistScreen(
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
+                                    platform.toast(Res.string.added_to_queue)
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }
@@ -385,7 +385,7 @@ fun ArtistScreen(
                     if (albums.isNotEmpty()) {
                         item {
                             Text(
-                                text = stringResource(R.string.artist_albums),
+                                text = stringResource(Res.string.artist_albums),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -411,7 +411,7 @@ fun ArtistScreen(
                     if (relatedArtists.isNotEmpty()) {
                         item {
                             Text(
-                                text = stringResource(R.string.artist_fans_also_like),
+                                text = stringResource(Res.string.artist_fans_also_like),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -423,7 +423,7 @@ fun ArtistScreen(
                                 items(relatedArtists) { relArtist ->
                                     PlaylistItemCard(
                                         title = relArtist.name,
-                                        subtitle = stringResource(R.string.search_subtitle_artist),
+                                        subtitle = stringResource(Res.string.search_subtitle_artist),
                                         images = relArtist.images,
                                         isCircle = true,
                                         onClick = { onArtistClick(relArtist.id) }
@@ -460,7 +460,7 @@ fun ArtistScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     artistDetails?.let { artist ->
@@ -474,7 +474,7 @@ fun ArtistScreen(
                         }
                     }
                     IconButton(onClick = { showEntityMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.cd_more_options), tint = Color.White)
                     }
                 }
             }

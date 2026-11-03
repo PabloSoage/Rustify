@@ -33,15 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
-import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.components.TrackRowItem
 
 /**
@@ -53,7 +52,7 @@ fun RadioScreen(
     trackId: String,
     trackName: String,
     spotifyRepo: SpotifyRepository,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: com.varuna.rustify.player.PlayerController,
     onBackClick: () -> Unit,
     onOpenTrack: (String) -> Unit
 ) {
@@ -97,7 +96,7 @@ fun RadioScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackClick) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
             }
             Spacer(Modifier.width(4.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -123,7 +122,7 @@ fun RadioScreen(
             }
             tracks.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = stringResource(R.string.radio_empty),
+                    text = stringResource(Res.string.radio_empty),
                     color = Color.Gray,
                     modifier = Modifier.padding(24.dp)
                 )
@@ -142,7 +141,7 @@ fun RadioScreen(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.radio_play_all), color = Color.Black)
+                        Text(stringResource(Res.string.radio_play_all), color = Color.Black)
                     }
                     OutlinedButton(
                         onClick = { audioPlayerService.enqueueAll(tracks) },
@@ -150,7 +149,7 @@ fun RadioScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.track_menu_add_queue), color = Color.White)
+                        Text(stringResource(Res.string.track_menu_add_queue), color = Color.White)
                     }
                 }
 

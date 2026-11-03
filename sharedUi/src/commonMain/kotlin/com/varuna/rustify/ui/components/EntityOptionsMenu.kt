@@ -1,6 +1,6 @@
 package com.varuna.rustify.ui.components
 
-import android.widget.Toast
+import com.varuna.rustify.ui.toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,19 +45,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.largest
-import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.util.ShareUtils
 import kotlinx.coroutines.launch
 
@@ -105,7 +103,8 @@ fun EntityOptionsMenuBottomSheet(
      */
     loadAllTracks: (suspend () -> List<FullTrack>)? = null
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val player = com.varuna.rustify.player.LocalPlayer.current
     val coroutineScope = rememberCoroutineScope()
 
     // Nested playlist selector state (mirrors TrackOptionsMenu flow).
@@ -126,25 +125,21 @@ fun EntityOptionsMenuBottomSheet(
 
     // Share label + link path derived from the entity type.
     val shareLabelRes = when (entityType) {
-        "album" -> R.string.entity_menu_share_album
-        "playlist" -> R.string.entity_menu_share_playlist
-        else -> R.string.entity_menu_share_artist
+        "album" -> Res.string.entity_menu_share_album
+        "playlist" -> Res.string.entity_menu_share_playlist
+        else -> Res.string.entity_menu_share_artist
     }
 
     // Adds the given ids to [playlistId], showing progress + a result/error toast.
-    val addedTemplate = stringResource(R.string.entity_menu_added_n_to_playlist)
+    val addedTemplate = stringResource(Res.string.entity_menu_added_n_to_playlist)
     fun addAllTo(playlistId: String, playlistName: String) {
         coroutineScope.launch {
             isAdding = true
             try {
-                val n = spotifyRepoAddAll(context, playlistId, idsToAdd())
-                Toast.makeText(context, String.format(addedTemplate, n, playlistName), Toast.LENGTH_SHORT).show()
+                val n = spotifyRepoAddAll(playlistId, idsToAdd())
+                platform.toast(String.format(addedTemplate, n, playlistName))
             } catch (e: Exception) {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.entity_menu_add_error, e.message ?: ""),
-                    Toast.LENGTH_LONG
-                ).show()
+                platform.toast(Res.string.entity_menu_add_error, e.message ?: "", long = true)
             } finally {
                 isAdding = false
                 showPlaylistSelector = false
@@ -161,17 +156,13 @@ fun EntityOptionsMenuBottomSheet(
                 coroutineScope.launch {
                     isAdding = true
                     try {
-                        val me = spotifyRepoGetMe(context)
-                        val created = spotifyRepoCreatePlaylist(context, me, name)
+                        val me = spotifyRepoGetMe()
+                        val created = spotifyRepoCreatePlaylist(me, name)
                         // Reuse addAllTo for the freshly created playlist.
-                        val n = spotifyRepoAddAll(context, created.first, idsToAdd())
-                        Toast.makeText(context, String.format(addedTemplate, n, created.second), Toast.LENGTH_SHORT).show()
+                        val n = spotifyRepoAddAll(created.first, idsToAdd())
+                        platform.toast(String.format(addedTemplate, n, created.second))
                     } catch (e: Exception) {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.entity_menu_add_error, e.message ?: ""),
-                            Toast.LENGTH_LONG
-                        ).show()
+                        platform.toast(Res.string.entity_menu_add_error, e.message ?: "", long = true)
                     } finally {
                         isAdding = false
                         showPlaylistSelector = false
@@ -195,7 +186,7 @@ fun EntityOptionsMenuBottomSheet(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.entity_menu_add_all_playlist),
+                    text = stringResource(Res.string.entity_menu_add_all_playlist),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -203,7 +194,7 @@ fun EntityOptionsMenuBottomSheet(
                 // "New playlist" entry always available at the top.
                 EntityMenuRow(
                     icon = Icons.Default.Add,
-                    label = stringResource(R.string.entity_menu_new_playlist),
+                    label = stringResource(Res.string.entity_menu_new_playlist),
                     onClick = { showNewPlaylistDialog = true }
                 )
                 HorizontalDivider(color = Color.DarkGray)
@@ -220,7 +211,7 @@ fun EntityOptionsMenuBottomSheet(
                         modifier = Modifier.fillMaxWidth().height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(stringResource(R.string.playlist_not_found), color = Color.Gray)
+                        Text(stringResource(Res.string.playlist_not_found), color = Color.Gray)
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
@@ -285,20 +276,20 @@ fun EntityOptionsMenuBottomSheet(
                     icon = Icons.Default.Share,
                     label = stringResource(shareLabelRes),
                     onClick = {
-                        ShareUtils.shareSpotifyLink(com.varuna.rustify.ui.AndroidAppPlatform(context), entityType, entityId)
+                        ShareUtils.shareSpotifyLink(platform, entityType, entityId)
                         onDismiss()
                     }
                 )
 
                 // Extra "Share as Rustify" shown only when the Settings toggle is on.
-                val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                val prefs = platform.prefs("rustify_settings")
                 if (prefs.getBoolean("share_as_rustify_link", false)) {
                     EntityMenuRow(
                         icon = Icons.Default.Share,
-                        label = stringResource(R.string.entity_menu_share_rustify),
+                        label = stringResource(Res.string.entity_menu_share_rustify),
                         onClick = {
                             ShareUtils.shareRustifyLink(
-                                com.varuna.rustify.ui.AndroidAppPlatform(context), entityType, entityId,
+                                platform, entityType, entityId,
                                 title = entityName,
                                 subtitle = tracks.firstOrNull()
                                     ?.artists?.joinToString(", ") { it.name },
@@ -314,7 +305,7 @@ fun EntityOptionsMenuBottomSheet(
                 if (!primaryArtistId.isNullOrBlank()) {
                     EntityMenuRow(
                         icon = Icons.Default.Person,
-                        label = stringResource(R.string.entity_menu_go_artist),
+                        label = stringResource(Res.string.entity_menu_go_artist),
                         onClick = {
                             onGoToArtist(primaryArtistId)
                             onDismiss()
@@ -324,13 +315,13 @@ fun EntityOptionsMenuBottomSheet(
 
                 // Add all tracks to the playback queue (only when there are tracks).
                 if (tracks.isNotEmpty()) {
-                    val addedToQueueMsg = stringResource(R.string.added_to_queue)
+                    val addedToQueueMsg = stringResource(Res.string.added_to_queue)
                     EntityMenuRow(
                         icon = Icons.AutoMirrored.Filled.QueueMusic,
-                        label = stringResource(R.string.track_menu_add_queue),
+                        label = stringResource(Res.string.track_menu_add_queue),
                         onClick = {
-                            AudioPlayerService.getInstance(context).enqueueAll(tracks)
-                            Toast.makeText(context, addedToQueueMsg, Toast.LENGTH_SHORT).show()
+                            player.enqueueAll(tracks)
+                            platform.toast(addedToQueueMsg)
                             onDismiss()
                         }
                     )
@@ -340,19 +331,15 @@ fun EntityOptionsMenuBottomSheet(
                 if (hasAddableTracks) {
                     EntityMenuRow(
                         icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                        label = stringResource(R.string.entity_menu_add_all_playlist),
+                        label = stringResource(Res.string.entity_menu_add_all_playlist),
                         onClick = {
                             showPlaylistSelector = true
                             isLoadingPlaylists = true
                             coroutineScope.launch {
                                 try {
-                                    playlists = spotifyRepoGetPlaylists(context)
+                                    playlists = spotifyRepoGetPlaylists()
                                 } catch (_: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        R.string.entity_menu_load_playlists_error,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    platform.toast(Res.string.entity_menu_load_playlists_error)
                                 } finally {
                                     isLoadingPlaylists = false
                                 }
@@ -380,13 +367,13 @@ private fun NewPlaylistDialog(
         containerColor = Color(0xFF1E1E1E),
         titleContentColor = Color.White,
         textContentColor = Color.White,
-        title = { Text(stringResource(R.string.entity_menu_new_playlist)) },
+        title = { Text(stringResource(Res.string.entity_menu_new_playlist)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                label = { Text(stringResource(R.string.entity_menu_new_playlist_hint)) },
+                label = { Text(stringResource(Res.string.entity_menu_new_playlist_hint)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
             )
         },
@@ -394,10 +381,10 @@ private fun NewPlaylistDialog(
             TextButton(
                 onClick = { if (name.isNotBlank()) onCreate(name.trim()) },
                 enabled = name.isNotBlank()
-            ) { Text(stringResource(R.string.entity_menu_create)) }
+            ) { Text(stringResource(Res.string.entity_menu_create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.entity_menu_cancel)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.entity_menu_cancel)) }
         }
     )
 }
@@ -434,14 +421,13 @@ private fun EntityMenuRow(
 
 // --- Thin suspend adapters over SpotifyRepository (keep the composable self-contained) ---
 
-private suspend fun spotifyRepoGetPlaylists(context: android.content.Context): List<SimplePlaylist> {
+private suspend fun spotifyRepoGetPlaylists(): List<SimplePlaylist> {
     // The live repository: constructing one here started a library sync and a local scan per call.
     val repo = checkNotNull(SpotifyRepository.instance)
     return repo.getSavedPlaylists(limit = 50).items
 }
 
 private suspend fun spotifyRepoAddAll(
-    context: android.content.Context,
     playlistId: String,
     trackIds: List<String>
 ): Int {
@@ -451,7 +437,7 @@ private suspend fun spotifyRepoAddAll(
 }
 
 /** @return the current user's id. */
-private suspend fun spotifyRepoGetMe(context: android.content.Context): String {
+private suspend fun spotifyRepoGetMe(): String {
     // The live repository: constructing one here started a library sync and a local scan per call.
     val repo = checkNotNull(SpotifyRepository.instance)
     return repo.getMe().id
@@ -459,7 +445,6 @@ private suspend fun spotifyRepoGetMe(context: android.content.Context): String {
 
 /** @return (playlistId, playlistName) of the created playlist. */
 private suspend fun spotifyRepoCreatePlaylist(
-    context: android.content.Context,
     userId: String,
     name: String
 ): Pair<String, String> {

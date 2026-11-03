@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,13 +54,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullAlbum
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyImage
@@ -113,7 +114,7 @@ fun AlbumScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
 
     LaunchedEffect(albumId) {
         if (tracks.isEmpty()) isLoading = true   // when the cache is already populated, skip the spinner
@@ -250,7 +251,7 @@ fun AlbumScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.common_something_wrong), 
+                        text = stringResource(Res.string.common_something_wrong), 
                         style = MaterialTheme.typography.titleLarge, 
                         color = Color.White
                     )
@@ -305,7 +306,7 @@ fun AlbumScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)
                     ) {
-                        Text(stringResource(R.string.general_retry), color = Color.White)
+                        Text(stringResource(Res.string.general_retry), color = Color.White)
                     }
                 }
             } else {
@@ -359,10 +360,10 @@ fun AlbumScreen(
                                 Text(
                                     text = stringResource(
                                         when (albumDetails?.albumType?.lowercase()) {
-                                            "single" -> R.string.album_type_single
-                                            "ep" -> R.string.album_type_ep
-                                            "compilation" -> R.string.album_type_compilation
-                                            else -> R.string.album_type_album
+                                            "single" -> Res.string.album_type_single
+                                            "ep" -> Res.string.album_type_ep
+                                            "compilation" -> Res.string.album_type_compilation
+                                            else -> Res.string.album_type_album
                                         }
                                     ).uppercase(),
                                     style = MaterialTheme.typography.labelSmall.copy(
@@ -384,7 +385,7 @@ fun AlbumScreen(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                val descriptionText = stringResource(R.string.album_by, albumDetails?.artists?.joinToString(", ") { it.name } ?: stringResource(R.string.common_unknown_artist))
+                                val descriptionText = stringResource(Res.string.album_by, albumDetails?.artists?.joinToString(", ") { it.name } ?: stringResource(Res.string.common_unknown_artist))
                                 Text(
                                     text = descriptionText,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -412,7 +413,7 @@ fun AlbumScreen(
                                         )
                                     }
                                     Text(
-                                        text = (albumDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(R.plurals.track_count, n, n) },
+                                        text = (albumDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(Res.plurals.track_count, n, n) },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color.Gray
                                     )
@@ -470,7 +471,7 @@ fun AlbumScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Shuffle,
-                                        contentDescription = stringResource(R.string.cd_shuffle_play),
+                                        contentDescription = stringResource(Res.string.cd_shuffle_play),
                                         tint = Color.Black,
                                         modifier = Modifier.size(32.dp)
                                     )
@@ -487,7 +488,7 @@ fun AlbumScreen(
                                     .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(stringResource(R.string.common_no_tracks), color = Color.Gray)
+                                Text(stringResource(Res.string.common_no_tracks), color = Color.Gray)
                             }
                         }
                     } else {
@@ -520,7 +521,7 @@ fun AlbumScreen(
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
+                                    platform.toast(Res.string.added_to_queue)
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }
@@ -603,7 +604,7 @@ fun AlbumScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     albumDetails?.let { album ->
@@ -617,7 +618,7 @@ fun AlbumScreen(
                         }
                     }
                     IconButton(onClick = { showEntityMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.cd_more_options), tint = Color.White)
                     }
                 }
             }
