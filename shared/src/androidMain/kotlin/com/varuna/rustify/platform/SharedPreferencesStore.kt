@@ -31,4 +31,17 @@ class SharedPreferencesStore(private val prefs: SharedPreferences) : KeyValueSto
     }
 
     override fun contains(key: String): Boolean = prefs.contains(key)
+
+    // Typed, as the values were written: SharedPreferences throws reading an int as a long.
+    override fun getInt(key: String, default: Int): Int = prefs.getInt(key, default)
+
+    override fun putInt(key: String, value: Int) {
+        prefs.edit().putInt(key, value).apply()
+    }
+
+    override fun getFloat(key: String, default: Float): Float = prefs.getFloat(key, default)
+
+    override fun putFloat(key: String, value: Float) {
+        prefs.edit().putFloat(key, value).apply()
+    }
 }

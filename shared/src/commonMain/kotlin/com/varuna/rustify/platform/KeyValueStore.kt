@@ -30,6 +30,16 @@ interface KeyValueStore {
     fun remove(key: String)
 
     fun contains(key: String): Boolean
+
+    // Ints and floats, which Android's settings also hold. A store that keeps types apart (Android's,
+    // where an int read as a long throws) overrides these; for the rest a long or a string will do.
+    fun getInt(key: String, default: Int): Int = getLong(key, default.toLong()).toInt()
+
+    fun putInt(key: String, value: Int) = putLong(key, value.toLong())
+
+    fun getFloat(key: String, default: Float): Float = getString(key)?.toFloatOrNull() ?: default
+
+    fun putFloat(key: String, value: Float) = putString(key, value.toString())
 }
 
 /** In memory, for tests and for code that runs before the platform store exists. */
