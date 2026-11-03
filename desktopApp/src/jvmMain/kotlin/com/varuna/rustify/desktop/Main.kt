@@ -47,6 +47,12 @@ fun main() {
             )
         }
 
+        // What the shared screens (docs serie-4.x/26) take from the platform: the phone has these
+        // over Android; here they are over the desktop's folders, preferences and the core's engine.
+        val appPlatform = remember { com.varuna.rustify.ui.DesktopAppPlatform() }
+        val appServices = remember { com.varuna.rustify.ui.DesktopAppServices() }
+        val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope) }
+
         // The computer's name is what the others in a Jam see, unless one is set in the Jam tab. From
         // the environment, not InetAddress.getLocalHost(): that can wait on a reverse DNS lookup, and
         // this runs on the UI thread.
@@ -97,8 +103,22 @@ fun main() {
                     onQuit = ::quit,
                 )
             }
-            RustifyTheme {
-                if (ready) App(player, spotify, jam)
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.varuna.rustify.ui.LocalAppPlatform provides appPlatform,
+                com.varuna.rustify.ui.LocalAppServices provides appServices,
+                com.varuna.rustify.player.LocalPlayer provides controller,
+            ) {
+                com.varuna.rustify.ui.RememberStringEnvironment()
+                RustifyTheme {
+                    // The repository the phone's screens read, created once the core knows its folders.
+                    val repo = remember(ready) {
+                        if (ready) com.varuna.rustify.bridge.SpotifyRepository(appPlatform, com.varuna.rustify.ui.DesktopLocalMusicScanner()) else null
+                    }
+                    androidx.compose.foundation.layout.Box {
+                        if (repo != null) App(player, spotify, jam, repo)
+                        Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                    }
+                }
             }
         }
     }

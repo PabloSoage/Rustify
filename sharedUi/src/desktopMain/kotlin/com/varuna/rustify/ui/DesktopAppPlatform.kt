@@ -6,6 +6,7 @@ import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.PreferencesStore
+import com.varuna.rustify.platform.SecureKeyValueStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.awt.Desktop
@@ -28,8 +29,15 @@ class DesktopAppPlatform : AppPlatform {
 
     override fun prefs(name: String): KeyValueStore = synchronized(stores) {
         stores.getOrPut(name) {
-            PreferencesStore(Preferences.userRoot().node("com/varuna/rustify/$name"))
+            val node = PreferencesStore(Preferences.userRoot().node("com/varuna/rustify/$name"))
+            // The Spotify session's cookie and token go to the system's credential store, as
+            // SpotifyLibrary kept them (same key names, so a session saved there carries over).
+            if (name == SPOTIFY_PREFS) SecureKeyValueStore(setOf("sp_dc_cookie", "access_token"), node) else node
         }
+    }
+
+    private companion object {
+        const val SPOTIFY_PREFS = "rustify_spotify_prefs"
     }
 
     /** For values past Preferences' 8 KiB (a JSON list that grows): one file per key. */

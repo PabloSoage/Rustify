@@ -1,6 +1,7 @@
 // shared/src/desktopMain/kotlin/com/varuna/rustify/engine/WindowStyle.kt
 package com.varuna.rustify.engine
 
+import com.varuna.rustify.bridge.NativeLibrary
 import com.varuna.rustify.platform.Log
 
 /**
@@ -14,7 +15,8 @@ object WindowStyle {
     /** [windowHandle] is the window's native handle (`ComposeWindow.windowHandle`). */
     fun darkFrame(windowHandle: Long) {
         if (!System.getProperty("os.name").orEmpty().startsWith("Windows")) return
-        val took = runCatching { darkFrameNative(windowHandle) }
+        // The window can be up before anything else has touched the core: load it first.
+        val took = runCatching { NativeLibrary.load(); darkFrameNative(windowHandle) }
             .onFailure { Log.w("WindowStyle", "no dark frame: ${it.message}") }
             .getOrDefault(false)
         if (!took) Log.i("WindowStyle", "the system kept its own frame")

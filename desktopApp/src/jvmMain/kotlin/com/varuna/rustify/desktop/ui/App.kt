@@ -155,8 +155,9 @@ private data class Collection(
  * rest), the screen beside it, the mini player along the bottom, and the full player over everything.
  */
 @Composable
-fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession) {
+fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession, repo: com.varuna.rustify.bridge.SpotifyRepository) {
     val ui by player.ui.collectAsState()
+    val controller = com.varuna.rustify.player.LocalPlayer.current
     var section by remember { mutableStateOf(Section.HOME) }
     var user by remember { mutableStateOf<SpotifyUser?>(null) }
     // What was opened on top of the section, newest last; Back pops it.
@@ -200,7 +201,24 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession) {
                 } else {
                     when (section) {
                         Section.HOME -> HomeSection(spotify, signedIn = user != null, open = open)
-                        Section.SEARCH -> SearchSection(player, ui, spotify, signedIn = user != null)
+                        // The phone's own search screen (docs serie-4.x/26), shared rather than redrawn.
+                        Section.SEARCH -> com.varuna.rustify.ui.screens.SearchScreen(
+                            spotifyRepo = repo,
+                            onTrackClick = { player.playAll(listOf(it), 0) },
+                            onOpenTrack = { },
+                            onAddToQueue = { controller.enqueue(it) },
+                            onGoToQueue = { fullPlayer = true },
+                            onAlbumClick = { id, name, images ->
+                                open(Collection("al-$id", S.album, name, "", images) {
+                                    spotify.albumTracks(id).map { t -> if (t.album == null) t.copy(album = com.varuna.rustify.bridge.SimpleAlbum(id, name, "", null, null, images, emptyList(), null)) else t }
+                                })
+                            },
+                            onPlaylistClick = { id, name, images ->
+                                open(Collection("pl-$id", S.playlist, name, "", images) { spotify.playlistTracks(id) })
+                            },
+                            onArtistClick = { },
+                            currentTrackId = ui.current?.id,
+                        )
                         Section.LIBRARY -> LibrarySection(spotify, user, open = open)
                         Section.METRICS -> MetricsSection()
                         Section.JAM -> JamSection(jam)
