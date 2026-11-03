@@ -32,6 +32,9 @@ media-controls = ["dep:souvlaki"]
 # The system's credential store for the desktop's secrets (src/secrets.rs): Credential Manager,
 # Keychain, Secret Service. Linux builds need libdbus-1-dev for the last.
 secure-store = ["dep:keyring"]
+# The desktop window's frame in the app's colours (src/window_style.rs): a dark title bar on Windows
+# through DWM. Nothing on Linux and macOS, whose frames follow the system's theme.
+window-style = ["dep:windows-sys"]
 
 [dependencies]
 # JNI bridge with Android
@@ -146,6 +149,11 @@ rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 # aarch64-apple-ios or aarch64-apple-ios-sim (seen in CI: "couldn't find file
 # src/bindings/aarch64-apple-ios.rs"). On a Mac bindgen finds Xcode's libclang, so nothing else is
 # needed. Not used by `cargo ndk build`, so the APK is unchanged.
+[target.'cfg(windows)'.dependencies]
+# DwmSetWindowAttribute for the dark title bar (feature window-style). 0.59 is already in the lock
+# through keyring and cpal.
+windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+
 [target.'cfg(target_os = "ios")'.dependencies]
 rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 

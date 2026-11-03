@@ -23,6 +23,8 @@ pub mod engine;
 pub mod ffi;
 #[cfg(feature = "media-controls")]
 pub mod media_controls;
+#[cfg(feature = "window-style")]
+pub mod window_style;
 #[cfg(feature = "secure-store")]
 pub mod secrets;
 pub mod tempo;
@@ -3315,3 +3317,15 @@ pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_removeNative
     })
 }
 
+
+/// JNI Bridge: paints the desktop window's frame in the app's colours (a dark title bar on
+/// Windows; nothing elsewhere). `hwnd` is the window's native handle. Answers whether it took.
+#[cfg(feature = "window-style")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_WindowStyle_darkFrameNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    hwnd: jlong,
+) -> jni::sys::jboolean {
+    window_style::dark_frame(hwnd as isize).into()
+}

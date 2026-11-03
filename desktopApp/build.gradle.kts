@@ -69,7 +69,7 @@ val buildRustCoreDesktop by tasks.registering(Exec::class) {
     description = "Builds core_engine for this host with the desktop audio engine and media controls"
     workingDir = rootProject.file("core_engine")
     environment("CARGO_TARGET_DIR", coreTargetDir.absolutePath)
-    commandLine(cargoCommand, "build", "--release", "--lib", "--features", "desktop-audio,media-controls,secure-store")
+    commandLine(cargoCommand, "build", "--release", "--lib", "--features", "desktop-audio,media-controls,secure-store,window-style")
     inputs.dir(rootProject.file("core_engine/src"))
     inputs.file(rootProject.file("core_engine/Cargo.toml"))
     outputs.file(File(coreTargetDir, "release/$coreLibraryName"))

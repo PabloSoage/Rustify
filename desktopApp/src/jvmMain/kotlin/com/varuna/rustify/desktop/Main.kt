@@ -88,6 +88,7 @@ fun main() {
         ) {
             // The window's native handle is what Windows attaches the media overlay to.
             val handle = window.windowHandle
+            LaunchedEffect(handle) { com.varuna.rustify.engine.WindowStyle.darkFrame(handle) }
             LaunchedEffect(handle) {
                 MediaKeys.run(
                     player = player,

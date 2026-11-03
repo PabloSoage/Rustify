@@ -51,7 +51,23 @@ internal object S {
     val back = t("Back", "Atrás", "戻る")
     val couldNotLoad = t("Could not load", "No se pudo cargar", "読み込めませんでした")
 
-    val signedInAs = t("Signed in as", "Sesión iniciada como", "ログイン中:")
+    val lyrics = t("Lyrics", "Letra", "歌詞")
+    val lyricsNotFound = t("Lyrics not found", "No se encontraron letras", "歌詞が見つかりません")
+    fun lyricsAsking(name: String) = t("Asking $name…", "Preguntando a $name…", "${name}に問い合わせ中…")
+    fun lyricsNothing(name: String) = t("$name has nothing for this song", "$name no tiene esta canción", "${name}にはこの曲がありません")
+
+    /** A lyrics provider's name, by its id in the shared chain. */
+    fun lyricsProvider(id: String) = when (id) {
+        "spotify" -> t("Spotify (official, needs an account)", "Spotify (oficiales, requiere cuenta)", "Spotify（公式・アカウント必要）")
+        "lrclib" -> "LRCLIB"
+        "musixmatch" -> "Musixmatch"
+        "genius" -> "Genius"
+        "petitlyrics" -> "PetitLyrics"
+        "local" -> t("The file's own", "El propio archivo", "ファイル内蔵")
+        else -> id
+    }
+
+    val signedInAs =t("Signed in as", "Sesión iniciada como", "ログイン中:")
     val signOut = t("Sign out", "Cerrar sesión", "ログアウト")
     val signIn = t("Sign in", "Iniciar sesión", "ログイン")
     val signingIn = t("Signing in…", "Iniciando sesión…", "ログイン中…")

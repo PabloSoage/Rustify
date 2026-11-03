@@ -47,6 +47,9 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Subject
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -722,36 +725,54 @@ private fun MiniPlayer(ui: PlayerUi, player: QueuePlayer, onOpen: () -> Unit) {
     }
 }
 
-/** The full player, as the tablet shows it in landscape: the cover on one side, the song and its controls beside it, the queue under. */
+/**
+ * The full player, as the tablet shows it in landscape: the cover on one side; beside it the song, its
+ * controls and, under them, the lyrics — or the queue, the two buttons at the end of the controls
+ * switching between them as the tablet's do.
+ */
 @Composable
 private fun NowPlaying(ui: PlayerUi, player: QueuePlayer, onClose: () -> Unit) {
     val track = ui.current
+    var showQueue by remember { mutableStateOf(false) }
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF2C3E37), Palette.Background))),
     ) {
-        val coverSide = (minOf(maxWidth * 0.45f, maxHeight - 140.dp)).coerceAtLeast(200.dp)
+        val coverSide = (minOf(maxWidth * 0.42f, maxHeight - 120.dp)).coerceAtLeast(200.dp)
         Column(Modifier.fillMaxSize().padding(24.dp)) {
             IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = S.back) }
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 RemoteImage(track?.album?.images.best(640), track?.name ?: "", RoundedCornerShape(12.dp), Modifier.size(coverSide).aspectRatio(1f))
                 Spacer(Modifier.width(40.dp))
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
-                    Text(track?.name ?: S.notPlaying, fontSize = 34.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Text(track?.name ?: S.notPlaying, fontSize = 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(track?.artists?.joinToString(", ") { it.name }.orEmpty(), fontSize = 18.sp, color = Palette.Accent, maxLines = 1)
                     track?.album?.name?.let { Text(it.uppercase(), fontSize = 14.sp, color = Palette.Muted, maxLines = 1) }
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(16.dp))
                     Progress(ui, player, Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Controls(ui, player, big = true)
-                        Volume(ui, player)
-                    }
-                    Spacer(Modifier.height(24.dp))
-                    Text(S.queue, fontWeight = FontWeight.Bold, color = Palette.Muted)
-                    LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth()) {
-                        itemsIndexed(ui.queue, key = { i, t -> "q-$i-${t.id}" }) { index, t ->
-                            TrackRow(number = index + 1, track = t, current = index == ui.index, onClick = { player.jumpTo(index) })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { showQueue = true }) {
+                                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = S.queue, tint = if (showQueue) Palette.Accent else Palette.Muted)
+                            }
+                            IconButton(onClick = { showQueue = false }) {
+                                Icon(Icons.Default.Subject, contentDescription = S.lyrics, tint = if (!showQueue) Palette.Accent else Palette.Muted)
+                            }
+                            Volume(ui, player)
                         }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (showQueue) {
+                        LazyColumn(
+                            Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Card),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                        ) {
+                            itemsIndexed(ui.queue, key = { i, t -> "q-$i-${t.id}" }) { index, t ->
+                                TrackRow(number = index + 1, track = t, current = index == ui.index, onClick = { player.jumpTo(index) })
+                            }
+                        }
+                    } else {
+                        LyricsPanel(track, ui.positionMs, onSeek = player::seek, modifier = Modifier.weight(1f).fillMaxWidth())
                     }
                 }
             }
