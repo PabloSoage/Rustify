@@ -2,7 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # multiplatform too while the shared module is moving code out of the app: every step of it has
+    # to keep the APK's checks green (docs 25).
+    branches: [main, multiplatform]
   pull_request:
 
 jobs:
