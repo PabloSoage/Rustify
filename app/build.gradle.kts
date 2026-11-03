@@ -90,6 +90,16 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // The release build — R8, shrunk resources — under its own id and the debug key, so it can
+        // be measured on a phone that has the real app without touching it (`23` §5, against
+        // Spotube). A debug build is no yardstick: unminified, debuggable, and slower to start.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".bench"
+            versionNameSuffix = "-bench"
+            matchingFallbacks += listOf("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -148,6 +158,8 @@ dependencies {
     implementation(libs.coil.compose)
     // Home-screen widget (4.9).
     implementation(libs.androidx.glance.appwidget)
+    // Glance alone would bring WorkManager 2.7.1, which crashes the minified build (see the catalog).
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
