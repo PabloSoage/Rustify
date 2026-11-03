@@ -864,6 +864,9 @@
     <string name="ab_repeat_set_a">A-Bリピート: 開始点(A)を設定</string>
     <string name="ab_repeat_set_b">A-Bリピート: 終了点(B)を設定</string>
     <string name="ab_repeat_clear">A-Bリピート: リピートを解除</string>
+    <string name="ab_repeat_marked_a">A を %1$s に設定：もう一度押して B を設定</string>
+    <string name="ab_repeat_looping">%1$s から %2$s をリピート中</string>
+    <string name="ab_repeat_cleared">A-B リピート解除</string>
     <string name="nano_chat_title">Gemini Nano とチャット</string>
     <string name="nano_chat_on_device">この端末で</string>
     <string name="nano_chat_clear">チャットを消去</string>
