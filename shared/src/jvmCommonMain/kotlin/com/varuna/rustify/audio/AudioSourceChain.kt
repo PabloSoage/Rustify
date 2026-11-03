@@ -1,6 +1,7 @@
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -119,7 +120,7 @@ class AudioSourceChain(
                     if (r.isFailure) work.cancel()
                     // Logged whatever happens, because "it timed out" on its own says nothing about
                     // whether the ceiling was too low or the provider was hung.
-                    android.util.Log.d(
+                    Log.d(
                         TAG,
                         "${p.capabilities.id}: ${System.currentTimeMillis() - startedAt} ms of $budget " +
                             (if (r.isSuccess) "ok" else "-> ${r.exceptionOrNull()?.message}")

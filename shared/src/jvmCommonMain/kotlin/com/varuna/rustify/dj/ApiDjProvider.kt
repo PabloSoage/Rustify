@@ -2,14 +2,22 @@ package com.varuna.rustify.dj
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
  * External AI provider. Calls an OpenAI-compatible endpoint (`/v1/chat/completions` or `/openai`)
- * using `java.net.HttpURLConnection` (no new dependencies).
+ * using `java.net.HttpURLConnection` (no new dependencies). JVM-only for that reason, so it lives in
+ * the source set Android and the desktop share; the JSON is kotlinx since 5.x, as on every target.
  *
  * Defaults to Pollinations AI (keyless, free, best-effort). [apiKey] is optional: when blank, no
  * Authorization header is sent (public endpoint). No third-party private key is embedded.
@@ -39,16 +47,20 @@ class ApiDjProvider(
         }
     }
 
-    private fun buildRequestBody(context: DjContext, request: String): String {
-        val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", DjPrompt.systemPrompt(context)))
-        messages.put(JSONObject().put("role", "user").put("content", DjPrompt.userPrompt(context, request)))
-        return JSONObject().apply {
-            put("model", model)
-            put("messages", messages)
-            put("temperature", 0.8)
-        }.toString()
-    }
+    private fun buildRequestBody(context: DjContext, request: String): String = buildJsonObject {
+        put("model", model)
+        putJsonArray("messages") {
+            addJsonObject {
+                put("role", "system")
+                put("content", DjPrompt.systemPrompt(context))
+            }
+            addJsonObject {
+                put("role", "user")
+                put("content", DjPrompt.userPrompt(context, request))
+            }
+        }
+        put("temperature", 0.8)
+    }.toString()
 
     private fun postChatCompletions(body: String): String {
         val url = resolveEndpoint(baseUrl)
@@ -87,11 +99,18 @@ class ApiDjProvider(
 
     /** Extracts `choices[0].message.content` from the OpenAI-compatible response. */
     private fun extractAssistantContent(raw: String): String {
-        val obj = JSONObject(raw)
-        val choices = obj.optJSONArray("choices") ?: return ""
-        val first = choices.optJSONObject(0) ?: return ""
-        return first.optJSONObject("message")?.optString("content")
-            ?: first.optString("text", "")
+        val obj = Json.parseToJsonElement(raw) as? JsonObject ?: return ""
+        val choices = obj["choices"] as? JsonArray ?: return ""
+        val first = choices.firstOrNull() as? JsonObject ?: return ""
+        val message = first["message"] as? JsonObject
+        return if (message != null) message["content"].text() else first["text"].text()
+    }
+
+    /** org.json's `optString`, which this read before 5.x: absent or null is "". */
+    private fun kotlinx.serialization.json.JsonElement?.text(): String = when (this) {
+        null, JsonNull -> ""
+        is JsonPrimitive -> content
+        else -> toString()
     }
 
 }
