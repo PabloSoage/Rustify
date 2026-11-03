@@ -72,7 +72,7 @@ fun RustifyTheme(content: @Composable () -> Unit) {
 }
 
 private enum class Section(val label: String) {
-    HOME("Home"), SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), ACCOUNT("Account"),
+    HOME("Home"), SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), METRICS("Metrics"), ACCOUNT("Account"),
 }
 
 /** Something on Home that opens into a list of songs. */
@@ -103,6 +103,7 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary) {
                 Section.SEARCH -> SearchSection(player, ui, spotify, signedIn = user != null)
                 Section.LIKED -> SignedIn(user) { LikedSection(player, ui, spotify) }
                 Section.PLAYLISTS -> SignedIn(user) { PlaylistsSection(player, ui, spotify) }
+                Section.METRICS -> MetricsSection()
                 Section.ACCOUNT -> AccountSection(spotify, user) { user = it }
             }
         }
@@ -121,7 +122,7 @@ private fun SignedIn(user: SpotifyUser?, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Centered(text: String) {
+internal fun Centered(text: String) {
     Box(Modifier.fillMaxSize()) {
         Text(text, Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -129,7 +130,7 @@ private fun Centered(text: String) {
 
 /** A list that loads once; [load] is the whole list (every page), not a screen's worth. */
 @Composable
-private fun <T> Loaded(key: Any, load: suspend () -> List<T>, content: @Composable (List<T>) -> Unit) {
+internal fun <T> Loaded(key: Any, load: suspend () -> List<T>, content: @Composable (List<T>) -> Unit) {
     var items by remember(key) { mutableStateOf<List<T>?>(null) }
     var error by remember(key) { mutableStateOf<String?>(null) }
     LaunchedEffect(key) {

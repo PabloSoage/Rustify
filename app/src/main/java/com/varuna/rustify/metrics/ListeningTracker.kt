@@ -171,28 +171,7 @@ class ListeningTracker(private val appContext: Context) {
          * The device zone as the offsets it has had, `[[fromMs, offsetMs], …]`, from 1970 to two
          * years ahead — what the core needs to put each play in its local hour and day, with DST.
          */
-        internal fun zoneJson(zone: ZoneId = ZoneId.systemDefault()): String {
-            val rules = zone.rules
-            val start = Instant.EPOCH
-            val end = Instant.now().plusSeconds(2L * 366 * 86_400)
-            // kotlinx rather than org.json: this is pure java.time and is unit-tested on the JVM, where
-            // org.json is Android's stub.
-            return kotlinx.serialization.json.buildJsonArray {
-                add(kotlinx.serialization.json.buildJsonArray {
-                    add(kotlinx.serialization.json.JsonPrimitive(Long.MIN_VALUE))
-                    add(kotlinx.serialization.json.JsonPrimitive(rules.getOffset(start).totalSeconds * 1000L))
-                })
-                var t = rules.nextTransition(start)
-                while (t != null && t.instant.isBefore(end)) {
-                    val change = t
-                    add(kotlinx.serialization.json.buildJsonArray {
-                        add(kotlinx.serialization.json.JsonPrimitive(change.instant.toEpochMilli()))
-                        add(kotlinx.serialization.json.JsonPrimitive(change.offsetAfter.totalSeconds * 1000L))
-                    })
-                    t = rules.nextTransition(t.instant)
-                }
-            }.toString()
-        }
+        internal fun zoneJson(zone: ZoneId = ZoneId.systemDefault()): String = zoneOffsetsJson(zone)
 
         /**
          * Exports the history in Spotify's Extended Streaming History format, which stats.fm and
