@@ -1,6 +1,7 @@
 // sharedUi/src/desktopMain/kotlin/com/varuna/rustify/ui/DesktopAppServices.kt
 package com.varuna.rustify.ui
 
+import androidx.compose.runtime.Composable
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalMusicScanner
@@ -13,7 +14,13 @@ import kotlinx.coroutines.flow.StateFlow
  * [AppServices] on the desktop. Tempo and downloads are Android's today (MediaCodec, the Storage
  * Access Framework); [can] says so and the screens show them as unavailable.
  */
-class DesktopAppServices : AppServices {
+class DesktopAppServices(
+    /** The desktop's Jam screen, shown as the dialog (desktopApp passes it; it owns the JamSession). */
+    private val jamDialog: @Composable (onDismiss: () -> Unit) -> Unit = {},
+) : AppServices {
+    @Composable
+    override fun JamDialog(onDismiss: () -> Unit) = jamDialog(onDismiss)
+
     override fun can(feature: AppServices.Feature): Boolean = false
 
     override fun bpmCached(trackId: String): Float? = null

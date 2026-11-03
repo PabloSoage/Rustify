@@ -51,13 +51,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.ui.components.PlaylistItemCard
@@ -112,15 +112,15 @@ fun HomeScreen(
         // the menu (settings, downloads, metrics) and "continue listening" with it whenever Spotify
         // could not be reached; the state of Spotify's sections is now one row among the others.
         run {
-            val config = androidx.compose.ui.platform.LocalConfiguration.current
-            val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val isLandscape = com.varuna.rustify.ui.isLandscape()
             val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
             var menuOpen by remember { mutableStateOf(false) }
             // Jam is reachable from the queue sheet too, but a guest joins before playing anything.
             var showJam by remember { mutableStateOf(false) }
-            if (showJam) com.varuna.rustify.ui.components.JamDialog(onDismiss = { showJam = false })
-            val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
+            val services = com.varuna.rustify.ui.LocalAppServices.current
+            if (showJam) services.JamDialog(onDismiss = { showJam = false })
+            val activeDownloads by services.activeDownloadCount.collectAsState()
 
             PullToRefreshBox(
                 isRefreshing = isRunning,
@@ -139,9 +139,9 @@ fun HomeScreen(
                     ) {
                         val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                         val greeting = when (currentHour) {
-                            in 5..11 -> androidx.compose.ui.res.stringResource(R.string.home_greeting_morning)
-                            in 12..17 -> androidx.compose.ui.res.stringResource(R.string.home_greeting_afternoon)
-                            else -> androidx.compose.ui.res.stringResource(R.string.home_greeting_evening)
+                            in 5..11 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_morning)
+                            in 12..17 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_afternoon)
+                            else -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_evening)
                         }
                         Text(
                             text = greeting,
@@ -153,14 +153,14 @@ fun HomeScreen(
 
                         // Resolve menu labels outside the DropdownMenu, whose Popup may not
                         // inherit the overridden LocalContext used for localization.
-                        val djLabel = stringResource(R.string.home_dj)
-                        val travelLabel = stringResource(R.string.home_travel)
-                        val newReleasesLabel = stringResource(R.string.home_new_releases)
-                        val metricsLabel = stringResource(R.string.home_metrics)
-                        val webPlayerLabel = stringResource(R.string.web_player_title)
-                        val downloadsLabel = stringResource(R.string.home_downloads)
-                        val settingsLabel = stringResource(R.string.home_settings)
-                        val jamLabel = stringResource(R.string.jam_title)
+                        val djLabel = stringResource(Res.string.home_dj)
+                        val travelLabel = stringResource(Res.string.home_travel)
+                        val newReleasesLabel = stringResource(Res.string.home_new_releases)
+                        val metricsLabel = stringResource(Res.string.home_metrics)
+                        val webPlayerLabel = stringResource(Res.string.web_player_title)
+                        val downloadsLabel = stringResource(Res.string.home_downloads)
+                        val settingsLabel = stringResource(Res.string.home_settings)
+                        val jamLabel = stringResource(Res.string.jam_title)
 
                         // Hamburger icon opens a small context menu, with icons and labels
                         // aligned via DropdownMenuItem's leadingIcon slot.
@@ -174,10 +174,10 @@ fun HomeScreen(
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.a11y_open_menu), tint = Color.White)
+                                        Icon(Icons.Default.Menu, contentDescription = stringResource(Res.string.a11y_open_menu), tint = Color.White)
                                     }
                                 } else {
-                                    Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.a11y_open_menu), tint = Color.White)
+                                    Icon(Icons.Default.Menu, contentDescription = stringResource(Res.string.a11y_open_menu), tint = Color.White)
                                 }
                             }
 
@@ -309,15 +309,15 @@ private fun SignInCard(sessionExpired: Boolean, onSignIn: () -> Unit) {
             .padding(20.dp)
     ) {
         Text(
-            stringResource(if (sessionExpired) R.string.spotify_session_expired else R.string.spotify_sign_in_title),
+            stringResource(if (sessionExpired) Res.string.spotify_session_expired else Res.string.spotify_sign_in_title),
             color = Color.White,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
         )
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.spotify_sign_in_body), color = Color.LightGray, fontSize = 13.sp)
+        Text(stringResource(Res.string.spotify_sign_in_body), color = Color.LightGray, fontSize = 13.sp)
         Spacer(Modifier.height(14.dp))
         Button(onClick = onSignIn, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))) {
-            Text(stringResource(R.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
+            Text(stringResource(Res.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -334,7 +334,7 @@ private fun OfflineNotice(showingCached: Boolean, detail: String, onRetry: () ->
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                stringResource(if (showingCached) R.string.home_offline_cached else R.string.home_error_loading),
+                stringResource(if (showingCached) Res.string.home_offline_cached else Res.string.home_error_loading),
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
@@ -342,7 +342,7 @@ private fun OfflineNotice(showingCached: Boolean, detail: String, onRetry: () ->
             Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 2)
         }
         androidx.compose.material3.TextButton(onClick = onRetry) {
-            Text(stringResource(R.string.general_retry), color = Color(0xFF1DB954))
+            Text(stringResource(Res.string.general_retry), color = Color(0xFF1DB954))
         }
     }
 }
@@ -408,7 +408,7 @@ fun ContinueListeningRow(
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Text(
-            text = stringResource(R.string.home_continue_listening),
+            text = stringResource(Res.string.home_continue_listening),
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.Bold,
                 color = Color.White

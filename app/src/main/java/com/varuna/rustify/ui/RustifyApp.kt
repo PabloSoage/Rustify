@@ -556,7 +556,7 @@ fun RustifyApp(
                         // Without an account Home is built from the public catalogue and your history.
                         var publicSections by remember { mutableStateOf<List<BrowseSection>>(emptyList()) }
                         LaunchedEffect(isLoggedIn) {
-                            if (!isLoggedIn) publicSections = com.varuna.rustify.bridge.PublicHome.sections(context, spotifyRepo)
+                            if (!isLoggedIn) publicSections = com.varuna.rustify.bridge.PublicHome.sections(com.varuna.rustify.ui.AndroidAppPlatform(context), spotifyRepo)
                         }
                         HomeScreen(
                             browseSections = browseSections,
@@ -568,7 +568,7 @@ fun RustifyApp(
                             onSignIn = { showWebView = true },
                             onRetry = {
                                 if (!isLoggedIn) {
-                                    coroutineScope.launch { publicSections = com.varuna.rustify.bridge.PublicHome.sections(context, spotifyRepo, refresh = true) }
+                                    coroutineScope.launch { publicSections = com.varuna.rustify.bridge.PublicHome.sections(com.varuna.rustify.ui.AndroidAppPlatform(context), spotifyRepo, refresh = true) }
                                     return@HomeScreen
                                 }
 

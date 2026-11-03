@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -50,7 +51,6 @@ fun main() {
         // What the shared screens (docs serie-4.x/26) take from the platform: the phone has these
         // over Android; here they are over the desktop's folders, preferences and the core's engine.
         val appPlatform = remember { com.varuna.rustify.ui.DesktopAppPlatform() }
-        val appServices = remember { com.varuna.rustify.ui.DesktopAppServices() }
         val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope) }
 
         // The computer's name is what the others in a Jam see, unless one is set in the Jam tab. From
@@ -59,6 +59,17 @@ fun main() {
         val jam = remember {
             val host = System.getenv("COMPUTERNAME") ?: System.getenv("HOSTNAME")
             JamSession(scope, JvmJamCore, player, PreferencesStore(), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
+        }
+        val appServices = remember {
+            com.varuna.rustify.ui.DesktopAppServices(jamDialog = { onDismiss ->
+                androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+                    androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(560.dp, 640.dp)) {
+                            com.varuna.rustify.desktop.ui.JamSection(jam)
+                        }
+                    }
+                }
+            })
         }
 
         // Closing waits, briefly, for the last listen to be stored and the Jam room to be told:

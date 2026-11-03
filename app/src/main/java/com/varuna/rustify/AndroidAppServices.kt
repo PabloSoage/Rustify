@@ -33,4 +33,7 @@ class AndroidAppServices(context: Context) : AppServices {
         )
 
     override fun clearCompleted() = DownloadManager.clearCompleted()
+
+    @androidx.compose.runtime.Composable
+    override fun JamDialog(onDismiss: () -> Unit) = com.varuna.rustify.ui.components.JamDialog(onDismiss = onDismiss)
 }

@@ -1,7 +1,8 @@
 package com.varuna.rustify.bridge
 
-import android.content.Context
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.metrics.ListeningTracker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,13 +24,13 @@ import java.util.Locale
 object PublicHome {
     @Volatile private var cached: List<BrowseSection>? = null
 
-    suspend fun sections(context: Context, repo: SpotifyRepository, refresh: Boolean = false): List<BrowseSection> =
+    suspend fun sections(platform: AppPlatform, repo: SpotifyRepository, refresh: Boolean = false): List<BrowseSection> =
         withContext(Dispatchers.IO) {
             if (!refresh) cached?.let { return@withContext it }
             val built = coroutineScope {
-                val recent = async { recentAlbums(context) }
-                val charts = async { charts(context, repo) }
-                val moods = async { moods(context, repo) }
+                val recent = async { recentAlbums(platform) }
+                val charts = async { charts(platform, repo) }
+                val moods = async { moods(platform, repo) }
                 listOfNotNull(recent.await(), charts.await(), moods.await())
             }
             if (built.isNotEmpty()) cached = built
@@ -37,9 +38,9 @@ object PublicHome {
         }
 
     /** Albums of the songs you played lately, newest first, one per album. Spotify ones only. */
-    private suspend fun recentAlbums(context: Context): BrowseSection? = runCatching {
+    private suspend fun recentAlbums(platform: AppPlatform): BrowseSection? = runCatching {
         val now = System.currentTimeMillis()
-        val plays = ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), now - 90L * 86_400_000L, now).recent
+        val plays = ListeningTracker.stats(platform, now - 90L * 86_400_000L, now).recent
         val albums = plays
             .filter { TrackRef.parse(it.trackId)?.spotifyId != null && it.albumId.isNotBlank() }
             .distinctBy { it.albumId }
@@ -55,7 +56,7 @@ object PublicHome {
                 )
             }
         if (albums.isEmpty()) null
-        else BrowseSection(id = "public-recent", title = context.getString(R.string.home_recent_albums), items = albums)
+        else BrowseSection(id = "public-recent", title = appString(Res.string.home_recent_albums), items = albums)
     }.getOrNull()
 
     /** Spotify's own playlist for [query], if there is one: the editorial ones are owned by "spotify". */
@@ -63,7 +64,7 @@ object PublicHome {
         repo.searchPlaylists(query, limit = 10).items.firstOrNull { it.owner?.id == "spotify" }
     }.getOrNull()
 
-    private suspend fun charts(context: Context, repo: SpotifyRepository): BrowseSection? = coroutineScope {
+    private suspend fun charts(platform: AppPlatform, repo: SpotifyRepository): BrowseSection? = coroutineScope {
         // The country's name in English is what the chart playlists are called ("Top 50 - Spain").
         // Spotify's own short names where they differ from the English country name.
         val country = when (Locale.getDefault().country) {
@@ -74,13 +75,13 @@ object PublicHome {
         val queries = listOfNotNull("Top 50 Global", country?.let { "Top 50 $it" }, "Viral 50 Global", country?.let { "Viral 50 $it" })
         val found = queries.map { q -> async { editorial(repo, q) } }.awaitAll().filterNotNull().distinctBy { it.id }
         if (found.isEmpty()) null
-        else BrowseSection(id = "public-charts", title = context.getString(R.string.home_charts), items = found.map { BrowseSectionItem.PlaylistItem(it) })
+        else BrowseSection(id = "public-charts", title = appString(Res.string.home_charts), items = found.map { BrowseSectionItem.PlaylistItem(it) })
     }
 
-    private suspend fun moods(context: Context, repo: SpotifyRepository): BrowseSection? = coroutineScope {
+    private suspend fun moods(platform: AppPlatform, repo: SpotifyRepository): BrowseSection? = coroutineScope {
         val queries = listOf("chill", "focus", "workout", "party", "sleep", "happy")
         val found = queries.map { q -> async { editorial(repo, q) } }.awaitAll().filterNotNull().distinctBy { it.id }
         if (found.isEmpty()) null
-        else BrowseSection(id = "public-moods", title = context.getString(R.string.home_moods), items = found.map { BrowseSectionItem.PlaylistItem(it) })
+        else BrowseSection(id = "public-moods", title = appString(Res.string.home_moods), items = found.map { BrowseSectionItem.PlaylistItem(it) })
     }
 }

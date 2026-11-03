@@ -1,6 +1,7 @@
 // sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/AppServices.kt
 package com.varuna.rustify.ui
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
@@ -26,6 +27,13 @@ interface AppServices {
     val activeDownloadCount: StateFlow<Int>
     fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?)
     fun clearCompleted()
+
+    /**
+     * The Jam dialog. Android's is over its own Jam and the desktop's over the shared JamSession
+     * until the two are one (docs serie-4.x/27 §2.7), so each platform hands its own in.
+     */
+    @Composable
+    fun JamDialog(onDismiss: () -> Unit)
 
     enum class Feature { BPM, DOWNLOADS }
 }
