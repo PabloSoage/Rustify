@@ -82,6 +82,8 @@ fun main() {
         Window(
             onCloseRequest = ::quit,
             title = "Rustify",
+            // The phone's launcher icon, also in the title bar and the taskbar.
+            icon = androidx.compose.ui.res.painterResource("rustify.png"),
             state = rememberWindowState(width = 1100.dp, height = 760.dp),
         ) {
             // The window's native handle is what Windows attaches the media overlay to.

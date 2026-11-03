@@ -107,7 +107,8 @@ compose.desktop {
             appResourcesRootDir.set(coreResources)
             // What jlink keeps besides the modules Compose already needs: Preferences backs the
             // settings (PreferencesStore). Check with ./gradlew :desktopApp:suggestRuntimeModules.
-            modules("java.prefs")
+            // java.net.http: the covers (ui/RemoteImage.kt) are fetched with the JDK's client.
+            modules("java.prefs", "java.net.http")
 
             windows {
                 menuGroup = "Rustify"
@@ -116,14 +117,18 @@ compose.desktop {
                 shortcut = true
                 dirChooser = true
                 perUserInstall = true
+                // The phone's launcher icon (app/src/main/res/playstore-icon.png), in each system's format.
+                iconFile.set(project.file("icons/rustify.ico"))
             }
             linux {
                 packageName = "rustify"
                 appCategory = "AudioVideo"
                 shortcut = true
+                iconFile.set(project.file("icons/rustify.png"))
             }
             macOS {
                 bundleID = "com.varuna.rustify.desktop"
+                iconFile.set(project.file("icons/rustify.icns"))
                 // Unsigned until there is an Apple developer account (docs 24 §5): Gatekeeper will ask.
             }
         }
