@@ -58,6 +58,14 @@ pub struct MockState {
     /// Host → the addresses it resolves to. Lets a test say "this name points at 127.0.0.1" and
     /// watch the add-on layer refuse it, which is the whole of the DNS-rebinding defence.
     pub dns: HashMap<String, Vec<std::net::IpAddr>>,
+    /// Answer `Range` requests on `fetch_stream` with 206 and the slice, as a CDN does. Off by
+    /// default, so every other test keeps seeing the whole body.
+    pub honour_ranges: bool,
+}
+
+/// From here on, `fetch_stream` answers `Range` requests with 206 and the slice.
+pub fn honour_ranges() {
+    state().honour_ranges = true;
 }
 
 /// Says what `host` resolves to for the rest of the test.
@@ -167,10 +175,14 @@ impl Env for MockEnv {
         })
     }
 
-
     fn fetch_stream(req: HttpRequest) -> TryEnvFuture<(HttpResponseHead, ByteStream)> {
         let url = req.url.clone();
-        let (found, sizes) = {
+        let asked_range = req
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Range"))
+            .map(|(_, v)| v.clone());
+        let (found, sizes, honour) = {
             let mut state = state();
             state.requests.push(req);
             let found = state.responses.get(&url).cloned().or_else(|| {
@@ -180,16 +192,40 @@ impl Env for MockEnv {
                     .find(|(prefix, _)| url.starts_with(prefix.as_str()))
                     .map(|(_, response)| response.clone())
             });
-            (found, state.stream_chunk_sizes.clone())
+            (found, state.stream_chunk_sizes.clone(), state.honour_ranges)
         };
         Box::pin(async move {
-            let response =
+            let mut response =
                 found.ok_or_else(|| EnvError::Fetch(format!("no canned response for {url}")))?;
+            // Like a CDN that takes ranges: a 200 body answered as 206 with the slice asked for.
+            if let (true, 200, Some(range)) = (honour, response.status, asked_range) {
+                let total = response.body.len();
+                let (from, to) = range
+                    .strip_prefix("bytes=")
+                    .and_then(|r| r.split_once('-'))
+                    .and_then(|(a, b)| Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?)))
+                    .ok_or_else(|| EnvError::Fetch(format!("bad range {range}")))?;
+                let to = to.min(total.saturating_sub(1));
+                response.body = response.body[from..=to].to_vec();
+                response.status = 206;
+                response
+                    .headers
+                    .retain(|(k, _)| !k.eq_ignore_ascii_case("Content-Length"));
+                response
+                    .headers
+                    .push(("Content-Range".into(), format!("bytes {from}-{to}/{total}")));
+                response
+                    .headers
+                    .push(("Content-Length".into(), (to + 1 - from).to_string()));
+            }
             let head = HttpResponseHead {
                 status: response.status,
                 headers: response.headers.clone(),
             };
-            Ok((head, ByteStream::from_chunks(split_into_chunks(&response.body, &sizes))))
+            Ok((
+                head,
+                ByteStream::from_chunks(split_into_chunks(&response.body, &sizes)),
+            ))
         })
     }
 
@@ -199,9 +235,8 @@ impl Env for MockEnv {
         Box::pin(async move {
             // Loud when a test has not said what a name resolves to, for the same reason an
             // unregistered URL is loud: silence would let the test describe something else.
-            let addrs = canned.ok_or_else(|| {
-                EnvError::Fetch(format!("no canned DNS answer for {host}"))
-            })?;
+            let addrs = canned
+                .ok_or_else(|| EnvError::Fetch(format!("no canned DNS answer for {host}")))?;
             Ok(addrs
                 .into_iter()
                 .map(|ip| std::net::SocketAddr::new(ip, port))
@@ -227,7 +262,11 @@ impl Env for MockEnv {
     }
 
     fn append_storage(key: &str, text: &str) -> TryEnvFuture<()> {
-        state().storage.entry(key.to_owned()).or_default().push_str(text);
+        state()
+            .storage
+            .entry(key.to_owned())
+            .or_default()
+            .push_str(text);
         Box::pin(async move { Ok(()) })
     }
 

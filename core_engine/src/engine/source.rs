@@ -4,9 +4,14 @@
 //
 // The HTTP source goes through `Env::fetch_stream`, like every other request the core makes, and keeps
 // what has arrived in memory so the decoder can seek backwards for free and forwards as far as the
-// download has got. A forward seek past that waits for the bytes rather than issuing a range request:
-// a song is a few megabytes and arrives in seconds, and one connection per track is what the CDN
-// (and the core's own local server, for cached and Deezer tracks) already expects.
+// download has got.
+//
+// It downloads in **ranges** of [CHUNK] when the server takes them. Measured on the desktop
+// (`examples/engine_probe.rs`, 2026-11-03): googlevideo sends a whole-file GET at about twice the
+// bitrate, ~32 KB/s for a 128 kbps AAC, and probing an MP4 reads most of the file, so a 6-minute
+// song took **180 s** to start. In ranges, as ExoPlayer asks for them on Android, each comes at full
+// speed. A server that ignores `Range` answers 200 with the whole body, which is read as one stream
+// as before (the core's local server, files on disk, plain CDNs).
 //
 // Dropping the source cancels the download — skipping a track must not leave it downloading.
 
@@ -22,15 +27,16 @@ use super::EngineError;
 /// Opens `uri`: `http(s)://` through `E`, anything else as a path (`file://` prefix optional).
 ///
 /// Answers the source and a format hint (extension or MIME type) for the decoder.
-pub fn open<E: Env>(uri: &str) -> Result<(Box<dyn MediaSource>, Option<String>), EngineError> {
+pub fn open<E: Env + 'static>(
+    uri: &str,
+) -> Result<(Box<dyn MediaSource>, Option<String>), EngineError> {
     if uri.starts_with("http://") || uri.starts_with("https://") {
         let source = HttpSource::open::<E>(uri)?;
         let hint = source.mime.clone().or_else(|| extension_of(uri));
         return Ok((Box::new(source), hint));
     }
     let path = uri.strip_prefix("file://").unwrap_or(uri);
-    let file = std::fs::File::open(path)
-        .map_err(|e| EngineError::Open(format!("{path}: {e}")))?;
+    let file = std::fs::File::open(path).map_err(|e| EngineError::Open(format!("{path}: {e}")))?;
     Ok((Box::new(file), extension_of(path)))
 }
 
@@ -63,18 +69,62 @@ pub struct HttpSource {
     mime: Option<String>,
 }
 
+/// One range request's worth. Big enough that a song is a handful of requests, small enough that
+/// the first one (which the decoder waits for) is quick.
+const CHUNK: u64 = 1 << 20;
+
+/// Tries per range before the download is called failed.
+const RANGE_TRIES: usize = 3;
+
+fn range(from: u64, to_inclusive: u64) -> String {
+    format!("bytes={from}-{to_inclusive}")
+}
+
+/// The total from a `Content-Range: bytes 0-1048575/5818745` header.
+fn total_from_content_range(value: &str) -> Option<u64> {
+    value.rsplit('/').next()?.trim().parse().ok()
+}
+
+/// Appends a body to the download. `Err` with the message on a network error; `Ok(false)` when the
+/// source was dropped meanwhile.
+async fn drain(mut body: crate::env::ByteStream, shared: &Shared) -> Result<bool, String> {
+    loop {
+        let next = std::future::poll_fn(|cx| body.poll_chunk(cx)).await;
+        let Ok(mut state) = shared.state.lock() else {
+            return Ok(false);
+        };
+        if state.cancelled {
+            return Ok(false);
+        }
+        match next {
+            Some(Ok(bytes)) => state.data.extend_from_slice(&bytes),
+            Some(Err(e)) => return Err(e.message()),
+            None => return Ok(true),
+        }
+        drop(state);
+        shared.arrived.notify_all();
+    }
+}
+
 impl HttpSource {
     /// Starts the request and returns once the response head is in. Blocking: called from the
     /// engine's opener thread, never from the player thread or a device callback.
-    pub fn open<E: Env>(url: &str) -> Result<Self, EngineError> {
-        let request = HttpRequest::get(url);
-        let (head, mut body) = crate::get_runtime()
+    pub fn open<E: Env + 'static>(url: &str) -> Result<Self, EngineError> {
+        let request = HttpRequest::get(url).header("Range", range(0, CHUNK - 1));
+        let (head, body) = crate::get_runtime()
             .block_on(E::fetch_stream(request))
             .map_err(|e| EngineError::Open(e.message()))?;
         if !head.is_success() {
             return Err(EngineError::Http(head.status));
         }
-        let total = head.content_length();
+        // 206 with a total: the rest comes in ranges. Anything else is the whole body.
+        let ranged_total = (head.status == 206)
+            .then(|| {
+                head.header("Content-Range")
+                    .and_then(total_from_content_range)
+            })
+            .flatten();
+        let total = ranged_total.or_else(|| head.content_length());
         let mime = head
             .header("Content-Type")
             .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
@@ -88,30 +138,75 @@ impl HttpSource {
             arrived: Condvar::new(),
         });
         let pump = shared.clone();
+        let url = url.to_string();
         crate::get_runtime().spawn(async move {
-            loop {
-                let next = std::future::poll_fn(|cx| body.poll_chunk(cx)).await;
-                let Ok(mut state) = pump.state.lock() else {
-                    return;
-                };
-                if state.cancelled {
-                    return;
-                }
-                match next {
-                    Some(Ok(bytes)) => state.data.extend_from_slice(&bytes),
-                    Some(Err(e)) => {
-                        state.error = Some(e.message());
-                        pump.arrived.notify_all();
-                        return;
-                    }
-                    None => {
-                        state.done = true;
-                        pump.arrived.notify_all();
-                        return;
+            let finish = |error: Option<String>| {
+                if let Ok(mut state) = pump.state.lock() {
+                    match error {
+                        Some(e) => state.error = Some(e),
+                        None => state.done = true,
                     }
                 }
                 pump.arrived.notify_all();
+            };
+            match drain(body, &pump).await {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(e) => return finish(Some(e)),
             }
+            if let Some(total) = ranged_total {
+                loop {
+                    let have = match pump.state.lock() {
+                        Ok(state) if !state.cancelled => state.data.len() as u64,
+                        _ => return,
+                    };
+                    if have >= total {
+                        break;
+                    }
+                    let to = (have + CHUNK).min(total) - 1;
+                    let mut last_error = String::new();
+                    let mut got = false;
+                    for _ in 0..RANGE_TRIES {
+                        let request =
+                            HttpRequest::get(url.clone()).header("Range", range(have, to));
+                        match E::fetch_stream(request).await {
+                            Ok((head, body)) if head.status == 206 => {
+                                match drain(body, &pump).await {
+                                    Ok(true) => {
+                                        got = true;
+                                        break;
+                                    }
+                                    Ok(false) => return,
+                                    // A cut mid-range: the next try asks from where it stopped.
+                                    Err(e) => last_error = e,
+                                }
+                            }
+                            Ok((head, _)) => {
+                                last_error = format!("range answered HTTP {}", head.status)
+                            }
+                            Err(e) => last_error = e.message(),
+                        }
+                        if pump
+                            .state
+                            .lock()
+                            .map(|s| s.data.len() as u64 > have)
+                            .unwrap_or(false)
+                        {
+                            break; // part of it arrived; the outer loop asks for the rest
+                        }
+                    }
+                    if !got
+                        && pump
+                            .state
+                            .lock()
+                            .map(|s| s.data.len() as u64 <= have)
+                            .unwrap_or(true)
+                    {
+                        return finish(Some(last_error));
+                    }
+                }
+            }
+            finish(None);
         });
 
         Ok(HttpSource {
@@ -234,9 +329,10 @@ mod tests {
         response
             .headers
             .push(("Content-Length".into(), expected.len().to_string()));
-        response
-            .headers
-            .push(("Content-Type".into(), "audio/mp4; codecs=\"mp4a.40.2\"".into()));
+        response.headers.push((
+            "Content-Type".into(),
+            "audio/mp4; codecs=\"mp4a.40.2\"".into(),
+        ));
         mock::on_url("https://cdn.test/a.m4a", response);
 
         let mut source = HttpSource::open::<MockEnv>("https://cdn.test/a.m4a").expect("opens");
@@ -268,6 +364,60 @@ mod tests {
     }
 
     #[test]
+    fn a_server_that_takes_ranges_is_read_in_ranges_to_the_end() {
+        let _guard = mock::lock_and_reset();
+        mock::honour_ranges();
+        let expected = body((CHUNK as usize) * 2 + 12_345);
+        let mut response = HttpResponse::ok(expected.clone());
+        response
+            .headers
+            .push(("Content-Type".into(), "audio/mp4".into()));
+        mock::on_url("https://cdn.test/v", response);
+
+        let mut source = HttpSource::open::<MockEnv>("https://cdn.test/v").expect("opens");
+        assert_eq!(
+            source.byte_len(),
+            Some(expected.len() as u64),
+            "the total comes from Content-Range"
+        );
+        let mut all = Vec::new();
+        source.read_to_end(&mut all).expect("reads");
+        assert_eq!(all.len(), expected.len());
+        assert!(
+            all == expected,
+            "the ranges join without a gap or an overlap"
+        );
+
+        let asked: Vec<String> = mock::state()
+            .requests
+            .iter()
+            .filter_map(|r| {
+                r.headers
+                    .iter()
+                    .find(|(k, _)| k == "Range")
+                    .map(|(_, v)| v.clone())
+            })
+            .collect();
+        assert_eq!(
+            asked,
+            vec![
+                format!("bytes=0-{}", CHUNK - 1),
+                format!("bytes={}-{}", CHUNK, 2 * CHUNK - 1),
+                format!("bytes={}-{}", 2 * CHUNK, expected.len() - 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_total_is_read_from_content_range() {
+        assert_eq!(
+            total_from_content_range("bytes 0-1048575/5818745"),
+            Some(5_818_745)
+        );
+        assert_eq!(total_from_content_range("bytes 0-1/*"), None);
+    }
+
+    #[test]
     fn an_error_status_is_an_http_error() {
         let _guard = mock::lock_and_reset();
         mock::on_url("https://cdn.test/gone", HttpResponse::with_status(403, ""));
@@ -279,7 +429,10 @@ mod tests {
 
     #[test]
     fn hints_come_from_the_extension_without_the_query() {
-        assert_eq!(extension_of("https://x/y/song.FLAC?sig=1"), Some("flac".into()));
+        assert_eq!(
+            extension_of("https://x/y/song.FLAC?sig=1"),
+            Some("flac".into())
+        );
         assert_eq!(extension_of("C:\\Music\\a.mp3"), Some("mp3".into()));
         assert_eq!(extension_of("https://x/videoplayback?id=1"), None);
     }
