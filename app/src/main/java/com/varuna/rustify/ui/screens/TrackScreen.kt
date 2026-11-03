@@ -1645,8 +1645,7 @@ private fun LyricsProviderSwitcher(
     var nothingFrom by remember(trackId) { mutableStateOf<String?>(null) }
     val shown = current?.providerId
     val index = providers.indexOf(shown).coerceAtLeast(0)
-    fun nameOf(id: String): String = if (id == LyricsRepository.LOCAL) context.getString(R.string.lyrics_provider_file)
-        else com.varuna.rustify.bridge.LyricsProviders.byId(id)?.let { context.getString(it.displayNameRes) } ?: id
+    fun nameOf(id: String): String = LyricsRepository.nameRes(id)?.let { context.getString(it) } ?: id
     fun open(target: Int) {
         val id = providers.getOrNull(Math.floorMod(target, providers.size)) ?: return
         if (id == shown || asking != null) return
@@ -1821,11 +1820,11 @@ fun LyricsView(
                 val scrollState = rememberScrollState()
                 Text(
                     text = if (translated != null) {
-                        lyricsResult.plain.lines().mapIndexed { i, l ->
+                        lyricsResult.plain.orEmpty().lines().mapIndexed { i, l ->
                             val t = translated.getOrNull(i).orEmpty()
                             if (t.isBlank()) l else "$l\n($t)"
                         }.joinToString("\n")
-                    } else lyricsResult.plain,
+                    } else lyricsResult.plain.orEmpty(),
                     color = Color.LightGray,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
@@ -2093,7 +2092,7 @@ private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
             val now = audioPlayerService.abRepeat.value
             val text = when {
                 now.isLooping -> looping.format(mmss(now.a ?: 0), mmss(now.b ?: 0))
-                now.a != null -> markedA.format(mmss(now.a))
+                now.a != null -> markedA.format(mmss(now.a ?: 0))
                 else -> cleared
             }
             android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_SHORT).show()

@@ -335,14 +335,14 @@ internal fun ReorderableBackendList(
 
 @Composable
 internal fun LyricsProvidersSection(context: Context) {
-    var entries by remember { mutableStateOf(com.varuna.rustify.bridge.LyricsSettings.load(context)) }
+    var entries by remember { mutableStateOf(com.varuna.rustify.bridge.LyricsSettings.load(com.varuna.rustify.bridge.LyricsRepository.store(context))) }
     Spacer(modifier = Modifier.height(24.dp))
     Text(stringResource(R.string.settings_lyrics_providers), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             ReorderableLyricsList(entries) { newOrder ->
                 entries = newOrder
-                com.varuna.rustify.bridge.LyricsSettings.save(context, newOrder)
+                com.varuna.rustify.bridge.LyricsSettings.save(com.varuna.rustify.bridge.LyricsRepository.store(context), newOrder)
             }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.settings_lyrics_providers_hint), color = Color.Gray, fontSize = 12.sp)
@@ -394,7 +394,7 @@ internal fun ReorderableLyricsList(
                 ) {
                     Icon(Icons.Default.DragHandle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
-                    val nameRes = com.varuna.rustify.bridge.LyricsProviders.byId(entry.id)?.displayNameRes
+                    val nameRes = com.varuna.rustify.bridge.LyricsRepository.nameRes(entry.id)
                     Text(
                         if (nameRes != null) stringResource(nameRes) else entry.id,
                         color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f)
