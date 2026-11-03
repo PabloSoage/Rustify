@@ -201,7 +201,7 @@ lab's SME kernels and Gemini Nano need the real hardware.
   each: on a Snapdragon 8 Elite Gen 5, SME computes the key's matrix product 9× faster than NEON.
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 310 in the Rust engine (301 unit, 9 end-to-end; clippy-clean and enforced in CI) and 110
+- **Tests** — 354 in the Rust engine (345 unit, 9 end-to-end; clippy-clean and enforced in CI) and 197
   in Kotlin, run by
   `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
