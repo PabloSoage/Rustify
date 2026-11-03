@@ -26,9 +26,10 @@ kotlin {
 
     jvm("desktop")
 
-    // Devices and the Apple Silicon simulator. Not iosX64: Intel Macs are not a target worth a build.
+    // Devices, the Apple Silicon simulator, and the simulator on an Intel Mac (iosX64: the owner's
+    // macOS VM on an AMD host is x86_64, and so is its simulator). Each is built only when asked for.
     // On a host that is not a Mac these targets are skipped with a warning, which is expected.
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+    listOf(iosArm64(), iosSimulatorArm64(), iosX64()).forEach { target ->
         target.binaries.framework {
             baseName = "RustifyShared"
             isStatic = true
