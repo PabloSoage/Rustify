@@ -1,6 +1,13 @@
 // desktopApp/src/jvmMain/kotlin/com/varuna/rustify/desktop/ui/App.kt
 package com.varuna.rustify.desktop.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -101,7 +108,7 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession) {
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (section) {
-                Section.HOME -> HomeSection(player, ui, spotify)
+                Section.HOME -> HomeSection(player, ui, spotify, signedIn = user != null)
                 Section.SEARCH -> SearchSection(player, ui, spotify, signedIn = user != null)
                 Section.LIKED -> SignedIn(user) { LikedSection(player, ui, spotify) }
                 Section.PLAYLISTS -> SignedIn(user) { PlaylistsSection(player, ui, spotify) }
@@ -209,7 +216,7 @@ private fun SearchSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLib
 
 /** Spotify's Home sections, without an account as on the phone; a playlist or album opens its songs. */
 @Composable
-private fun HomeSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLibrary) {
+private fun HomeSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLibrary, signedIn: Boolean) {
     var open by remember { mutableStateOf<Opened?>(null) }
     val opened = open
     if (opened != null) {
@@ -222,7 +229,12 @@ private fun HomeSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLibra
         }
         return
     }
-    Loaded("home", { spotify.home() }) { sections ->
+    // Without an account the personal Home answers "not authenticated"; the public one is the
+    // charts and moods, as Android's PublicHome shows them.
+    Loaded("home-$signedIn", {
+        if (signedIn) spotify.home()
+        else spotify.publicHome(chartCountry(), chartsTitle = "Charts", moodsTitle = "For every mood")
+    }) { sections ->
         LazyColumn(Modifier.fillMaxSize()) {
             sections.forEach { section ->
                 item(key = "h-${section.id}") {
@@ -262,6 +274,13 @@ private fun HomeSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLibra
             }
         }
     }
+}
+
+/** The country as the chart playlists spell it ("Top 50 - Spain"), as on Android. */
+private fun chartCountry(): String? = when (java.util.Locale.getDefault().country) {
+    "US" -> "USA"
+    "GB" -> "UK"
+    else -> java.util.Locale.getDefault().getDisplayCountry(java.util.Locale.ENGLISH).takeIf { it.isNotBlank() }
 }
 
 private fun keyOf(item: BrowseSectionItem): String = when (item) {
@@ -422,11 +441,11 @@ private fun NowPlayingBar(ui: PlayerUi, player: QueuePlayer) {
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = player::previous, enabled = ui.current != null) { Text("⏮") }
+                IconButton(onClick = player::previous, enabled = ui.current != null) { Icon(Icons.Default.SkipPrevious, contentDescription = "Previous") }
                 Button(onClick = player::togglePause, enabled = ui.current != null && !ui.loading) {
-                    Text(if (ui.playing) "⏸" else "▶")
+                    Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (ui.playing) "Pause" else "Play")
                 }
-                TextButton(onClick = player::next, enabled = ui.current != null) { Text("⏭") }
+                IconButton(onClick = player::next, enabled = ui.current != null) { Icon(Icons.Default.SkipNext, contentDescription = "Next") }
                 TextButton(onClick = {
                     repeat = (repeat + 1) % repeatModes.size
                     player.setRepeat(repeatModes[repeat])
