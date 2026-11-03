@@ -8,7 +8,7 @@ import kotlin.test.Test
 
 class AbRepeatTest {
     @Test
-    fun `three presses mark A, mark B, and clear`() {
+    fun `three presses mark A - mark B - and clear`() {
         val a = AbRepeat.NONE.press("t", 10_000)
         assertEquals(10_000L, a.a); assertFalse(a.isLooping)
         val ab = a.press("t", 25_000)
@@ -17,7 +17,7 @@ class AbRepeatTest {
     }
 
     @Test
-    fun `passing B jumps back to A, only on the same track`() {
+    fun `passing B jumps back to A - only on the same track`() {
         val ab = AbRepeat("t", 10_000, 25_000)
         assertNull(ab.jumpFrom("t", 24_900))
         assertEquals(10_000L, ab.jumpFrom("t", 25_000))

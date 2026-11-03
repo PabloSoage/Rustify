@@ -21,7 +21,7 @@ class LocalFoldersTest {
     }
 
     @Test
-    fun `a level lists sub-folders with their counts, then its own tracks`() {
+    fun `a level lists sub-folders with their counts - then its own tracks`() {
         val root = LocalFolders.root(paths)
         val top = LocalFolders.level(paths, { it }, root)
         assertEquals(

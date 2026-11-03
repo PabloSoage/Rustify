@@ -15,7 +15,7 @@ class LyricsInContextTest {
     }
 
     @Test
-    fun `answers are matched back by number, whatever the model wraps them in`() {
+    fun `answers are matched back by number - whatever the model wraps them in`() {
         val answer = """
             Here is the translation:
             12: Sigo adelante
@@ -36,7 +36,7 @@ class LyricsInContextTest {
     }
 
     @Test
-    fun `a long song is cut in the context, not in the block`() {
+    fun `a long song is cut in the context - not in the block`() {
         val song = List(400) { "line number $it with some words" }
         val p = LyricsInContext.prompt("en", "es", song, listOf(399 to song[399]))
         assertTrue(p.contains("399: line number 399"))

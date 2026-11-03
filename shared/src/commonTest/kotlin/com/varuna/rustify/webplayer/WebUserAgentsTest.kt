@@ -22,7 +22,7 @@ class WebUserAgentsTest {
         "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.36 Mobile Safari/537.36"
 
     @Test
-    fun `a tablet presents itself as a phone, because Spotify refuses the tablet agent`() {
+    fun `a tablet presents itself as a phone - because Spotify refuses the tablet agent`() {
         assertEquals(
             "Mozilla/5.0 (Linux; Android 16; 24018RPACG Build/BP2A.250605.031.A3) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.36 Mobile Safari/537.36",
