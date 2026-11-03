@@ -217,6 +217,11 @@ targets.forEach { target ->
         // Set the environment variables required by cargo-ndk
         environment("ANDROID_NDK_HOME", effectiveNdkDir.absolutePath)
         environment("ANDROID_HOME", sdkDir.absolutePath)
+        // One target directory per ABI. With the configuration cache Gradle already starts the three
+        // tasks together, but cargo locks a shared target directory, so they used to queue behind
+        // each other: ~60 s each after a one-file change (crate + fat LTO, mostly one thread), three
+        // minutes in all on a 32-thread machine that sat idle.
+        environment("CARGO_TARGET_DIR", file("../core_engine/target/ndk-$target").absolutePath)
 
         // Find libclang statically to avoid I/O during Gradle's configuration phase (supports Configuration Cache)
         val hostTag = if (isWindows) "windows-x86_64" else if (System.getProperty("os.name").lowercase().contains("mac")) "darwin-x86_64" else "linux-x86_64"
