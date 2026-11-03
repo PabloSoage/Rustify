@@ -30,4 +30,6 @@ object JvmPlayerBackend : PlayerBackend {
     }
 
     override suspend fun resolveYouTubeId(spotifyId: String): String = NativeEngine.resolveYouTubeId(spotifyId, "")
+
+    override suspend fun recordPlay(eventJson: String): String = NativeEngine.recordPlay(eventJson)
 }

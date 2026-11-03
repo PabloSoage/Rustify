@@ -80,31 +80,7 @@ class ListeningTracker(private val appContext: Context) {
 
     fun flush() {
         val s = cur ?: return; cur = null
-        val tid = s.track.id ?: return
-        val counted = !s.errored &&
-            (s.listenedMs >= 30_000 || (s.track.durationMs > 0 && s.listenedMs >= s.track.durationMs / 2))
-        val source = when {
-            TrackRef.isLocal(tid) -> "local"
-            TrackRef.isYtm(tid) -> "ytm"
-            else -> "spotify"
-        }
-        val event = PlayEvent(
-            trackId = tid,
-            isrc = s.track.isrc,
-            trackName = s.track.name,
-            artistIds = s.track.artists.map { it.id },
-            artistNames = s.track.artists.map { it.name },
-            albumId = s.track.album?.id.orEmpty(),
-            albumName = s.track.album?.name.orEmpty(),
-            // Album artwork, used to show covers on the metrics screen.
-            imageUrl = s.track.album?.images?.firstOrNull()?.url.orEmpty(),
-            durationMs = s.track.durationMs.toLong(),
-            startedAt = s.startedAt,
-            listenedMs = s.listenedMs,
-            counted = counted,
-            completed = s.completed,
-            source = source
-        )
+        val event = playEventOf(s.track, s.startedAt, s.listenedMs, s.completed, s.errored) ?: return
         // ListenBrainz and Last.fm share their own, stricter rule (4 min or half); the core queues
         // each if offline.
         if (!s.errored && ListenBrainz.qualifies(s.listenedMs, s.track.durationMs.toLong())) {
@@ -263,18 +239,5 @@ class ListeningTracker(private val appContext: Context) {
     }
 }
 
-/**
- * How much of a tick counts as listening: the position advanced [posDelta], the clock [wallDelta].
- *
- * Ticks are half a second apart while the app is awake, and the old rule — count only gaps up to
- * 10 s — was written for that. With audio offload (4.7.1) the DSP plays while the CPU sleeps, and
- * the next tick can come minutes later; dropping those gaps lost whole songs from the stats. A long
- * gap counts when the position moved about as much as the clock did — playback went on unattended.
- * A seek (position far ahead of the clock) and a pause (position still) still count nothing extra.
- */
-internal fun creditedListenMs(posDelta: Long, wallDelta: Long): Long = when {
-    posDelta <= 0L || wallDelta <= 0L -> 0L
-    wallDelta <= 10_000L -> minOf(posDelta, wallDelta)
-    kotlin.math.abs(posDelta - wallDelta) <= maxOf(2_000L, wallDelta / 20) -> minOf(posDelta, wallDelta)
-    else -> 0L
-}
+// creditedListenMs and playEventOf — what a play *is* — live in the shared module since 5.x
+// (shared/.../metrics/PlayRules.kt), so the desktop and iOS count plays by the same rule.

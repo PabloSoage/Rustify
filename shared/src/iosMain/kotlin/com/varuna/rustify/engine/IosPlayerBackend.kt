@@ -69,6 +69,11 @@ object IosPlayerBackend : PlayerBackend {
         return runCatching { Json.parseToJsonElement(answer).jsonPrimitive.content }.getOrDefault("")
     }
 
+    override suspend fun recordPlay(eventJson: String): String = CoreCall.call(
+        "recordPlay",
+        JsonObject(mapOf("event" to Json.parseToJsonElement(eventJson))),
+    )
+
     override suspend fun resolveAudio(videoId: String, prefsJson: String): String = CoreCall.call(
         "resolveInnertubeAudio",
         JsonObject(

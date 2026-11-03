@@ -3,8 +3,12 @@ package com.varuna.rustify.engine
 
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.TrackRef
+import com.varuna.rustify.metrics.PlayEvent
+import com.varuna.rustify.metrics.creditedListenMs
+import com.varuna.rustify.metrics.playEventOf
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +55,9 @@ interface PlayerBackend {
 
     /** The YouTube video for a Spotify track id, by the core's resolver; "" when there is none. */
     suspend fun resolveYouTubeId(spotifyId: String): String
+
+    /** Stores one play in the core's listening history (`metrics::record`); [eventJson] is a `PlayEvent`. */
+    suspend fun recordPlay(eventJson: String): String
 }
 
 /** What a screen shows. Top-level rather than nested so Swift sees it as `PlayerUi`. */
@@ -141,6 +148,44 @@ class QueuePlayer(
     private var failuresInARow = 0
 
     /**
+     * The listen in progress, for the listening history: the same rules as Android's
+     * `ListeningTracker` (`metrics/PlayRules.kt`), fed by the engine's events instead of ExoPlayer's.
+     */
+    private class Listening(val track: FullTrack, val startedAt: Long) {
+        var lastPos = 0L
+        var lastTickAt = 0L
+        var listenedMs = 0L
+    }
+
+    private var listening: Listening? = null
+
+    private fun startListening(token: Long) {
+        finishListening(completed = false, errored = false)
+        val index = indexOfToken[token] ?: return
+        val track = tracks.getOrNull(index) ?: return
+        listening = Listening(track, currentTimeMillis())
+    }
+
+    private fun progressListening(positionMs: Long) {
+        val l = listening ?: return
+        val now = currentTimeMillis()
+        val wallDelta = if (l.lastTickAt > 0L) now - l.lastTickAt else 0L
+        l.listenedMs += creditedListenMs(positionMs - l.lastPos, wallDelta)
+        l.lastPos = positionMs
+        l.lastTickAt = now
+    }
+
+    private fun finishListening(completed: Boolean, errored: Boolean) {
+        val l = listening ?: return
+        listening = null
+        val event = playEventOf(l.track, l.startedAt, l.listenedMs, completed, errored) ?: return
+        scope.launch {
+            runCatching { backend.recordPlay(json.encodeToString(PlayEvent.serializer(), event)) }
+                .onFailure { Log.w(TAG, "could not record a play", it) }
+        }
+    }
+
+    /**
      * Brings back the last session's queue and position, paused. Call before [start]. Nothing saved, or
      * something unreadable (an older shape), leaves an empty player.
      */
@@ -226,6 +271,7 @@ class QueuePlayer(
     })
 
     fun shutdown() {
+        finishListening(completed = false, errored = false)
         save()
         backend.send(EngineCommand.Stop)
     }
@@ -267,6 +313,8 @@ class QueuePlayer(
 
     private fun load(index: Int, startMs: Long) {
         val track = tracks.getOrNull(index) ?: return
+        // A skip, or a new queue: the track that was playing ends here, not completed.
+        finishListening(completed = false, errored = false)
         val token = nextToken++
         indexOfToken[token] = index
         currentToken = token
@@ -309,26 +357,32 @@ class QueuePlayer(
         when (event) {
             is EngineEvent.Ready -> if (event.token == currentToken) {
                 failuresInARow = 0
+                startListening(event.token)
                 _ui.update { it.copy(loading = false, durationMs = event.durationMs) }
                 preloadNext()
             }
             is EngineEvent.State -> _ui.update { it.copy(playing = event.playing) }
             is EngineEvent.Position -> if (event.token == currentToken) {
+                progressListening(event.positionMs)
                 state = state.copy(positionMs = event.positionMs)
                 _ui.update { it.copy(positionMs = event.positionMs) }
             }
             is EngineEvent.Transitioned -> if (event.to == preloadedToken) {
+                finishListening(completed = true, errored = false)
                 currentToken = event.to
                 preloadedToken = 0
+                startListening(event.to)
                 // The engine is already playing it: tell the reducer, but do not load it again.
                 reduce(buildJsonObject { put("type", "track_ended") }, skipPlay = true)
                 _ui.update { it.copy(positionMs = 0, durationMs = null) }
                 preloadNext()
             }
             is EngineEvent.Ended -> if (event.token == currentToken) {
+                finishListening(completed = true, errored = false)
                 reduce(buildJsonObject { put("type", "track_ended") })
             }
             is EngineEvent.Error -> if (event.token == currentToken) {
+                finishListening(completed = false, errored = true)
                 failed(event.message)
             }
             is EngineEvent.Loading, is EngineEvent.Preloaded -> Unit
