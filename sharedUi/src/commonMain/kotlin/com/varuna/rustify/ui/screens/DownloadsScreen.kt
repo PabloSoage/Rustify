@@ -35,11 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.varuna.rustify.R
-import com.varuna.rustify.bridge.DownloadManager
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.DownloadStatus
 import com.varuna.rustify.bridge.DownloadTask
 
@@ -50,28 +49,29 @@ fun DownloadsScreen(
     modifier: Modifier = Modifier,
     onOpenCustom: () -> Unit = {}
 ) {
-    val downloads by DownloadManager.downloads.collectAsState()
+    val services = com.varuna.rustify.ui.LocalAppServices.current
+    val downloads by services.downloads.collectAsState()
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.home_downloads), color = Color.White) },
+                title = { Text(stringResource(Res.string.home_downloads), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {
                     if (downloads.any { it.status == DownloadStatus.COMPLETE || it.status == DownloadStatus.ERROR }) {
-                        TextButton(onClick = { DownloadManager.clearCompleted() }) {
-                            Text(stringResource(R.string.downloads_clear), color = Color(0xFF1DB954))
+                        TextButton(onClick = { services.clearCompleted() }) {
+                            Text(stringResource(Res.string.downloads_clear), color = Color(0xFF1DB954))
                         }
                     }
                     // Custom download by URL: paste any link to choose video/audio qualities.
                     IconButton(onClick = onOpenCustom) {
-                        Icon(Icons.Default.AddLink, contentDescription = stringResource(R.string.cd_title), tint = Color(0xFF1DB954))
+                        Icon(Icons.Default.AddLink, contentDescription = stringResource(Res.string.cd_title), tint = Color(0xFF1DB954))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
@@ -82,7 +82,7 @@ fun DownloadsScreen(
     ) { innerPadding ->
         if (downloads.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.downloads_no_active), color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(Res.string.downloads_no_active), color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyColumn(
@@ -112,9 +112,9 @@ fun DownloadRow(task: DownloadTask) {
             contentAlignment = Alignment.Center
         ) {
             when (task.status) {
-                DownloadStatus.COMPLETE -> Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.track_menu_download_complete), tint = Color(0xFF1DB954))
-                DownloadStatus.ERROR -> Icon(Icons.Default.Error, contentDescription = stringResource(R.string.general_error), tint = Color.Red)
-                else -> Icon(Icons.Default.FileDownload, contentDescription = stringResource(R.string.a11y_downloading), tint = Color.White)
+                DownloadStatus.COMPLETE -> Icon(Icons.Default.CheckCircle, contentDescription = stringResource(Res.string.track_menu_download_complete), tint = Color(0xFF1DB954))
+                DownloadStatus.ERROR -> Icon(Icons.Default.Error, contentDescription = stringResource(Res.string.general_error), tint = Color.Red)
+                else -> Icon(Icons.Default.FileDownload, contentDescription = stringResource(Res.string.a11y_downloading), tint = Color.White)
             }
         }
 
@@ -143,9 +143,10 @@ fun DownloadRow(task: DownloadTask) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = when(task.status) {
-                            DownloadStatus.QUEUED -> stringResource(R.string.track_menu_connecting)
-                            DownloadStatus.RESOLVING -> stringResource(R.string.track_menu_getting_url)
-                            DownloadStatus.DOWNLOADING -> stringResource(R.string.track_menu_download_progress, task.progress)
+                            DownloadStatus.QUEUED -> stringResource(Res.string.track_menu_connecting)
+                            DownloadStatus.RESOLVING -> stringResource(Res.string.track_menu_getting_url)
+                            DownloadStatus.DOWNLOADING -> stringResource(Res.string.track_menu_download_progress, task.progress)
+                            else -> ""
                         },
                         color = Color(0xFF1DB954),
                         style = MaterialTheme.typography.labelSmall
@@ -153,7 +154,7 @@ fun DownloadRow(task: DownloadTask) {
                 } else if (task.status == DownloadStatus.ERROR && task.errorMessage != null) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = task.errorMessage,
+                        text = task.errorMessage.orEmpty(),
                         color = Color.Red,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,

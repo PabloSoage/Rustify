@@ -1,6 +1,5 @@
 package com.varuna.rustify.bridge
 
-import android.content.Context
 import com.varuna.rustify.bridge.LyricsOffsetStore.set
 import com.varuna.rustify.bridge.LyricsOffsetStore.version
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,12 +23,12 @@ object LyricsOffsetStore {
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
 
-    private fun ensure(context: Context) {
+    private fun ensure(dir: File) {
         if (loaded) return
         synchronized(this) {
             if (loaded) return
             runCatching {
-                val f = File(context.filesDir, FILE)
+                val f = File(dir, FILE)
                 if (f.exists()) {
                     val obj = JSONObject(f.readText())
                     obj.keys().forEach { k -> cache[k] = obj.optLong(k, 0L) }
@@ -40,25 +39,26 @@ object LyricsOffsetStore {
     }
 
     /** Offset in ms for [trackId] (0 if no adjustment). */
-    fun get(context: Context, trackId: String): Long {
+    /** [dir] is the app's files folder. */
+    fun get(dir: File, trackId: String): Long {
         if (trackId.isBlank()) return 0L
-        ensure(context)
+        ensure(dir)
         return cache[trackId] ?: 0L
     }
 
-    fun set(context: Context, trackId: String, offsetMs: Long) {
+    fun set(dir: File, trackId: String, offsetMs: Long) {
         if (trackId.isBlank()) return
-        ensure(context)
+        ensure(dir)
         if (offsetMs == 0L) cache.remove(trackId) else cache[trackId] = offsetMs
-        persist(context)
+        persist(dir)
         _version.value += 1
     }
 
-    private fun persist(context: Context) {
+    private fun persist(dir: File) {
         runCatching {
             val obj = JSONObject()
             cache.forEach { (k, v) -> obj.put(k, v) }
-            File(context.filesDir, FILE).writeText(obj.toString())
+            File(dir, FILE).writeText(obj.toString())
         }
     }
 }

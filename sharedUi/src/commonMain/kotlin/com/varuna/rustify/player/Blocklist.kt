@@ -1,6 +1,6 @@
 package com.varuna.rustify.player
 
-import android.content.Context
+import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.bridge.FullTrack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +18,6 @@ import org.json.JSONObject
  * request per row.
  */
 object Blocklist {
-    private const val PREFS = "rustify_settings"
     private const val KEY_TRACKS = "blocklist_tracks"
     private const val KEY_ARTISTS = "blocklist_artists"
 
@@ -43,38 +42,35 @@ object Blocklist {
 
     @Volatile private var loaded = false
 
-    fun current(context: Context): Lists {
+    fun current(prefs: KeyValueStore): Lists {
         if (!loaded) synchronized(this) {
             if (!loaded) {
-                val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                _lists.value = Lists(decode(p.getString(KEY_TRACKS, null)), decode(p.getString(KEY_ARTISTS, null)))
+                                _lists.value = Lists(decode(prefs.getString(KEY_TRACKS)), decode(prefs.getString(KEY_ARTISTS)))
                 loaded = true
             }
         }
         return _lists.value
     }
 
-    fun toggleTrack(context: Context, track: FullTrack) {
+    fun toggleTrack(prefs: KeyValueStore, track: FullTrack) {
         val id = track.id ?: return
-        val l = current(context)
+        val l = current(prefs)
         val tracks = if (l.blocksTrack(id)) l.tracks.filterNot { it.id == id }
             else l.tracks + Entry(id, track.name, track.artists.joinToString(", ") { it.name })
-        save(context, l.copy(tracks = tracks))
+        save(prefs, l.copy(tracks = tracks))
     }
 
-    fun toggleArtist(context: Context, id: String, name: String) {
+    fun toggleArtist(prefs: KeyValueStore, id: String, name: String) {
         if (id.isBlank()) return
-        val l = current(context)
+        val l = current(prefs)
         val artists = if (l.blocksArtist(id)) l.artists.filterNot { it.id == id } else l.artists + Entry(id, name)
-        save(context, l.copy(artists = artists))
+        save(prefs, l.copy(artists = artists))
     }
 
-    private fun save(context: Context, l: Lists) {
+    private fun save(prefs: KeyValueStore, l: Lists) {
         _lists.value = l
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_TRACKS, encode(l.tracks))
-            .putString(KEY_ARTISTS, encode(l.artists))
-            .apply()
+        prefs.putString(KEY_TRACKS, encode(l.tracks))
+        prefs.putString(KEY_ARTISTS, encode(l.artists))
     }
 
     /**

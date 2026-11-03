@@ -300,7 +300,7 @@ fun YtMusicAlbumScreen(
     LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, LinkTarget.YtmAlbum(browseId).canonicalUrl)
+        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmAlbum(browseId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -359,7 +359,7 @@ fun YtMusicArtistScreen(
     LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
     YtmDetailScaffold(name, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, LinkTarget.YtmArtist(channelId).canonicalUrl)
+        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmArtist(channelId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -429,7 +429,7 @@ fun YtMusicPlaylistScreen(
     LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(context, LinkTarget.YtmPlaylist(playlistId).canonicalUrl)
+        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmPlaylist(playlistId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -688,7 +688,7 @@ fun YtmTrackListItem(
                 text = { Text(stringResource(R.string.track_menu_share)) },
                 onClick = {
                     showMenu = false
-                    ShareUtils.shareYtmLink(context, LinkTarget.YtmTrack(track.videoId).canonicalUrl)
+                    ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmTrack(track.videoId).canonicalUrl)
                 },
                 leadingIcon = { Icon(Icons.Default.Share, null) }
             )
@@ -698,7 +698,7 @@ fun YtmTrackListItem(
                     onClick = {
                         showMenu = false
                         ShareUtils.shareRustifyUrl(
-                            context,
+                            com.varuna.rustify.ui.AndroidAppPlatform(context),
                             url = LinkTarget.YtmTrack(track.videoId).canonicalUrl,
                             title = track.title,
                             subtitle = track.artists.joinToString(", ") { it.name },

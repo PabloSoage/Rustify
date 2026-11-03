@@ -1,8 +1,17 @@
 // sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/AppPlatform.kt
 package com.varuna.rustify.ui
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
+import org.jetbrains.compose.resources.ResourceEnvironment
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import com.varuna.rustify.platform.KeyValueStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import java.io.File
 
 /**
@@ -29,10 +38,19 @@ interface AppPlatform {
     /** Opens a web page or a link in the system's handler for it. */
     fun openUrl(url: String)
 
-    /** Offers [text] to the system's share sheet; on the desktop, copies it and says so. */
-    fun share(text: String, subject: String? = null)
+    /**
+     * Offers [text] to the system's share sheet (on the desktop, copies it); false when nothing could
+     * take it.
+     */
+    fun share(text: String, subject: String? = null): Boolean
+
+    /** Shares an image file with [text] as its caption; false when nothing could take it. */
+    fun shareImage(file: File, text: String): Boolean
 
     fun copyToClipboard(label: String, text: String)
+
+    /** The clipboard's text, or null when it holds none (or cannot be read). */
+    fun readClipboard(): String?
 
     enum class Kind { ANDROID, DESKTOP }
 
@@ -42,3 +60,33 @@ interface AppPlatform {
 }
 
 val LocalAppPlatform = staticCompositionLocalOf<AppPlatform> { error("no AppPlatform provided") }
+
+private val toastScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+/**
+ * The language the interface is in, for strings looked up outside a composition (a toast from a
+ * click handler). Outside one, Compose Multiplatform would use the system's language, and Android
+ * lets the user pick another for the app; [RememberStringEnvironment] at the root keeps this current.
+ */
+object StringEnvironment {
+    @Volatile
+    var current: ResourceEnvironment? = null
+}
+
+/** Call once at the root of the interface, inside whatever sets its language. */
+@Composable
+fun RememberStringEnvironment() {
+    StringEnvironment.current = rememberResourceEnvironment()
+}
+
+/** A string resource outside a composition, in the interface's language. */
+suspend fun appString(resource: StringResource, vararg args: Any): String =
+    StringEnvironment.current?.let { getString(it, resource, *args) } ?: getString(resource, *args)
+
+/**
+ * A toast from a string resource, from anywhere (a click handler, a coroutine): the text is looked up
+ * off the caller, in the interface's language, and shown when it is ready.
+ */
+fun AppPlatform.toast(resource: StringResource, vararg args: Any, long: Boolean = false) {
+    toastScope.launch { toast(appString(resource, *args), long) }
+}

@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,13 +52,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NormalizedSearchResults
 import com.varuna.rustify.bridge.SpotifyImage
@@ -93,11 +94,10 @@ fun SearchScreen(
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
     var searchQuery by remember { mutableStateOf("") }
@@ -108,13 +108,13 @@ fun SearchScreen(
     var searchResults by remember { mutableStateOf<NormalizedSearchResults?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
-    var recentSearches by remember { mutableStateOf(RecentSearches.list(context)) }
+    var recentSearches by remember { mutableStateOf(RecentSearches.list(platform.prefs())) }
     // The category being browsed, while its query is still the one in the field.
     var browsing by remember { mutableStateOf<SearchCategory?>(null) }
 
     // Kept only when the search was meant: submitted, or followed by opening a result.
     fun keepQuery() {
-        if (searchQuery.isNotBlank()) recentSearches = RecentSearches.add(context, searchQuery)
+        if (searchQuery.isNotBlank()) recentSearches = RecentSearches.add(platform.prefs(), searchQuery)
     }
 
     fun performSearch(query: String) {
@@ -166,10 +166,10 @@ fun SearchScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp)),
                 placeholder = {
-                    Text(stringResource(R.string.search_placeholder), color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(Res.string.search_placeholder), color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search), tint = Color.White)
+                    Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.nav_search), tint = Color.White)
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -185,27 +185,21 @@ fun SearchScreen(
                     } else {
                         // Paste a Spotify link from the clipboard and navigate to it rather than playing a stub.
                         IconButton(onClick = {
-                            val pasted = try {
-                                val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-                            } catch (e: Exception) {
-                                android.util.Log.w("SearchScreen", "Clipboard read failed: ${e.message}")
-                                null
-                            }
+                            val pasted = platform.readClipboard()
                             if (pasted.isNullOrBlank()) {
-                                android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
+                                platform.toast(Res.string.paste_clipboard_empty)
                                 return@IconButton
                             }
                             when (val link = LinkTarget.parse(pasted)) {
                                 is LinkTarget.SpotifyTrack -> {
-                                    android.util.Log.d("SearchScreen", "Pasted Spotify track: ${link.id}")
+                                    com.varuna.rustify.platform.Log.d("SearchScreen", "Pasted Spotify track: ${link.id}")
                                     onOpenTrack(link.id)
                                 }
                                 is LinkTarget.SpotifyAlbum -> onAlbumClick(link.id, "", emptyList())
                                 is LinkTarget.SpotifyPlaylist -> onPlaylistClick(link.id, "", emptyList())
                                 is LinkTarget.SpotifyArtist -> onArtistClick(link.id)
                                 // A YouTube Music link is a link, just not one this screen opens.
-                                else -> android.widget.Toast.makeText(context, R.string.paste_no_spotify_link, android.widget.Toast.LENGTH_SHORT).show()
+                                else -> platform.toast(Res.string.paste_no_spotify_link)
                             }
                         }) {
                             Icon(Icons.Default.Add, contentDescription = "Paste Spotify link", tint = Color.White)
@@ -240,11 +234,11 @@ fun SearchScreen(
                 items(SearchFilter.entries) { filter ->
                     val isSelected = activeFilter == filter
                     val filterName = when (filter) {
-                        SearchFilter.ALL -> stringResource(R.string.search_filter_all)
-                        SearchFilter.TRACKS -> stringResource(R.string.search_filter_tracks)
-                        SearchFilter.ALBUMS -> stringResource(R.string.search_filter_albums)
-                        SearchFilter.ARTISTS -> stringResource(R.string.search_filter_artists)
-                        SearchFilter.PLAYLISTS -> stringResource(R.string.search_filter_playlists)
+                        SearchFilter.ALL -> stringResource(Res.string.search_filter_all)
+                        SearchFilter.TRACKS -> stringResource(Res.string.search_filter_tracks)
+                        SearchFilter.ALBUMS -> stringResource(Res.string.search_filter_albums)
+                        SearchFilter.ARTISTS -> stringResource(Res.string.search_filter_artists)
+                        SearchFilter.PLAYLISTS -> stringResource(Res.string.search_filter_playlists)
                     }
                     
                     Surface(
@@ -285,8 +279,8 @@ fun SearchScreen(
                         keepQuery()
                         performSearch(q)
                     },
-                    onRecentRemove = { q -> recentSearches = RecentSearches.remove(context, q) },
-                    onClearRecent = { recentSearches = RecentSearches.clear(context) },
+                    onRecentRemove = { q -> recentSearches = RecentSearches.remove(platform.prefs(), q) },
+                    onClearRecent = { recentSearches = RecentSearches.clear(platform.prefs()) },
                     onCategoryClick = { cat ->
                         // A category is a way in, not something the user typed: not kept as recent.
                         searchQuery = cat.query
@@ -304,7 +298,7 @@ fun SearchScreen(
                 ) {
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.TRACKS) {
                         if (results.tracks.isNotEmpty()) {
-                            item { SectionHeader(stringResource(R.string.search_header_tracks)) }
+                            item { SectionHeader(stringResource(Res.string.search_header_tracks)) }
                             items(results.tracks) { track ->
                                 val trackId = track.id ?: ""
                                 val isLiked = spotifyRepo.isTrackLiked(trackId)
@@ -316,7 +310,7 @@ fun SearchScreen(
                                 LaunchedEffect(dismissState.currentValue) {
                                     if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                         onAddToQueue(track)
-                                        android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
+                                        platform.toast(Res.string.added_to_queue)
                                         dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                     }
                                 }
@@ -349,7 +343,7 @@ fun SearchScreen(
                                     content = {
                                         SearchResultRow(
                                             title = track.name,
-                                            subtitle = stringResource(R.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
+                                            subtitle = stringResource(Res.string.search_subtitle_track, track.artists.joinToString(", ") { it.name }),
                                             imageUrl = track.album?.images?.maxByOrNull { it.width ?: 0 }?.url,
                                             onClick = { keepQuery(); onTrackClick(track) },
                                             isLiked = isLiked,
@@ -372,11 +366,11 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.ALBUMS) {
                         if (results.albums.isNotEmpty()) {
-                            item { SectionHeader(stringResource(R.string.search_header_albums)) }
+                            item { SectionHeader(stringResource(Res.string.search_header_albums)) }
                             items(results.albums) { album ->
                                 SearchResultRow(
                                     title = album.name,
-                                    subtitle = stringResource(R.string.search_subtitle_album, album.artists.joinToString(", ") { it.name }),
+                                    subtitle = stringResource(Res.string.search_subtitle_album, album.artists.joinToString(", ") { it.name }),
                                     imageUrl = album.images.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { keepQuery(); onAlbumClick(album.id, album.name, album.images) }
                                 )
@@ -386,14 +380,14 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.PLAYLISTS) {
                         if (results.playlists.isNotEmpty()) {
-                            item { SectionHeader(stringResource(R.string.search_header_playlists)) }
+                            item { SectionHeader(stringResource(Res.string.search_header_playlists)) }
                             // Browsing a category, Spotify's own playlists for it come first.
                             val playlists = if (browsing?.query == searchQuery) results.playlists.sortedByDescending { it.owner?.id == "spotify" }
                                 else results.playlists
                             items(playlists) { playlist ->
                                 SearchResultRow(
                                     title = playlist.name,
-                                    subtitle = stringResource(R.string.search_subtitle_playlist, playlist.owner?.name ?: "Spotify"),
+                                    subtitle = stringResource(Res.string.search_subtitle_playlist, playlist.owner?.name ?: "Spotify"),
                                     imageUrl = playlist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     onClick = { keepQuery(); onPlaylistClick(playlist.id, playlist.name, playlist.images) }
                                 )
@@ -403,11 +397,11 @@ fun SearchScreen(
 
                     if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.ARTISTS) {
                         if (results.artists.isNotEmpty()) {
-                            item { SectionHeader(stringResource(R.string.search_header_artists)) }
+                            item { SectionHeader(stringResource(Res.string.search_header_artists)) }
                             items(results.artists) { artist ->
                                 SearchResultRow(
                                     title = artist.name,
-                                    subtitle = stringResource(R.string.search_subtitle_artist),
+                                    subtitle = stringResource(Res.string.search_subtitle_artist),
                                     imageUrl = artist.images.maxByOrNull { it.width ?: 0 }?.url,
                                     isCircle = true,
                                     onClick = { keepQuery(); onArtistClick(artist.id) }

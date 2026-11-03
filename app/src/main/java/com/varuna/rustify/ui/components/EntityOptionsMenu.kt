@@ -285,7 +285,7 @@ fun EntityOptionsMenuBottomSheet(
                     icon = Icons.Default.Share,
                     label = stringResource(shareLabelRes),
                     onClick = {
-                        ShareUtils.shareSpotifyLink(context, entityType, entityId)
+                        ShareUtils.shareSpotifyLink(com.varuna.rustify.ui.AndroidAppPlatform(context), entityType, entityId)
                         onDismiss()
                     }
                 )
@@ -298,7 +298,7 @@ fun EntityOptionsMenuBottomSheet(
                         label = stringResource(R.string.entity_menu_share_rustify),
                         onClick = {
                             ShareUtils.shareRustifyLink(
-                                context, entityType, entityId,
+                                com.varuna.rustify.ui.AndroidAppPlatform(context), entityType, entityId,
                                 title = entityName,
                                 subtitle = tracks.firstOrNull()
                                     ?.artists?.joinToString(", ") { it.name },

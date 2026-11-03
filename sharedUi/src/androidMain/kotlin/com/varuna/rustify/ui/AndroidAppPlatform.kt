@@ -33,16 +33,40 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
         }
     }
 
-    override fun share(text: String, subject: String?) {
+    // FLAG_ACTIVITY_NEW_TASK and a wide catch: started from a bottom sheet's window, startActivity throws
+    // AndroidRuntimeException, and a share must never take the app down.
+    override fun share(text: String, subject: String?): Boolean {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
         if (subject != null) send.putExtra(Intent.EXTRA_SUBJECT, subject)
-        runCatching {
+        return runCatching {
             app.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        }.isSuccess
     }
+
+    override fun shareImage(file: File, text: String): Boolean = runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, text)
+            // Some targets read the payload from clipData rather than the extra.
+            clipData = ClipData.newUri(app.contentResolver, "cover", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        app.startActivity(
+            Intent.createChooser(send, null)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        )
+    }.isSuccess
 
     override fun copyToClipboard(label: String, text: String) {
         (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
             ?.setPrimaryClip(ClipData.newPlainText(label, text))
     }
+
+    override fun readClipboard(): String? = runCatching {
+        (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+            ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()
+    }.getOrNull()
 }

@@ -56,11 +56,19 @@ class DesktopAppPlatform : AppPlatform {
             .onFailure { Log.w("DesktopAppPlatform", "could not open $url: ${it.message}") }
     }
 
-    override fun share(text: String, subject: String?) {
+    override fun share(text: String, subject: String?): Boolean {
         copyToClipboard(subject ?: "Rustify", text)
+        return true
     }
+
+    /** No share sheet to hand an image to: the caption (title and link) is what is copied. */
+    override fun shareImage(file: File, text: String): Boolean = share(text)
 
     override fun copyToClipboard(label: String, text: String) {
         runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
     }
+
+    override fun readClipboard(): String? = runCatching {
+        Toolkit.getDefaultToolkit().systemClipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+    }.getOrNull()
 }

@@ -2907,7 +2907,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         if (!decision.play) return
         // Moving on by itself or with next/previous steps over what the user blocked (Blocklist),
         // in the direction it was going. All blocked from there on: nothing more plays.
-        val blocklist = Blocklist.current(context)
+        val blocklist = Blocklist.current(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs())
         val step = if (decision.index >= currentIndexIn(st)) 1 else -1
         val index = Blocklist.firstAllowed(st.queue.size, decision.index, step) { blocklist.blocks(st.queue[it]) } ?: return
         val target = st.queue.getOrNull(index) ?: return
@@ -3109,7 +3109,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         // in flight.
         val live = _state.value
         val liveIds = live.queue.mapNotNull { it.id }.toSet()
-        val blocklist = Blocklist.current(context)
+        val blocklist = Blocklist.current(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs())
         val fresh = fetched.filter { it.id != null && it.id !in liveIds && !blocklist.blocks(it) }
         if (fresh.isEmpty()) return false
 

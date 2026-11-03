@@ -41,6 +41,8 @@ kotlin {
             api(compose.components.resources)
             api(libs.coil.compose)
             implementation(libs.coil.network.okhttp)
+            // The app's OkHttp (5.x), not the older one Coil would bring: ShareUtils reads its non-null body.
+            implementation(libs.okhttp)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             // Android has it in the platform; the desktop gets it below (see the catalog).
@@ -49,6 +51,10 @@ kotlin {
         androidMain.dependencies {
             // The local scan's folders are Storage Access Framework trees (AndroidLocalMusicScanner).
             implementation(libs.androidx.documentfile)
+            // FileProvider, for sharing a cover image (AndroidAppPlatform.shareImage).
+            implementation(libs.androidx.core.ktx)
+            // rememberLauncherForActivityResult, for the runtime permissions a screen asks for.
+            implementation(libs.androidx.activity.compose)
         }
         getByName("desktopMain").dependencies {
             implementation(libs.org.json)

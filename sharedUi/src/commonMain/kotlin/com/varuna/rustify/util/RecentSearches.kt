@@ -1,6 +1,6 @@
 package com.varuna.rustify.util
 
-import android.content.Context
+import com.varuna.rustify.platform.KeyValueStore
 import org.json.JSONArray
 
 /**
@@ -10,20 +10,19 @@ import org.json.JSONArray
  * The search-as-you-type debounce would otherwise store every half-typed word.
  */
 object RecentSearches {
-    private const val PREFS = "rustify_settings"
     private const val KEY = "recent_searches"
     const val MAX = 12
 
-    fun list(context: Context): List<String> {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null) ?: return emptyList()
+    fun list(prefs: KeyValueStore): List<String> {
+        val raw = prefs.getString(KEY) ?: return emptyList()
         return runCatching { JSONArray(raw).let { a -> List(a.length()) { a.getString(it) } } }.getOrDefault(emptyList())
     }
 
-    fun add(context: Context, query: String): List<String> = save(context, push(list(context), query))
+    fun add(prefs: KeyValueStore, query: String): List<String> = save(prefs, push(list(prefs), query))
 
-    fun remove(context: Context, query: String): List<String> = save(context, list(context).filterNot { it == query })
+    fun remove(prefs: KeyValueStore, query: String): List<String> = save(prefs, list(prefs).filterNot { it == query })
 
-    fun clear(context: Context): List<String> = save(context, emptyList())
+    fun clear(prefs: KeyValueStore): List<String> = save(prefs, emptyList())
 
     /** [query] goes first; an older copy of it (any case) is dropped; the list stays at [max]. */
     fun push(current: List<String>, query: String, max: Int = MAX): List<String> {
@@ -32,9 +31,8 @@ object RecentSearches {
         return (listOf(q) + current.filterNot { it.equals(q, ignoreCase = true) }).take(max)
     }
 
-    private fun save(context: Context, items: List<String>): List<String> {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY, JSONArray(items).toString()).apply()
+    private fun save(prefs: KeyValueStore, items: List<String>): List<String> {
+        prefs.putString(KEY, JSONArray(items).toString())
         return items
     }
 }

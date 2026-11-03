@@ -1220,7 +1220,7 @@ internal fun BitPerfectSection(context: Context) {
 @Composable
 internal fun BlocklistSection(context: Context) {
     val bl = com.varuna.rustify.player.Blocklist
-    LaunchedEffect(Unit) { bl.current(context) }
+    LaunchedEffect(Unit) { bl.current(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()) }
     val lists by bl.lists.collectAsState()
     Spacer(modifier = Modifier.height(16.dp))
     Card(
@@ -1237,7 +1237,7 @@ internal fun BlocklistSection(context: Context) {
             lists.artists.forEach { a ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.settings_blocklist_artist, a.name), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.TextButton(onClick = { bl.toggleArtist(context, a.id, a.name) }) {
+                    androidx.compose.material3.TextButton(onClick = { bl.toggleArtist(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs(), a.id, a.name) }) {
                         Text(stringResource(R.string.settings_blocklist_unblock), color = Color(0xFF1DB954))
                     }
                 }
@@ -1249,7 +1249,7 @@ internal fun BlocklistSection(context: Context) {
                         if (t.detail.isNotBlank()) Text(t.detail, color = Color.Gray, fontSize = 12.sp)
                     }
                     androidx.compose.material3.TextButton(onClick = {
-                        bl.toggleTrack(context, com.varuna.rustify.bridge.FullTrack(id = t.id, name = t.name))
+                        bl.toggleTrack(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs(), com.varuna.rustify.bridge.FullTrack(id = t.id, name = t.name))
                     }) {
                         Text(stringResource(R.string.settings_blocklist_unblock), color = Color(0xFF1DB954))
                     }

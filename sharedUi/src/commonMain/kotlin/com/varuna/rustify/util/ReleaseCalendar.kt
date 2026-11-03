@@ -1,7 +1,8 @@
 package com.varuna.rustify.util
 
-import android.util.Log
-import com.varuna.rustify.R
+import com.varuna.rustify.platform.Log
+import com.varuna.rustify.ui.resources.*
+import org.jetbrains.compose.resources.StringResource
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SimpleAlbum
 import org.json.JSONArray
@@ -26,16 +27,16 @@ object ReleaseCalendar {
     private const val TAG = "ReleaseCalendar"
 
     /** One heading and the albums under it. */
-    data class Group(val titleRes: Int, val albums: List<SimpleAlbum>)
+    data class Group(val titleRes: StringResource, val albums: List<SimpleAlbum>)
 
-    private fun headingFor(bucket: String): Int = when (bucket) {
-        "upcoming" -> R.string.calendar_upcoming
-        "today" -> R.string.calendar_today
-        "this_week" -> R.string.calendar_this_week
-        "this_month" -> R.string.calendar_this_month
-        "this_year" -> R.string.calendar_this_year
-        "older" -> R.string.calendar_older
-        else -> R.string.calendar_undated
+    private fun headingFor(bucket: String): StringResource = when (bucket) {
+        "upcoming" -> Res.string.calendar_upcoming
+        "today" -> Res.string.calendar_today
+        "this_week" -> Res.string.calendar_this_week
+        "this_month" -> Res.string.calendar_this_month
+        "this_year" -> Res.string.calendar_this_year
+        "older" -> Res.string.calendar_older
+        else -> Res.string.calendar_undated
     }
 
     /**
@@ -63,7 +64,7 @@ object ReleaseCalendar {
             (0 until array.length()).mapNotNull { array.optJSONObject(it) }
         }.getOrElse {
             Log.w(TAG, "could not arrange the releases", it)
-            return listOf(Group(R.string.calendar_undated, albums))
+            return listOf(Group(Res.string.calendar_undated, albums))
         }
 
         // The same album can appear twice in a paged feed when a page boundary shifts under a new

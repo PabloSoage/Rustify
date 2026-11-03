@@ -1269,7 +1269,7 @@ fun TrackScreenControls(
     val lyricsCtx = LocalContext.current
     val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
     val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
-        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx, track.id ?: "")
+        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx.filesDir, track.id ?: "")
     }
 
     // Auto-scroll to the current lyric line, applying the offset (a positive value advances the lyrics).

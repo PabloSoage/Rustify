@@ -1,10 +1,8 @@
 
 package com.varuna.rustify.ui.components
 
+import com.varuna.rustify.ui.toast
 import com.varuna.rustify.bridge.TrackRef
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,14 +61,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
 import com.varuna.rustify.bridge.SpotifyImage
@@ -93,7 +90,7 @@ fun TrackOptionsMenuBottomSheet(
     onRemoveFromPlaylist: (() -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var showPlaylistSelector by remember { mutableStateOf(false) }
     var showLyricsOffsetDialog by remember { mutableStateOf(false) }
     var showCredits by remember { mutableStateOf(false) }
@@ -106,14 +103,11 @@ fun TrackOptionsMenuBottomSheet(
     /** Playlist currently being written to, or null. Drives the row spinner and locks the list. */
     var addingToPlaylistId by remember { mutableStateOf<String?>(null) }
 
-    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
-    val downloadUriStr = prefs.getString("download_directory", null)
+    val prefs = platform.prefs("rustify_settings")
+    val downloadUriStr = prefs.getString("download_directory")
     
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        // Handle if needed
-    }
+    val services = com.varuna.rustify.ui.LocalAppServices.current
+    val requestNotificationPermission = com.varuna.rustify.ui.rememberNotificationPermissionRequest()
 
     if (showCredits) {
         TrackCreditsDialog(
@@ -127,18 +121,18 @@ fun TrackOptionsMenuBottomSheet(
     // Per-track lyrics sync offset (±), persisted in LyricsOffsetStore.
     if (showLyricsOffsetDialog) {
         val tid = track.id ?: ""
-        var offsetMs by remember(tid) { mutableLongStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(context, tid)) }
+        var offsetMs by remember(tid) { mutableLongStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(platform.filesDir, tid)) }
         fun apply(newMs: Long) {
             offsetMs = newMs.coerceIn(-10_000L, 10_000L)
-            com.varuna.rustify.bridge.LyricsOffsetStore.set(context, tid, offsetMs)
+            com.varuna.rustify.bridge.LyricsOffsetStore.set(platform.filesDir, tid, offsetMs)
         }
         AlertDialog(
             onDismissRequest = { showLyricsOffsetDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text(stringResource(R.string.lyrics_offset_title), color = Color.White) },
+            title = { Text(stringResource(Res.string.lyrics_offset_title), color = Color.White) },
             text = {
                 Column {
-                    Text(stringResource(R.string.lyrics_offset_hint), color = Color.Gray, fontSize = 13.sp)
+                    Text(stringResource(Res.string.lyrics_offset_hint), color = Color.Gray, fontSize = 13.sp)
                     Spacer(Modifier.height(18.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -159,24 +153,24 @@ fun TrackOptionsMenuBottomSheet(
             },
             confirmButton = {
                 TextButton(onClick = { showLyricsOffsetDialog = false }) {
-                    Text(stringResource(R.string.lyrics_offset_done), color = Color(0xFF1DB954))
+                    Text(stringResource(Res.string.lyrics_offset_done), color = Color(0xFF1DB954))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { apply(0L) }) {
-                    Text(stringResource(R.string.lyrics_offset_reset), color = Color.Gray)
+                    Text(stringResource(Res.string.lyrics_offset_reset), color = Color.Gray)
                 }
             }
         )
     }
 
     // Local playlist selector (for "local:" tracks) + creation dialog.
-    val localPlaylistAddedMsg = stringResource(R.string.local_playlist_added)
-    val localPlaylistAlreadyMsg = stringResource(R.string.local_playlist_already_added)
+    val localPlaylistAddedMsg = stringResource(Res.string.local_playlist_added)
+    val localPlaylistAlreadyMsg = stringResource(Res.string.local_playlist_already_added)
     if (showLocalPlaylistSelector) {
         AlertDialog(
             onDismissRequest = { showLocalPlaylistSelector = false },
-            title = { Text(stringResource(R.string.local_playlist_selector_title)) },
+            title = { Text(stringResource(Res.string.local_playlist_selector_title)) },
             text = {
                 Column {
                     Row(
@@ -191,12 +185,12 @@ fun TrackOptionsMenuBottomSheet(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1DB954))
                         Spacer(Modifier.width(12.dp))
-                        Text(stringResource(R.string.local_playlist_create), color = Color.White)
+                        Text(stringResource(Res.string.local_playlist_create), color = Color.White)
                     }
                     HorizontalDivider(color = Color.DarkGray)
                     if (spotifyRepo.localPlaylists.isEmpty()) {
                         Text(
-                            stringResource(R.string.playlist_not_found),
+                            stringResource(Res.string.playlist_not_found),
                             color = Color.Gray,
                             modifier = Modifier.padding(16.dp)
                         )
@@ -209,11 +203,7 @@ fun TrackOptionsMenuBottomSheet(
                                         val tid = track.id
                                         val already = tid != null && tid in pl.trackIds
                                         if (tid != null) spotifyRepo.addToLocalPlaylist(pl.id, tid)
-                                        Toast.makeText(
-                                            context,
-                                            if (already) localPlaylistAlreadyMsg else localPlaylistAddedMsg,
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        platform.toast(if (already) localPlaylistAlreadyMsg else localPlaylistAddedMsg)
                                         showLocalPlaylistSelector = false
                                         onDismiss()
                                     }
@@ -231,7 +221,7 @@ fun TrackOptionsMenuBottomSheet(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showLocalPlaylistSelector = false }) {
-                    Text(stringResource(android.R.string.cancel))
+                    Text(stringResource(Res.string.cancel))
                 }
             }
         )
@@ -239,13 +229,13 @@ fun TrackOptionsMenuBottomSheet(
     if (showCreateLocalPlaylistDialog) {
         AlertDialog(
             onDismissRequest = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" },
-            title = { Text(stringResource(R.string.local_playlist_create)) },
+            title = { Text(stringResource(Res.string.local_playlist_create)) },
             text = {
                 OutlinedTextField(
                     value = newLocalPlaylistName,
                     onValueChange = { newLocalPlaylistName = it },
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                    placeholder = { Text(stringResource(Res.string.local_playlist_name_hint)) }
                 )
             },
             confirmButton = {
@@ -253,16 +243,16 @@ fun TrackOptionsMenuBottomSheet(
                     if (newLocalPlaylistName.isNotBlank()) {
                         val pl = spotifyRepo.createLocalPlaylist(newLocalPlaylistName.trim())
                         track.id?.let { spotifyRepo.addToLocalPlaylist(pl.id, it) }
-                        Toast.makeText(context, localPlaylistAddedMsg, Toast.LENGTH_SHORT).show()
+                        platform.toast(localPlaylistAddedMsg)
                     }
                     showCreateLocalPlaylistDialog = false
                     newLocalPlaylistName = ""
                     onDismiss()
-                }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+                }) { Text(stringResource(Res.string.local_playlist_create_confirm)) }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" }) {
-                    Text(stringResource(android.R.string.cancel))
+                    Text(stringResource(Res.string.cancel))
                 }
             }
         )
@@ -281,7 +271,7 @@ fun TrackOptionsMenuBottomSheet(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.track_menu_add_playlist),
+                    text = stringResource(Res.string.track_menu_add_playlist),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -299,7 +289,7 @@ fun TrackOptionsMenuBottomSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            stringResource(R.string.playlist_none_owned),
+                            stringResource(Res.string.playlist_none_owned),
                             color = Color.Gray,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
@@ -307,7 +297,7 @@ fun TrackOptionsMenuBottomSheet(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
                         items(playlists) { playlist ->
-                            val addedMessage = stringResource(R.string.added_to_playlist, playlist.name)
+                            val addedMessage = stringResource(Res.string.added_to_playlist, playlist.name)
                             val busy = addingToPlaylistId != null
                             val thisOne = addingToPlaylistId == playlist.id
                             Row(
@@ -324,15 +314,13 @@ fun TrackOptionsMenuBottomSheet(
                                             val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
                                             addingToPlaylistId = null
                                             if (res.success) {
-                                                Toast.makeText(context, addedMessage, Toast.LENGTH_SHORT).show()
+                                                platform.toast(addedMessage)
                                                 showPlaylistSelector = false
                                                 onDismiss()
                                             } else {
                                                 // Stay open on failure: closing the sheet threw the
                                                 // error away along with any chance of retrying.
-                                                Toast.makeText(
-                                                    context, addFailureMessage(context, res.error), Toast.LENGTH_LONG
-                                                ).show()
+                                                platform.toast(addFailureMessage(res.error), long = true)
                                             }
                                         }
                                     }
@@ -431,13 +419,13 @@ fun TrackOptionsMenuBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Menu items
-                val queueAddedMsg = stringResource(R.string.added_to_queue)
+                val queueAddedMsg = stringResource(Res.string.added_to_queue)
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = stringResource(R.string.track_menu_add_queue),
+                    label = stringResource(Res.string.track_menu_add_queue),
                     onClick = {
                         onAddToQueue()
-                        Toast.makeText(context, queueAddedMsg, Toast.LENGTH_SHORT).show()
+                        platform.toast(queueAddedMsg)
                     }
                 )
 
@@ -450,7 +438,7 @@ fun TrackOptionsMenuBottomSheet(
                     var isFav by remember { mutableStateOf(spotifyRepo.isLocalFavorite(tid)) }
                     MenuOptionItem(
                         icon = if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        label = stringResource(if (isFav) R.string.track_menu_unfavorite else R.string.track_menu_favorite),
+                        label = stringResource(if (isFav) Res.string.track_menu_unfavorite else Res.string.track_menu_favorite),
                         iconColor = if (isFav) Color(0xFF1DB954) else Color.White,
                         onClick = {
                             spotifyRepo.toggleLocalFavorite(tid)
@@ -459,42 +447,42 @@ fun TrackOptionsMenuBottomSheet(
                     )
 
                     // Tempo (5.x): measured on demand, then remembered (BpmAnalyzer).
-                    var bpm by remember(tid) { mutableStateOf(com.varuna.rustify.audio.BpmAnalyzer.cached(context, tid)) }
+                    var bpm by remember(tid) { mutableStateOf(services.bpmCached(tid)) }
                     var analysing by remember(tid) { mutableStateOf(false) }
                     var showBpmFix by remember(tid) { mutableStateOf(false) }
                     if (showBpmFix && bpm != null) {
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { showBpmFix = false },
-                            title = { Text(stringResource(R.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))) },
-                            text = { Text(stringResource(R.string.track_menu_bpm_fix)) },
+                            title = { Text(stringResource(Res.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))) },
+                            text = { Text(stringResource(Res.string.track_menu_bpm_fix)) },
                             confirmButton = {
                                 androidx.compose.material3.TextButton(onClick = {
-                                    bpm = com.varuna.rustify.audio.BpmAnalyzer.scale(context, tid, 2f); showBpmFix = false
+                                    bpm = services.bpmScale(tid, 2f); showBpmFix = false
                                 }) { Text("×2") }
                             },
                             dismissButton = {
                                 androidx.compose.material3.TextButton(onClick = {
-                                    bpm = com.varuna.rustify.audio.BpmAnalyzer.scale(context, tid, 0.5f); showBpmFix = false
+                                    bpm = services.bpmScale(tid, 0.5f); showBpmFix = false
                                 }) { Text("÷2") }
                             }
                         )
                     }
-                    val noBeat = stringResource(R.string.track_menu_bpm_none)
+                    val noBeat = stringResource(Res.string.track_menu_bpm_none)
                     MenuOptionItem(
                         icon = Icons.Default.GraphicEq,
                         label = when {
-                            analysing -> stringResource(R.string.track_menu_bpm_analysing)
-                            bpm != null -> stringResource(R.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))
-                            else -> stringResource(R.string.track_menu_bpm_analyse)
+                            analysing -> stringResource(Res.string.track_menu_bpm_analysing)
+                            bpm != null -> stringResource(Res.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))
+                            else -> stringResource(Res.string.track_menu_bpm_analyse)
                         },
                         onClick = {
                             if (bpm != null) { showBpmFix = true; return@MenuOptionItem }
                             if (analysing) return@MenuOptionItem
                             analysing = true
                             coroutineScope.launch {
-                                bpm = com.varuna.rustify.audio.BpmAnalyzer.analyze(context, tid, track.durationMs.toLong())
+                                bpm = services.bpmAnalyze(tid, track.durationMs.toLong())
                                 analysing = false
-                                if (bpm == null) android.widget.Toast.makeText(context, noBeat, android.widget.Toast.LENGTH_SHORT).show()
+                                if (bpm == null) platform.toast(noBeat)
                             }
                         }
                     )
@@ -502,7 +490,7 @@ fun TrackOptionsMenuBottomSheet(
 
                 MenuOptionItem(
                     icon = Icons.Default.Add,
-                    label = stringResource(R.string.track_menu_add_playlist),
+                    label = stringResource(Res.string.track_menu_add_playlist),
                     onClick = {
                         if (isLocalTrack || isYtmTrack) {
                             showLocalPlaylistSelector = true
@@ -526,11 +514,7 @@ fun TrackOptionsMenuBottomSheet(
                                     // Say what actually went wrong. Swallowing it left the sheet
                                     // sitting empty on a rate limit or an expired session, which
                                     // reads as "the button does nothing".
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.playlists_load_failed, e.message ?: ""),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    platform.toast(Res.string.playlists_load_failed, e.message ?: "", long = true)
                                 } finally {
                                     isLoadingPlaylists = false
                                 }
@@ -542,7 +526,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (onRemoveFromPlaylist != null) {
                     MenuOptionItem(
                         icon = Icons.Default.RemoveCircleOutline,
-                        label = stringResource(R.string.track_menu_remove_playlist),
+                        label = stringResource(Res.string.track_menu_remove_playlist),
                         iconColor = Color(0xFFCC2200),
                         labelColor = Color(0xFFCC2200),
                         onClick = onRemoveFromPlaylist
@@ -551,14 +535,14 @@ fun TrackOptionsMenuBottomSheet(
 
                 MenuOptionItem(
                     icon = Icons.AutoMirrored.Filled.PlaylistPlay,
-                    label = stringResource(R.string.track_menu_go_queue),
+                    label = stringResource(Res.string.track_menu_go_queue),
                     onClick = onGoToQueue
                 )
 
                 // Manual lyrics sync adjustment (for slightly out-of-sync songs).
                 MenuOptionItem(
                     icon = Icons.Default.Schedule,
-                    label = stringResource(R.string.track_menu_lyrics_offset),
+                    label = stringResource(Res.string.track_menu_lyrics_offset),
                     onClick = { showLyricsOffsetDialog = true }
                 )
 
@@ -566,7 +550,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (album != null && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Album,
-                        label = stringResource(R.string.track_menu_go_album),
+                        label = stringResource(Res.string.track_menu_go_album),
                         onClick = {
                             onGoToAlbum(album.id, album.name, album.images)
                         }
@@ -576,7 +560,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (track.artists.isNotEmpty() && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Person,
-                        label = stringResource(R.string.track_options_view_artist),
+                        label = stringResource(Res.string.track_options_view_artist),
                         onClick = {
                             onGoToArtist(track.artists.first().id)
                         }
@@ -588,7 +572,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (creditsTrackId != null) {
                     MenuOptionItem(
                         icon = Icons.Default.Info,
-                        label = stringResource(R.string.track_menu_credits),
+                        label = stringResource(Res.string.track_menu_credits),
                         onClick = { showCredits = true }
                     )
                 }
@@ -596,7 +580,7 @@ fun TrackOptionsMenuBottomSheet(
                 if (onGoToRadio != null && !isLocalTrack && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Radio,
-                        label = stringResource(R.string.track_menu_go_radio),
+                        label = stringResource(Res.string.track_menu_go_radio),
                         onClick = {
                             onGoToRadio()
                             onDismiss()
@@ -609,23 +593,23 @@ fun TrackOptionsMenuBottomSheet(
                         // Share YTM link
                         MenuOptionItem(
                             icon = Icons.Default.Share,
-                            label = stringResource(R.string.track_menu_share),
+                            label = stringResource(Res.string.track_menu_share),
                             onClick = {
                                 val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
-                                com.varuna.rustify.util.ShareUtils.shareYtmLink(context, "https://music.youtube.com/watch?v=$videoId")
+                                com.varuna.rustify.util.ShareUtils.shareYtmLink(platform, "https://music.youtube.com/watch?v=$videoId")
                                 onDismiss()
                             }
                         )
                         // Share as Rustify Link (only if toggle is on)
-                        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                        val prefs = platform.prefs("rustify_settings")
                         if (prefs.getBoolean("share_as_rustify_link", false)) {
                             MenuOptionItem(
                                 icon = Icons.Default.Share,
-                                label = stringResource(R.string.track_menu_share_rustify),
+                                label = stringResource(Res.string.track_menu_share_rustify),
                                 onClick = {
                                     val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
                                     com.varuna.rustify.util.ShareUtils.shareRustifyUrl(
-                                        context,
+                                        platform,
                                         url = "https://music.youtube.com/watch?v=$videoId",
                                         title = track.name,
                                         subtitle = track.artists.joinToString(", ") { it.name },
@@ -638,35 +622,35 @@ fun TrackOptionsMenuBottomSheet(
                     } else {
                     MenuOptionItem(
                         icon = Icons.Default.Share,
-                        label = stringResource(R.string.track_menu_share),
+                        label = stringResource(Res.string.track_menu_share),
                         onClick = {
                             val id = track.id
                             if (id.isNullOrBlank()) {
-                                Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
+                                platform.toast(Res.string.share_no_link)
                                 onDismiss()
                                 return@MenuOptionItem
                             }
                             // Robust share: adds FLAG_ACTIVITY_NEW_TASK and catches any exception.
-                            com.varuna.rustify.util.ShareUtils.shareSpotifyLink(context, "track", id)
+                            com.varuna.rustify.util.ShareUtils.shareSpotifyLink(platform, "track", id)
                             onDismiss()
                         }
                     )
 
                     // Extra "Share as Rustify" button shown only when the toggle is on.
-                    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                    val prefs = platform.prefs("rustify_settings")
                     if (prefs.getBoolean("share_as_rustify_link", false)) {
                         MenuOptionItem(
                             icon = Icons.Default.Share,
-                            label = stringResource(R.string.track_menu_share_rustify),
+                            label = stringResource(Res.string.track_menu_share_rustify),
                             onClick = {
                                 val id = track.id
                                 if (id.isNullOrBlank()) {
-                                    Toast.makeText(context, R.string.share_no_link, Toast.LENGTH_SHORT).show()
+                                    platform.toast(Res.string.share_no_link)
                                     onDismiss()
                                     return@MenuOptionItem
                                 }
                                 com.varuna.rustify.util.ShareUtils.shareRustifyLink(
-                                    context, "track", id,
+                                    platform, "track", id,
                                     title = track.name,
                                     subtitle = track.artists.joinToString(", ") { it.name },
                                     imageUrl = track.album?.images?.largest()?.url
@@ -681,33 +665,27 @@ fun TrackOptionsMenuBottomSheet(
                 // YouTube Music tracks are downloadable too: their "ytm:" id already carries the video
                 // id, so the yt-dlp chain resolves them without going through the Spotify resolver.
                 if (!isLocalTrack && downloadUriStr != null) {
-                    val downloadingStr = stringResource(R.string.track_menu_getting_url)
+                    val downloadingStr = stringResource(Res.string.track_menu_getting_url)
                     
                     MenuOptionItem(
                         icon = Icons.Default.Download,
-                        label = stringResource(R.string.track_menu_download),
+                        label = stringResource(Res.string.track_menu_download),
                         onClick = {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            }
+                            requestNotificationPermission()
                             
                             val trackId = track.id ?: return@MenuOptionItem
                             val trackName = track.name
                             val trackArtist = track.artists.joinToString(", ") { it.name }
                             
-                            com.varuna.rustify.bridge.DownloadManager.enqueueDownload(
-                                context = context,
+                            services.enqueueDownload(
                                 trackId = trackId,
                                 trackName = trackName,
                                 trackArtist = trackArtist,
-                                spotifyRepo = spotifyRepo,
                                 downloadUriStr = downloadUriStr,
                                 track = track
                             )
                             
-                            Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
+                            platform.toast(downloadingStr)
                             onDismiss()
                         }
                     )
@@ -716,24 +694,24 @@ fun TrackOptionsMenuBottomSheet(
                 // Blocklist (`23` §2): never from the radio, stepped over in the queue.
                 if (!track.id.isNullOrBlank()) {
                     val blocked by com.varuna.rustify.player.Blocklist.lists.collectAsState()
-                    androidx.compose.runtime.LaunchedEffect(Unit) { com.varuna.rustify.player.Blocklist.current(context) }
+                    androidx.compose.runtime.LaunchedEffect(Unit) { com.varuna.rustify.player.Blocklist.current(platform.prefs()) }
                     val songBlocked = blocked.blocksTrack(track.id)
                     MenuOptionItem(
                         icon = Icons.Default.Block,
-                        label = stringResource(if (songBlocked) R.string.track_menu_unblock_song else R.string.track_menu_block_song),
+                        label = stringResource(if (songBlocked) Res.string.track_menu_unblock_song else Res.string.track_menu_block_song),
                         iconColor = if (songBlocked) Color.White else Color(0xFFCC2200),
-                        onClick = { com.varuna.rustify.player.Blocklist.toggleTrack(context, track) }
+                        onClick = { com.varuna.rustify.player.Blocklist.toggleTrack(platform.prefs(), track) }
                     )
                     track.artists.filter { it.id.isNotBlank() }.forEach { artist ->
                         val artistBlocked = blocked.blocksArtist(artist.id)
                         MenuOptionItem(
                             icon = Icons.Default.Block,
                             label = stringResource(
-                                if (artistBlocked) R.string.track_menu_unblock_artist else R.string.track_menu_block_artist,
+                                if (artistBlocked) Res.string.track_menu_unblock_artist else Res.string.track_menu_block_artist,
                                 artist.name
                             ),
                             iconColor = if (artistBlocked) Color.White else Color(0xFFCC2200),
-                            onClick = { com.varuna.rustify.player.Blocklist.toggleArtist(context, artist.id, artist.name) }
+                            onClick = { com.varuna.rustify.player.Blocklist.toggleArtist(platform.prefs(), artist.id, artist.name) }
                         )
                     }
                 }
@@ -787,24 +765,24 @@ private fun MenuOptionItem(
  * whose useful part — which variable is missing, which member of the union came back — sits past
  * anything a toast can hold, so the untrimmed text goes to the log (Settings → Logs) every time.
  */
-private fun addFailureMessage(context: android.content.Context, error: String?): String {
+private suspend fun addFailureMessage(error: String?): String {
     val raw = error.orEmpty()
-    android.util.Log.e("TrackOptionsMenu", "add to playlist failed: $raw")
+    com.varuna.rustify.platform.Log.e("TrackOptionsMenu", "add to playlist failed: $raw")
     return when {
         // A GraphQL error names the problem inside the envelope. Show the message field rather than
         // the wrapper, which is all a toast has room for otherwise.
         raw.contains("\"message\"") -> {
             val msg = Regex("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
                 .find(raw)?.groupValues?.get(1)?.take(140)
-            context.getString(R.string.playlist_add_failed, msg ?: raw.take(140))
+            com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, msg ?: raw.take(140))
         }
         // The mutation names its own refusal in the payload. Show it verbatim rather than folding it
         // into "not writable": the useful cases (not yours, gone, already there) differ only there.
-        raw.contains("addToPlaylist") -> context.getString(R.string.playlist_add_failed, raw.take(140))
-        raw.contains("429") -> context.getString(R.string.error_rate_limited)
-        raw.contains("403") -> context.getString(R.string.error_playlist_not_writable)
+        raw.contains("addToPlaylist") -> com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, raw.take(140))
+        raw.contains("429") -> com.varuna.rustify.ui.appString(Res.string.error_rate_limited)
+        raw.contains("403") -> com.varuna.rustify.ui.appString(Res.string.error_playlist_not_writable)
         raw.contains("401") || raw.contains("expired", ignoreCase = true) ->
-            context.getString(R.string.error_session_expired)
-        else -> context.getString(R.string.playlist_add_failed, raw.take(140).ifBlank { "?" })
+            com.varuna.rustify.ui.appString(Res.string.error_session_expired)
+        else -> com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, raw.take(140).ifBlank { "?" })
     }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings the shared interface needs that Android took from the platform (android.R.string). -->
+<resources>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+</resources>

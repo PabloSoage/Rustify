@@ -592,12 +592,26 @@ class MainActivity : ComponentActivity() {
                 newConfig.setLocale(locale)
                 context.createConfigurationContext(newConfig)
             }
+            // The screens in :sharedUi take their strings from Compose Multiplatform, which reads the
+            // language from LocalConfiguration, not from the Context swapped above. So the configuration
+            // is overridden too — derived from the framework's current one on every change, so
+            // orientation is still tracked.
+            val localizedConfig = remember(currentConfig, appLanguage) {
+                Configuration(currentConfig).apply {
+                    setLocale(if (appLanguage == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLanguage))
+                }
+            }
+            val appPlatform = remember { com.varuna.rustify.ui.AndroidAppPlatform(applicationContext) }
+            val appServices = remember { AndroidAppServices(applicationContext) }
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalContext provides localizedContext,
-                // NOT overriding LocalConfiguration — let it flow from the framework
-                // so orientation changes are tracked correctly by Compose.
-                androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity
+                LocalConfiguration provides localizedConfig,
+                androidx.activity.compose.LocalActivityResultRegistryOwner provides this@MainActivity,
+                com.varuna.rustify.ui.LocalAppPlatform provides appPlatform,
+                com.varuna.rustify.ui.LocalAppServices provides appServices,
+                com.varuna.rustify.player.LocalPlayer provides com.varuna.rustify.player.AudioPlayerService.getInstance(applicationContext),
             ) {
+                com.varuna.rustify.ui.RememberStringEnvironment()
                 RustifyTheme {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

@@ -41,12 +41,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.SimpleAlbum
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
@@ -114,11 +114,11 @@ fun NewReleasesScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackClick) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
             }
             Spacer(Modifier.width(4.dp))
             Text(
-                text = stringResource(R.string.new_releases_title),
+                text = stringResource(Res.string.new_releases_title),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = Color.White
             )
@@ -133,9 +133,9 @@ fun NewReleasesScreen(
                 val signedIn = remember { spotifyRepo.hasSavedSession() }
                 Text(
                     text = when {
-                        !signedIn -> stringResource(R.string.new_releases_signed_out)
+                        !signedIn -> stringResource(Res.string.new_releases_signed_out)
                         failure != null -> failure!!
-                        else -> stringResource(R.string.new_releases_empty)
+                        else -> stringResource(Res.string.new_releases_empty)
                     },
                     color = Color.Gray,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center

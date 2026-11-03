@@ -1,6 +1,6 @@
 package com.varuna.rustify.util
 
-import android.util.Log
+import com.varuna.rustify.platform.Log
 import com.varuna.rustify.bridge.NativeEngine
 import org.json.JSONArray
 import org.json.JSONObject
