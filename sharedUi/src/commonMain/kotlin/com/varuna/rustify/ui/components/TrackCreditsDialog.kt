@@ -20,11 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.TrackCredits
 
@@ -49,7 +49,7 @@ fun TrackCreditsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF282828),
-        title = { Text(stringResource(R.string.track_menu_credits), color = Color.White) },
+        title = { Text(stringResource(Res.string.track_menu_credits), color = Color.White) },
         text = {
             val c = credits
             when {
@@ -77,17 +77,17 @@ fun TrackCreditsDialog(
                     }
                     if (c.sources.isNotEmpty()) item {
                         Text(
-                            stringResource(R.string.track_credits_source, c.sources.joinToString(", ")),
+                            stringResource(Res.string.track_credits_source, c.sources.joinToString(", ")),
                             color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp)
                         )
                     }
                 }
-                failed || c != null -> Text(stringResource(R.string.track_credits_none), color = Color.Gray)
+                failed || c != null -> Text(stringResource(Res.string.track_credits_none), color = Color.Gray)
                 else -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = green)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close), color = green) } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.settings_close), color = green) } }
     )
 }

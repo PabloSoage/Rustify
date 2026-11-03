@@ -24,12 +24,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ui.components.TrackRowItem
@@ -85,7 +85,7 @@ fun ArtistAllSongsScreen(
             if (tracks.isEmpty() && loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = green) }
             } else if (tracks.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.common_no_tracks), color = Color.Gray) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(Res.string.common_no_tracks), color = Color.Gray) }
             } else {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     item {

@@ -1,6 +1,6 @@
 package com.varuna.rustify.ui.screens
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,35 +30,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 
 /**
  * A category on the empty Search screen: the label is translated, the query stays in English
  * because that is what Spotify's editorial playlists are named after.
  */
-data class SearchCategory(@param:StringRes val label: Int, val query: String, val color: Color)
+data class SearchCategory(val label: StringResource, val query: String, val color: Color)
 
 val searchCategories = listOf(
-    SearchCategory(R.string.search_cat_pop, "pop", Color(0xFFE8115B)),
-    SearchCategory(R.string.search_cat_rock, "rock", Color(0xFFBA5D07)),
-    SearchCategory(R.string.search_cat_hiphop, "hip hop", Color(0xFF8D67AB)),
-    SearchCategory(R.string.search_cat_latin, "latin", Color(0xFFE1118C)),
-    SearchCategory(R.string.search_cat_electronic, "electronic", Color(0xFF0D73EC)),
-    SearchCategory(R.string.search_cat_indie, "indie", Color(0xFF608108)),
-    SearchCategory(R.string.search_cat_rnb, "r&b", Color(0xFFDC148C)),
-    SearchCategory(R.string.search_cat_jazz, "jazz", Color(0xFF477D95)),
-    SearchCategory(R.string.search_cat_classical, "classical", Color(0xFF7D4B32)),
-    SearchCategory(R.string.search_cat_metal, "metal", Color(0xFF503750)),
-    SearchCategory(R.string.search_cat_chill, "chill", Color(0xFF1E3264)),
-    SearchCategory(R.string.search_cat_focus, "focus", Color(0xFF503750)),
-    SearchCategory(R.string.search_cat_workout, "workout", Color(0xFF777777)),
-    SearchCategory(R.string.search_cat_party, "party", Color(0xFFAF2896)),
-    SearchCategory(R.string.search_cat_sleep, "sleep", Color(0xFF1E3264)),
-    SearchCategory(R.string.search_cat_decades, "80s", Color(0xFFBA5D07)),
+    SearchCategory(Res.string.search_cat_pop, "pop", Color(0xFFE8115B)),
+    SearchCategory(Res.string.search_cat_rock, "rock", Color(0xFFBA5D07)),
+    SearchCategory(Res.string.search_cat_hiphop, "hip hop", Color(0xFF8D67AB)),
+    SearchCategory(Res.string.search_cat_latin, "latin", Color(0xFFE1118C)),
+    SearchCategory(Res.string.search_cat_electronic, "electronic", Color(0xFF0D73EC)),
+    SearchCategory(Res.string.search_cat_indie, "indie", Color(0xFF608108)),
+    SearchCategory(Res.string.search_cat_rnb, "r&b", Color(0xFFDC148C)),
+    SearchCategory(Res.string.search_cat_jazz, "jazz", Color(0xFF477D95)),
+    SearchCategory(Res.string.search_cat_classical, "classical", Color(0xFF7D4B32)),
+    SearchCategory(Res.string.search_cat_metal, "metal", Color(0xFF503750)),
+    SearchCategory(Res.string.search_cat_chill, "chill", Color(0xFF1E3264)),
+    SearchCategory(Res.string.search_cat_focus, "focus", Color(0xFF503750)),
+    SearchCategory(Res.string.search_cat_workout, "workout", Color(0xFF777777)),
+    SearchCategory(Res.string.search_cat_party, "party", Color(0xFFAF2896)),
+    SearchCategory(Res.string.search_cat_sleep, "sleep", Color(0xFF1E3264)),
+    SearchCategory(Res.string.search_cat_decades, "80s", Color(0xFFBA5D07)),
 )
 
 /**
@@ -75,7 +75,7 @@ fun SearchEmptyState(
     bottomPadding: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
-    val columns = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 180).coerceIn(2, 6)
+    val columns = (com.varuna.rustify.ui.windowWidthDp() / 180).coerceIn(2, 6)
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = bottomPadding)) {
         if (recent.isNotEmpty()) {
             item {
@@ -84,13 +84,13 @@ fun SearchEmptyState(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        stringResource(R.string.search_recent),
+                        stringResource(Res.string.search_recent),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = Color.White,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = onClearRecent) {
-                        Text(stringResource(R.string.search_recent_clear), color = Color.LightGray)
+                        Text(stringResource(Res.string.search_recent_clear), color = Color.LightGray)
                     }
                 }
             }
@@ -114,7 +114,7 @@ fun SearchEmptyState(
                     IconButton(onClick = { onRecentRemove(q) }) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = stringResource(R.string.search_recent_remove, q),
+                            contentDescription = stringResource(Res.string.search_recent_remove, q),
                             tint = Color.Gray,
                             modifier = Modifier.size(18.dp)
                         )
@@ -126,7 +126,7 @@ fun SearchEmptyState(
 
         item {
             Text(
-                stringResource(R.string.search_browse),
+                stringResource(Res.string.search_browse),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.White,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

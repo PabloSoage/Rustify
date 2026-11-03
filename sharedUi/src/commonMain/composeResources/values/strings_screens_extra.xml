@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cd_shuffle_play">Shuffle play</string>
+    <string name="cd_more_options">More options</string>
+</resources>
