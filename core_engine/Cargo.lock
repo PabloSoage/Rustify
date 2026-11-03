@@ -381,6 +381,7 @@ dependencies = [
  "cc",
  "chacha20poly1305",
  "filetime",
+ "flate2",
  "getrandom 0.2.17",
  "hkdf",
  "http-body-util",

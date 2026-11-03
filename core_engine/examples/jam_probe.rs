@@ -74,7 +74,11 @@ async fn main() {
                         .collect::<String>()
                 );
                 if matches!(e, Event::State { .. }) && !asked {
-                    println!("guest: state after {} ms", started.elapsed().as_millis());
+                    println!(
+                        "guest: state after {} ms ({} bytes as JSON)",
+                        started.elapsed().as_millis(),
+                        serde_json::to_vec(&e).unwrap().len()
+                    );
                     session::send(Command::Next).await.expect("send");
                     asked = true;
                 }
@@ -102,6 +106,7 @@ async fn main() {
 async fn sniff(host: &str, port: u16) {
     let mut opts = rumqttc::MqttOptions::new(format!("sniff-{}", std::process::id()), host, port);
     opts.set_keep_alive(Duration::from_secs(30));
+    opts.set_max_packet_size(1024 * 1024, 1024 * 1024);
     let (client, mut eventloop) = rumqttc::AsyncClient::new(opts, 64);
     client
         .subscribe("rustify/jam/v1/#", rumqttc::QoS::AtMostOnce)

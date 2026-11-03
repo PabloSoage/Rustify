@@ -45,6 +45,8 @@ pub mod session;
 const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 pub const CODE_LEN: usize = 12;
 const NONCE_LEN: usize = 12;
+/// The most a payload may inflate to: a queue of several thousand songs.
+const MAX_PLAIN: usize = 16 * 1024 * 1024;
 
 /// A new room code, `XXXX-XXXX-XXXX`.
 pub fn new_code() -> String {
@@ -95,25 +97,41 @@ impl Room {
         }
     }
 
+    /// Deflated, then sealed. A real fifty-song queue is ~99 KB of JSON (measured on the tablet);
+    /// deflated it is a fraction of that, which keeps long playlists under the packet limit.
+    /// Compressing before encrypting leaks only the length, and nothing secret is mixed with
+    /// anything an outsider chooses, so there is nothing for a length to reveal.
     pub fn seal(&self, plain: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut z = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(plain).expect("writing to a Vec cannot fail");
+        let packed = z.finish().expect("writing to a Vec cannot fail");
         let mut nonce = [0u8; NONCE_LEN];
         getrandom::getrandom(&mut nonce).expect("system random");
         let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.key));
         let sealed = cipher
-            .encrypt(Nonce::from_slice(&nonce), plain)
+            .encrypt(Nonce::from_slice(&nonce), packed.as_slice())
             .expect("encryption cannot fail");
         [nonce.as_slice(), &sealed].concat()
     }
 
-    /// `None` for anything not sealed with this room's key: another room, noise, a forgery.
+    /// `None` for anything not sealed with this room's key: another room, noise, a forgery — or
+    /// something that inflates past [MAX_PLAIN], which only a participant could have sent.
     pub fn open(&self, sealed: &[u8]) -> Option<Vec<u8>> {
+        use std::io::Read;
         if sealed.len() < NONCE_LEN + 16 {
             return None;
         }
         let (nonce, body) = sealed.split_at(NONCE_LEN);
-        ChaCha20Poly1305::new(Key::from_slice(&self.key))
+        let packed = ChaCha20Poly1305::new(Key::from_slice(&self.key))
             .decrypt(Nonce::from_slice(nonce), body)
-            .ok()
+            .ok()?;
+        let mut plain = Vec::new();
+        flate2::read::DeflateDecoder::new(packed.as_slice())
+            .take(MAX_PLAIN as u64 + 1)
+            .read_to_end(&mut plain)
+            .ok()?;
+        (plain.len() <= MAX_PLAIN).then_some(plain)
     }
 }
 
@@ -233,6 +251,48 @@ mod tests {
         *forged.last_mut().unwrap() ^= 1;
         assert!(room.open(&forged).is_none(), "tampered");
         assert_ne!(room.seal(b"x"), room.seal(b"x"), "fresh nonce each time");
+    }
+
+    #[test]
+    fn a_long_queue_travels_deflated_and_comes_back_whole() {
+        let room = Room::new("ABCDEFGHJKMN");
+        // 600 songs shaped like the app's JSON: ~1.8 KB each, over 1 MB in all, the old packet limit.
+        let state = State {
+            tracks: (0..600)
+                .map(|i| {
+                    serde_json::json!({
+                        "id": format!("spotify:track:{i:022}"),
+                        "name": format!("Song {i}"),
+                        "album": {"name": "Album", "images": [
+                            {"url": format!("https://i.scdn.co/image/ab67616d0000b273{i:024}"), "width": 640},
+                            {"url": format!("https://i.scdn.co/image/ab67616d00001e02{i:024}"), "width": 300},
+                        ]},
+                        "artists": [{"name": "Artist", "externalUri": "https://open.spotify.com/artist/x"}],
+                        "padding": "a".repeat(1500),
+                    })
+                })
+                .collect(),
+            ..State::default()
+        };
+        let plain = serde_json::to_vec(&state).unwrap();
+        let sealed = room.seal(&plain);
+        assert!(plain.len() > 1_000_000);
+        assert!(
+            sealed.len() < plain.len() / 5,
+            "{} of {}",
+            sealed.len(),
+            plain.len()
+        );
+        assert_eq!(room.open(&sealed).unwrap(), plain);
+    }
+
+    #[test]
+    fn a_payload_that_inflates_past_the_limit_is_refused() {
+        let room = Room::new("ABCDEFGHJKMN");
+        let bomb = room.seal(&vec![0u8; MAX_PLAIN + 1]);
+        assert!(bomb.len() < 64 * 1024);
+        assert_eq!(room.open(&bomb), None);
+        assert!(room.open(&room.seal(&vec![0u8; 1024])).is_some());
     }
 
     #[test]

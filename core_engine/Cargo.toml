@@ -89,6 +89,8 @@ lofty = "0.25.5"
 webpki-roots = "1.0.11"
 chacha20poly1305 = "0.10"
 hkdf = "0.12"
+# Already in the tree through reqwest; Jam deflates its payloads with it.
+flate2 = "1.1"
 sha2 = "0.10"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-rustls-no-provider"] }

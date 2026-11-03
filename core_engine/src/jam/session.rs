@@ -18,7 +18,12 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long `join` keeps trying. The public broker leaves about one TLS handshake in eight hanging
+/// (measured from this PC: seven of eight connected in ~160 ms, one only on the second attempt), so
+/// what matters is how many attempts fit: 3 s each ([ATTEMPT_SECS]) gives five here.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// One attempt: TCP, TLS and CONNACK. rumqttc's default is 5 s; a healthy one takes a fraction of 1.
+const ATTEMPT_SECS: u64 = 3;
 const KEEP_ALIVE: Duration = Duration::from_secs(30);
 /// Retried this often while the broker cannot be reached; rumqttc reconnects on the next poll.
 const RETRY: Duration = Duration::from_secs(3);
@@ -178,7 +183,11 @@ pub async fn join(cfg: Config) -> Result<(), String> {
             Arc::new(tls_config()),
         )));
     }
-    let (client, eventloop) = AsyncClient::new(opts, 64);
+    let (client, mut eventloop) = AsyncClient::new(opts, 64);
+    let mut net = rumqttc::NetworkOptions::new();
+    net.set_connection_timeout(ATTEMPT_SECS);
+    net.set_tcp_nodelay(true);
+    eventloop.set_network_options(net);
 
     let live = Arc::new(Live {
         client,
@@ -264,7 +273,7 @@ async fn run(
                     // let it say why. A first TLS handshake to a public broker does time out now
                     // and then while the next attempt goes through.
                     *live.last_error.lock().unwrap() = reason;
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                     continue;
                 }
                 live.push(Event::Disconnected { reason });
