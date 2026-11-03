@@ -1,5 +1,7 @@
 package com.varuna.rustify.dj
 
+import com.varuna.rustify.platform.defaultLanguage
+
 /**
  * Phrases the DJ speaks (voice). They must be in the voice language (configurable separately from the
  * app language), which is why they come from this table rather than from Android resources (which
@@ -25,7 +27,7 @@ object DjPhrases {
     )
 
     private fun lang(voiceLang: String): String {
-        val code = voiceLang.ifBlank { java.util.Locale.getDefault().language }.lowercase().take(2)
+        val code = voiceLang.ifBlank { defaultLanguage() }.lowercase().take(2)
         return if (MOOD_NAME.containsKey(code)) code else "en"
     }
 

@@ -3,6 +3,7 @@ package com.varuna.rustify.util
 import com.varuna.rustify.bridge.SpotifyEngineException
 import kotlinx.coroutines.delay
 import kotlin.math.min
+import com.varuna.rustify.platform.isIoException
 
 /**
  * Kind of error produced by the engine / network layer, used to decide whether to retry.
@@ -54,7 +55,7 @@ fun classifyError(t: Throwable): ErrorKind {
         t is SpotifyEngineException && msg.contains("429") -> ErrorKind.RATE_LIMITED
         t is SpotifyEngineException && (Regex("""\b5\d\d\b""").containsMatchIn(msg) ||
             msg.contains("network") || msg.contains("timed out") || msg.contains("timeout")) -> ErrorKind.TRANSIENT
-        t is java.io.IOException -> ErrorKind.TRANSIENT
+        isIoException(t) -> ErrorKind.TRANSIENT
         else -> ErrorKind.PERMANENT
     }
 }

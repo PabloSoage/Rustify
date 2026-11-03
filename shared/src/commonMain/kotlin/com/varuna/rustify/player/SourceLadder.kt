@@ -18,7 +18,7 @@ package com.varuna.rustify.player
  *
  * Each step is a lambda so that nothing below the answer is asked: some of them read the disk.
  */
-internal object SourceLadder {
+object SourceLadder {
 
     enum class Kind { LOCAL_FILE, LOCAL_MATCH, STREAM_CACHE, PERSISTED, PRE_RESOLVED, NETWORK }
 

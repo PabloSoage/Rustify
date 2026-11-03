@@ -1,4 +1,4 @@
-// app/src/main/java/com/varuna/rustify/bridge/SpotifyModels.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/bridge/SpotifyModels.kt
 package com.varuna.rustify.bridge
 
 import kotlinx.serialization.KSerializer
@@ -20,8 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.json.JSONArray
-import org.json.JSONObject
+import com.varuna.rustify.platform.currentTimeMillis
 
 /**
  * The Kotlin side of the engine's wire types.
@@ -30,7 +29,7 @@ import org.json.JSONObject
  *
  * Every type here mirrors one in `core_engine/src/spotify/models.rs` or
  * `core_engine/src/youtube/models.rs`. What used to sit underneath each of them was a hand-written
- * `fromJson` reading field by field out of a [JSONObject] — 500 lines whose only tie to the Rust it
+ * `fromJson` reading field by field out of a `JSONObject` — 500 lines whose only tie to the Rust it
  * mirrored was that somebody remembered. It did not hold: **eight** fields declared `String?` here
  * were read with `optString(name, "")` — `releaseDate`, `releaseDatePrecision`, `albumType`,
  * `recordLabel`, `description`, `country`, `product` and `LoginResult.error` — so an absent one
@@ -49,7 +48,7 @@ import org.json.JSONObject
  * running an older APK against a newer `.so` must not crash. The contract test does the opposite —
  * unknown keys are an error there — which is what keeps the tolerance from hiding a real rename.
  */
-internal val RustifyJson: Json = Json {
+val RustifyJson: Json = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
     encodeDefaults = false
@@ -59,23 +58,16 @@ internal val RustifyJson: Json = Json {
 // =============================================================================
 // CODEC HELPERS
 //
-// These carry no knowledge of any field. They exist so the call sites that already hold a
-// JSONObject — the playback-state reader, the library caches, the YT Music store — keep working
-// without each type growing a hand-written parser again.
+// These carry no knowledge of any field. The `org.json` forms (`toJson()`, `X.fromJson(JSONObject)`,
+// `listFromJsonArray`) that the Android call sites holding a JSONObject use live in the app, in
+// `bridge/SpotifyModelsJson.kt`: org.json is part of Android and does not exist on iOS, so this
+// module speaks strings and kotlinx elements only. That is also why the types below that had those
+// forms keep an empty `companion object`: the app's `FullTrack.fromJson(…)` extends it.
 // =============================================================================
 
-internal inline fun <reified T> decodeWire(json: String): T = RustifyJson.decodeFromString(json)
+inline fun <reified T> decodeWire(json: String): T = RustifyJson.decodeFromString(json)
 
-internal inline fun <reified T> decodeWire(json: JSONObject): T = decodeWire(json.toString())
-
-internal inline fun <reified T> decodeWireList(array: JSONArray?): List<T> =
-    if (array == null) emptyList() else decodeWire(array.toString())
-
-internal inline fun <reified T> encodeWire(value: T): JSONObject =
-    JSONObject(RustifyJson.encodeToString(value))
-
-internal inline fun <reified T> encodeWireArray(values: List<T>): JSONArray =
-    JSONArray(RustifyJson.encodeToString(values))
+inline fun <reified T> encodeWireString(value: T): String = RustifyJson.encodeToString(value)
 
 // =============================================================================
 // FIELD SERIALIZERS
@@ -85,7 +77,7 @@ internal inline fun <reified T> encodeWireArray(values: List<T>): JSONArray =
 // =============================================================================
 
 /** Spotify puts markup in playlist descriptions. Strip it on the way in. */
-internal object CleanHtmlSerializer : KSerializer<String?> {
+object CleanHtmlSerializer : KSerializer<String?> {
     private val delegate = String.serializer().nullable
     override val descriptor: SerialDescriptor = delegate.descriptor
     override fun deserialize(decoder: Decoder): String? = delegate.deserialize(decoder)?.cleanHtml()
@@ -99,7 +91,7 @@ internal object CleanHtmlSerializer : KSerializer<String?> {
  * `Option<String>`, so a stored favourite has `"album_id": ""` and must still come back as null.
  * New writes omit the key, which is what `Option` deserializes from.
  */
-internal object BlankAsNullSerializer : KSerializer<String?> {
+object BlankAsNullSerializer : KSerializer<String?> {
     private val delegate = String.serializer().nullable
     override val descriptor: SerialDescriptor = delegate.descriptor
     override fun deserialize(decoder: Decoder): String? =
@@ -108,7 +100,7 @@ internal object BlankAsNullSerializer : KSerializer<String?> {
 }
 
 /** `0` means absent — the same legacy-file concession as [BlankAsNullSerializer], for `year`. */
-internal object ZeroAsNullSerializer : KSerializer<Int?> {
+object ZeroAsNullSerializer : KSerializer<Int?> {
     private val delegate = Int.serializer().nullable
     override val descriptor: SerialDescriptor = delegate.descriptor
     override fun deserialize(decoder: Decoder): Int? =
@@ -117,7 +109,7 @@ internal object ZeroAsNullSerializer : KSerializer<Int?> {
 }
 
 /** YouTube Music hands out thumbnails at whatever size it feels like. Ask for the big one. */
-internal object ThumbnailSerializer : KSerializer<String> {
+object ThumbnailSerializer : KSerializer<String> {
     private val delegate = String.serializer()
     override val descriptor: SerialDescriptor = delegate.descriptor
     override fun deserialize(decoder: Decoder): String =
@@ -135,12 +127,7 @@ data class SpotifyImage(
     val height: Int? = null,
     val width: Int? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): SpotifyImage = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<SpotifyImage> = decodeWireList(array)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -192,9 +179,7 @@ data class LoginResult(
     /** What kind of failure, as stated by the engine. See `errorKindOf`. */
     val kind: String? = null
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): LoginResult = decodeWire(json)
-    }
+    companion object
 }
 
 /**
@@ -217,9 +202,7 @@ data class OperationResult(
      */
     val kind: String? = null
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): OperationResult = decodeWire(json)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -233,12 +216,7 @@ data class SimpleArtist(
     val externalUri: String = "",
     val images: List<SpotifyImage>? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): SimpleArtist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<SimpleArtist> = decodeWireList(array)
-    }
+    companion object
 }
 
 @Serializable
@@ -250,12 +228,7 @@ data class FullArtist(
     val genres: List<String> = emptyList(),
     @SerialName("followers") val followersTotal: Int? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): FullArtist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<FullArtist> = decodeWireList(array)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -273,12 +246,7 @@ data class SimpleAlbum(
     val artists: List<SimpleArtist> = emptyList(),
     val albumType: String? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): SimpleAlbum = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<SimpleAlbum> = decodeWireList(array)
-    }
+    companion object
 }
 
 @Serializable
@@ -295,12 +263,7 @@ data class FullAlbum(
     val recordLabel: String? = null,
     val genres: List<String> = emptyList()
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): FullAlbum = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<FullAlbum> = decodeWireList(array)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -319,12 +282,7 @@ data class FullTrack(
     val album: SimpleAlbum? = null,
     val addedAt: String? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): FullTrack = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<FullTrack> = decodeWireList(array)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -354,12 +312,8 @@ data class SimplePlaylist(
 ) {
     val totalTracks: Int? get() = tracks?.total
 
-    fun toJson(): JSONObject = encodeWire(this)
 
-    companion object {
-        fun fromJson(json: JSONObject): SimplePlaylist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<SimplePlaylist> = decodeWireList(array)
-    }
+    companion object
 }
 
 @Serializable
@@ -376,9 +330,7 @@ data class FullPlaylist(
 ) {
     val totalTracks: Int? get() = tracks?.total
 
-    companion object {
-        fun fromJson(json: JSONObject): FullPlaylist = decodeWire(json)
-    }
+    companion object
 }
 
 /**
@@ -394,15 +346,10 @@ data class LocalPlaylist(
     val id: String = "",
     val name: String = "",
     val trackIds: List<String> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val createdAt: Long = currentTimeMillis(),
+    val updatedAt: Long = currentTimeMillis()
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): LocalPlaylist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<LocalPlaylist> = decodeWireList(array)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -419,11 +366,7 @@ data class SpotifyUser(
     val country: String? = null,
     val product: String? = null
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): SpotifyUser = decodeWire(json)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -450,9 +393,7 @@ data class NormalizedSearchResults(
     val artists: List<FullArtist> = emptyList(),
     val playlists: List<SimplePlaylist> = emptyList()
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): NormalizedSearchResults = decodeWire(json)
-    }
+    companion object
 }
 
 // =============================================================================
@@ -466,10 +407,7 @@ data class BrowseSection(
     @Serializable(with = BrowseItemsSerializer::class)
     val items: List<BrowseSectionItem> = emptyList()
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): BrowseSection = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<BrowseSection> = decodeWireList(array)
-    }
+    companion object
 }
 
 /**
@@ -515,7 +453,7 @@ sealed class BrowseSectionItem {
     }
 }
 
-internal object BrowseItemsSerializer : KSerializer<List<BrowseSectionItem>> {
+object BrowseItemsSerializer : KSerializer<List<BrowseSectionItem>> {
     private val delegate = ListSerializer(JsonElement.serializer())
     override val descriptor: SerialDescriptor = delegate.descriptor
 
@@ -561,11 +499,11 @@ fun FullTrack.effectiveCoverUrl(): String? =
  * `coverArt.sources`, which is **not** guaranteed to be widest-first, so anything that will be seen
  * at full size (sharing, full-screen art) has to ask for the biggest rather than take the first.
  */
-internal fun List<SpotifyImage>.largest(): SpotifyImage? =
+fun List<SpotifyImage>.largest(): SpotifyImage? =
     maxByOrNull { (it.width ?: 0) * (it.height ?: 0) }
 
 /** Maximise a YouTube Music thumbnail URL. Removes size-restricting params (`=w120-h120` → `=w720-h720`). */
-internal fun maximiseThumbnail(url: String): String {
+fun maximiseThumbnail(url: String): String {
     if (url.isBlank()) return url
     return url
         .replace(Regex("""=w\d+-h\d+"""), "=w720-h720")
@@ -585,13 +523,7 @@ data class YtmArtistRef(
     val id: String = "",
     val name: String = ""
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): YtmArtistRef = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<YtmArtistRef> = decodeWireList(array)
-        fun toJsonArray(list: List<YtmArtistRef>): JSONArray = encodeWireArray(list)
-    }
+    companion object
 }
 
 @Serializable
@@ -606,8 +538,6 @@ data class YtmTrack(
     @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
     @SerialName("is_explicit") val isExplicit: Boolean = false
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
     fun toFullTrack(): FullTrack = FullTrack(
         id = "ytm:$videoId", name = title, externalUri = "https://music.youtube.com/watch?v=$videoId",
         explicit = isExplicit, durationMs = durationSec * 1000, isrc = "",
@@ -616,11 +546,7 @@ data class YtmTrack(
             listOf(SpotifyImage(maximiseThumbnail(thumbnailUrl), 720, 720)), emptyList(), null)
     )
 
-    companion object {
-        fun fromJson(json: JSONObject): YtmTrack = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<YtmTrack> = decodeWireList(array)
-        fun toJsonArray(list: List<YtmTrack>): JSONArray = encodeWireArray(list)
-    }
+    companion object
 }
 
 @Serializable
@@ -633,11 +559,7 @@ data class YtmAlbum(
     @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
     val tracks: List<YtmTrack> = emptyList()
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): YtmAlbum = decodeWire(json)
-    }
+    companion object
 }
 
 @Serializable
@@ -648,13 +570,7 @@ data class YtmAlbumSlim(
     @SerialName("thumbnail_url")
     @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = ""
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): YtmAlbumSlim = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<YtmAlbumSlim> = decodeWireList(array)
-        fun toJsonArray(list: List<YtmAlbumSlim>): JSONArray = encodeWireArray(list)
-    }
+    companion object
 }
 
 @Serializable
@@ -666,9 +582,7 @@ data class YtmArtist(
     @SerialName("top_tracks") val topTracks: List<YtmTrack> = emptyList(),
     val albums: List<YtmAlbumSlim> = emptyList()
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): YtmArtist = decodeWire(json)
-    }
+    companion object
 }
 
 @Serializable
@@ -680,10 +594,7 @@ data class YtmPlaylist(
     @Serializable(with = ThumbnailSerializer::class) val thumbnailUrl: String = "",
     val tracks: List<YtmTrack> = emptyList()
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): YtmPlaylist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<YtmPlaylist> = decodeWireList(array)
-    }
+    companion object
 }
 
 /** App-side only: the YT Music equivalent of [LocalPlaylist], with no Rust counterpart. */
@@ -695,13 +606,7 @@ data class YtmLocalPlaylist(
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) {
-    fun toJson(): JSONObject = encodeWire(this)
-
-    companion object {
-        fun fromJson(json: JSONObject): YtmLocalPlaylist = decodeWire(json)
-        fun listFromJsonArray(array: JSONArray?): List<YtmLocalPlaylist> = decodeWireList(array)
-        fun toJsonArray(list: List<YtmLocalPlaylist>): JSONArray = encodeWireArray(list)
-    }
+    companion object
 }
 
 @Serializable
@@ -711,7 +616,5 @@ data class YtmSearchResults(
     val artists: List<YtmArtistRef> = emptyList(),
     val playlists: List<YtmPlaylist> = emptyList()
 ) {
-    companion object {
-        fun fromJson(json: JSONObject): YtmSearchResults = decodeWire(json)
-    }
+    companion object
 }

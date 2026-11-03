@@ -43,6 +43,13 @@ reorderable = "3.1.0"
 # 4.7 — lyrics translated on the device (no server, offline once the model is downloaded).
 mlkitTranslate = "17.0.3"
 mlkitLanguageId = "17.0.6"
+# Multiplatform (docs 24/25). The shared module uses the Kotlin version above; coroutines is declared
+# for it explicitly rather than borrowed from the app's graph, where lifecycle brings it in.
+kotlinxCoroutines = "1.10.2"
+# Compose Multiplatform for the desktop app only — the Android app keeps Jetpack Compose and the BOM.
+# Written without a Gradle sync: if this version does not resolve, take the newest
+# org.jetbrains.compose release that supports Kotlin 2.4 (docs 25 §4, first thing to check).
+composeMultiplatform = "1.9.0"
 [libraries]
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
@@ -77,8 +84,14 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 maplibre-android = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibre" }
 appauth = { group = "net.openid", name = "appauth", version.ref = "appauth" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinxCoroutines" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+# AGP 9 refuses com.android.library next to the Kotlin Multiplatform plugin; this is its KMP form.
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 

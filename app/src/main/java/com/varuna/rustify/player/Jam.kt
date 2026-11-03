@@ -2,6 +2,8 @@ package com.varuna.rustify.player
 
 import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.fromJson
+import com.varuna.rustify.bridge.toJson
 import com.varuna.rustify.bridge.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

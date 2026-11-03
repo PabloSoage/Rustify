@@ -1,5 +1,7 @@
 package com.varuna.rustify.bridge
 
+import com.varuna.rustify.platform.normalizeNfc
+
 /**
  * M3U/M3U8 playlists (4.10, Musicolet 3.6): read one written by any player or PC, write one the
  * same players read back.
@@ -104,21 +106,20 @@ object M3u {
         return n
     }
 
-    private fun fold(s: String): String =
-        java.text.Normalizer.normalize(s.trim(), java.text.Normalizer.Form.NFC).lowercase()
+    private fun fold(s: String): String = normalizeNfc(s.trim()).lowercase()
 
     private fun percentDecode(s: String): String {
-        val bytes = java.io.ByteArrayOutputStream()
+        val bytes = ArrayList<Byte>(s.length)
         var i = 0
         while (i < s.length) {
             val c = s[i]
             if (c == '%' && i + 2 < s.length) {
                 val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
-                if (hex != null) { bytes.write(hex); i += 3; continue }
+                if (hex != null) { bytes.add(hex.toByte()); i += 3; continue }
             }
-            bytes.write(c.toString().toByteArray(Charsets.UTF_8))
+            c.toString().encodeToByteArray().forEach { bytes.add(it) }
             i++
         }
-        return bytes.toString(Charsets.UTF_8.name())
+        return bytes.toByteArray().decodeToString()
     }
 }

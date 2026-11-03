@@ -24,3 +24,12 @@ dependencyResolutionManagement {
 
 rootProject.name = "Rustify"
 include(":app")
+// Code shared by Android, the desktop app and iOS (docs 24 §3): models, pure logic, the JNI bridge
+// for the JVM targets and the C ABI bridge for iOS. The app depends on it, so it is always included.
+include(":shared")
+// The desktop app (Windows, Linux, macOS) is opt-in while it is new: `-Prustify.desktop=true`, or
+// `rustify.desktop=true` in ~/.gradle/gradle.properties. Its Compose Multiplatform plugin is resolved
+// and configured by every build that includes it, and building the APK must not depend on that.
+if (providers.gradleProperty("rustify.desktop").orNull.toBoolean()) {
+    include(":desktopApp")
+}

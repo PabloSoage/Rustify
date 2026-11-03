@@ -1,4 +1,4 @@
-// app/src/main/java/com/varuna/rustify/bridge/NativeEngine.kt
+// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/bridge/NativeEngine.kt
 
 package com.varuna.rustify.bridge
 
@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
  */
 object NativeEngine {
     init {
-        System.loadLibrary("core_engine")
+        NativeLibrary.load()
     }
 
     /** Every blocking bridge goes through here, so there is exactly one place that names the pool. */

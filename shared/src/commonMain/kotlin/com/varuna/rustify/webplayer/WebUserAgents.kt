@@ -5,7 +5,7 @@ package com.varuna.rustify.webplayer
  *
  * Pure string work, kept out of [WebPlayerController] so it can be tested without a WebView.
  */
-internal object WebUserAgents {
+object WebUserAgents {
 
     /**
      * Chrome for Android, as a **phone**.

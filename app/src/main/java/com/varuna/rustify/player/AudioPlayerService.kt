@@ -21,6 +21,9 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.fromJson
+import com.varuna.rustify.bridge.listFromJsonArray
+import com.varuna.rustify.bridge.toJson
 import com.varuna.rustify.bridge.LocalStreamServer
 import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.NativeEngine

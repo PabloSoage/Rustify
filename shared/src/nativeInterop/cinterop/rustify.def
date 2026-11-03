@@ -1,0 +1,10 @@
+# The core's C ABI (core_engine/include/rustify.h) for the iOS targets.
+#
+# The static library comes from tools/ios/build-core.sh, which must run before the iOS framework is
+# built: shared/build.gradle.kts passes this target's directory with -libraryPath.
+headers = rustify.h
+package = com.varuna.rustify.native
+staticLibraries = libcore_engine.a
+# What the Rust side links against on iOS: CoreAudio/AudioToolbox for cpal, Security and
+# SystemConfiguration for the TLS and network stack, libc++ for rquickjs (rustypipe).
+linkerOpts = -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework CoreFoundation -framework Security -framework SystemConfiguration -lc++

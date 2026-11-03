@@ -30,21 +30,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
 
-/**
- * Exception thrown when a Rust engine operation fails.
- * Contains the error message from the native engine.
- */
-/**
- * A failure the Rust engine reported.
- *
- * [kind] is what the engine says the failure *was* — `auth`, `rateLimited`, `transient`,
- * `permanent` — and it is what `classifyError` reads. Null means the engine did not say, which
- * happens for the handful of refusals built by hand on that side; the message heuristic covers those.
- */
-class SpotifyEngineException(
-    message: String,
-    val kind: String? = null
-) : Exception(message)
+// SpotifyEngineException lives in the shared module (bridge/SpotifyEngineException.kt) since 5.x:
+// util/Retry.kt classifies it and moved there with it. Same package, so nothing here imports it.
 
 /**
  * High-level abstraction layer over the Rust Spotify engine.
