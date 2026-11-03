@@ -25,13 +25,13 @@ pub fn dark_frame(hwnd: isize) -> bool {
     if hwnd == 0 {
         return false;
     }
-    let set = |attribute: i32, value: u32| -> bool {
+    let set = |attribute: u32, value: u32| -> bool {
         // SAFETY: `hwnd` is the caller's live top-level window and `value` outlives the call, which
         // reads exactly `size_of::<u32>()` bytes from it.
         unsafe {
             DwmSetWindowAttribute(
                 hwnd as _,
-                attribute as u32,
+                attribute,
                 &value as *const u32 as *const core::ffi::c_void,
                 core::mem::size_of::<u32>() as u32,
             ) >= 0
@@ -39,9 +39,9 @@ pub fn dark_frame(hwnd: isize) -> bool {
     };
     // Dark mode first (Windows 10 20H1 and later): it darkens the buttons too. The colours after it
     // (Windows 11) match the bar to the app exactly; on Windows 10 they fail and dark mode stays.
-    let dark = set(DWMWA_USE_IMMERSIVE_DARK_MODE as i32, 1);
-    let caption = set(DWMWA_CAPTION_COLOR as i32, CAPTION);
-    set(DWMWA_TEXT_COLOR as i32, TEXT);
+    let dark = set(DWMWA_USE_IMMERSIVE_DARK_MODE as u32, 1);
+    let caption = set(DWMWA_CAPTION_COLOR as u32, CAPTION);
+    set(DWMWA_TEXT_COLOR as u32, TEXT);
     dark || caption
 }
 

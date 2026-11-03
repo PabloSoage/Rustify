@@ -3327,5 +3327,5 @@ pub extern "system" fn Java_com_varuna_rustify_engine_WindowStyle_darkFrameNativ
     _class: JClass<'local>,
     hwnd: jlong,
 ) -> jni::sys::jboolean {
-    window_style::dark_frame(hwnd as isize).into()
+    window_style::dark_frame(hwnd as isize)
 }
