@@ -2,6 +2,7 @@
 
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -83,17 +84,14 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.edit
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalFolders
 import com.varuna.rustify.bridge.LocalPlaylist
@@ -147,19 +145,17 @@ fun LibraryScreen(
 ) {
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
-    val context = LocalContext.current
-    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val prefs = platform.prefs("rustify_settings")
     val enableLocalMusic = prefs.getBoolean("enable_local_music", true)
     val enableYtmMusic = prefs.getBoolean("enable_ytm_music", true)
     var ytmResultFilter by remember { mutableStateOf("all") }
-    var ytmUseScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
+    var ytmUseScraper by remember { mutableStateOf((prefs.getString("ytm_search_mode") ?: "api") == "scraper") }
     // React to the scraper toggle being changed elsewhere (Settings) while this screen is alive.
-    androidx.compose.runtime.DisposableEffect(prefs) {
-        val djScraperListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "ytm_search_mode") ytmUseScraper = p?.getString("ytm_search_mode", "api") == "scraper"
+    androidx.compose.runtime.LaunchedEffect(prefs) {
+        prefs.changes("ytm_search_mode").collect {
+            ytmUseScraper = (prefs.getString("ytm_search_mode") ?: "api") == "scraper"
         }
-        prefs.registerOnSharedPreferenceChangeListener(djScraperListener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(djScraperListener) }
     }
     var ytmPendingPlaylistTrack by remember { mutableStateOf<YtmTrack?>(null) }
     var showYtmCreatePlaylistDialog by remember { mutableStateOf(false) }
@@ -242,13 +238,13 @@ fun LibraryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        stringResource(R.string.library_spotify_signed_out),
+                        stringResource(Res.string.library_spotify_signed_out),
                         color = Color.LightGray,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onSignIn, colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)) {
-                        Text(stringResource(R.string.spotify_sign_in), color = Color.Black)
+                        Text(stringResource(Res.string.spotify_sign_in), color = Color.Black)
                     }
                 }
             } else when (selectedTab) {
@@ -282,7 +278,7 @@ fun LibraryScreen(
                 )
                 LibraryTab.YTMUSIC -> {
                     // Fallback repo when the caller didn't hoist one (keeps preview/testing simple).
-                    val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
+                    val repo = ytmRepo ?: remember { YtMusicRepository(platform.filesDir) }
                     YtMusicLibraryContent(
                         repo = repo,
                         searchQuery = globalSearchQuery,
@@ -300,7 +296,7 @@ fun LibraryScreen(
                         useScraper = ytmUseScraper,
                         onToggleScraper = {
                             ytmUseScraper = !ytmUseScraper
-                            prefs.edit { putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api") }
+                            prefs.putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api")
                         },
                         currentTrackId = currentTrackId
                     )
@@ -336,9 +332,9 @@ fun LibraryScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(24.dp),
-                    placeholder = { Text(stringResource(R.string.search_placeholder), color = Color.Gray) },
+                    placeholder = { Text(stringResource(Res.string.search_placeholder), color = Color.Gray) },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search), tint = Color.White)
+                        Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.nav_search), tint = Color.White)
                     },
                     trailingIcon = {
                         Row {
@@ -352,11 +348,11 @@ fun LibraryScreen(
                                         expanded = showFilterMenu,
                                         onDismissRequest = { showFilterMenu = false }
                                     ) {
-                                        Text(stringResource(R.string.ytm_search_filter_title), color = Color.Gray,
+                                        Text(stringResource(Res.string.ytm_search_filter_title), color = Color.Gray,
                                             fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                                        val filters = listOf("all" to R.string.search_filter_all, "tracks" to R.string.search_filter_tracks,
-                                            "albums" to R.string.search_filter_albums, "artists" to R.string.search_filter_artists,
-                                            "playlists" to R.string.search_filter_playlists)
+                                        val filters = listOf("all" to Res.string.search_filter_all, "tracks" to Res.string.search_filter_tracks,
+                                            "albums" to Res.string.search_filter_albums, "artists" to Res.string.search_filter_artists,
+                                            "playlists" to Res.string.search_filter_playlists)
                                         filters.forEach { (f, label) ->
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(label), fontSize = 14.sp,
@@ -368,11 +364,11 @@ fun LibraryScreen(
                                         }
                                         HorizontalDivider(color = Color.DarkGray)
                                         DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.settings_ytm_scraper), fontSize = 14.sp,
+                                            text = { Text(stringResource(Res.string.settings_ytm_scraper), fontSize = 14.sp,
                                                 color = if (ytmUseScraper) Color(0xFFE65100) else Color.White) },
                                             onClick = {
                                                 ytmUseScraper = !ytmUseScraper
-                                                prefs.edit { putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api") }
+                                                prefs.putString("ytm_search_mode", if (ytmUseScraper) "scraper" else "api")
                                                 showFilterMenu = false
                                             },
                                             leadingIcon = {
@@ -382,7 +378,7 @@ fun LibraryScreen(
                                         )
                                         HorizontalDivider(color = Color.DarkGray)
                                         DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.ytm_paste_link), fontSize = 14.sp, color = Color.White) },
+                                            text = { Text(stringResource(Res.string.ytm_paste_link), fontSize = 14.sp, color = Color.White) },
                                             onClick = { showFilterMenu = false; onYtmPasteLink() },
                                             leadingIcon = { Icon(Icons.Default.Add, null, tint = Color.White) }
                                         )
@@ -428,12 +424,12 @@ fun LibraryScreen(
             ) {
                 tabs.forEachIndexed { index, tab ->
                     val title = when (tab) {
-                        LibraryTab.PLAYLISTS -> stringResource(R.string.library_tab_playlists)
-                        LibraryTab.ALBUMS -> stringResource(R.string.library_tab_albums)
-                        LibraryTab.ARTISTS -> stringResource(R.string.library_tab_artists)
-                        LibraryTab.LOCAL -> stringResource(R.string.library_tab_local_music)
-                        LibraryTab.TRACKS -> stringResource(R.string.library_tab_liked_tracks)
-                        LibraryTab.YTMUSIC -> stringResource(R.string.ytm_title)
+                        LibraryTab.PLAYLISTS -> stringResource(Res.string.library_tab_playlists)
+                        LibraryTab.ALBUMS -> stringResource(Res.string.library_tab_albums)
+                        LibraryTab.ARTISTS -> stringResource(Res.string.library_tab_artists)
+                        LibraryTab.LOCAL -> stringResource(Res.string.library_tab_local_music)
+                        LibraryTab.TRACKS -> stringResource(Res.string.library_tab_liked_tracks)
+                        LibraryTab.YTMUSIC -> stringResource(Res.string.ytm_title)
                     }
                     Tab(
                         selected = selectedTab == tab,
@@ -456,10 +452,10 @@ fun LibraryScreen(
         // ── YTM: playlist selector dialog (uses YTM playlists, not local) ──
         if (ytmPendingPlaylistTrack != null) {
             val track = ytmPendingPlaylistTrack!!
-            val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
+            val repo = ytmRepo ?: remember { YtMusicRepository(platform.filesDir) }
             AlertDialog(
                 onDismissRequest = { ytmPendingPlaylistTrack = null },
-                title = { Text(stringResource(R.string.local_playlist_selector_title)) },
+                title = { Text(stringResource(Res.string.local_playlist_selector_title)) },
                 text = {
                     Column {
                         Row(
@@ -470,11 +466,11 @@ fun LibraryScreen(
                         ) {
                             Icon(Icons.Default.Add, null, tint = Color(0xFF1DB954))
                             Spacer(Modifier.width(12.dp))
-                            Text(stringResource(R.string.local_playlist_create), color = Color.White)
+                            Text(stringResource(Res.string.local_playlist_create), color = Color.White)
                         }
                         HorizontalDivider(color = Color.DarkGray)
                         if (repo.playlists.isEmpty()) {
-                            Text(stringResource(R.string.playlist_not_found), color = Color.Gray, modifier = Modifier.padding(16.dp))
+                            Text(stringResource(Res.string.playlist_not_found), color = Color.Gray, modifier = Modifier.padding(16.dp))
                         } else {
                             repo.playlists.forEach { pl ->
                                 Row(
@@ -494,21 +490,21 @@ fun LibraryScreen(
                 confirmButton = {},
                 dismissButton = {
                     TextButton(onClick = { ytmPendingPlaylistTrack = null }) {
-                        Text(stringResource(android.R.string.cancel))
+                        Text(stringResource(Res.string.cancel))
                     }
                 }
             )
         }
         if (showYtmCreatePlaylistDialog) {
-            val repo = ytmRepo ?: remember { YtMusicRepository(context.filesDir) }
+            val repo = ytmRepo ?: remember { YtMusicRepository(platform.filesDir) }
             AlertDialog(
                 onDismissRequest = { showYtmCreatePlaylistDialog = false; ytmNewPlaylistName = "" },
-                title = { Text(stringResource(R.string.local_playlist_create)) },
+                title = { Text(stringResource(Res.string.local_playlist_create)) },
                 text = {
                     OutlinedTextField(
                         value = ytmNewPlaylistName, onValueChange = { ytmNewPlaylistName = it },
                         singleLine = true,
-                        placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                        placeholder = { Text(stringResource(Res.string.local_playlist_name_hint)) }
                     )
                 },
                 confirmButton = {
@@ -520,11 +516,11 @@ fun LibraryScreen(
                         showYtmCreatePlaylistDialog = false
                         ytmNewPlaylistName = ""
                         ytmPendingPlaylistTrack = null
-                    }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+                    }) { Text(stringResource(Res.string.local_playlist_create_confirm)) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showYtmCreatePlaylistDialog = false; ytmNewPlaylistName = "" }) {
-                        Text(stringResource(android.R.string.cancel))
+                        Text(stringResource(Res.string.cancel))
                     }
                 }
             )
@@ -646,7 +642,7 @@ fun LibraryArtists(
         itemContent = { _, artist ->
             SearchResultRow(
                 title = artist.name,
-                subtitle = stringResource(R.string.search_subtitle_artist),
+                subtitle = stringResource(Res.string.search_subtitle_artist),
                 imageUrl = artist.images.firstOrNull()?.url,
                 isCircle = true,
                 onClick = { onArtistClick(artist.id) }
@@ -677,12 +673,11 @@ fun LibraryTracks(
     val tracks = spotifyRepo.likedTracks
     val isSyncing = spotifyRepo.isSyncingLikedTracks
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val lazyListState = rememberLazyListState()
     var isScrollbarDragging by remember { mutableStateOf(false) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
-    val config = LocalConfiguration.current
-    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
 
     // Folded once when the list changes; each keystroke only sends the query. The album is in the
@@ -725,7 +720,7 @@ fun LibraryTracks(
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
                         Text(
-                            text = stringResource(R.string.library_no_liked),
+                            text = stringResource(Res.string.library_no_liked),
                             color = Color.Gray,
                             modifier = Modifier.align(Alignment.Center)
                         )
@@ -750,7 +745,7 @@ fun LibraryTracks(
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                 onAddToQueue(track)
-                                android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
+                                platform.toast(Res.string.added_to_queue)
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
                         }
@@ -866,13 +861,13 @@ fun LibraryLocalMusic(
     selectedGroup: String,
     onGroupSelected: (String) -> Unit
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val tracks = spotifyRepo.localTracks
     val isLoading = spotifyRepo.isScanningLocalTracks
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
 
-    val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+    val prefs = platform.prefs("rustify_settings")
     val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
     
     LaunchedEffect(localMusicDirs) {
@@ -907,16 +902,15 @@ fun LibraryLocalMusic(
         .groupBy({ it.first }, { it.second })
         .toList().sortedBy { it.first.lowercase().trim() }
 
-    val config = LocalConfiguration.current
-    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     val groupOptions = listOf(
-        stringResource(R.string.local_group_tracks) to "Tracks",
-        stringResource(R.string.local_group_albums) to "Albums",
-        stringResource(R.string.local_group_artists) to "Artists",
-        stringResource(R.string.local_group_folders) to "Folders",
-        stringResource(R.string.local_group_playlists) to "Playlists",
-        stringResource(R.string.local_group_favorites) to "Favorites"
+        stringResource(Res.string.local_group_tracks) to "Tracks",
+        stringResource(Res.string.local_group_albums) to "Albums",
+        stringResource(Res.string.local_group_artists) to "Artists",
+        stringResource(Res.string.local_group_folders) to "Folders",
+        stringResource(Res.string.local_group_playlists) to "Playlists",
+        stringResource(Res.string.local_group_favorites) to "Favorites"
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -943,13 +937,13 @@ fun LibraryLocalMusic(
         if (localMusicDirs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.library_local_not_configured), color = Color.Gray)
+                    Text(stringResource(Res.string.library_local_not_configured), color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = onOpenSettings,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                     ) {
-                        Text(stringResource(R.string.library_local_configure_btn), color = Color.White)
+                        Text(stringResource(Res.string.library_local_configure_btn), color = Color.White)
                     }
                 }
             }
@@ -963,7 +957,7 @@ fun LibraryLocalMusic(
             }
         } else if (filteredTracks.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.library_local_no_tracks), color = Color.Gray)
+                Text(stringResource(Res.string.library_local_no_tracks), color = Color.Gray)
             }
         } else when (selectedGroup) {
             "Tracks" -> {
@@ -1012,7 +1006,7 @@ fun LibraryLocalMusic(
                                 val sortedTracks = albumTracks.sortedBy { it.name.lowercase() }
                                 SearchResultRow(
                                     title = albumName,
-                                    subtitle = pluralStringResource(R.plurals.track_count, albumTracks.size, albumTracks.size),
+                                    subtitle = pluralStringResource(Res.plurals.track_count, albumTracks.size, albumTracks.size),
                                     imageUrl = albumTracks.firstOrNull()?.externalUri,
                                     onClick = {
                                         val localId = "local_album:$albumName"
@@ -1047,7 +1041,7 @@ fun LibraryLocalMusic(
                                 val sortedTracks = artistTracks.sortedBy { it.name.lowercase() }
                                 SearchResultRow(
                                     title = artistName,
-                                    subtitle = pluralStringResource(R.plurals.track_count, artistTracks.size, artistTracks.size),
+                                    subtitle = pluralStringResource(Res.plurals.track_count, artistTracks.size, artistTracks.size),
                                     imageUrl = artistTracks.firstOrNull()?.externalUri,
                                     isCircle = true,
                                     onClick = {
@@ -1081,30 +1075,19 @@ fun LibraryLocalMusic(
                 var showCreateDialog by remember { mutableStateOf(false) }
                 var newPlaylistName by remember { mutableStateOf("") }
                 var pendingDelete by remember { mutableStateOf<LocalPlaylist?>(null) }
-                val deletedMsg = stringResource(R.string.local_playlist_deleted)
-                val m3uContext = androidx.compose.ui.platform.LocalContext.current
-                val m3uScope = rememberCoroutineScope()
-                val importM3u = androidx.activity.compose.rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-                ) { uri ->
-                    if (uri == null) return@rememberLauncherForActivityResult
-                    m3uScope.launch {
-                        val outcome = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            runCatching {
-                                val text = m3uContext.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-                                val name = androidx.documentfile.provider.DocumentFile.fromSingleUri(m3uContext, uri)?.name
-                                    ?.substringBeforeLast('.')?.ifBlank { null } ?: "M3U"
-                                text to name
-                            }.getOrNull()
-                        }
-                        val msg = if (outcome == null) {
-                            m3uContext.getString(R.string.m3u_import_failed)
-                        } else {
-                            val (pl, missing) = spotifyRepo.importM3u(outcome.second, outcome.first)
-                            m3uContext.getString(R.string.m3u_imported, pl.trackIds.size, missing)
-                        }
-                        android.widget.Toast.makeText(m3uContext, msg, android.widget.Toast.LENGTH_LONG).show()
-                    }
+                val deletedMsg = stringResource(Res.string.local_playlist_deleted)
+                val m3uPlatform = com.varuna.rustify.ui.LocalAppPlatform.current
+                val importM3u = com.varuna.rustify.ui.rememberOpenTextFile(
+                    listOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")
+                ) { picked ->
+                    val read = picked ?: return@rememberOpenTextFile
+                    read.fold(
+                        onSuccess = { file ->
+                            val (pl, missing) = spotifyRepo.importM3u(file.name, file.text)
+                            m3uPlatform.toast(Res.string.m3u_imported, pl.trackIds.size, missing, long = true)
+                        },
+                        onFailure = { m3uPlatform.toast(Res.string.m3u_import_failed, long = true) },
+                    )
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -1124,7 +1107,7 @@ fun LibraryLocalMusic(
                                 Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1DB954))
                                 Spacer(Modifier.width(12.dp))
                                 Text(
-                                    stringResource(R.string.local_playlist_create),
+                                    stringResource(Res.string.local_playlist_create),
                                     color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium
                                 )
                             }
@@ -1133,14 +1116,14 @@ fun LibraryLocalMusic(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) }
+                                    .clickable { importM3u() }
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Icons.Default.FileOpen, contentDescription = null, tint = Color(0xFF1DB954))
                                 Spacer(Modifier.width(12.dp))
                                 Text(
-                                    stringResource(R.string.m3u_import),
+                                    stringResource(Res.string.m3u_import),
                                     color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium
                                 )
                             }
@@ -1175,13 +1158,13 @@ fun LibraryLocalMusic(
                 if (showCreateDialog) {
                     AlertDialog(
                         onDismissRequest = { showCreateDialog = false; newPlaylistName = "" },
-                        title = { Text(stringResource(R.string.local_playlist_create)) },
+                        title = { Text(stringResource(Res.string.local_playlist_create)) },
                         text = {
                             OutlinedTextField(
                                 value = newPlaylistName,
                                 onValueChange = { newPlaylistName = it },
                                 singleLine = true,
-                                placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                                placeholder = { Text(stringResource(Res.string.local_playlist_name_hint)) }
                             )
                         },
                         confirmButton = {
@@ -1191,11 +1174,11 @@ fun LibraryLocalMusic(
                                 }
                                 showCreateDialog = false
                                 newPlaylistName = ""
-                            }) { Text(stringResource(R.string.local_playlist_create_confirm)) }
+                            }) { Text(stringResource(Res.string.local_playlist_create_confirm)) }
                         },
                         dismissButton = {
                             TextButton(onClick = { showCreateDialog = false; newPlaylistName = "" }) {
-                                Text(stringResource(android.R.string.cancel))
+                                Text(stringResource(Res.string.cancel))
                             }
                         }
                     )
@@ -1204,18 +1187,18 @@ fun LibraryLocalMusic(
                 pendingDelete?.let { pl ->
                     AlertDialog(
                         onDismissRequest = { pendingDelete = null },
-                        title = { Text(stringResource(R.string.local_playlist_delete)) },
-                        text = { Text(stringResource(R.string.local_playlist_delete_msg)) },
+                        title = { Text(stringResource(Res.string.local_playlist_delete)) },
+                        text = { Text(stringResource(Res.string.local_playlist_delete_msg)) },
                         confirmButton = {
                             TextButton(onClick = {
                                 spotifyRepo.deleteLocalPlaylist(pl.id)
-                                android.widget.Toast.makeText(context, deletedMsg, android.widget.Toast.LENGTH_SHORT).show()
+                                platform.toast(deletedMsg)
                                 pendingDelete = null
-                            }) { Text(stringResource(R.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
+                            }) { Text(stringResource(Res.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
                         },
                         dismissButton = {
                             TextButton(onClick = { pendingDelete = null }) {
-                                Text(stringResource(android.R.string.cancel))
+                                Text(stringResource(Res.string.cancel))
                             }
                         }
                     )
@@ -1232,7 +1215,7 @@ fun LibraryLocalMusic(
                 val at = folderAt?.takeIf { LocalFolders.isUnder(it, root) } ?: root
                 val level = remember(pathById, at) { LocalFolders.level(filteredTracks, { pathById[it.id ?: ""] }, at) }
                 var pendingExclude by remember { mutableStateOf<LocalFolders.Folder?>(null) }
-                androidx.activity.compose.BackHandler(enabled = at != root) {
+                com.varuna.rustify.ui.PlatformBackHandler(enabled = at != root) {
                     folderAt = at.substringBeforeLast('/')
                 }
                 val foldersLazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -1250,7 +1233,7 @@ fun LibraryLocalMusic(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (at != root) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.Gray)
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.Gray)
                                 Spacer(Modifier.width(8.dp))
                             }
                             Text(
@@ -1272,10 +1255,10 @@ fun LibraryLocalMusic(
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(folder.name, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(pluralStringResource(R.plurals.track_count, folder.trackCount, folder.trackCount), color = Color.Gray, fontSize = 13.sp)
+                                Text(pluralStringResource(Res.plurals.track_count, folder.trackCount, folder.trackCount), color = Color.Gray, fontSize = 13.sp)
                             }
                             IconButton(onClick = { pendingExclude = folder }) {
-                                Icon(Icons.Default.VisibilityOff, contentDescription = stringResource(R.string.local_folder_exclude), tint = Color.Gray)
+                                Icon(Icons.Default.VisibilityOff, contentDescription = stringResource(Res.string.local_folder_exclude), tint = Color.Gray)
                             }
                         }
                     }
@@ -1295,16 +1278,16 @@ fun LibraryLocalMusic(
                 pendingExclude?.let { folder ->
                     AlertDialog(
                         onDismissRequest = { pendingExclude = null },
-                        title = { Text(stringResource(R.string.local_folder_exclude)) },
-                        text = { Text(stringResource(R.string.local_folder_exclude_msg, folder.name)) },
+                        title = { Text(stringResource(Res.string.local_folder_exclude)) },
+                        text = { Text(stringResource(Res.string.local_folder_exclude_msg, folder.name)) },
                         confirmButton = {
                             TextButton(onClick = {
                                 spotifyRepo.excludeLocalFolder(folder.path)
                                 pendingExclude = null
-                            }) { Text(stringResource(R.string.local_folder_exclude_confirm)) }
+                            }) { Text(stringResource(Res.string.local_folder_exclude_confirm)) }
                         },
                         dismissButton = {
-                            TextButton(onClick = { pendingExclude = null }) { Text(stringResource(android.R.string.cancel)) }
+                            TextButton(onClick = { pendingExclude = null }) { Text(stringResource(Res.string.cancel)) }
                         }
                     )
                 }
@@ -1337,7 +1320,7 @@ fun LibraryLocalMusic(
                     }
                     if (favs.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.local_favorites_empty), color = Color.Gray)
+                            Text(stringResource(Res.string.local_favorites_empty), color = Color.Gray)
                         }
                     }
                     VerticalScrollbarWithTooltip(
@@ -1427,8 +1410,7 @@ fun <T> LibraryContentList(
         }
     }
 
-    val config = LocalConfiguration.current
-    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
     val bottomPadding = if (isLandscape) 16.dp else 100.dp
     
     Column(modifier = Modifier.fillMaxSize()) {
@@ -1458,7 +1440,7 @@ fun <T> LibraryContentList(
                         onClick = onRetry,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                     ) {
-                        Text(stringResource(R.string.general_retry), color = Color.White)
+                        Text(stringResource(Res.string.general_retry), color = Color.White)
                     }
                 }
             } else if (filteredItems != null) {
@@ -1540,7 +1522,7 @@ private fun LocalPlaylistRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = pluralStringResource(R.plurals.track_count, playlist.trackIds.size, playlist.trackIds.size),
+                text = pluralStringResource(Res.plurals.track_count, playlist.trackIds.size, playlist.trackIds.size),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.LightGray,
                 maxLines = 1
@@ -1552,7 +1534,7 @@ private fun LocalPlaylistRow(
         ) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = stringResource(R.string.local_playlist_delete),
+                contentDescription = stringResource(Res.string.local_playlist_delete),
                 tint = Color.LightGray
             )
         }

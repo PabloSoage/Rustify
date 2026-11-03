@@ -48,8 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,7 +56,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.YtmSearchResults
@@ -137,11 +136,11 @@ fun YtMusicLibraryContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val chips = listOf(
-                YtmLibSection.EXPLORE to R.string.ytm_tab_explore,
-                YtmLibSection.FAVORITES to R.string.ytm_tab_favorites,
-                YtmLibSection.PLAYLISTS to R.string.ytm_tab_playlists,
-                YtmLibSection.ALBUMS to R.string.ytm_tab_albums,
-                YtmLibSection.ARTISTS to R.string.ytm_tab_artists
+                YtmLibSection.EXPLORE to Res.string.ytm_tab_explore,
+                YtmLibSection.FAVORITES to Res.string.ytm_tab_favorites,
+                YtmLibSection.PLAYLISTS to Res.string.ytm_tab_playlists,
+                YtmLibSection.ALBUMS to Res.string.ytm_tab_albums,
+                YtmLibSection.ARTISTS to Res.string.ytm_tab_artists
             )
             items(chips.size) { i ->
                 val (s, label) = chips[i]
@@ -208,7 +207,7 @@ private fun YtmBrowseHome(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    stringResource(R.string.ytm_home_browse),
+                    stringResource(Res.string.ytm_home_browse),
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp,
                     modifier = Modifier.weight(1f)
                 )
@@ -251,7 +250,7 @@ private fun YtmHomeRowView(
                 val playing = currentTrackId == "ytm:${t.videoId}"
                 Column(Modifier.width(140.dp).clickable { onTrackClick(full, i) }) {
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
+                        model = ImageRequest.Builder(coil3.compose.LocalPlatformContext.current)
                             .data(t.thumbnailUrl)
                             .crossfade(true)
                             .size(420)
@@ -282,7 +281,7 @@ private fun FavoritesSection(
 ) {
     val favorites = repo.favorites
     if (favorites.isEmpty()) {
-        EmptyMessage(stringResource(R.string.ytm_no_favorites)); return
+        EmptyMessage(stringResource(Res.string.ytm_no_favorites)); return
     }
     val full = favorites.map { it.toFullTrack() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
@@ -307,7 +306,7 @@ private fun PlaylistsSection(
     repo: YtMusicRepository,
     onOpenLocalPlaylist: (String) -> Unit
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var showDialog by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     val playlists = repo.playlists
@@ -320,12 +319,12 @@ private fun PlaylistsSection(
             ) {
                 Icon(Icons.Default.Add, null, tint = Green)
                 Spacer(Modifier.width(12.dp))
-                Text(stringResource(R.string.ytm_create_playlist), color = Color.White,
+                Text(stringResource(Res.string.ytm_create_playlist), color = Color.White,
                     fontWeight = FontWeight.Medium)
             }
         }
         if (playlists.isEmpty()) {
-            item { EmptyMessage(stringResource(R.string.ytm_no_playlists)) }
+            item { EmptyMessage(stringResource(Res.string.ytm_no_playlists)) }
         } else {
             items(playlists.toList(), key = { it.localId }) { pl ->
                 Row(
@@ -364,7 +363,7 @@ private fun PlaylistsSection(
                             style = MaterialTheme.typography.bodyMedium)
                     }
                     IconButton(onClick = { repo.deletePlaylist(pl.localId) }) {
-                        Icon(Icons.Default.Delete, stringResource(R.string.ytm_delete), tint = Color.Gray)
+                        Icon(Icons.Default.Delete, stringResource(Res.string.ytm_delete), tint = Color.Gray)
                     }
                 }
             }
@@ -374,11 +373,11 @@ private fun PlaylistsSection(
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false; name = "" },
-            title = { Text(stringResource(R.string.ytm_create_playlist)) },
+            title = { Text(stringResource(Res.string.ytm_create_playlist)) },
             text = {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it }, singleLine = true,
-                    placeholder = { Text(stringResource(R.string.ytm_playlist_name_hint)) },
+                    placeholder = { Text(stringResource(Res.string.ytm_playlist_name_hint)) },
                     colors = TextFieldDefaults.colors(cursorColor = Green)
                 )
             },
@@ -386,14 +385,14 @@ private fun PlaylistsSection(
                 TextButton(onClick = {
                     if (name.isNotBlank()) {
                         repo.createPlaylist(name.trim())
-                        context.ytmToast(R.string.ytm_playlist_created)
+                        platform.ytmToast(Res.string.ytm_playlist_created)
                     }
                     name = ""; showDialog = false
-                }) { Text(stringResource(R.string.ytm_create_playlist), color = Green) }
+                }) { Text(stringResource(Res.string.ytm_create_playlist), color = Green) }
             },
             dismissButton = {
                 TextButton(onClick = { showDialog = false; name = "" }) {
-                    Text(stringResource(android.R.string.cancel))
+                    Text(stringResource(Res.string.cancel))
                 }
             }
         )
@@ -406,7 +405,7 @@ private fun AlbumsSection(
     onOpenAlbum: (String, String) -> Unit
 ) {
     val albums = repo.savedAlbums
-    if (albums.isEmpty()) { EmptyMessage(stringResource(R.string.ytm_no_albums)); return }
+    if (albums.isEmpty()) { EmptyMessage(stringResource(Res.string.ytm_no_albums)); return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
         items(albums.toList(), key = { it.browseId }) { a ->
             YtmResultRow(
@@ -414,7 +413,7 @@ private fun AlbumsSection(
                 isCircle = false,
                 trailing = {
                     IconButton(onClick = { repo.toggleSavedAlbum(a) }) {
-                        Icon(Icons.Default.Delete, stringResource(R.string.ytm_delete), tint = Color.Gray)
+                        Icon(Icons.Default.Delete, stringResource(Res.string.ytm_delete), tint = Color.Gray)
                     }
                 },
                 onClick = { onOpenAlbum(a.browseId, a.title) }
@@ -429,15 +428,15 @@ private fun ArtistsSection(
     onOpenArtist: (String, String) -> Unit
 ) {
     val artists = repo.savedArtists
-    if (artists.isEmpty()) { EmptyMessage(stringResource(R.string.ytm_no_artists)); return }
+    if (artists.isEmpty()) { EmptyMessage(stringResource(Res.string.ytm_no_artists)); return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
         items(artists.toList(), key = { it.id }) { a ->
             YtmResultRow(
-                title = a.name, subtitle = stringResource(R.string.ytm_artist_detail),
+                title = a.name, subtitle = stringResource(Res.string.ytm_artist_detail),
                 imageUrl = null, isCircle = true,
                 trailing = {
                     IconButton(onClick = { repo.toggleSavedArtist(a) }) {
-                        Icon(Icons.Default.Delete, stringResource(R.string.ytm_delete), tint = Color.Gray)
+                        Icon(Icons.Default.Delete, stringResource(Res.string.ytm_delete), tint = Color.Gray)
                     }
                 },
                 onClick = { onOpenArtist(a.id, a.name) }
@@ -475,14 +474,14 @@ private fun ExploreSection(
     }
     if (results == null || results.isEmpty()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
-            Text(stringResource(R.string.ytm_no_results), color = Color.Gray)
+            Text(stringResource(Res.string.ytm_no_results), color = Color.Gray)
         }
         return
     }
     val r = results
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
         if (r.tracks.isNotEmpty() && (resultFilter == "all" || resultFilter == "tracks")) {
-            item { YtmSectionHeader(stringResource(R.string.ytm_section_tracks)) }
+            item { YtmSectionHeader(stringResource(Res.string.ytm_section_tracks)) }
             itemsIndexed(r.tracks) { i, t ->
                 YtmTrackListItem(
                     track = t, index = i, currentTrackId = currentTrackId,
@@ -498,7 +497,7 @@ private fun ExploreSection(
             }
         }
         if (r.albums.isNotEmpty() && (resultFilter == "all" || resultFilter == "albums")) {
-            item { YtmSectionHeader(stringResource(R.string.ytm_section_albums)) }
+            item { YtmSectionHeader(stringResource(Res.string.ytm_section_albums)) }
             items(r.albums) { a ->
                 YtmResultRow(a.title, a.year?.toString() ?: "", a.thumbnailUrl, false) {
                     onOpenAlbum(a.browseId, a.title)
@@ -506,15 +505,15 @@ private fun ExploreSection(
             }
         }
         if (r.artists.isNotEmpty() && (resultFilter == "all" || resultFilter == "artists")) {
-            item { YtmSectionHeader(stringResource(R.string.ytm_section_artists)) }
+            item { YtmSectionHeader(stringResource(Res.string.ytm_section_artists)) }
             items(r.artists) { a ->
-                YtmResultRow(a.name, stringResource(R.string.ytm_artist_detail), null, true) {
+                YtmResultRow(a.name, stringResource(Res.string.ytm_artist_detail), null, true) {
                     onOpenArtist(a.id, a.name)
                 }
             }
         }
         if (r.playlists.isNotEmpty() && (resultFilter == "all" || resultFilter == "playlists")) {
-            item { YtmSectionHeader(stringResource(R.string.ytm_section_playlists)) }
+            item { YtmSectionHeader(stringResource(Res.string.ytm_section_playlists)) }
             items(r.playlists) { p ->
                 YtmResultRow(p.title, p.author ?: "", p.thumbnailUrl, false) {
                     onOpenPlaylist(p.playlistId, p.title)

@@ -1,8 +1,7 @@
 package com.varuna.rustify.ui.screens
 
-import android.content.Context
-import android.widget.Toast
-import androidx.annotation.StringRes
+import com.varuna.rustify.ui.toast
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,14 +64,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.YtmAlbum
@@ -120,7 +118,7 @@ fun YtMusicSearchScreen(
     onPlaylist: (playlistId: String, title: String) -> Unit,
     currentTrackId: String?
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<YtmSearchResults?>(null) }
@@ -129,15 +127,9 @@ fun YtMusicSearchScreen(
 
     // Paste a YTM link from the clipboard and navigate (mirror of Spotify's "+" button).
     fun pasteYtmLink() {
-        val pasted = try {
-            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-        } catch (e: Exception) {
-            android.util.Log.w("YtMusicSearchScreen", "Clipboard read failed: ${e.message}")
-            null
-        }
+        val pasted = platform.readClipboard()
         if (pasted.isNullOrBlank()) {
-            Toast.makeText(context, R.string.paste_clipboard_empty, Toast.LENGTH_SHORT).show()
+            platform.toast(Res.string.paste_clipboard_empty)
             return
         }
         when (val link = LinkTarget.parse(pasted)) {
@@ -155,7 +147,7 @@ fun YtMusicSearchScreen(
             is LinkTarget.YtmArtist -> onArtist(link.id, "")
             is LinkTarget.YtmPlaylist -> onPlaylist(link.id, "")
             // A Spotify link is a link, just not one this screen can open.
-            else -> Toast.makeText(context, R.string.paste_no_ytm_link, Toast.LENGTH_SHORT).show()
+            else -> platform.toast(Res.string.paste_no_ytm_link)
         }
     }
 
@@ -176,10 +168,10 @@ fun YtMusicSearchScreen(
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.ytm_title), color = Color.White, maxLines = 1) },
+                title = { Text(stringResource(Res.string.ytm_title), color = Color.White, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = YtmDark)
@@ -192,7 +184,7 @@ fun YtMusicSearchScreen(
                 onValueChange = { query = it; runSearch(it) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 shape = RoundedCornerShape(24.dp),
-                placeholder = { Text(stringResource(R.string.ytm_search_placeholder), color = Color.Gray) },
+                placeholder = { Text(stringResource(Res.string.ytm_search_placeholder), color = Color.Gray) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -202,7 +194,7 @@ fun YtMusicSearchScreen(
                     } else {
                         // Paste a YTM link from the clipboard.
                         IconButton(onClick = { pasteYtmLink() }) {
-                            Icon(Icons.Default.Add, stringResource(R.string.ytm_paste_link), tint = Color.White)
+                            Icon(Icons.Default.Add, stringResource(Res.string.ytm_paste_link), tint = Color.White)
                         }
                     }
                 },
@@ -225,17 +217,17 @@ fun YtMusicSearchScreen(
                     CircularProgressIndicator(color = YtmGreen)
                 }
                 results == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text(stringResource(R.string.ytm_search_empty), color = Color.Gray,
+                    Text(stringResource(Res.string.ytm_search_empty), color = Color.Gray,
                         modifier = Modifier.padding(24.dp))
                 }
                 results!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text(stringResource(R.string.ytm_no_results), color = Color.Gray)
+                    Text(stringResource(Res.string.ytm_no_results), color = Color.Gray)
                 }
                 else -> {
                     val r = results!!
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 100.dp)) {
                         if (r.tracks.isNotEmpty()) {
-                            item { YtmSectionHeader(stringResource(R.string.ytm_section_tracks)) }
+                            item { YtmSectionHeader(stringResource(Res.string.ytm_section_tracks)) }
                             itemsIndexed(r.tracks) { i, t ->
                                 YtmTrackListItem(
                                     track = t, index = i, currentTrackId = currentTrackId,
@@ -246,7 +238,7 @@ fun YtMusicSearchScreen(
                             }
                         }
                         if (r.albums.isNotEmpty()) {
-                            item { YtmSectionHeader(stringResource(R.string.ytm_section_albums)) }
+                            item { YtmSectionHeader(stringResource(Res.string.ytm_section_albums)) }
                             items(r.albums) { a ->
                                 YtmResultRow(a.title, a.year?.toString() ?: "", a.thumbnailUrl, false) {
                                     onAlbum(a.browseId, a.title)
@@ -254,15 +246,15 @@ fun YtMusicSearchScreen(
                             }
                         }
                         if (r.artists.isNotEmpty()) {
-                            item { YtmSectionHeader(stringResource(R.string.ytm_section_artists)) }
+                            item { YtmSectionHeader(stringResource(Res.string.ytm_section_artists)) }
                             items(r.artists) { a ->
-                                YtmResultRow(a.name, stringResource(R.string.ytm_artist_detail), null, true) {
+                                YtmResultRow(a.name, stringResource(Res.string.ytm_artist_detail), null, true) {
                                     onArtist(a.id, a.name)
                                 }
                             }
                         }
                         if (r.playlists.isNotEmpty()) {
-                            item { YtmSectionHeader(stringResource(R.string.ytm_section_playlists)) }
+                            item { YtmSectionHeader(stringResource(Res.string.ytm_section_playlists)) }
                             items(r.playlists) { p ->
                                 YtmResultRow(p.title, p.author ?: "", p.thumbnailUrl, false) {
                                     onPlaylist(p.playlistId, p.title)
@@ -293,14 +285,14 @@ fun YtMusicAlbumScreen(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String?
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var data by remember { mutableStateOf<YtmAlbum?>(null) }
     var loading by remember { mutableStateOf(true) }
     var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(browseId, attempt) { loading = true; data = repo.getAlbum(browseId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmAlbum(browseId).canonicalUrl)
+        ShareUtils.shareYtmLink(platform, LinkTarget.YtmAlbum(browseId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -318,7 +310,7 @@ fun YtMusicAlbumScreen(
                             onSave = {
                                 val wasSaved = repo.isAlbumSaved(browseId)
                                 repo.toggleSavedAlbum(YtmAlbumSlim(browseId, d.title, d.year, d.thumbnailUrl))
-                                context.ytmToast(if (wasSaved) R.string.ytm_removed_album else R.string.ytm_saved_album)
+                                platform.ytmToast(if (wasSaved) Res.string.ytm_removed_album else Res.string.ytm_saved_album)
                             },
                             onPlayAll = { onTrackClick(d.tracks.toFullTracks(), 0) }
                         )
@@ -352,14 +344,14 @@ fun YtMusicArtistScreen(
     onAlbum: (browseId: String, title: String) -> Unit,
     currentTrackId: String?
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var data by remember { mutableStateOf<YtmArtist?>(null) }
     var loading by remember { mutableStateOf(true) }
     var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(channelId, attempt) { loading = true; data = repo.getArtist(channelId); loading = false }
 
     YtmDetailScaffold(name, onBack, onShare = {
-        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmArtist(channelId).canonicalUrl)
+        ShareUtils.shareYtmLink(platform, LinkTarget.YtmArtist(channelId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -376,7 +368,7 @@ fun YtMusicArtistScreen(
                             onSave = {
                                 val wasSaved = repo.isArtistSaved(channelId)
                                 repo.toggleSavedArtist(YtmArtistRef(channelId, d.name))
-                                context.ytmToast(if (wasSaved) R.string.ytm_removed_artist else R.string.ytm_saved_artist)
+                                platform.ytmToast(if (wasSaved) Res.string.ytm_removed_artist else Res.string.ytm_saved_artist)
                             },
                             onPlayAll = if (d.topTracks.isNotEmpty()) {
                                 { onTrackClick(d.topTracks.toFullTracks(), 0) }
@@ -384,7 +376,7 @@ fun YtMusicArtistScreen(
                         )
                     }
                     if (d.topTracks.isNotEmpty()) {
-                        item { YtmSectionHeader(stringResource(R.string.ytm_top_tracks)) }
+                        item { YtmSectionHeader(stringResource(Res.string.ytm_top_tracks)) }
                         itemsIndexed(d.topTracks) { i, t ->
                             YtmTrackListItem(
                                 track = t, index = i, currentTrackId = currentTrackId,
@@ -395,7 +387,7 @@ fun YtMusicArtistScreen(
                         }
                     }
                     if (d.albums.isNotEmpty()) {
-                        item { YtmSectionHeader(stringResource(R.string.ytm_section_albums)) }
+                        item { YtmSectionHeader(stringResource(Res.string.ytm_section_albums)) }
                         items(d.albums) { a ->
                             YtmResultRow(a.title, a.year?.toString() ?: "", a.thumbnailUrl, false) {
                                 onAlbum(a.browseId, a.title)
@@ -422,14 +414,14 @@ fun YtMusicPlaylistScreen(
     onTrackClick: (List<FullTrack>, Int) -> Unit,
     currentTrackId: String?
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var data by remember { mutableStateOf<YtmPlaylist?>(null) }
     var loading by remember { mutableStateOf(true) }
     var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(playlistId, attempt) { loading = true; data = repo.getPlaylist(playlistId); loading = false }
 
     YtmDetailScaffold(title, onBack, onShare = {
-        ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmPlaylist(playlistId).canonicalUrl)
+        ShareUtils.shareYtmLink(platform, LinkTarget.YtmPlaylist(playlistId).canonicalUrl)
     }) { padding ->
         when {
             loading -> YtmLoading(padding)
@@ -527,13 +519,13 @@ private fun YtmDetailScaffold(
                 title = { Text(title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {
                     if (onShare != null) {
                         IconButton(onClick = onShare) {
-                            Icon(Icons.Default.Share, stringResource(R.string.ytm_share), tint = Color.White)
+                            Icon(Icons.Default.Share, stringResource(Res.string.ytm_share), tint = Color.White)
                         }
                     }
                 },
@@ -554,7 +546,7 @@ private fun YtmLoading(padding: PaddingValues) {
 @Composable
 private fun YtmNotFound(padding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-        Text(stringResource(R.string.ytm_not_found), color = Color.Gray)
+        Text(stringResource(Res.string.ytm_not_found), color = Color.Gray)
     }
 }
 
@@ -566,13 +558,13 @@ private fun YtmError(padding: PaddingValues, onRetry: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(24.dp)
         ) {
-            Text(stringResource(R.string.ytm_load_error), color = Color.Gray)
+            Text(stringResource(Res.string.ytm_load_error), color = Color.Gray)
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onRetry,
                 colors = ButtonDefaults.buttonColors(containerColor = YtmGreen)
             ) {
-                Text(stringResource(R.string.ytm_retry), color = Color.Black)
+                Text(stringResource(Res.string.ytm_retry), color = Color.Black)
             }
         }
     }
@@ -605,9 +597,9 @@ fun YtmTrackListItem(
     onOpenArtist: ((String, String) -> Unit)? = null,
     onOpenAlbum: ((String, String) -> Unit)? = null
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val full = remember(track) { track.toFullTrack() }
-    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    val prefs = platform.prefs("rustify_settings")
     val shareAsRustify = prefs.getBoolean("share_as_rustify_link", false)
     var showMenu by remember { mutableStateOf(false) }
 
@@ -629,21 +621,21 @@ fun YtmTrackListItem(
         ) {
             if (onAddToQueue != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_add_queue)) },
+                    text = { Text(stringResource(Res.string.track_menu_add_queue)) },
                     onClick = { showMenu = false; onAddToQueue() },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) }
                 )
             }
             if (onGoToQueue != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_go_queue)) },
+                    text = { Text(stringResource(Res.string.track_menu_go_queue)) },
                     onClick = { showMenu = false; onGoToQueue() },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) }
                 )
             }
             if (onAddToPlaylist != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_add_playlist)) },
+                    text = { Text(stringResource(Res.string.track_menu_add_playlist)) },
                     onClick = { showMenu = false; onAddToPlaylist() },
                     leadingIcon = { Icon(Icons.Default.Add, null) }
                 )
@@ -651,7 +643,7 @@ fun YtmTrackListItem(
             if (track.artists.isNotEmpty() && onOpenArtist != null) {
                 val a = track.artists.first()
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_options_view_artist)) },
+                    text = { Text(stringResource(Res.string.track_options_view_artist)) },
                     onClick = { showMenu = false; onOpenArtist(a.id, a.name) },
                     leadingIcon = { Icon(Icons.Default.Person, null) }
                 )
@@ -659,46 +651,46 @@ fun YtmTrackListItem(
             val albumId = track.albumId
             if (albumId != null && onOpenAlbum != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_go_album)) },
+                    text = { Text(stringResource(Res.string.track_menu_go_album)) },
                     onClick = { showMenu = false; onOpenAlbum(albumId, "") },
                     leadingIcon = { Icon(Icons.Default.Album, null) }
                 )
             }
-            val downloadUriStr = prefs.getString("download_directory", null)
+            val services = com.varuna.rustify.ui.LocalAppServices.current
+            val downloadUriStr = prefs.getString("download_directory")
             if (downloadUriStr != null) {
-                val downloadingStr = stringResource(R.string.track_menu_getting_url)
+                val downloadingStr = stringResource(Res.string.track_menu_getting_url)
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_download)) },
+                    text = { Text(stringResource(Res.string.track_menu_download)) },
                     onClick = {
                         showMenu = false
-                        com.varuna.rustify.bridge.DownloadManager.enqueueDownload(
-                            context = context,
+                        services.enqueueDownload(
                             trackId = full.id ?: return@DropdownMenuItem,
                             trackName = full.name,
                             trackArtist = full.artists.joinToString(", ") { it.name },
                             downloadUriStr = downloadUriStr,
                             track = full
                         )
-                        Toast.makeText(context, downloadingStr, Toast.LENGTH_SHORT).show()
+                        platform.toast(downloadingStr)
                     },
                     leadingIcon = { Icon(Icons.Default.Download, null) }
                 )
             }
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.track_menu_share)) },
+                text = { Text(stringResource(Res.string.track_menu_share)) },
                 onClick = {
                     showMenu = false
-                    ShareUtils.shareYtmLink(com.varuna.rustify.ui.AndroidAppPlatform(context), LinkTarget.YtmTrack(track.videoId).canonicalUrl)
+                    ShareUtils.shareYtmLink(platform, LinkTarget.YtmTrack(track.videoId).canonicalUrl)
                 },
                 leadingIcon = { Icon(Icons.Default.Share, null) }
             )
             if (shareAsRustify) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.track_menu_share_rustify)) },
+                    text = { Text(stringResource(Res.string.track_menu_share_rustify)) },
                     onClick = {
                         showMenu = false
                         ShareUtils.shareRustifyUrl(
-                            com.varuna.rustify.ui.AndroidAppPlatform(context),
+                            platform,
                             url = LinkTarget.YtmTrack(track.videoId).canonicalUrl,
                             title = track.title,
                             subtitle = track.artists.joinToString(", ") { it.name },
@@ -798,7 +790,7 @@ private fun YtmDetailHeader(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            stringResource(if (isSaved) R.string.ytm_unsave else R.string.ytm_save),
+                            stringResource(if (isSaved) Res.string.ytm_unsave else Res.string.ytm_save),
                             color = if (isSaved) Color.Black else Color.White
                         )
                     }
@@ -813,7 +805,7 @@ private fun YtmDetailHeader(
             ) {
                 Icon(Icons.Default.PlayArrow, null, tint = Color.Black)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ytm_play_all), color = Color.Black)
+                Text(stringResource(Res.string.ytm_play_all), color = Color.Black)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -821,6 +813,4 @@ private fun YtmDetailHeader(
 }
 
 /** Short, localized save/favorite feedback. Kept here so all YTM screens share it. */
-internal fun Context.ytmToast(@StringRes msg: Int) {
-    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-}
+fun com.varuna.rustify.ui.AppPlatform.ytmToast(msg: StringResource) = toast(msg)
