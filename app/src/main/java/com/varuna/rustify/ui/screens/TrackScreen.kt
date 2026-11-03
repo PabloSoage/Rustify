@@ -392,7 +392,7 @@ fun TrackScreen(
 
     LaunchedEffect(trackToShow?.id) {
         val track = trackToShow ?: return@LaunchedEffect
-        if (track.id == null) return@LaunchedEffect
+        val trackId = track.id ?: return@LaunchedEffect
 
         // First check if preloaded lyrics are already available for this track
         val cached = preloadedLyrics
@@ -409,7 +409,7 @@ fun TrackScreen(
         try {
             lyricsResult = LyricsRepository.getLyrics(
                 context = context,
-                trackId = track.id,
+                trackId = trackId,
                 artist = artist,
                 title = track.name,
                 durationSec = durationSec
@@ -743,9 +743,10 @@ fun TrackScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         TextButton(onClick = {
-                                            val inQueue = playerState.queue.any { it.id == trackToShow.id }
-                                            if (inQueue && trackToShow.id != null) {
-                                                audioPlayerService.playSpecificTrackInQueue(trackToShow.id)
+                                            val showId = trackToShow.id
+                                            val inQueue = playerState.queue.any { it.id == showId }
+                                            if (inQueue && showId != null) {
+                                                audioPlayerService.playSpecificTrackInQueue(showId)
                                             } else {
                                                 audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow.id)
                                             }
@@ -1490,9 +1491,10 @@ fun TrackScreenControls(
                             if (isCurrentTrack) {
                                 audioPlayerService.togglePlayPause()
                             } else {
-                                val inQueue = playerState.queue.any { it.id == track.id }
-                                if (inQueue && track.id != null) {
-                                    audioPlayerService.playSpecificTrackInQueue(track.id)
+                                val id = track.id
+                                val inQueue = playerState.queue.any { it.id == id }
+                                if (inQueue && id != null) {
+                                    audioPlayerService.playSpecificTrackInQueue(id)
                                 } else {
                                     audioPlayerService.loadAndPlay(track)
                                 }

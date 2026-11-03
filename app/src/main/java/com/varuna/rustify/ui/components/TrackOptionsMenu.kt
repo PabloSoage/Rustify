@@ -562,8 +562,8 @@ fun TrackOptionsMenuBottomSheet(
                     onClick = { showLyricsOffsetDialog = true }
                 )
 
-                if (track.album != null && !isYtmTrack) {
-                    val album = track.album
+                val album = track.album
+                if (album != null && !isYtmTrack) {
                     MenuOptionItem(
                         icon = Icons.Default.Album,
                         label = stringResource(R.string.track_menu_go_album),

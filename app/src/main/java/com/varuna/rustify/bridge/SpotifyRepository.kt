@@ -559,10 +559,10 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                 while (true) {
                     val page = fetchItems(limit, offset)
                     allItems.addAll(page.items)
-                    if (page.hasMore && page.nextOffset != null) {
+                    val newOffset = page.nextOffset
+                    if (page.hasMore && newOffset != null) {
                         // Use server-provided nextOffset to avoid infinite loop when
                         // client-side filtering discards items (e.g. PlaylistResponseWrapper filter)
-                        val newOffset = page.nextOffset
                         if (newOffset <= offset) break  // safety: offset didn't advance
                         offset = newOffset
                     } else {
