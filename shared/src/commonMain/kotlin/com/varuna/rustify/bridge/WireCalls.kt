@@ -29,7 +29,7 @@ inline fun <reified T> decodeCheckedWire(json: String): T {
 
 /**
  * Every page of a paged list, joined. A screen's list is how far someone scrolled; anything that
- * decides about the whole playlist asks for the whole playlist (`CLAUDE.md`, "A paged list is not
+ * decides about the whole playlist asks for the whole playlist ("a paged list is not
  * the list").
  *
  * The server's `nextOffset` is followed rather than `offset + limit`, because client-side filtering
