@@ -1,6 +1,7 @@
+// shared/src/commonMain/kotlin/com/varuna/rustify/bridge/LyricsInContext.kt
 package com.varuna.rustify.bridge
 
-import java.util.Locale
+import com.varuna.rustify.platform.languageNameInEnglish
 
 /**
  * Lyrics translated with the whole song in view (4.9), by the on-device model the DJ already uses.
@@ -23,7 +24,7 @@ object LyricsInContext {
     const val MAX_CONTEXT_CHARS = 3_000
 
     fun languageName(code: String): String =
-        Locale.forLanguageTag(code).getDisplayLanguage(Locale.ENGLISH).ifBlank { code }
+        languageNameInEnglish(code).ifBlank { code }
 
     /**
      * The prompt for one block. [block] holds (number, line) pairs; the numbers are what the answer

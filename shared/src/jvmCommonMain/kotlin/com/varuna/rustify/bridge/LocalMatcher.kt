@@ -1,7 +1,15 @@
 package com.varuna.rustify.bridge
 
-import org.json.JSONArray
-import org.json.JSONObject
+import com.varuna.rustify.platform.Log
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * Deciding whether a file on this phone *is* a given Spotify track — the Kotlin half of
@@ -58,23 +66,25 @@ object LocalMatcher {
     }
 
     fun register(tracks: List<FullTrack>) {
-        val items = JSONArray()
-        for (track in tracks) {
-            val id = track.id ?: continue
-            items.put(
-                JSONObject().apply {
-                    put("id", id)
-                    put("name", track.name)
-                    put("artists", JSONArray().apply { track.artists.forEach { put(it.name) } })
-                    put("isrc", track.isrc)
-                    put("durationMs", track.durationMs)
-                }
-            )
+        val items = buildJsonArray {
+            for (track in tracks) {
+                val id = track.id ?: continue
+                add(payloadOf(track, id))
+            }
         }
         runCatching { NativeEngine.indexLocalTracksNative(items.toString()) }
             .onFailure {
-                android.util.Log.w(TAG, "could not register ${items.length()} local tracks", it)
+                Log.w(TAG, "could not register ${items.size} local tracks", it)
             }
+    }
+
+    /** What the core reads for one track (`matcher::local`), registered or asked about. */
+    private fun payloadOf(track: FullTrack, id: String): JsonObject = buildJsonObject {
+        put("id", id)
+        put("name", track.name)
+        putJsonArray("artists") { track.artists.forEach { add(it.name) } }
+        put("isrc", track.isrc)
+        put("durationMs", track.durationMs)
     }
 
     /**
@@ -84,18 +94,17 @@ object LocalMatcher {
      * to the caller: play it the way you would have anyway.
      */
     fun matchId(track: FullTrack): String? {
-        val payload = JSONObject().apply {
-            put("id", track.id ?: "")
-            put("name", track.name)
-            put("artists", JSONArray().apply { track.artists.forEach { put(it.name) } })
-            put("isrc", track.isrc)
-            put("durationMs", track.durationMs)
-        }
+        val payload = payloadOf(track, track.id ?: "")
         return runCatching {
-            val answer = JSONObject(NativeEngine.findLocalMatchNative(payload.toString()))
-            answer.optString("id").takeIf { it.isNotBlank() }
+            val answer = Json.parseToJsonElement(NativeEngine.findLocalMatchNative(payload.toString())) as? JsonObject
+            // org.json's optString("id"), which this read before 5.x: absent or null is no match.
+            when (val id = answer?.get("id")) {
+                null, JsonNull -> null
+                is JsonPrimitive -> id.content.takeIf { it.isNotBlank() }
+                else -> null
+            }
         }.getOrElse {
-            android.util.Log.w(TAG, "local match lookup failed for ${track.id}", it)
+            Log.w(TAG, "local match lookup failed for ${track.id}", it)
             null
         }
     }

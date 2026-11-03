@@ -15,3 +15,6 @@ actual fun normalizeNfc(s: String): String = (s as NSString).precomposedStringWi
 
 /** No `java.io` here: transport failures from the core arrive as answers, not exceptions. */
 actual fun isIoException(t: Throwable): Boolean = false
+
+actual fun languageNameInEnglish(code: String): String =
+    NSLocale(localeIdentifier = "en").localizedStringForLanguageCode(code) ?: ""
