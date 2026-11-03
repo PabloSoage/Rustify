@@ -19,6 +19,8 @@ pub mod autoeq;
 pub mod dsp;
 #[cfg(feature = "engine")]
 pub mod engine;
+#[cfg(feature = "c-api")]
+pub mod ffi;
 pub mod tempo;
 pub mod tonal;
 pub mod calendar;

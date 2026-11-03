@@ -21,6 +21,10 @@ engine = ["dep:symphonia"]
 # The engine plus a real device through cpal (WASAPI, ALSA/PipeWire, CoreAudio) and its JNI bridges
 # for the desktop JVM app. What `desktopApp`'s build of the core turns on.
 desktop-audio = ["engine", "dep:cpal"]
+# The C ABI (`src/ffi.rs`, `include/rustify.h`) for iOS and anything else that is not a JVM. Built as a
+# static library with `cargo rustc --crate-type staticlib` (tools/ios/build-core.sh) rather than by
+# adding `staticlib` to crate-type, which would build an unused `.a` on every Android build too.
+c-api = []
 
 [dependencies]
 # JNI bridge with Android
