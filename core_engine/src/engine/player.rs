@@ -158,6 +158,7 @@ impl<E: Env> Player<E> {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
+            self.follow_output_format();
             self.pump();
             self.track_progress();
         }
@@ -393,6 +394,31 @@ impl<E: Env> Player<E> {
         Ok(())
     }
 
+    /// The output moved to a device at another rate (it reopens on its own when the device is lost
+    /// or the default changes): convert to the new one from where the listener is. What the ring
+    /// held was made for the old rate, so it is dropped and that place decoded again — the seek does
+    /// both, and the resamplers rebuild themselves against the new format.
+    fn follow_output_format(&mut self) {
+        let (Some(now), Some(was)) = (self.output.current_format(), self.format) else {
+            return;
+        };
+        if now == was {
+            return;
+        }
+        let heard_ms = match (self.segments.front(), self.producer.as_ref()) {
+            (Some(seg), Some(p)) => {
+                let frames = p.played().saturating_sub(seg.start_sample) / was.channels.max(1);
+                seg.base_ms + frames as u64 * 1000 / was.sample_rate.max(1) as u64
+            }
+            _ => 0,
+        };
+        self.format = Some(now);
+        self.apply_fade();
+        if self.current.is_some() {
+            self.seek(heard_ms);
+        }
+    }
+
     fn apply_fade(&self) {
         if let (Some(p), Some(f)) = (&self.producer, self.format) {
             let samples =
@@ -545,11 +571,7 @@ impl<E: Env> Player<E> {
         let Some(next) = self.next.take() else {
             return;
         };
-        let start = self
-            .producer
-            .as_ref()
-            .map(|p| p.written())
-            .unwrap_or(0);
+        let start = self.producer.as_ref().map(|p| p.written()).unwrap_or(0);
         self.segments.push_back(Segment {
             token: next.token,
             uri: next.uri.clone(),
@@ -593,7 +615,8 @@ impl<E: Env> Player<E> {
             self.last_position = Instant::now();
             if let (Some(seg), Some(format)) = (self.segments.front(), self.format) {
                 let frames = played.saturating_sub(seg.start_sample) / format.channels.max(1);
-                let position_ms = seg.base_ms + frames as u64 * 1000 / format.sample_rate.max(1) as u64;
+                let position_ms =
+                    seg.base_ms + frames as u64 * 1000 / format.sample_rate.max(1) as u64;
                 self.emit(Event::Position {
                     token: seg.token,
                     position_ms,

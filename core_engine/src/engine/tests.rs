@@ -21,10 +21,8 @@ struct TempWav(PathBuf);
 impl TempWav {
     fn new(rate: u32, channels: u16, seconds: f64) -> Self {
         let n = FILES.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "rustify-engine-{}-{n}.wav",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("rustify-engine-{}-{n}.wav", std::process::id()));
         std::fs::write(&path, wav(rate, channels, seconds, 440.0)).expect("temp file");
         TempWav(path)
     }
@@ -118,6 +116,45 @@ fn a_different_rate_and_channel_count_still_plays_through() {
     engine.send(load(7, track.uri(), true));
     let events = collect_until(&engine, |e| matches!(e, Event::Ended { .. }));
     assert_eq!(events.last(), Some(&Event::Ended { token: 7 }));
+}
+
+#[test]
+fn a_device_that_moves_to_another_rate_keeps_the_song_where_it_was() {
+    // Headphones unplugged, or Windows' output picker: the output reopens at another rate mid-song.
+    let track = TempWav::new(44_100, 2, 3.0);
+    let (output, switch) = NullOutput::new(Pace::RealTime { speed: 2.0 }).switchable();
+    let engine = engine(output);
+    engine.send(load(9, track.uri(), true));
+    let before = loop {
+        let events = collect_until(&engine, |e| matches!(e, Event::Position { .. }));
+        if let Some(Event::Position { position_ms, .. }) = events.last() {
+            if *position_ms >= 500 {
+                break *position_ms;
+            }
+        }
+    };
+    switch.set(Format {
+        sample_rate: 48_000,
+        channels: 2,
+    });
+    let rest = collect_until(&engine, |e| matches!(e, Event::Ended { .. }));
+    assert!(
+        !rest.iter().any(|e| matches!(e, Event::Error { .. })),
+        "no error on the switch: {rest:?}"
+    );
+    let first_after = rest
+        .iter()
+        .find_map(|e| match e {
+            Event::Position { position_ms, .. } => Some(*position_ms),
+            _ => None,
+        })
+        .expect("positions after the switch");
+    // From where it was heard, not from the start and not from what the ring held ahead.
+    assert!(
+        first_after + 300 >= before && first_after < before + 1_000,
+        "{before} -> {first_after}"
+    );
+    assert_eq!(rest.last(), Some(&Event::Ended { token: 9 }));
 }
 
 #[test]
@@ -240,7 +277,12 @@ fn commands_deserialise_from_the_shape_the_app_sends() {
         }
     );
     let seek: Command = serde_json::from_str(r#"{"type":"seek","positionMs":30000}"#).unwrap();
-    assert_eq!(seek, Command::Seek { position_ms: 30_000 });
+    assert_eq!(
+        seek,
+        Command::Seek {
+            position_ms: 30_000
+        }
+    );
     let pause: Command = serde_json::from_str(r#"{"type":"pause"}"#).unwrap();
     assert_eq!(pause, Command::Pause);
     assert!(
