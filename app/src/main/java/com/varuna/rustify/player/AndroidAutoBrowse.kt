@@ -108,7 +108,7 @@ object AndroidAutoBrowse {
             when {
                 parentId == "sec_recent" -> {
                     val now = System.currentTimeMillis()
-                    com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now).recent
+                    com.varuna.rustify.metrics.ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), now - 30L * 86_400_000L, now).recent
                         .distinctBy { it.trackId }
                         .take(50)
                         .map { e ->

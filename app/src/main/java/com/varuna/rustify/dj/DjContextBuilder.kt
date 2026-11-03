@@ -20,7 +20,7 @@ object DjContextBuilder {
         topN: Int = 10
     ): DjContext {
         val stats = runCatching {
-            ListeningTracker.stats(context, 0L, System.currentTimeMillis() + 1)
+            ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), 0L, System.currentTimeMillis() + 1)
         }.getOrNull()
 
         val topArtists = stats?.topArtists.orEmpty().map { it.name }.filter { it.isNotBlank() }.take(topN)

@@ -39,7 +39,7 @@ object PublicHome {
     /** Albums of the songs you played lately, newest first, one per album. Spotify ones only. */
     private suspend fun recentAlbums(context: Context): BrowseSection? = runCatching {
         val now = System.currentTimeMillis()
-        val plays = ListeningTracker.stats(context, now - 90L * 86_400_000L, now).recent
+        val plays = ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), now - 90L * 86_400_000L, now).recent
         val albums = plays
             .filter { TrackRef.parse(it.trackId)?.spotifyId != null && it.albumId.isNotBlank() }
             .distinctBy { it.albumId }

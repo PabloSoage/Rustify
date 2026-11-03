@@ -98,12 +98,12 @@ fun MetricsScreen(onBack: () -> Unit) {
         scope.launch {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val events = ListeningTracker.loadEvents(context)
+                    val events = ListeningTracker.loadEvents(com.varuna.rustify.ui.AndroidAppPlatform(context))
                     if (events.isEmpty()) {
                         withContext(Dispatchers.Main) { Toast.makeText(context, exportEmptyMsg, Toast.LENGTH_SHORT).show() }
                         return@withContext
                     }
-                    val bytes = ListeningTracker.exportSpotifyHistoryBytes(context)
+                    val bytes = ListeningTracker.exportSpotifyHistoryBytes(com.varuna.rustify.ui.AndroidAppPlatform(context))
                     context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
                     withContext(Dispatchers.Main) { Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show() }
                 }.onFailure { e ->
@@ -123,7 +123,7 @@ fun MetricsScreen(onBack: () -> Unit) {
         scope.launch {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val csv = ListeningTracker.topCsv(context, from, to, kind)
+                    val csv = ListeningTracker.topCsv(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to, kind)
                     context.contentResolver.openOutputStream(uri, "w")?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
                     withContext(Dispatchers.Main) { Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show() }
                 }.onFailure { e ->
@@ -141,7 +141,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val n = context.contentResolver.openInputStream(uri)?.use {
-                        ListeningTracker.importHistory(context, it)
+                        ListeningTracker.importHistory(com.varuna.rustify.ui.AndroidAppPlatform(context), it)
                     } ?: PlayImportReport()
                     withContext(Dispatchers.Main) { Toast.makeText(context, importDoneTemplate.format(n.added), Toast.LENGTH_SHORT).show() }
                     load()
@@ -604,7 +604,7 @@ private fun rangeToFrom(range: MetricsRange): Pair<Long, Long> {
  */
 private suspend fun computeStats(context: Context, range: MetricsRange): Stats {
     val (from, to) = rangeToFrom(range)
-    return runCatching { ListeningTracker.stats(context, from, to) }
+    return runCatching { ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to) }
         .onFailure { android.util.Log.w("MetricsScreen", "stats failed: ${it.message}") }
         .getOrDefault(Stats())
 }

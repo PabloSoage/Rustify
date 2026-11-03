@@ -1,6 +1,6 @@
 package com.varuna.rustify.metrics
 
-import android.content.Context
+import com.varuna.rustify.ui.AppPlatform
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
@@ -32,8 +32,8 @@ object ListenBrainz {
     @Serializable
     data class Report(val sent: Int = 0, val pending: Int = 0, val rejected: Int = 0)
 
-    fun token(context: Context): String? =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREF_TOKEN, null)?.takeIf { it.isNotBlank() }
+    fun token(platform: AppPlatform): String? =
+        platform.prefs(PREFS).getString(PREF_TOKEN)?.takeIf { it.isNotBlank() }
 
     /** ListenBrainz's guideline; the same rule as `scrobble::qualifies` in the core. */
     fun qualifies(listenedMs: Long, durationMs: Long): Boolean {
@@ -50,15 +50,15 @@ object ListenBrainz {
         isrc = track.isrc,
     )
 
-    suspend fun submit(context: Context, listen: Listen): Report? {
-        val token = token(context) ?: return null
+    suspend fun submit(platform: AppPlatform, listen: Listen): Report? {
+        val token = token(platform) ?: return null
         val answer = NativeEngine.listenBrainzSubmit(token, RustifyJson.encodeToString(Listen.serializer(), listen))
         return runCatching { RustifyJson.decodeFromString(Report.serializer(), answer) }.getOrNull()
-            .also { android.util.Log.d("ListenBrainz", "submit: $it ${if (it == null) answer.take(200) else ""}") }
+            .also { com.varuna.rustify.platform.Log.d("ListenBrainz", "submit: $it ${if (it == null) answer.take(200) else ""}") }
     }
 
-    suspend fun playingNow(context: Context, listen: Listen) {
-        val token = token(context) ?: return
+    suspend fun playingNow(platform: AppPlatform, listen: Listen) {
+        val token = token(platform) ?: return
         runCatching { NativeEngine.listenBrainzPlayingNow(token, RustifyJson.encodeToString(Listen.serializer(), listen)) }
     }
 

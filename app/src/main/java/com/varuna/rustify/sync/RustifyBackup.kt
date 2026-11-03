@@ -96,7 +96,7 @@ object RustifyBackup {
         root.put("ytm", readObject(File(dir, F_YTM)) ?: JSONObject())
 
         // metrics: array of raw events
-        root.put("metrics", ListeningTracker.loadEventsJson(ctx))
+        root.put("metrics", ListeningTracker.loadEventsJson(com.varuna.rustify.ui.AndroidAppPlatform(ctx)))
 
         return root
     }
@@ -173,7 +173,7 @@ object RustifyBackup {
         // metrics — dedupe import (union, not replace)
         container.optJSONArray("metrics")?.let { metrics ->
             runCatching {
-                ListeningTracker.importEvents(ctx, metrics)
+                ListeningTracker.importEvents(com.varuna.rustify.ui.AndroidAppPlatform(ctx), metrics)
             }
         }
     }

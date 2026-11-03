@@ -60,7 +60,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     private val _state = MutableStateFlow(AudioPlayerState())
     override val state: StateFlow<AudioPlayerState> = _state.asStateFlow()
 
-    private val listenerTracker = ListeningTracker(context.applicationContext)
+    private val listenerTracker = ListeningTracker(com.varuna.rustify.ui.AndroidAppPlatform(context.applicationContext))
 
     // Preloaded lyrics for the current track
     private val _preloadedLyrics = MutableStateFlow<com.varuna.rustify.bridge.LyricsResult?>(null)

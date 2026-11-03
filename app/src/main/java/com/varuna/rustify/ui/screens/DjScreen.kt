@@ -115,7 +115,7 @@ fun DjScreen(
         }
         val now = System.currentTimeMillis()
         topArtists = runCatching {
-            com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now)
+            com.varuna.rustify.metrics.ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), now - 30L * 86_400_000L, now)
                 .topArtists.map { it.name }.filter { it.isNotBlank() }.take(3)
         }.getOrDefault(emptyList())
     }

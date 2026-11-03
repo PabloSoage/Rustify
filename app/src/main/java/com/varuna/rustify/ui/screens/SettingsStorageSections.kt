@@ -1263,9 +1263,9 @@ internal fun BlocklistSection(context: Context) {
 @Composable
 internal fun LastFmSection(context: Context) {
     val lf = com.varuna.rustify.metrics.LastFm
-    var user by remember { mutableStateOf(lf.user(context)) }
-    var apiKey by remember { mutableStateOf(lf.apiKey(context)) }
-    var secret by remember { mutableStateOf(lf.secret(context)) }
+    var user by remember { mutableStateOf(lf.user(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
+    var apiKey by remember { mutableStateOf(lf.apiKey(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
+    var secret by remember { mutableStateOf(lf.secret(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -1283,7 +1283,7 @@ internal fun LastFmSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             if (user != null) {
                 Text(stringResource(R.string.settings_listenbrainz_connected, user!!), color = Color.White, fontSize = 15.sp)
-                androidx.compose.material3.TextButton(onClick = { lf.logout(context); user = null }) {
+                androidx.compose.material3.TextButton(onClick = { lf.logout(com.varuna.rustify.ui.AndroidAppPlatform(context)); user = null }) {
                     Text(stringResource(R.string.settings_listenbrainz_disconnect), color = Color(0xFFCC2200))
                 }
             } else {
@@ -1308,10 +1308,10 @@ internal fun LastFmSection(context: Context) {
                     onClick = {
                         busy = true
                         scope.launch {
-                            val why = lf.login(context, apiKey, secret, name, password)
+                            val why = lf.login(com.varuna.rustify.ui.AndroidAppPlatform(context), apiKey, secret, name, password)
                             busy = false
                             password = ""
-                            if (why == null) user = lf.user(context) else error = why
+                            if (why == null) user = lf.user(com.varuna.rustify.ui.AndroidAppPlatform(context)) else error = why
                         }
                     }
                 ) { Text(stringResource(R.string.settings_listenbrainz_connect), color = Color(0xFF1DB954)) }

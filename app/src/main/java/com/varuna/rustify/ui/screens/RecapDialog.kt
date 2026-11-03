@@ -79,7 +79,7 @@ fun RecapDialog(year: Int, onDismiss: () -> Unit) {
         val zone = ZoneId.systemDefault()
         val from = LocalDate.of(year, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
         val to = LocalDate.of(year + 1, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
-        recap = runCatching { RecapBuilder.build(year, ListeningTracker.stats(context, from, to)) }.getOrNull()
+        recap = runCatching { RecapBuilder.build(year, ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to)) }.getOrNull()
         loaded = true
     }
 
