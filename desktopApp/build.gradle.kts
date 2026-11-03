@@ -87,11 +87,13 @@ compose.desktop {
         mainClass = "com.varuna.rustify.desktop.MainKt"
 
         nativeDistributions {
-            targetFormats(
-                TargetFormat.Msi, TargetFormat.Exe,
-                TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage,
-                TargetFormat.Dmg,
-            )
+            // Per host, because jpackage only builds for the system it runs on, and because asking a
+            // Mac for AppImage too makes packageDmg read packageAppImage's output undeclared (CI).
+            when (hostOs) {
+                "windows" -> targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+                "macos" -> targetFormats(TargetFormat.Dmg)
+                else -> targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
+            }
             packageName = "Rustify"
             // jpackage wants MAJOR.MINOR.PATCH with numbers only (an MSI refuses "5.0.0b"). The
             // app's version name is "5.0.0b"; this is the same release without the beta letter.

@@ -93,4 +93,5 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
       - run: tools/ios/build-core.sh
-      - run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+      # Device first: linking a framework needs no signing, and it is the build an .ipa is made of.
+      - run: ./gradlew :shared:linkDebugFrameworkIosArm64 :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
