@@ -14,7 +14,9 @@ import com.varuna.rustify.desktop.ui.RustifyTheme
 import com.varuna.rustify.engine.JvmPlayerBackend
 import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.platform.AppDirs
+import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.defaultLanguage
+import java.io.File
 
 fun main() {
     // Before anything names NativeEngine: on the desktop the library is not on java.library.path.
@@ -22,7 +24,9 @@ fun main() {
 
     application {
         val scope = rememberCoroutineScope()
-        val player = remember { QueuePlayer(scope, JvmPlayerBackend) }
+        val player = remember {
+            QueuePlayer(scope, JvmPlayerBackend, FileStore(File(AppDirs.data, "player"))).also { it.restore() }
+        }
 
         LaunchedEffect(Unit) {
             // The same start-up the Android app does, with the desktop's folders.

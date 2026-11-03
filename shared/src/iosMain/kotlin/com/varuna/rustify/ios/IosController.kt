@@ -8,6 +8,7 @@ import com.varuna.rustify.bridge.decodeWire
 import com.varuna.rustify.engine.IosPlayerBackend
 import com.varuna.rustify.engine.PlayerUi
 import com.varuna.rustify.engine.QueuePlayer
+import com.varuna.rustify.platform.UserDefaultsStore
 import com.varuna.rustify.platform.defaultLanguage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.put
  */
 class IosController {
     private val scope = MainScope()
-    private val player = QueuePlayer(scope, IosPlayerBackend)
+    private val player = QueuePlayer(scope, IosPlayerBackend, UserDefaultsStore()).also { it.restore() }
 
     /** Call once at launch with the app's Application Support and Caches folders. */
     fun start(dataDir: String, cacheDir: String) {

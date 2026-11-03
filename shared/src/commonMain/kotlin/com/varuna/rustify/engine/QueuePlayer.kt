@@ -2,6 +2,7 @@
 package com.varuna.rustify.engine
 
 import com.varuna.rustify.bridge.YtmTrack
+import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -74,8 +75,16 @@ data class PlayerUi(
  *
  * Runs on one thread — the scope's, which must be single-threaded (the desktop's Swing main thread,
  * iOS's main queue): no locks, and events and clicks cannot interleave in the middle of a reduce.
+ *
+ * **Persisted** in [store], when there is one: the queue, where it is and the position, written on the
+ * reducer's `Persist` and on pause and shutdown, and read back by [restore] — loaded, not played, so
+ * opening the app does not start the music. One key, one JSON document, versioned in its name.
  */
-class QueuePlayer(private val scope: CoroutineScope, private val backend: PlayerBackend) {
+class QueuePlayer(
+    private val scope: CoroutineScope,
+    private val backend: PlayerBackend,
+    private val store: KeyValueStore? = null,
+) {
 
     private val _ui = MutableStateFlow(PlayerUi())
     val ui: StateFlow<PlayerUi> = _ui.asStateFlow()
@@ -92,6 +101,10 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
         val repeat: String = "off",
         val shuffle: Boolean = false,
     )
+
+    /** What [store] holds. A new shape is a new key (`queue_v2`), never this one changed in place. */
+    @Serializable
+    private data class Saved(val state: QueueState = QueueState(), val tracks: List<YtmTrack> = emptyList())
 
     @Serializable
     private data class ReduceAnswer(val state: QueueState = QueueState(), val effects: List<JsonObject> = emptyList())
@@ -119,6 +132,27 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
 
     /** Failures in a row; at three the player stops instead of running through the queue (as on Android). */
     private var failuresInARow = 0
+
+    /**
+     * Brings back the last session's queue and position, paused. Call before [start]. Nothing saved, or
+     * something unreadable (an older shape), leaves an empty player.
+     */
+    fun restore() {
+        val raw = store?.getString(STORE_KEY) ?: return
+        val saved = runCatching { json.decodeFromString(Saved.serializer(), raw) }
+            .onFailure { Log.w(TAG, "saved queue unreadable; starting empty", it) }
+            .getOrNull() ?: return
+        if (saved.tracks.isEmpty() || saved.state.queue.size != saved.tracks.size) return
+        tracks = saved.tracks
+        state = saved.state
+        _ui.update { it.copy(queue = tracks, index = state.index, positionMs = state.positionMs) }
+    }
+
+    private fun save() {
+        val target = store ?: return
+        runCatching { target.putString(STORE_KEY, json.encodeToString(Saved.serializer(), Saved(state, tracks))) }
+            .onFailure { Log.w(TAG, "could not save the queue", it) }
+    }
 
     fun start() {
         scope.launch {
@@ -151,7 +185,15 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
     fun previous() = reduce(buildJsonObject { put("type", "previous") })
 
     fun togglePause() {
-        backend.send(if (_ui.value.playing) EngineCommand.Pause else EngineCommand.Play)
+        when {
+            // A restored queue has nothing loaded yet: play starts it where it was left.
+            currentToken == 0L && tracks.isNotEmpty() -> load(state.index, state.positionMs)
+            _ui.value.playing -> {
+                backend.send(EngineCommand.Pause)
+                save()
+            }
+            else -> backend.send(EngineCommand.Play)
+        }
     }
 
     fun seek(positionMs: Long) = reduce(buildJsonObject {
@@ -170,6 +212,7 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
     })
 
     fun shutdown() {
+        save()
         backend.send(EngineCommand.Stop)
     }
 
@@ -194,8 +237,7 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
                 }
                 // No radio on the desktop yet (Android extends the queue here): the queue just ends.
                 "queue_exhausted" -> Unit
-                // Not persisted yet: docs 25 lists saving the queue through KeyValueStore.
-                "persist" -> Unit
+                "persist" -> save()
             }
         }
     }
@@ -301,5 +343,6 @@ class QueuePlayer(private val scope: CoroutineScope, private val backend: Player
 
     private companion object {
         const val TAG = "QueuePlayer"
+        const val STORE_KEY = "queue_v1"
     }
 }
