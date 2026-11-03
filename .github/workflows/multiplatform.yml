@@ -47,7 +47,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # ubuntu-24.04-arm: the aarch64 Linux packages Spotube also ships (docs 25 §6, T2.7).
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -68,12 +69,13 @@ jobs:
         run: ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rustify-desktop-${{ runner.os }}
+          name: rustify-desktop-${{ runner.os }}-${{ runner.arch }}
           path: desktopApp/build/compose/binaries/main/
           if-no-files-found: error
 
-  # The core as an iOS static library and the Kotlin framework linked against it, for the simulator.
-  # No app: that needs XcodeGen and signing (iosApp/project.yml).
+  # The core as an iOS static library, the Kotlin framework linked against it, and the app itself
+  # built unsigned into an .ipa for AltStore/SideStore (docs 25 §6, T4.4) — which is also what
+  # compiles the Swift.
   ios:
     runs-on: macos-latest
     steps:
@@ -95,3 +97,21 @@ jobs:
       - run: tools/ios/build-core.sh
       # Device first: linking a framework needs no signing, and it is the build an .ipa is made of.
       - run: ./gradlew :shared:linkDebugFrameworkIosArm64 :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+      - run: brew install xcodegen
+      - working-directory: iosApp
+        run: xcodegen generate
+      # Unsigned: an .ipa from this is installed by AltStore/SideStore, which sign it with the user's
+      # own Apple ID. The pre-build script in project.yml builds the Kotlin framework for Release.
+      - working-directory: iosApp
+        run: |
+          xcodebuild -project Rustify.xcodeproj -target Rustify -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Rustify.app Payload/
+          zip -qr Rustify-unsigned.ipa Payload
+          ls -l Rustify-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustify-ios-unsigned
+          path: iosApp/Rustify-unsigned.ipa
+          if-no-files-found: error

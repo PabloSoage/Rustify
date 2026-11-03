@@ -37,6 +37,12 @@ targets:
         # these are what that core links against.
         OTHER_LDFLAGS: "$(inherited) -framework RustifyShared -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -lc++"
         ENABLE_BITCODE: NO
+        # Swift 5 mode: Swift 6's strict concurrency would reject the Kotlin callbacks this app takes
+        # on the main queue without annotations Kotlin/Native does not emit.
+        SWIFT_VERSION: "5.0"
+        # Gradle reads and writes the whole repository from the pre-build script; Xcode's sandbox for
+        # user scripts would refuse it (Kotlin's own Xcode guide says to turn it off).
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         # Sideloaded (AltStore/SideStore) with a free or paid Apple ID; set your team in Xcode.
         CODE_SIGN_STYLE: Automatic
     preBuildScripts:
