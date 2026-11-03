@@ -1,7 +1,8 @@
 // shared/src/commonMain/kotlin/com/varuna/rustify/engine/QueuePlayer.kt
 package com.varuna.rustify.engine
 
-import com.varuna.rustify.bridge.YtmTrack
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.TrackRef
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.CoroutineScope
@@ -44,11 +45,17 @@ interface PlayerBackend {
 
     /** `youtube::innertube::resolve_audio` for [videoId] with [prefsJson]; the core's JSON. */
     suspend fun resolveAudio(videoId: String, prefsJson: String): String
+
+    /** Makes a Spotify track matchable by the core's resolver (`registerTrackMetadata`). Memory only. */
+    fun registerTrackMetadata(track: FullTrack)
+
+    /** The YouTube video for a Spotify track id, by the core's resolver; "" when there is none. */
+    suspend fun resolveYouTubeId(spotifyId: String): String
 }
 
 /** What a screen shows. Top-level rather than nested so Swift sees it as `PlayerUi`. */
 data class PlayerUi(
-    val queue: List<YtmTrack> = emptyList(),
+    val queue: List<FullTrack> = emptyList(),
     val index: Int = -1,
     val playing: Boolean = false,
     val loading: Boolean = false,
@@ -57,7 +64,7 @@ data class PlayerUi(
     val volume: Float = 1f,
     val error: String? = null,
 ) {
-    val current: YtmTrack? get() = queue.getOrNull(index)
+    val current: FullTrack? get() = queue.getOrNull(index)
 }
 
 /**
@@ -104,7 +111,7 @@ class QueuePlayer(
 
     /** What [store] holds. A new shape is a new key (`queue_v2`), never this one changed in place. */
     @Serializable
-    private data class Saved(val state: QueueState = QueueState(), val tracks: List<YtmTrack> = emptyList())
+    private data class Saved(val state: QueueState = QueueState(), val tracks: List<FullTrack> = emptyList())
 
     @Serializable
     private data class ReduceAnswer(val state: QueueState = QueueState(), val effects: List<JsonObject> = emptyList())
@@ -122,7 +129,7 @@ class QueuePlayer(
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
 
     private var state = QueueState()
-    private var tracks: List<YtmTrack> = emptyList()
+    private var tracks: List<FullTrack> = emptyList()
 
     private var nextToken = 1L
     private var currentToken = 0L
@@ -169,14 +176,21 @@ class QueuePlayer(
     // What the window asks for
     // ---------------------------------------------------------------------------------------------
 
-    fun playAll(list: List<YtmTrack>, start: Int) {
-        tracks = list
+    /**
+     * Plays [list] from [start]. Spotify and YouTube Music tracks mix freely: a `ytm:` id is played
+     * as that video, anything else goes through the core's resolver, as on the phone. Tracks with no
+     * id (a local file on Android) cannot play here and are dropped.
+     */
+    fun playAll(list: List<FullTrack>, start: Int) {
+        val playable = list.filter { it.id != null }
+        val first = list.getOrNull(start)?.let { playable.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+        tracks = playable
         failuresInARow = 0
-        _ui.update { it.copy(queue = list, error = null) }
+        _ui.update { it.copy(queue = playable, error = null) }
         reduce(buildJsonObject {
             put("type", "set_queue")
-            put("tracks", JsonArray(list.map { JsonPrimitive("ytm:${it.videoId}") }))
-            put("start", start)
+            put("tracks", JsonArray(playable.map { JsonPrimitive(it.id.orEmpty()) }))
+            put("start", first)
         })
     }
 
@@ -264,7 +278,7 @@ class QueuePlayer(
             val audio = resolve(track)
             if (token != currentToken) return@launch // Skipped while resolving.
             if (audio == null) {
-                failed("Could not resolve \"${track.title}\"")
+                failed("Could not resolve \"${track.name}\"")
                 return@launch
             }
             backend.send(EngineCommand.Load(token, audio.url, startMs, gainOf(audio), play = true))
@@ -328,9 +342,15 @@ class QueuePlayer(
         if (failuresInARow < 3) next() else backend.send(EngineCommand.Stop)
     }
 
-    private suspend fun resolve(track: YtmTrack): ResolvedAudio? {
+    private suspend fun resolve(track: FullTrack): ResolvedAudio? {
+        val id = track.id ?: return null
+        val videoId = TrackRef.youtubeVideoIdOf(id) ?: run {
+            // A Spotify track: the same resolver the phone uses, which needs the metadata first.
+            backend.registerTrackMetadata(track)
+            VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
+        } ?: return null
         // AAC (itag 140): the engine's decoder has no Opus (core_engine/src/engine/decode.rs).
-        val raw = backend.resolveAudio(track.videoId, """{"prefer":"aac","maxKbps":0}""")
+        val raw = backend.resolveAudio(videoId, """{"prefer":"aac","maxKbps":0}""")
         val audio = runCatching { json.decodeFromString(ResolvedAudio.serializer(), raw) }.getOrNull()
         return audio?.takeIf { it.success != false && it.url.isNotBlank() }
     }
@@ -343,6 +363,9 @@ class QueuePlayer(
 
     private companion object {
         const val TAG = "QueuePlayer"
-        const val STORE_KEY = "queue_v1"
+        // v2: the queue became FullTrack (v1 held YtmTrack and was never released).
+        const val STORE_KEY = "queue_v2"
+        /** A YouTube video id inside whatever the resolver answered. */
+        val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
     }
 }

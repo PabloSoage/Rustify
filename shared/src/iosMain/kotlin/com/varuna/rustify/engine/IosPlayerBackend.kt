@@ -2,6 +2,9 @@
 package com.varuna.rustify.engine
 
 import com.varuna.rustify.bridge.CoreCall
+import com.varuna.rustify.bridge.FullTrack
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.currentCoroutineContext
@@ -45,6 +48,26 @@ object IosPlayerBackend : PlayerBackend {
             ),
         ),
     )
+
+    override fun registerTrackMetadata(track: FullTrack) {
+        val id = track.id ?: return
+        CoreCall.callBlocking(
+            "registerTrackMetadata",
+            buildJsonObject {
+                put("id", id)
+                put("name", track.name)
+                put("artists", JsonArray(track.artists.map { kotlinx.serialization.json.JsonPrimitive(it.name) }))
+                put("durationMs", track.durationMs)
+                put("isrc", track.isrc)
+            },
+        )
+    }
+
+    /** `resolveYouTubeId` answers the id as a JSON string. */
+    override suspend fun resolveYouTubeId(spotifyId: String): String {
+        val answer = CoreCall.call("resolveYouTubeId") { put("spotifyId", spotifyId) }
+        return runCatching { Json.parseToJsonElement(answer).jsonPrimitive.content }.getOrDefault("")
+    }
 
     override suspend fun resolveAudio(videoId: String, prefsJson: String): String = CoreCall.call(
         "resolveInnertubeAudio",

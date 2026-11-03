@@ -116,6 +116,9 @@ pub const METHODS: &[&str] = &[
     "restoreSpotifySession",
     "isSpotifyAuthenticated",
     "logoutSpotify",
+    "getSpotifyMe",
+    "getSpotifySavedTracks",
+    "getSpotifySavedPlaylists",
     "searchSpotify",
     "getSpotifyBrowse",
     "getSpotifyAlbum",
@@ -132,6 +135,8 @@ pub const METHODS: &[&str] = &[
     "getYtmArtist",
     "getYtmPlaylist",
     "resolveInnertubeAudio",
+    "registerTrackMetadata",
+    "resolveYouTubeId",
     "startLocalServer",
     "engineStart",
     "engineSend",
@@ -264,6 +269,17 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             ok()
         }
 
+        // getSpotifyMeNative
+        "getSpotifyMe" => serialize_result(get_runtime().block_on(client().get_me())),
+        // getSpotifySavedTracksNative
+        "getSpotifySavedTracks" => serialize_result(get_runtime().block_on(
+            client().get_saved_tracks(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
+        )),
+        // getSpotifySavedPlaylistsNative
+        "getSpotifySavedPlaylists" => serialize_result(get_runtime().block_on(
+            client().get_saved_playlists(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
+        )),
+
         // searchSpotifyNative
         "searchSpotify" => {
             let q = text(args, "query");
@@ -366,6 +382,34 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             >(
                 &text(args, "videoId"), &prefs
             )))
+        }
+
+        // registerTrackMetadataNative — `artists` is a JSON array of names here, not a string of one.
+        "registerTrackMetadata" => {
+            let artists: Vec<String> =
+                serde_json::from_value(args["artists"].clone()).unwrap_or_default();
+            youtube::server::register_track_meta(
+                text(args, "id"),
+                text(args, "name"),
+                artists,
+                int(args, "durationMs", 0).max(0) as u32,
+                text(args, "isrc"),
+            );
+            ok()
+        }
+        // resolveYouTubeIdNative — answers the video id as a JSON string, "" when none was found.
+        "resolveYouTubeId" => {
+            let spotify_id = text(args, "spotifyId");
+            let hint = text(args, "youtubeId");
+            let cache_dir = youtube::server::get_cache_dir().unwrap_or_default();
+            let found = get_runtime().block_on(youtube::server::resolve_youtube_id_direct::<
+                env::android::AndroidEnv,
+            >(
+                &spotify_id,
+                if hint.is_empty() { None } else { Some(hint.as_str()) },
+                &cache_dir,
+            ));
+            Value::String(found.unwrap_or_default()).to_string()
         }
 
         // startLocalServerNative

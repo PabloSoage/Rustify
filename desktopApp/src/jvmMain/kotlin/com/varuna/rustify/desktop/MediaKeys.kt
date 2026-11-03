@@ -1,6 +1,7 @@
 // desktopApp/src/jvmMain/kotlin/com/varuna/rustify/desktop/MediaKeys.kt
 package com.varuna.rustify.desktop
 
+import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.engine.MediaRequest
 import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.engine.SystemMediaControls
@@ -34,16 +35,16 @@ object MediaKeys {
                     lastTrack = null
                     return@collect
                 }
-                val duration = ui.durationMs ?: (track.durationSec * 1000L).takeIf { it > 0 }
-                if (track.videoId != lastTrack || duration != lastDuration) {
+                val duration = ui.durationMs ?: track.durationMs.toLong().takeIf { it > 0 }
+                if (track.id != lastTrack || duration != lastDuration) {
                     SystemMediaControls.metadata(
-                        title = track.title,
+                        title = track.name,
                         artist = track.artists.joinToString(", ") { it.name },
-                        album = "",
-                        coverUrl = track.thumbnailUrl.ifBlank { null },
+                        album = track.album?.name.orEmpty(),
+                        coverUrl = track.effectiveCoverUrl(),
                         durationMs = duration,
                     )
-                    lastTrack = track.videoId
+                    lastTrack = track.id
                     lastDuration = duration
                     lastPlaying = null // re-send the state with the new track
                 }

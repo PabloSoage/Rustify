@@ -2,14 +2,17 @@
 package com.varuna.rustify.ios
 
 import com.varuna.rustify.bridge.CoreCall
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SpotifyUser
 import com.varuna.rustify.bridge.YtmSearchResults
-import com.varuna.rustify.bridge.YtmTrack
 import com.varuna.rustify.bridge.decodeWire
 import com.varuna.rustify.engine.IosPlayerBackend
 import com.varuna.rustify.engine.PlayerUi
 import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.platform.UserDefaultsStore
 import com.varuna.rustify.platform.defaultLanguage
+import com.varuna.rustify.spotify.IosSpotifyCore
+import com.varuna.rustify.spotify.SpotifyLibrary
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -27,6 +30,7 @@ import kotlinx.serialization.json.put
 class IosController {
     private val scope = MainScope()
     private val player = QueuePlayer(scope, IosPlayerBackend, UserDefaultsStore()).also { it.restore() }
+    private val spotify = SpotifyLibrary(IosSpotifyCore, UserDefaultsStore())
 
     /** Call once at launch with the app's Application Support and Caches folders. */
     fun start(dataDir: String, cacheDir: String) {
@@ -38,16 +42,42 @@ class IosController {
         }
     }
 
-    fun search(query: String, onResult: (List<YtmTrack>) -> Unit, onError: (String) -> Unit) {
+    /** YouTube Music, no account needed — as on the phone. */
+    fun search(query: String, onResult: (List<FullTrack>) -> Unit, onError: (String) -> Unit) {
         scope.launch {
             val answer = CoreCall.call("searchYtMusic") { put("query", query) }
-            runCatching { decodeWire<YtmSearchResults>(answer).tracks }
+            runCatching { decodeWire<YtmSearchResults>(answer).tracks.map { it.toFullTrack() } }
                 .onSuccess(onResult)
                 .onFailure { onError(it.message ?: "Search failed") }
         }
     }
 
-    fun playAll(tracks: List<YtmTrack>, start: Int) = player.playAll(tracks, start)
+    /** The saved Spotify session, if any; [onUser] gets null when there is none. */
+    fun restoreSpotify(onUser: (SpotifyUser?) -> Unit) {
+        scope.launch { onUser(runCatching { spotify.restore() }.getOrNull()) }
+    }
+
+    /** Signs in with the `sp_dc` cookie, as on the phone. */
+    fun signInSpotify(spDc: String, onUser: (SpotifyUser) -> Unit, onError: (String) -> Unit) {
+        scope.launch {
+            runCatching { spotify.login(spDc) }
+                .onSuccess(onUser)
+                .onFailure { onError(it.message ?: "Sign-in failed") }
+        }
+    }
+
+    fun signOutSpotify() = spotify.logout()
+
+    /** Every liked song, all pages. */
+    fun likedSongs(onResult: (List<FullTrack>) -> Unit, onError: (String) -> Unit) {
+        scope.launch {
+            runCatching { spotify.likedSongs() }
+                .onSuccess(onResult)
+                .onFailure { onError(it.message ?: "Could not load liked songs") }
+        }
+    }
+
+    fun playAll(tracks: List<FullTrack>, start: Int) = player.playAll(tracks, start)
 
     fun togglePause() = player.togglePause()
 

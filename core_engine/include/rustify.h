@@ -29,7 +29,8 @@ extern "C" {
  *   searchIndex {name, items}          searchQuery {name, query, limit}   searchForget {name}
  *   playerReduce {state, action}
  *   loginSpotify {spDc}                restoreSpotifySession {spDc, accessToken, expiration}
- *   isSpotifyAuthenticated {}          logoutSpotify {}
+ *   isSpotifyAuthenticated {}          logoutSpotify {}                   getSpotifyMe {}
+ *   getSpotifySavedTracks {limit, offset}     getSpotifySavedPlaylists {limit, offset}
  *   searchSpotify {query, type, limit, offset}                getSpotifyBrowse {limit}
  *   getSpotifyAlbum {id}               getSpotifyAlbumTracks {id, limit, offset}
  *   getSpotifyArtist {id}              getSpotifyArtistTopTracks {id, limit, offset}
@@ -37,6 +38,7 @@ extern "C" {
  *   getSpotifyTrack {id}               getSpotifyTrackRadio {id}          getSpotifyLyrics {id}
  *   searchYtMusic {query}              getYtmAlbum {id}  getYtmArtist {id}  getYtmPlaylist {id}
  *   resolveInnertubeAudio {videoId, prefs}
+ *   registerTrackMetadata {id, name, artists, durationMs, isrc}   resolveYouTubeId {spotifyId, youtubeId}
  *   startLocalServer {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}
  *

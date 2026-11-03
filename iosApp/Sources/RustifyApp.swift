@@ -26,7 +26,8 @@ struct RustifyApp: App {
 final class PlayerModel: ObservableObject {
     let controller = IosController()
     @Published var ui: PlayerUi?
-    @Published var results: [YtmTrack] = []
+    @Published var results: [FullTrack] = []
+    @Published var user: SpotifyUser?
     @Published var searching = false
     @Published var searchError: String?
     private var observation: Kotlinx_coroutines_coreJob?
@@ -41,6 +42,9 @@ final class PlayerModel: ObservableObject {
         controller.start(dataDir: data.path, cacheDir: cache.path)
         observation = controller.observe { [weak self] ui in
             self?.ui = ui
+        }
+        controller.restoreSpotify { [weak self] user in
+            self?.user = user
         }
     }
 
@@ -69,11 +73,31 @@ final class PlayerModel: ObservableObject {
     func play(at index: Int) {
         controller.playAll(tracks: results, start: Int32(index))
     }
+
+    func signIn(_ cookie: String) {
+        controller.signInSpotify(spDc: cookie, onUser: { [weak self] user in
+            self?.user = user
+        }, onError: { [weak self] message in
+            self?.searchError = message
+        })
+    }
+
+    func loadLiked() {
+        searching = true
+        controller.likedSongs(onResult: { [weak self] tracks in
+            self?.results = tracks
+            self?.searching = false
+        }, onError: { [weak self] message in
+            self?.searchError = message
+            self?.searching = false
+        })
+    }
 }
 
 struct ContentView: View {
     @EnvironmentObject var model: PlayerModel
     @State private var query = ""
+    @State private var showSignIn = false
 
     var body: some View {
         NavigationStack {
@@ -89,7 +113,7 @@ struct ContentView: View {
                             model.play(at: index)
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(track.title).lineLimit(1)
+                                Text(track.name).lineLimit(1)
                                 Text(track.artists.map { $0.name }.joined(separator: ", "))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -102,6 +126,21 @@ struct ContentView: View {
                 NowPlayingBar()
             }
             .navigationTitle("Rustify")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if model.user != nil {
+                        Button("Liked") { model.loadLiked() }
+                    } else {
+                        Button("Spotify") { showSignIn = true }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSignIn) {
+                SignInView { cookie in
+                    model.signIn(cookie)
+                    showSignIn = false
+                }
+            }
             .searchable(text: $query, prompt: "Search YouTube Music")
             .onSubmit(of: .search) { model.search(query) }
         }
@@ -116,7 +155,7 @@ struct NowPlayingBar: View {
         VStack(spacing: 6) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(ui?.current?.title ?? "Not playing").lineLimit(1)
+                    Text(ui?.current?.name ?? "Not playing").lineLimit(1)
                     Text(ui?.error ?? (ui?.current?.artists.map { $0.name }.joined(separator: ", ") ?? ""))
                         .font(.caption)
                         .foregroundStyle(ui?.error != nil ? .red : .secondary)
@@ -136,5 +175,24 @@ struct NowPlayingBar: View {
         }
         .padding()
         .background(.thinMaterial)
+    }
+}
+
+/// The sp_dc cookie from a signed-in open.spotify.com session, as the phone asks for it.
+struct SignInView: View {
+    let onSubmit: (String) -> Void
+    @State private var cookie = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(footer: Text("Open open.spotify.com signed in, copy the value of the sp_dc cookie and paste it here. It stays on this phone.")) {
+                    SecureField("sp_dc", text: $cookie)
+                }
+                Button("Sign in") { onSubmit(cookie) }
+                    .disabled(cookie.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .navigationTitle("Spotify")
+        }
     }
 }
