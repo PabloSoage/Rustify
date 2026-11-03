@@ -1,6 +1,7 @@
 // shared/src/androidMain/kotlin/com/varuna/rustify/platform/SharedPreferencesStore.kt
 package com.varuna.rustify.platform
 
+import kotlinx.coroutines.channels.awaitClose
 import android.content.SharedPreferences
 
 /**
@@ -50,5 +51,13 @@ class SharedPreferencesStore(private val prefs: SharedPreferences) : KeyValueSto
 
     override fun putStringSet(key: String, value: Set<String>) {
         prefs.edit().putStringSet(key, value).apply()
+    }
+
+    override fun changes(key: String): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
+            if (changed == key) trySend(Unit)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 }

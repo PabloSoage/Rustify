@@ -1,6 +1,7 @@
 // shared/src/desktopMain/kotlin/com/varuna/rustify/platform/PreferencesStore.kt
 package com.varuna.rustify.platform
 
+import kotlinx.coroutines.channels.awaitClose
 import java.util.prefs.Preferences
 
 /**
@@ -37,4 +38,11 @@ class PreferencesStore(private val node: Preferences = Preferences.userRoot().no
     }
 
     override fun contains(key: String): Boolean = node.get(key, null) != null
+
+    // java.util.prefs tells listeners on its own event thread, after the write.
+    override fun changes(key: String): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.callbackFlow {
+        val listener = java.util.prefs.PreferenceChangeListener { if (it.key == key) trySend(Unit) }
+        node.addPreferenceChangeListener(listener)
+        awaitClose { node.removePreferenceChangeListener(listener) }
+    }
 }

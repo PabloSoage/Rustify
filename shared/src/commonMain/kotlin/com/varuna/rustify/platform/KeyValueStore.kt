@@ -47,6 +47,12 @@ interface KeyValueStore {
         getString(key)?.let { s -> s.split('\n').filter { it.isNotEmpty() }.toSet() } ?: default
 
     fun putStringSet(key: String, value: Set<String>) = putString(key, value.joinToString("\n"))
+
+    /**
+     * Emits whenever [key] is written, by anyone — a screen that shows a setting changed in another
+     * (Android's `OnSharedPreferenceChangeListener`). A store that cannot tell never emits.
+     */
+    fun changes(key: String): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
 }
 
 /** In memory, for tests and for code that runs before the platform store exists. */

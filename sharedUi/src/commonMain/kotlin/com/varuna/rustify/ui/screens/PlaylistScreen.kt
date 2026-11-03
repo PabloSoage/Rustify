@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.toast
 import com.varuna.rustify.bridge.PlaylistRef
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,13 +63,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullPlaylist
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SimplePlaylist
@@ -99,7 +100,7 @@ fun PlaylistScreen(
     onShufflePlay: (List<FullTrack>) -> Unit = {},
     currentTrackId: String?
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     // Local playlist: the id already carries the "localpl:" prefix resolved by routing.
     val isLocal = PlaylistRef.isLocal(playlistId)
     val localPlaylist = if (isLocal) spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId } else null
@@ -151,16 +152,8 @@ fun PlaylistScreen(
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteLocalDialog by remember { mutableStateOf(false) }
-    val exportM3u = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("audio/x-mpegurl")
-    ) { uri ->
-        val text = uri?.let { spotifyRepo.exportM3u(playlistId) } ?: return@rememberLauncherForActivityResult
-        val ok = runCatching {
-            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
-        }.getOrDefault(false)
-        android.widget.Toast.makeText(
-            context, if (ok) R.string.m3u_exported else R.string.m3u_export_failed, android.widget.Toast.LENGTH_SHORT
-        ).show()
+    val exportM3u = com.varuna.rustify.ui.rememberSaveTextFile("audio/x-mpegurl") { ok ->
+        if (ok != null) platform.toast(if (ok) Res.string.m3u_exported else Res.string.m3u_export_failed)
     }
     var showRenameLocalDialog by remember { mutableStateOf(false) }
     var meId by remember { mutableStateOf<String?>(null) }
@@ -257,7 +250,7 @@ fun PlaylistScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.common_something_wrong), 
+                        text = stringResource(Res.string.common_something_wrong), 
                         style = MaterialTheme.typography.titleLarge, 
                         color = Color.White
                     )
@@ -289,7 +282,7 @@ fun PlaylistScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)
                     ) {
-                        Text(stringResource(R.string.general_retry), color = Color.White)
+                        Text(stringResource(Res.string.general_retry), color = Color.White)
                     }
                 }
             } else {
@@ -406,7 +399,7 @@ fun PlaylistScreen(
                                     Spacer(modifier = Modifier.height(8.dp))
                                     val count = tracks.size
                                     Text(
-                                        text = stringResource(R.string.local_playlist_label) + " · " + pluralStringResource(R.plurals.track_count, count, count),
+                                        text = stringResource(Res.string.local_playlist_label) + " · " + pluralStringResource(Res.plurals.track_count, count, count),
                                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                         color = Color.LightGray
                                     )
@@ -442,7 +435,7 @@ fun PlaylistScreen(
                                             )
                                         }
                                         Text(
-                                            text = (playlistDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(R.plurals.track_count, n, n) },
+                                            text = (playlistDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(Res.plurals.track_count, n, n) },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = Color.Gray
                                         )
@@ -501,7 +494,7 @@ fun PlaylistScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Shuffle,
-                                        contentDescription = stringResource(R.string.cd_shuffle_play),
+                                        contentDescription = stringResource(Res.string.cd_shuffle_play),
                                         tint = Color.Black,
                                         modifier = Modifier.size(32.dp)
                                     )
@@ -520,7 +513,7 @@ fun PlaylistScreen(
                             ) {
                                 Text(
                                     text = if (isLocal)
-                                        stringResource(R.string.local_playlist_empty)
+                                        stringResource(Res.string.local_playlist_empty)
                                     else "No tracks found",
                                     color = Color.Gray
                                 )
@@ -539,7 +532,7 @@ fun PlaylistScreen(
                         if (shownTracks.isEmpty() && findQuery.isNotBlank()) {
                             item(key = "find_no_results") {
                                 Text(
-                                    stringResource(R.string.playlist_find_none, findQuery),
+                                    stringResource(Res.string.playlist_find_none, findQuery),
                                     color = Color.Gray,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
                                 )
@@ -562,7 +555,7 @@ fun PlaylistScreen(
                             LaunchedEffect(dismissState.currentValue) {
                                 if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
                                     onAddToQueue(track)
-                                    android.widget.Toast.makeText(context, context.getString(R.string.added_to_queue), android.widget.Toast.LENGTH_SHORT).show()
+                                    platform.toast(Res.string.added_to_queue)
                                     dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                                 }
                             }
@@ -635,11 +628,11 @@ fun PlaylistScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(stringResource(R.string.playlist_recommended), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                        Text(stringResource(R.string.playlist_recommended_hint), color = Color.Gray, fontSize = 12.sp)
+                                        Text(stringResource(Res.string.playlist_recommended), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                        Text(stringResource(Res.string.playlist_recommended_hint), color = Color.Gray, fontSize = 12.sp)
                                     }
                                     androidx.compose.material3.TextButton(onClick = { recommendRound++ }) {
-                                        Text(stringResource(R.string.playlist_recommended_more), color = spotifyGreen)
+                                        Text(stringResource(Res.string.playlist_recommended_more), color = spotifyGreen)
                                     }
                                 }
                             }
@@ -693,21 +686,21 @@ fun PlaylistScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isLocal) {
                         IconButton(onClick = {
                             val name = spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name ?: playlistName
-                            exportM3u.launch("${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.m3u8")
+                            exportM3u("${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.m3u8") { spotifyRepo.exportM3u(playlistId).orEmpty() }
                         }) {
-                            Icon(Icons.Default.IosShare, contentDescription = stringResource(R.string.m3u_export), tint = Color.White)
+                            Icon(Icons.Default.IosShare, contentDescription = stringResource(Res.string.m3u_export), tint = Color.White)
                         }
                         IconButton(onClick = { showRenameLocalDialog = true }) {
-                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.local_playlist_rename), tint = Color.White)
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(Res.string.local_playlist_rename), tint = Color.White)
                         }
                         IconButton(onClick = { showDeleteLocalDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.local_playlist_delete), tint = Color.White)
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.local_playlist_delete), tint = Color.White)
                         }
                     }
                     // Edit/Follow are Spotify-only: they appear only when playlistDetails is present
@@ -734,7 +727,7 @@ fun PlaylistScreen(
                         }
                     }
                     IconButton(onClick = { showEntityMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more_options), tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.cd_more_options), tint = Color.White)
                     }
                 }
             }
@@ -748,20 +741,20 @@ fun PlaylistScreen(
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text(stringResource(R.string.playlist_edit_title), color = Color.White) },
+            title = { Text(stringResource(Res.string.playlist_edit_title), color = Color.White) },
             text = {
                 Column {
                     androidx.compose.material3.OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
-                        label = { Text(stringResource(R.string.common_name)) },
+                        label = { Text(stringResource(Res.string.common_name)) },
                         singleLine = true
                     )
                     Spacer(Modifier.height(8.dp))
                     androidx.compose.material3.OutlinedTextField(
                         value = editDesc,
                         onValueChange = { editDesc = it },
-                        label = { Text(stringResource(R.string.common_description)) }
+                        label = { Text(stringResource(Res.string.common_description)) }
                     )
                 }
             },
@@ -777,11 +770,11 @@ fun PlaylistScreen(
                             }
                         }
                     }
-                }) { Text(stringResource(R.string.ytm_save), color = Color(0xFF1DB954)) }
+                }) { Text(stringResource(Res.string.ytm_save), color = Color(0xFF1DB954)) }
             },
             dismissButton = {
                 TextButton(onClick = { showEditDialog = false }) {
-                    Text(stringResource(R.string.common_cancel), color = Color.Gray)
+                    Text(stringResource(Res.string.common_cancel), color = Color.Gray)
                 }
             }
         )
@@ -814,13 +807,13 @@ fun PlaylistScreen(
         AlertDialog(
             onDismissRequest = { showRenameLocalDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text(stringResource(R.string.local_playlist_rename), color = Color.White) },
+            title = { Text(stringResource(Res.string.local_playlist_rename), color = Color.White) },
             text = {
                 androidx.compose.material3.OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = it },
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.local_playlist_name_hint)) }
+                    placeholder = { Text(stringResource(Res.string.local_playlist_name_hint)) }
                 )
             },
             confirmButton = {
@@ -830,11 +823,11 @@ fun PlaylistScreen(
                         spotifyRepo.renameLocalPlaylist(playlistId, renameText.trim())
                     },
                     enabled = renameText.isNotBlank()
-                ) { Text(stringResource(R.string.local_playlist_create_confirm), color = Color(0xFF1DB954)) }
+                ) { Text(stringResource(Res.string.local_playlist_create_confirm), color = Color(0xFF1DB954)) }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameLocalDialog = false }) {
-                    Text(stringResource(android.R.string.cancel), color = Color.Gray)
+                    Text(stringResource(Res.string.cancel), color = Color.Gray)
                 }
             }
         )
@@ -843,19 +836,19 @@ fun PlaylistScreen(
     if (showDeleteLocalDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteLocalDialog = false },
-            title = { Text(stringResource(R.string.local_playlist_delete), color = Color.White) },
-            text = { Text(stringResource(R.string.local_playlist_delete_msg), color = Color.LightGray) },
+            title = { Text(stringResource(Res.string.local_playlist_delete), color = Color.White) },
+            text = { Text(stringResource(Res.string.local_playlist_delete_msg), color = Color.LightGray) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteLocalDialog = false
                     spotifyRepo.deleteLocalPlaylist(playlistId)
-                    android.widget.Toast.makeText(context, R.string.local_playlist_deleted, android.widget.Toast.LENGTH_SHORT).show()
+                    platform.toast(Res.string.local_playlist_deleted)
                     onBackClick()
-                }) { Text(stringResource(R.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
+                }) { Text(stringResource(Res.string.local_playlist_delete_confirm), color = Color(0xFFCC2200)) }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteLocalDialog = false }) {
-                    Text(stringResource(android.R.string.cancel), color = Color.Gray)
+                    Text(stringResource(Res.string.cancel), color = Color.Gray)
                 }
             }
         )
@@ -918,12 +911,12 @@ private fun FindInPlaylistField(query: String, onQueryChange: (String) -> Unit, 
             value = query,
             onValueChange = onQueryChange,
             singleLine = true,
-            placeholder = { Text(stringResource(R.string.playlist_find_hint), color = Color.Gray) },
+            placeholder = { Text(stringResource(Res.string.playlist_find_hint), color = Color.Gray) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.playlist_find_clear), tint = Color.Gray)
+                        Icon(Icons.Default.Clear, contentDescription = stringResource(Res.string.playlist_find_clear), tint = Color.Gray)
                     }
                 }
             },
@@ -937,7 +930,7 @@ private fun FindInPlaylistField(query: String, onQueryChange: (String) -> Unit, 
             modifier = Modifier.fillMaxWidth()
         )
         if (searchedOf != null && query.isNotBlank()) {
-            Text(stringResource(R.string.playlist_find_loading, searchedOf), color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(Res.string.playlist_find_loading, searchedOf), color = Color.Gray, fontSize = 12.sp)
         }
     }
 }
