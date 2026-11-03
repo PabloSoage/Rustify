@@ -503,6 +503,9 @@
     <string name="dj_auto_source_discover">Discover (suggestions)</string>
     <!-- Lyrics providers (chain) + Debug (Android Auto preview) -->
     <string name="lyrics_provider_lrclib">LRCLIB</string>
+    <string name="lyrics_provider_file">The file\'s own</string>
+    <string name="lyrics_provider_asking">Asking %1$s…</string>
+    <string name="lyrics_provider_nothing">%1$s has nothing for this song</string>
     <string name="lyrics_provider_musixmatch">Musixmatch</string>
     <string name="lyrics_provider_genius">Genius</string>
     <string name="lyrics_provider_petitlyrics">PetitLyrics</string>
