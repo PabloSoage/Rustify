@@ -1,6 +1,5 @@
 package com.varuna.rustify.player
 
-import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.RustifyJson
 import kotlinx.serialization.Serializable
@@ -14,7 +13,8 @@ import java.io.File
  * Kept apart from `playback_state.json` on purpose. That file is the live session and has already
  * lost queues to a bad write (`13-playback-state-persistence.md`); a new feature does not get to
  * change its shape. A saved queue is a snapshot with the same `FullTrack` JSON, so loading one needs
- * no network; `saved_queues.json` is written the same atomic way. At most [MAX] — Musicolet's 20 —
+ * no network; `saved_queues.json` is written the same atomic way, in the folder the platform keeps its
+ * files in (Android's `filesDir`). At most [MAX] — Musicolet's 20 —
  * the oldest going first. The list logic is pure and tested on the JVM.
  */
 object SavedQueues {
@@ -45,17 +45,17 @@ object SavedQueues {
     private val serializer = ListSerializer(SavedQueue.serializer())
 
     @Synchronized
-    fun load(context: Context): List<SavedQueue> = runCatching {
-        val file = File(context.filesDir, FILE)
+    fun load(dir: File): List<SavedQueue> = runCatching {
+        val file = File(dir, FILE)
         if (!file.exists()) emptyList() else RustifyJson.decodeFromString(serializer, file.readText())
     }.getOrDefault(emptyList())
 
     @Synchronized
-    fun store(context: Context, list: List<SavedQueue>) {
+    fun store(dir: File, list: List<SavedQueue>) {
         runCatching {
             val text = RustifyJson.encodeToString(serializer, list)
-            val tmp = File(context.filesDir, "$FILE.tmp")
-            val dst = File(context.filesDir, FILE)
+            val tmp = File(dir, "$FILE.tmp")
+            val dst = File(dir, FILE)
             tmp.writeText(text)
             if (!tmp.renameTo(dst)) { dst.writeText(text); tmp.delete() }
         }

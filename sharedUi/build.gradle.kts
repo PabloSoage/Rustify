@@ -41,6 +41,11 @@ kotlin {
             api(compose.components.resources)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+            // Android has it in the platform; the desktop gets it below (see the catalog).
+            compileOnly(libs.org.json)
+        }
+        getByName("desktopMain").dependencies {
+            implementation(libs.org.json)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

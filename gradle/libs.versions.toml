@@ -73,6 +73,9 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coilCompose" }
 # Coil 3 fetches nothing by itself; OkHttp is a JVM library, so the same fetcher serves Android and the desktop.
+# org.json: part of Android itself, a library on the desktop. :sharedUi compiles against it in common code
+# and ships it on the desktop only (the screens and the repositories moved there use it as the app did).
+org-json = { group = "org.json", name = "json", version = "20260814" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coilCompose" }
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }

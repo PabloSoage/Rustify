@@ -54,65 +54,6 @@ import kotlin.time.Duration.Companion.milliseconds
  * @param id stable per context — `"album:ID"`, `"playlist:ID"`, `"radio:ID"`. Coming back to the
  *   same one updates the entry rather than adding another.
  */
-data class PlaybackContext(
-    val id: String,
-    val label: String,
-    val subtitle: String = "",
-    val imageUrl: String = ""
-) {
-    internal fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
-        put("id", id)
-        put("label", label)
-        put("subtitle", subtitle)
-        put("imageUrl", imageUrl)
-    }
-
-    companion object {
-        /**
-         * Reads a context back out of the saved playback state.
-         *
-         * It is saved at all because it was not, and the queue was: after the process was killed the
-         * queue came back and the context did not, so playback carried on into a `null` context and
-         * both the things keyed on one went quiet — no ✓ on the tracks being finished, and no update
-         * to "pick up where you left off". Nothing looked broken, which is why it took a while to
-         * notice: the music played fine.
-         *
-         * Null for a state file written before this field existed, which is the behaviour that was
-         * there anyway.
-         */
-        internal fun fromJson(json: org.json.JSONObject?): PlaybackContext? {
-            val id = json?.optString("id").orEmpty()
-            if (id.isBlank()) return null
-            return PlaybackContext(
-                id = id,
-                label = json!!.optString("label"),
-                subtitle = json.optString("subtitle"),
-                imageUrl = json.optString("imageUrl")
-            )
-        }
-    }
-}
-
-data class AudioPlayerState(
-    val currentTrack: FullTrack? = null,
-    val isPlaying: Boolean = false,
-    val isBuffering: Boolean = false,  // true while resolving OR while ExoPlayer is buffering
-    val isError: Boolean = false,       // true when stream could not be resolved/played
-    val errorMessage: String = "",
-    val queue: List<FullTrack> = emptyList(),
-    val originalQueue: List<FullTrack> = emptyList(),
-    val isShuffle: Boolean = false,
-    val isRepeat: Boolean = false,
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
-    val bufferPercent: Int = 0,
-    val isVideoMode: Boolean = false,
-    val videoSizeRatio: Float? = null,
-    // true when the current track resolved to a local file (local match or a "local:" track).
-    // The UI uses it to turn the alternatives button green and indicate the current match.
-    val isLocalSource: Boolean = false
-)
-
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @SuppressLint("StaticFieldLeak")
 class AudioPlayerService private constructor(private val context: Context) {
@@ -2690,7 +2631,7 @@ class AudioPlayerService private constructor(private val context: Context) {
     val activeSavedQueue: StateFlow<String?> = _activeSavedQueue
 
     fun refreshSavedQueues() {
-        mainScope.launch { _savedQueues.value = withContext(Dispatchers.IO) { SavedQueues.load(context) } }
+        mainScope.launch { _savedQueues.value = withContext(Dispatchers.IO) { SavedQueues.load(context.filesDir) } }
     }
 
     private fun snapshot(name: String): SavedQueues.SavedQueue? {
@@ -2707,7 +2648,7 @@ class AudioPlayerService private constructor(private val context: Context) {
 
     private suspend fun persistSaved(update: (List<SavedQueues.SavedQueue>) -> List<SavedQueues.SavedQueue>) {
         _savedQueues.value = withContext(Dispatchers.IO) {
-            update(SavedQueues.load(context)).also { SavedQueues.store(context, it) }
+            update(SavedQueues.load(context.filesDir)).also { SavedQueues.store(context.filesDir, it) }
         }
     }
 
@@ -3136,7 +3077,7 @@ class AudioPlayerService private constructor(private val context: Context) {
             // just the slow path, because the round trip happens with nothing playing.
             radioJob?.cancel()
             radioJob = mainScope.launch {
-                if (appendRadioTracks(st.currentTrack.id)) nextTrack()
+                if (appendRadioTracks(st.currentTrack?.id)) nextTrack()
             }
         }
     }
