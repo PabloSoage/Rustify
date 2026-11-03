@@ -40,6 +40,13 @@ interface KeyValueStore {
     fun getFloat(key: String, default: Float): Float = getString(key)?.toFloatOrNull() ?: default
 
     fun putFloat(key: String, value: Float) = putString(key, value.toString())
+
+    // A set of strings (folders, ids). Android keeps it typed; elsewhere it is one value, one entry per
+    // line — none of the sets stored hold a line break.
+    fun getStringSet(key: String, default: Set<String>): Set<String> =
+        getString(key)?.let { s -> s.split('\n').filter { it.isNotEmpty() }.toSet() } ?: default
+
+    fun putStringSet(key: String, value: Set<String>) = putString(key, value.joinToString("\n"))
 }
 
 /** In memory, for tests and for code that runs before the platform store exists. */

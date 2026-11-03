@@ -435,7 +435,8 @@ private fun EntityMenuRow(
 // --- Thin suspend adapters over SpotifyRepository (keep the composable self-contained) ---
 
 private suspend fun spotifyRepoGetPlaylists(context: android.content.Context): List<SimplePlaylist> {
-    val repo = SpotifyRepository(context)
+    // The live repository: constructing one here started a library sync and a local scan per call.
+    val repo = checkNotNull(SpotifyRepository.instance)
     return repo.getSavedPlaylists(limit = 50).items
 }
 
@@ -444,13 +445,15 @@ private suspend fun spotifyRepoAddAll(
     playlistId: String,
     trackIds: List<String>
 ): Int {
-    val repo = SpotifyRepository(context)
-    return repo.addAllTracksToPlaylist(context, playlistId, trackIds)
+    // The live repository: constructing one here started a library sync and a local scan per call.
+    val repo = checkNotNull(SpotifyRepository.instance)
+    return repo.addAllTracksToPlaylist(playlistId, trackIds)
 }
 
 /** @return the current user's id. */
 private suspend fun spotifyRepoGetMe(context: android.content.Context): String {
-    val repo = SpotifyRepository(context)
+    // The live repository: constructing one here started a library sync and a local scan per call.
+    val repo = checkNotNull(SpotifyRepository.instance)
     return repo.getMe().id
 }
 
@@ -460,7 +463,8 @@ private suspend fun spotifyRepoCreatePlaylist(
     userId: String,
     name: String
 ): Pair<String, String> {
-    val repo = SpotifyRepository(context)
+    // The live repository: constructing one here started a library sync and a local scan per call.
+    val repo = checkNotNull(SpotifyRepository.instance)
     val pl = repo.createPlaylist(userId, name)
     return pl.id to pl.name
 }

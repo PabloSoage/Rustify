@@ -1820,7 +1820,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
             android.util.Log.d("AudioPlayerService", "User YouTube alternative present for $trackId — skipping local match")
             return null
         }
-        val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context, track)
+        val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(context.filesDir, track)
             ?: return null
         return TrackRef.localUriOf(match.id)?.also {
             android.util.Log.d("AudioPlayerService", "Matched Spotify track to local file: $it")

@@ -46,6 +46,10 @@ kotlin {
             // Android has it in the platform; the desktop gets it below (see the catalog).
             compileOnly(libs.org.json)
         }
+        androidMain.dependencies {
+            // The local scan's folders are Storage Access Framework trees (AndroidLocalMusicScanner).
+            implementation(libs.androidx.documentfile)
+        }
         getByName("desktopMain").dependencies {
             implementation(libs.org.json)
         }

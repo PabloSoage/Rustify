@@ -1111,7 +1111,7 @@ fun TravelScreen(
                             val user = spotifyRepo.getMe()
                             val pl = spotifyRepo.createPlaylist(user.id, name)
                             val ids = reorderable.mapNotNull { it.id }.filter { it.isNotBlank() && !TrackRef.isLocal(it) }
-                            spotifyRepo.addAllTracksToPlaylist(context, pl.id, ids)
+                            spotifyRepo.addAllTracksToPlaylist(pl.id, ids)
                             pl.id
                         }.onSuccess { onResult(true) }
                          .onFailure { onResult(false) }

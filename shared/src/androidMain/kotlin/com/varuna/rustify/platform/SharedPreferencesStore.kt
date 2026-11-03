@@ -44,4 +44,11 @@ class SharedPreferencesStore(private val prefs: SharedPreferences) : KeyValueSto
     override fun putFloat(key: String, value: Float) {
         prefs.edit().putFloat(key, value).apply()
     }
+
+    override fun getStringSet(key: String, default: Set<String>): Set<String> =
+        prefs.getStringSet(key, default)?.toSet() ?: default
+
+    override fun putStringSet(key: String, value: Set<String>) {
+        prefs.edit().putStringSet(key, value).apply()
+    }
 }

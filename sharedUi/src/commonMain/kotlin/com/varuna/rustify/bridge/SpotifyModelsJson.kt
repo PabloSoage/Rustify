@@ -16,14 +16,14 @@ import org.json.JSONObject
  * Nothing here knows a field. The decoders are still the generated ones in the shared module.
  */
 
-internal inline fun <reified T> decodeWire(json: JSONObject): T = decodeWire(json.toString())
+inline fun <reified T> decodeWire(json: JSONObject): T = decodeWire(json.toString())
 
-internal inline fun <reified T> decodeWireList(array: JSONArray?): List<T> =
+inline fun <reified T> decodeWireList(array: JSONArray?): List<T> =
     if (array == null) emptyList() else decodeWire(array.toString())
 
-internal inline fun <reified T> encodeWire(value: T): JSONObject = JSONObject(encodeWireString(value))
+inline fun <reified T> encodeWire(value: T): JSONObject = JSONObject(encodeWireString(value))
 
-internal inline fun <reified T> encodeWireArray(values: List<T>): JSONArray =
+inline fun <reified T> encodeWireArray(values: List<T>): JSONArray =
     JSONArray(encodeWireString(values))
 
 fun SpotifyImage.toJson(): JSONObject = encodeWire(this)
