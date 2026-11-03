@@ -18,7 +18,7 @@ plugins {
 kotlin {
     jvmToolchain(21)
 
-    androidLibrary {
+    android {
         namespace = "com.varuna.rustify.shared"
         compileSdk = 37
         minSdk = 29
@@ -66,10 +66,8 @@ kotlin {
         val iosMain = maybeCreate("iosMain").apply { dependsOn(commonMain.get()) }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
-        val desktopTest by getting {
-            dependencies {
-                implementation(kotlin("test-junit"))
-            }
+        getByName("desktopTest").dependencies {
+            implementation(kotlin("test-junit"))
         }
     }
 }

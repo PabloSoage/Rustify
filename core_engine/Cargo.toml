@@ -130,6 +130,14 @@ cpal = { version = "0.15", optional = true }
 # toolchain. See docs/17-testing-and-coverage.md.
 rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 
+# --- iOS only ---
+# The same switch for the same reason: rquickjs-sys ships no pre-generated bindings for
+# aarch64-apple-ios or aarch64-apple-ios-sim (seen in CI: "couldn't find file
+# src/bindings/aarch64-apple-ios.rs"). On a Mac bindgen finds Xcode's libclang, so nothing else is
+# needed. Not used by `cargo ndk build`, so the APK is unchanged.
+[target.'cfg(target_os = "ios")'.dependencies]
+rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
+
 
 # --- Optimizations for Android NDK (Reduces .so file size) ---
 [profile.release]
