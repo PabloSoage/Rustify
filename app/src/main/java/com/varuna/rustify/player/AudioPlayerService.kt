@@ -866,6 +866,7 @@ class AudioPlayerService private constructor(private val context: Context) {
         // Info level: it is the one way to tell offload is working on a given phone.
         exoPlayer.addAudioOffloadListener(object : ExoPlayer.AudioOffloadListener {
             override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
+                offloadedNow = isOffloadedPlayback
                 android.util.Log.i("AudioOffload", "offloaded playback: $isOffloadedPlayback")
             }
             override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
@@ -889,6 +890,21 @@ class AudioPlayerService private constructor(private val context: Context) {
                 EqualizerController.attach(context, audioSessionId)
                 AutoEqController.attach(context, audioSessionId)
                 ExternalEffects.announce(context, audioSessionId)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                // An announced jump (a seek, A-B, a new item): the clock starts again from here.
+                sanePositionMs = -1L
+                if (offloadedNow) {
+                    android.util.Log.i(
+                        "PositionSanity",
+                        "discontinuity (reason $reason) while offloaded: ${oldPosition.positionMs} -> ${newPosition.positionMs} ms"
+                    )
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -999,6 +1015,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                         val pos = exoPlayer.currentPosition
                         val declared = exoPlayer.duration.coerceAtLeast(0L)
                         val resumes = endedId?.let { prematureResumes[it] } ?: 0
+                        android.util.Log.i(
+                            "PositionSanity",
+                            "ended at $pos ms of $declared ms (offloaded=$offloadedNow)"
+                        )
                         if (endedId != null && preparedTrackId == endedId && !isCasting &&
                             PlaybackRecovery.isPrematureEnd(pos, declared, resumes)
                         ) {
@@ -1148,6 +1168,7 @@ class AudioPlayerService private constructor(private val context: Context) {
                     preparedTrackId == _state.value.currentTrack?.id
                 if (!isResolving && holdsCurrentTrack && (exoPlayer.isPlaying || _state.value.isBuffering)) {
                     val pos = exoPlayer.currentPosition
+                    watchPosition(pos)
                     _state.value = _state.value.copy(
                         positionMs = pos,
                         durationMs = if (exoPlayer.duration > 0) exoPlayer.duration
@@ -1683,6 +1704,36 @@ class AudioPlayerService private constructor(private val context: Context) {
      * converges, so it needs no bookkeeping at the call sites.
      */
     @Volatile private var userPaused = false
+
+    // PositionSanity: whether the DSP holds the song now, and the last position the clock vouches
+    // for. The baseline is dropped on every discontinuity the player reports (a seek, a new item)
+    // and on every pause, so only jumps nobody announced are measured.
+    @Volatile private var offloadedNow = false
+    private var sanePositionMs = -1L
+    private var saneAtMs = 0L
+
+    /**
+     * Measures, for now: logs every position the clock does not vouch for, with whether the DSP
+     * held the song. Correcting it (a seek) waits for numbers from a phone where offload engages,
+     * since a seek under offload is itself a suspect (A-B alone shifted the end of a song).
+     */
+    private fun watchPosition(pos: Long) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!exoPlayer.isPlaying) { sanePositionMs = -1L; return }
+        if (sanePositionMs >= 0) {
+            val expected = PositionSanity.check(
+                sanePositionMs, now - saneAtMs, pos, exoPlayer.duration, exoPlayer.playbackParameters.speed
+            )
+            if (expected != null) {
+                android.util.Log.w(
+                    "PositionSanity",
+                    "position $pos ms, expected about $expected ms (offloaded=$offloadedNow, duration=${exoPlayer.duration})"
+                )
+            }
+        }
+        sanePositionMs = pos
+        saneAtMs = now
+    }
 
     /**
      * Confirms that `play()` actually took, and asks again once if it did not.
