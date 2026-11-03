@@ -40,8 +40,8 @@ class WebUserAgentsTest {
     @Test
     fun `the embedded-view markers never reach the page`() {
         for (ua in listOf(WebUserAgents.mobile(tabletWebView), WebUserAgents.mobile(phoneWebView))) {
-            assertFalse(ua, ua.contains("; wv"))
-            assertFalse(ua, ua.contains("Version/4.0"))
+            assertFalse(ua.contains("; wv"), ua)
+            assertFalse(ua.contains("Version/4.0"), ua)
         }
     }
 
