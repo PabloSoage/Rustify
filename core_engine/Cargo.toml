@@ -29,6 +29,9 @@ c-api = []
 # Linux, Now Playing on macOS. Separate from desktop-audio so a platform where it fails to build or
 # register does not take the player down with it.
 media-controls = ["dep:souvlaki"]
+# The system's credential store for the desktop's secrets (src/secrets.rs): Credential Manager,
+# Keychain, Secret Service. Linux builds need libdbus-1-dev for the last.
+secure-store = ["dep:keyring"]
 
 [dependencies]
 # JNI bridge with Android
@@ -120,6 +123,7 @@ cpal = { version = "0.15", optional = true }
 # One API over SMTC, MPRIS and MPNowPlayingInfoCenter. zbus rather than the default libdbus binding,
 # so Linux builds need no system D-Bus headers (only libasound for cpal).
 souvlaki = { version = "0.7", optional = true, default-features = false, features = ["use_zbus"] }
+keyring = { version = "3", optional = true, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 
 # --- Android only ---
 [target.'cfg(target_os = "android")'.dependencies]

@@ -111,9 +111,10 @@ class SpotifyLibrary(private val core: SpotifyCore, private val store: KeyValueS
         result.expiration?.let { store.putLong(KEY_EXPIRATION, it) }
     }
 
-    private companion object {
-        const val TAG = "SpotifyLibrary"
-        // The names SpotifyRepository uses (KEY_SP_DC, KEY_ACCESS_TOKEN, KEY_EXPIRATION).
+    companion object {
+        private const val TAG = "SpotifyLibrary"
+        // The names SpotifyRepository uses (KEY_SP_DC, KEY_ACCESS_TOKEN, KEY_EXPIRATION). Public so a
+        // platform can route the secret ones to its credential store (SecureKeyValueStore).
         const val KEY_SP_DC = "sp_dc_cookie"
         const val KEY_ACCESS_TOKEN = "access_token"
         const val KEY_EXPIRATION = "expiration_timestamp"

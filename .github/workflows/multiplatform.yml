@@ -25,10 +25,10 @@ jobs:
         with:
           workspaces: core_engine
           key: features
-      # cpal's ALSA backend links libasound.
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - run: cargo test --all-targets --features mock-env,engine,c-api,media-controls
-      - run: cargo clippy --all-targets --features mock-env,desktop-audio,c-api,media-controls -- -D warnings
+      # cpal's ALSA backend links libasound; keyring's Secret Service backend links libdbus.
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: cargo test --all-targets --features mock-env,engine,c-api,media-controls,secure-store
+      - run: cargo clippy --all-targets --features mock-env,desktop-audio,c-api,media-controls,secure-store -- -D warnings
 
   # The shared Kotlin module's own tests, on the desktop JVM target.
   shared:
@@ -63,7 +63,7 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config rpm
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config rpm
       # bash on every runner: PowerShell splits `-Prustify.desktop=true` at the dot.
       - shell: bash
         run: ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS --no-daemon

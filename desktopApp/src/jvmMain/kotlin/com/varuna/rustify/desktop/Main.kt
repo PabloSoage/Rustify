@@ -19,6 +19,7 @@ import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.PreferencesStore
+import com.varuna.rustify.platform.SecureKeyValueStore
 import com.varuna.rustify.spotify.JvmSpotifyCore
 import com.varuna.rustify.spotify.SpotifyLibrary
 import com.varuna.rustify.platform.defaultLanguage
@@ -33,8 +34,14 @@ fun main() {
         val player = remember {
             QueuePlayer(scope, JvmPlayerBackend, FileStore(File(AppDirs.data, "player"))).also { it.restore() }
         }
-        // The session is three short values: Preferences is enough (the queue is not, see FileStore).
-        val spotify = remember { SpotifyLibrary(JvmSpotifyCore, PreferencesStore()) }
+        // The session is three short values: Preferences holds them (the queue does not fit, see
+        // FileStore), except the cookie and the token, which go to the system's credential store.
+        val spotify = remember {
+            SpotifyLibrary(
+                JvmSpotifyCore,
+                SecureKeyValueStore(setOf(SpotifyLibrary.KEY_SP_DC, SpotifyLibrary.KEY_ACCESS_TOKEN), PreferencesStore()),
+            )
+        }
 
         // The screens wait for the core's start-up: restoring the Spotify session before the client
         // knows its cache folder would work, and then forget what it learned.

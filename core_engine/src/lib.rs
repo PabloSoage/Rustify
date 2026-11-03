@@ -23,6 +23,8 @@ pub mod engine;
 pub mod ffi;
 #[cfg(feature = "media-controls")]
 pub mod media_controls;
+#[cfg(feature = "secure-store")]
+pub mod secrets;
 pub mod tempo;
 pub mod tonal;
 pub mod calendar;
@@ -3249,6 +3251,64 @@ pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_stopNa
         let taken = MEDIA_CONTROLS.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(taken);
         serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+
+// =============================================================================
+// SECRETS (docs `25` T2.3) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.platform.SecretStore`. Each answers the usual JSON: the value as a JSON string
+// (or `null`), or `{"success":false,…}` when there is no credential store to use.
+
+/// JNI Bridge: the secret under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_getNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::get(&key))
+    })
+}
+
+/// JNI Bridge: stores `value` under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_setNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+    value: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        let value = value.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::set(&key, &value).map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: removes the secret under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_removeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::remove(&key).map(|_| spotify::models::OperationResult {
             success: true,
             error: None,
         }))
