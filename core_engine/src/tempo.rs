@@ -126,7 +126,8 @@ impl Tempo {
             }
             b += 0.01;
         }
-        if !(mean > 0.0) || !fine.1.is_finite() {
+        // A NaN mean must also give up, which `mean <= 0.0` alone would let through.
+        if mean.is_nan() || mean <= 0.0 || !fine.1.is_finite() {
             return None;
         }
         Some(Estimate { bpm: (fine.0 * 10.0).round() / 10.0, confidence: fine.1 / mean })

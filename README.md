@@ -7,7 +7,7 @@ It is a personal project, released as betas. Local music, YouTube Music and sear
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
 you pick asks for. It keeps everything it knows about you on your own device.
 
-> **Current:** app `4.8.2b` · core `4.8.2` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `5.0.0b` · core `5.0.0` · `minSdk 29` · `targetSdk 36`
 >
 > The Rust core is built from the same commit as the app and carries the same version number.
 
@@ -53,8 +53,20 @@ lab's SME kernels and Gemini Nano need the real hardware.
   **race**: the next starts if the first has not answered in 4 s, and the first answer plays. The
   default order follows speed and robustness — the direct YouTube client, then yt-dlp (slower, but it
   updates itself), then add-ons; Invidious and Deezer last and off.
-- **Sound** — Volume normalised from song to song with YouTube's loudness data, a fade between songs,
-  an equaliser and a sleep timer that fades out and pauses.
+- **Sound** — Volume normalised from song to song with YouTube's loudness data or the file's own
+  ReplayGain tags (automatic track/album mode), a fade between songs and on pause, an equaliser, speed
+  and pitch, A-B repeat, skip silence, and a sleep timer that fades out — by minutes or by songs.
+- **Per-headphone correction** — An AutoEq profile per output device, applied when that device
+  connects.
+- **Stereo tools** — Crossfeed for headphones, balance, mono for one earbud, and voice reduction for
+  karaoke.
+- **Bit-perfect USB** — On Android 14+, a USB DAC can take the file's own sample rate untouched,
+  with nothing in the app in the way.
+- **Your own server** — A Subsonic / Navidrome / Gonic server is one more audio source: a song it has
+  plays from your file at its own quality, one it lacks goes to the next source.
+- **Headphones that come back** — Playback pauses when the headphones or Bluetooth drop, and resumes
+  if they reconnect within a minute (the car starting). A network drop no longer skips songs; a cut
+  stream resumes where it stopped. Long tracks remember their place.
 - **Battery** — On phones that support it, the audio chip (DSP) decodes the song and the processor
   sleeps between buffers of several minutes, instead of waking every few milliseconds. It steps aside
   by itself while the equaliser, the fade, the video or the audio lab need the processor.
@@ -84,6 +96,12 @@ lab's SME kernels and Gemini Nano need the real hardware.
 - **Spotify web player** — Spotify's own web player inside the app, with network filtering driven by
   uBlock Origin's public filter lists. Experimentally, it can also act as the playback backend,
   driven by Rustify's own transport controls.
+
+### 👥 Listening Together
+- **Jam** — One phone hosts the queue; others join with a code and play it in step, wherever they
+  are. Guests can skip and pick songs; pausing stays on your own phone. It goes through a public MQTT
+  broker (or your own), **end-to-end encrypted**: the broker sees a hash and ciphertext, never the
+  code or the queue.
 
 ### 🚗 In the Car
 - **Android Auto** — Browse your library, search (no account needed), recently played, shuffle and
@@ -119,6 +137,12 @@ lab's SME kernels and Gemini Nano need the real hardware.
 - **Your year in music** — A Wrapped-style recap of any year from the history on your phone —
   minutes, top artist and song, what kind of listener you are — as cards you can share as an image.
 - **Song Radio** — Spotify's own radio for any track, without an account.
+- **Blocklist** — Songs and artists you never want: the radio never adds them and the queue skips
+  them. Chosen by hand, they still play.
+- **Scrobbling** — To ListenBrainz and to Last.fm (with your own API key), queued while offline.
+- **Tempo** — The BPM of a local track, measured on the phone.
+- **Local library** — A folder view, M3U import and export, artist tags split on separators you
+  choose, lyrics read from the file itself, and saved queues you can switch between.
 - **Credits & recommendations** — Who wrote, played and produced a song; ten songs that fit any
   playlist, under it. Both from the public catalogue, no account needed.
 - **Artist pages** — Top tracks, discography, fans also like, and *About*: monthly listeners, world
@@ -154,6 +178,10 @@ lab's SME kernels and Gemini Nano need the real hardware.
 ### 🔄 Updates
 - **In-app updater** — Checks GitHub Releases on demand or at startup, shows the changelog for every
   version you missed, downloads the build matching your device, and lets you pick the installer.
+
+### 📱 Outside the App
+- **Home-screen widget, Quick Settings tile and launcher shortcuts.**
+- **Headphone button** — Two and three presses do what you choose.
 
 ### 🎨 Interface & UX
 - **Jetpack Compose + Material 3** — Reactive state via `StateFlow`, navigation over a manual stack

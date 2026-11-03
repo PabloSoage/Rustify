@@ -24,11 +24,11 @@ async fn main() {
     println!("ping, wrong password: {:?}", subsonic::ping::<AndroidEnv>(&wrong).await);
 
     let started = std::time::Instant::now();
-    let found = subsonic::find::<AndroidEnv>(&cfg, title, &[artist.clone()], duration_ms).await;
+    let found = subsonic::find::<AndroidEnv>(&cfg, title, std::slice::from_ref(artist), duration_ms).await;
     println!("find {title:?}: {:?} in {} ms", found.as_ref().map(|f| f.as_ref().map(|f| (&f.id, &f.suffix, f.bit_rate))), started.elapsed().as_millis());
-    let absent = subsonic::find::<AndroidEnv>(&cfg, "No Such Song Anywhere", &[artist.clone()], 0).await;
+    let absent = subsonic::find::<AndroidEnv>(&cfg, "No Such Song Anywhere", std::slice::from_ref(artist), 0).await;
     println!("find absent: {:?}", absent.map(|f| f.is_some()));
-    let off_by_a_minute = subsonic::find::<AndroidEnv>(&cfg, title, &[artist.clone()], duration_ms + 60_000).await;
+    let off_by_a_minute = subsonic::find::<AndroidEnv>(&cfg, title, std::slice::from_ref(artist), duration_ms + 60_000).await;
     println!("find, duration 60 s off: {:?}", off_by_a_minute.map(|f| f.is_some()));
 
     if let Ok(Some(f)) = found {
