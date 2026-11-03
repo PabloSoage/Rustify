@@ -31,15 +31,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import coil3.compose.LocalPlatformContext
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
 
 @Composable
@@ -93,7 +93,7 @@ fun TrackRowItem(
                 Spacer(modifier = Modifier.width(3.dp))
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = stringResource(R.string.track_already_listened),
+                    contentDescription = stringResource(Res.string.track_already_listened),
                     tint = Color(0xFF1DB954),
                     modifier = Modifier.size(12.dp)
                 )
@@ -102,7 +102,7 @@ fun TrackRowItem(
 
         // Track Cover art thumbnail
         val trackImageUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url ?: fallbackCoverUrl
-        val context = LocalContext.current
+        val context = LocalPlatformContext.current
         val imageRequest = ImageRequest.Builder(context)
             .data(trackImageUrl)
             .apply {

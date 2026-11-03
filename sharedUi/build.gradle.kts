@@ -39,6 +39,8 @@ kotlin {
             api(compose.materialIconsExtended)
             api(compose.ui)
             api(compose.components.resources)
+            api(libs.coil.compose)
+            implementation(libs.coil.network.okhttp)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             // Android has it in the platform; the desktop gets it below (see the catalog).

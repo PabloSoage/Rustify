@@ -30,7 +30,7 @@ import com.varuna.rustify.bridge.FullTrack
  * Marked `internal` so it can be reused across screens.
  */
 @Composable
-internal fun LocalPlaylistCover(
+fun LocalPlaylistCover(
     tracks: List<FullTrack>,
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(4.dp),
