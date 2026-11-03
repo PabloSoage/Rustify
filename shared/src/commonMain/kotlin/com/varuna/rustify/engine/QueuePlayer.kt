@@ -176,13 +176,20 @@ class QueuePlayer(
     }
 
     private fun finishListening(completed: Boolean, errored: Boolean) {
-        val l = listening ?: return
+        val event = takeListening(completed, errored) ?: return
+        scope.launch { record(event) }
+    }
+
+    /** Ends the listen in progress and answers its event, if it is one to store. */
+    private fun takeListening(completed: Boolean, errored: Boolean): PlayEvent? {
+        val l = listening ?: return null
         listening = null
-        val event = playEventOf(l.track, l.startedAt, l.listenedMs, completed, errored) ?: return
-        scope.launch {
-            runCatching { backend.recordPlay(json.encodeToString(PlayEvent.serializer(), event)) }
-                .onFailure { Log.w(TAG, "could not record a play", it) }
-        }
+        return playEventOf(l.track, l.startedAt, l.listenedMs, completed, errored)
+    }
+
+    private suspend fun record(event: PlayEvent) {
+        runCatching { backend.recordPlay(json.encodeToString(PlayEvent.serializer(), event)) }
+            .onFailure { Log.w(TAG, "could not record a play", it) }
     }
 
     /**
@@ -228,7 +235,9 @@ class QueuePlayer(
      */
     fun playAll(list: List<FullTrack>, start: Int, startMs: Long = 0) {
         val playable = list.filter { it.id != null }
-        val first = list.getOrNull(start)?.let { playable.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+        // By position, not by equality: a playlist can hold the same song twice, and starting at the
+        // second copy must not land on the first. Tracks dropped above shift the index down.
+        val first = if (list.getOrNull(start)?.id != null) list.take(start).count { it.id != null } else 0
         tracks = playable
         failuresInARow = 0
         _ui.update { it.copy(queue = playable, error = null) }
@@ -300,6 +309,17 @@ class QueuePlayer(
         finishListening(completed = false, errored = false)
         save()
         backend.send(EngineCommand.Stop)
+    }
+
+    /**
+     * [shutdown] for a process about to end: the listen in progress is stored before this returns.
+     * [shutdown] only launches that write, and an exit right after it loses the last song.
+     */
+    suspend fun close() {
+        val last = takeListening(completed = false, errored = false)
+        save()
+        backend.send(EngineCommand.Stop)
+        last?.let { record(it) }
     }
 
     // ---------------------------------------------------------------------------------------------

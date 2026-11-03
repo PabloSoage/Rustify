@@ -26,6 +26,8 @@ import com.varuna.rustify.spotify.JvmSpotifyCore
 import com.varuna.rustify.spotify.SpotifyLibrary
 import com.varuna.rustify.platform.defaultLanguage
 import java.io.File
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 fun main() {
     // Before anything names NativeEngine: on the desktop the library is not on java.library.path.
@@ -45,10 +47,24 @@ fun main() {
             )
         }
 
-        // The computer's name is what the others in a Jam see, unless one is set in the Jam tab.
+        // The computer's name is what the others in a Jam see, unless one is set in the Jam tab. From
+        // the environment, not InetAddress.getLocalHost(): that can wait on a reverse DNS lookup, and
+        // this runs on the UI thread.
         val jam = remember {
-            val host = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()
+            val host = System.getenv("COMPUTERNAME") ?: System.getenv("HOSTNAME")
             JamSession(scope, JvmJamCore, player, PreferencesStore(), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
+        }
+
+        // Closing waits, briefly, for the last listen to be stored and the Jam room to be told:
+        // launched and then exited, both were lost.
+        fun quit() {
+            runBlocking {
+                withTimeoutOrNull(3_000) {
+                    jam.leaveNow()
+                    player.close()
+                }
+            }
+            exitApplication()
         }
 
         // The screens wait for the core's start-up: restoring the Spotify session before the client
@@ -64,11 +80,7 @@ fun main() {
         }
 
         Window(
-            onCloseRequest = {
-                jam.leave()
-                player.shutdown()
-                exitApplication()
-            },
+            onCloseRequest = ::quit,
             title = "Rustify",
             state = rememberWindowState(width = 1100.dp, height = 760.dp),
         ) {
@@ -79,10 +91,7 @@ fun main() {
                     player = player,
                     windowHandle = handle,
                     onRaise = { window.toFront() },
-                    onQuit = {
-                        player.shutdown()
-                        exitApplication()
-                    },
+                    onQuit = ::quit,
                 )
             }
             RustifyTheme {

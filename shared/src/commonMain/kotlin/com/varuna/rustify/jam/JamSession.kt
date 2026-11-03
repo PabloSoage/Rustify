@@ -147,6 +147,19 @@ class JamSession(
         _ui.value = Ui()
     }
 
+    /**
+     * [leave] for a process about to end: waits until the room has been told (presence cleared, and
+     * the state too when hosting), which [leave] only launches.
+     */
+    suspend fun leaveNow() {
+        val inRoom = _ui.value.role != Role.NONE
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+        player.intercept = null
+        _ui.value = Ui()
+        if (inRoom) runCatching { core.leave() }
+    }
+
     fun kick(id: String) {
         scope.launch { runCatching { core.kick(id) } }
     }
