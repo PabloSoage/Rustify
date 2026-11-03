@@ -900,8 +900,10 @@ class AudioPlayerService private constructor(private val context: Context) {
                 newPosition: Player.PositionInfo,
                 reason: Int
             ) {
-                // An announced jump (a seek, A-B, a new item): the clock starts again from here.
-                sanePositionMs = -1L
+                // An announced jump (a seek, A-B, a new item): the clock starts again from where it
+                // landed, so a position that drifts right after the seek is still caught.
+                sanePositionMs = newPosition.positionMs
+                saneAtMs = android.os.SystemClock.elapsedRealtime()
                 if (offloadedNow) {
                     android.util.Log.i(
                         "PositionSanity",
@@ -920,6 +922,12 @@ class AudioPlayerService private constructor(private val context: Context) {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
+                // PositionSanity: paused, the position must stay where it is; the clock restarts on
+                // resume, so the first tick after it measures against the pause.
+                if (isPlaying) saneAtMs = android.os.SystemClock.elapsedRealtime()
+                else if (exoPlayer.playbackState == Player.STATE_READY) {
+                    sanePositionMs = exoPlayer.currentPosition
+                }
                 // Every way into playback, a restored queue resumed from the notification included.
                 if (isPlaying) ensureAudioRouteWatcher()
                 // Every pause, whoever asked for it (notification, headset, car): keep the place.
@@ -1714,15 +1722,27 @@ class AudioPlayerService private constructor(private val context: Context) {
     @Volatile private var offloadedNow = false
     private var sanePositionMs = -1L
     private var saneAtMs = 0L
+    /** The track the baseline belongs to: a new one starts at 0, which is not a jump back. */
+    private var saneTrackId: String? = null
 
     /**
-     * Measures, for now: logs every position the clock does not vouch for, with whether the DSP
-     * held the song. Correcting it (a seek) waits for numbers from a phone where offload engages,
-     * since a seek under offload is itself a suspect (A-B alone shifted the end of a song).
+     * Compares the player's position with the clock (PositionSanity) and logs every one it does not
+     * vouch for. The baseline survives pauses (the clock restarts on resume, the position must not
+     * move) and seeks (it moves to the seek's target), which is where offload was seen to lose count.
+     *
+     * Under offload a desync turns offload off for the session ([AudioOffload.distrusted]) and seeks
+     * to where playback should be: the same seek that put it right by hand, plus not letting it
+     * happen again. Without offload it is only logged — the cause would be somewhere else.
      */
     private fun watchPosition(pos: Long) {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (!exoPlayer.isPlaying) { sanePositionMs = -1L; return }
+        if (!exoPlayer.isPlaying) return
+        if (preparedTrackId != saneTrackId) {
+            saneTrackId = preparedTrackId
+            sanePositionMs = pos
+            saneAtMs = now
+            return
+        }
         if (sanePositionMs >= 0) {
             val expected = PositionSanity.check(
                 sanePositionMs, now - saneAtMs, pos, exoPlayer.duration, exoPlayer.playbackParameters.speed
@@ -1732,6 +1752,14 @@ class AudioPlayerService private constructor(private val context: Context) {
                     "PositionSanity",
                     "position $pos ms, expected about $expected ms (offloaded=$offloadedNow, duration=${exoPlayer.duration})"
                 )
+                if (offloadedNow && !AudioOffload.distrusted) {
+                    AudioOffload.distrusted = true
+                    applyAudioOffload()
+                    exoPlayer.seekTo(expected)
+                    sanePositionMs = expected
+                    saneAtMs = now
+                    return
+                }
             }
         }
         sanePositionMs = pos

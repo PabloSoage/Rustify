@@ -843,6 +843,7 @@
     <string name="settings_stereo_voice_desc">Cancels what is in the centre (usually the voice) and keeps the bass. For karaoke; works best on studio mixes.</string>
     <string name="settings_stereo_balance">Balance: %1$d</string>
     <string name="settings_offload_blocked_stereo">Not in use while a stereo tool is on: it processes the audio in the app.</string>
+    <string name="settings_offload_blocked_drift">Off until Rustify restarts: on this phone the player lost track of where the song was while the chip played it (the progress bar ran ahead or looped). Turned off to keep songs from ending early.</string>
     <string name="settings_disconnect">When the headphones disconnect</string>
     <string name="settings_disconnect_desc">The music pauses at once, so it never plays through the speaker. If the headphones, the car or the cable come back within this time, it carries on by itself.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>

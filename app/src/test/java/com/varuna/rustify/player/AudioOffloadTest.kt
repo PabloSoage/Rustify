@@ -38,6 +38,12 @@ class AudioOffloadTest {
     }
 
     @Test
+    fun aPositionThatDriftedUnderOffloadTurnsItOffForTheSession() {
+        assertEquals(AudioOffload.Blocker.POSITION_DRIFT, AudioOffload.blocker(true, true, 4, drifted = true))
+        assertEquals(null, AudioOffload.blocker(true, false, 0, drifted = false))
+    }
+
+    @Test
     fun theSwitchWinsOverEverything() {
         assertEquals(AudioOffload.Blocker.SWITCHED_OFF, AudioOffload.blocker(false, true, 4))
     }

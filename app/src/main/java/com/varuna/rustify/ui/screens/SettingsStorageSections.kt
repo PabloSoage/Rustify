@@ -786,6 +786,8 @@ internal fun AudioOffloadSection(context: Context) {
                     Text(stringResource(R.string.settings_offload_blocked_bitperfect), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 com.varuna.rustify.player.AudioOffload.Blocker.STEREO ->
                     Text(stringResource(R.string.settings_offload_blocked_stereo), color = Color(0xFFFFB74D), fontSize = 12.sp)
+                com.varuna.rustify.player.AudioOffload.Blocker.POSITION_DRIFT ->
+                    Text(stringResource(R.string.settings_offload_blocked_drift), color = Color(0xFFFFB74D), fontSize = 12.sp)
                 else -> {}
             }
         }
