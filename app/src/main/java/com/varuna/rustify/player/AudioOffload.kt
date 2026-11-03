@@ -28,11 +28,19 @@ object AudioOffload {
     /** The Video tab is playing: audio has to stay in step with the picture, which offload would not. */
     @Volatile var videoMode = false
 
-    /** Why offload is not used right now, or null when it is wanted. */
-    enum class Blocker { SWITCHED_OFF, EQUALIZER, FADE, AUDIO_LAB, VIDEO, SPEED, SKIP_SILENCE, AUTOEQ, BIT_PERFECT, STEREO }
+    /**
+     * The player's clock came loose from the audio while offloaded (PositionSanity), so offload is
+     * off until the app restarts. Reported on 5.0 as a progress bar looping and songs ending early;
+     * a session without offload costs battery, a song cut in half costs the song.
+     */
+    @Volatile var distrusted = false
 
-    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false, video: Boolean = false, speedChanged: Boolean = false, skipSilence: Boolean = false, autoEq: Boolean = false, bitPerfect: Boolean = false, stereo: Boolean = false): Blocker? = when {
+    /** Why offload is not used right now, or null when it is wanted. */
+    enum class Blocker { SWITCHED_OFF, POSITION_DRIFT, EQUALIZER, FADE, AUDIO_LAB, VIDEO, SPEED, SKIP_SILENCE, AUTOEQ, BIT_PERFECT, STEREO }
+
+    fun blocker(enabled: Boolean, equalizerOn: Boolean, fadeSeconds: Int, labOpen: Boolean = false, video: Boolean = false, speedChanged: Boolean = false, skipSilence: Boolean = false, autoEq: Boolean = false, bitPerfect: Boolean = false, stereo: Boolean = false, drifted: Boolean = false): Blocker? = when {
         !enabled -> Blocker.SWITCHED_OFF
+        drifted -> Blocker.POSITION_DRIFT
         labOpen -> Blocker.AUDIO_LAB
         video -> Blocker.VIDEO
         // Bit-perfect needs the PCM in the app: offload hands the encoded file to the DSP instead.
@@ -47,5 +55,5 @@ object AudioOffload {
     }
 
     fun blocker(context: Context): Blocker? =
-        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context), StereoTools.settings.active)
+        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context), StereoTools.settings.active, distrusted)
 }

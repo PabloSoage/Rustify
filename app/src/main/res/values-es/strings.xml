@@ -837,6 +837,7 @@
     <string name="settings_stereo_voice_desc">Cancela lo que está en el centro (normalmente la voz) y conserva el bajo. Para karaoke; funciona mejor con mezclas de estudio.</string>
     <string name="settings_stereo_balance">Balance: %1$d</string>
     <string name="settings_offload_blocked_stereo">No se usa con una herramienta estéreo activa: procesa el audio en la app.</string>
+    <string name="settings_offload_blocked_drift">Desactivado hasta que reinicies Rustify: en este móvil el reproductor perdió la cuenta de por dónde iba la canción mientras la tocaba el chip (la barra se adelantaba o volvía al principio). Se apaga para que las canciones no se corten antes de tiempo.</string>
     <string name="settings_disconnect">Al desconectarse los auriculares</string>
     <string name="settings_disconnect_desc">La música se pausa al momento, para que nunca suene por el altavoz. Si los auriculares, el coche o el cable vuelven antes de este tiempo, sigue sola.</string>
     <string name="settings_disconnect_seconds">%1$d s</string>
