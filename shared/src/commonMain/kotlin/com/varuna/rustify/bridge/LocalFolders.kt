@@ -30,18 +30,28 @@ object LocalFolders {
     /** What [at] holds: its sub-folders (by name) and its own tracks (by file name). */
     fun <T> level(items: List<T>, pathOf: (T) -> String?, at: String): Level<T> {
         val prefix = if (at.isEmpty()) "" else "$at/"
-        val counts = sortedMapOf<String, Int>(String.CASE_INSENSITIVE_ORDER)
+        // Sub-folder → how many tracks below it. Folded by case with the first spelling kept, which is
+        // what the case-insensitive TreeMap (`sortedMapOf`, JVM-only) did before this moved to shared.
+        val counts = LinkedHashMap<String, Pair<String, Int>>()
         val here = mutableListOf<Pair<String, T>>()
         for (item in items) {
             val path = pathOf(item) ?: continue
             if (!path.startsWith(prefix)) continue
             val rest = path.substring(prefix.length)
             val slash = rest.indexOf('/')
-            if (slash < 0) here += rest to item
-            else counts.merge(rest.substring(0, slash), 1, Int::plus)
+            if (slash < 0) {
+                here += rest to item
+            } else {
+                val name = rest.substring(0, slash)
+                val key = name.lowercase()
+                val seen = counts[key]
+                counts[key] = (seen?.first ?: name) to ((seen?.second ?: 0) + 1)
+            }
         }
         return Level(
-            counts.map { (name, n) -> Folder(name, prefix + name, n) },
+            counts.values
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first })
+                .map { (name, n) -> Folder(name, prefix + name, n) },
             here.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first }).map { it.second }
         )
     }
