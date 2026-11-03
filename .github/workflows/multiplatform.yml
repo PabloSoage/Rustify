@@ -97,6 +97,9 @@ jobs:
       - run: tools/ios/build-core.sh
       # Device first: linking a framework needs no signing, and it is the build an .ipa is made of.
       - run: ./gradlew :shared:linkDebugFrameworkIosArm64 :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+      # The shared module's common tests again, this time compiled by Kotlin/Native and run on the
+      # simulator: the same code the iOS app runs, not the JVM's reading of it.
+      - run: ./gradlew :shared:iosSimulatorArm64Test --no-daemon
       - run: brew install xcodegen
       - working-directory: iosApp
         run: xcodegen generate

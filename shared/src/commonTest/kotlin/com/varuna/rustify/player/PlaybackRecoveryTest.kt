@@ -1,10 +1,10 @@
 package com.varuna.rustify.player
 
 import com.varuna.rustify.player.PlaybackRecovery.Decision
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class PlaybackRecoveryTest {
     @Test
@@ -18,7 +18,7 @@ class PlaybackRecoveryTest {
     fun `a connection error with the network up retries but never skips`() {
         for (retries in 0..10) {
             val d = PlaybackRecovery.onFailure(networkUp = true, networkError = true, retries = retries)
-            assertTrue("retries=$retries gave $d", d is Decision.Retry)
+            assertTrue(d is Decision.Retry, "retries=$retries gave $d")
             assertTrue((d as Decision.Retry).delayMs <= 30_000L)
         }
     }

@@ -1,8 +1,8 @@
 package com.varuna.rustify.bridge
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.Test
 
 class M3uTest {
     private val doc = "local:content://com.android.externalstorage.documents/tree/primary%3AMusic/document/"

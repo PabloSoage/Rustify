@@ -1,10 +1,10 @@
 package com.varuna.rustify.bridge
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * The Kotlin half of the identity codec, checked against exactly the same cases as
@@ -25,7 +25,7 @@ class TrackRefTest {
     @Test
     fun `every shape round trips`() {
         for (raw in everyShape) {
-            assertEquals("round trip failed for $raw", raw, TrackRef.parse(raw)?.raw)
+            assertEquals(raw, TrackRef.parse(raw)?.raw, "round trip failed for $raw")
         }
     }
 
@@ -81,9 +81,9 @@ class TrackRefTest {
         // The predicates answer without building a TrackRef, so they must agree with parse on the
         // awkward inputs too — a length check would have called "ytm: " a valid video id.
         for (raw in listOf("ytm: ", "local:   ", "ytm:\t")) {
-            assertNull("parse accepted $raw", TrackRef.parse(raw))
-            assertFalse("isYtm accepted $raw", TrackRef.isYtm(raw))
-            assertFalse("isLocal accepted $raw", TrackRef.isLocal(raw))
+            assertNull(TrackRef.parse(raw), "parse accepted $raw")
+            assertFalse(TrackRef.isYtm(raw), "isYtm accepted $raw")
+            assertFalse(TrackRef.isLocal(raw), "isLocal accepted $raw")
             assertNull(TrackRef.youtubeVideoIdOf(raw))
             assertNull(TrackRef.localUriOf(raw))
         }
@@ -95,14 +95,13 @@ class TrackRefTest {
         // This is what stops them drifting.
         for (raw in everyShape + listOf("localpl:x", "ytm:", "local:", "", "   ")) {
             val ref = TrackRef.parse(raw)
-            assertEquals("isSpotify disagrees for '$raw'", ref is TrackRef.Spotify, TrackRef.isSpotify(raw))
-            assertEquals("isYtm disagrees for '$raw'", ref is TrackRef.Ytm, TrackRef.isYtm(raw))
-            assertEquals("isLocal disagrees for '$raw'", ref is TrackRef.Local, TrackRef.isLocal(raw))
+            assertEquals(ref is TrackRef.Spotify, TrackRef.isSpotify(raw), "isSpotify disagrees for '$raw'")
+            assertEquals(ref is TrackRef.Ytm, TrackRef.isYtm(raw), "isYtm disagrees for '$raw'")
+            assertEquals(ref is TrackRef.Local, TrackRef.isLocal(raw), "isLocal disagrees for '$raw'")
             assertEquals(
-                "isSpotifyLocal disagrees for '$raw'",
                 ref is TrackRef.SpotifyLocal,
                 TrackRef.isSpotifyLocal(raw)
-            )
+            , "isSpotifyLocal disagrees for '$raw'")
             assertEquals(ref?.youtubeVideoId, TrackRef.youtubeVideoIdOf(raw))
             assertEquals(ref?.localUri, TrackRef.localUriOf(raw))
         }

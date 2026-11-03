@@ -1,10 +1,10 @@
 package com.varuna.rustify.player
 
 import com.varuna.rustify.player.SourceLadder.Kind
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.fail
+import kotlin.test.Test
 
 class SourceLadderTest {
 

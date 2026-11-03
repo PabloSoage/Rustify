@@ -1,7 +1,7 @@
 package com.varuna.rustify.bridge
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class ArtistSeparatorsTest {
     @Test

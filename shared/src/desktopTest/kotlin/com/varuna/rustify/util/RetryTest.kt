@@ -1,8 +1,8 @@
 package com.varuna.rustify.util
 
 import com.varuna.rustify.bridge.SpotifyEngineException
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 import java.io.IOException
 
 /**
@@ -30,10 +30,9 @@ class RetryTest {
     fun `every kind the engine states is understood`() {
         for ((wire, expected) in theWireContract) {
             assertEquals(
-                "the engine said \"$wire\"",
                 expected,
                 classifyError(SpotifyEngineException("anything at all", wire))
-            )
+            , "the engine said \"$wire\"")
         }
     }
 
