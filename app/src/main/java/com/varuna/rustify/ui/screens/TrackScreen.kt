@@ -757,24 +757,13 @@ fun TrackScreen(
                                 }
 
                                 // ── Top bar (back + canvas tabs + menu) ──
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = if (isLandscape) 8.dp else 40.dp, start = 8.dp, end = 8.dp)
-                                        .align(Alignment.TopCenter),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    IconButton(onClick = onBackClick) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
-                                    }
-
-                                    // Image | Canvas | Video tab selector
-                                    val mediaTabs = buildList {
-                                        add(0 to stringResource(R.string.track_tab_image))
-                                        if (!canvasUrl.isNullOrEmpty()) add(1 to stringResource(R.string.track_tab_canvas))
-                                        if (!TrackRef.isLocal(trackId)) add(2 to stringResource(R.string.track_tab_video))
-                                    }
+                                // Image | Canvas | Video tab selector
+                                val mediaTabs = buildList {
+                                    add(0 to stringResource(R.string.track_tab_image))
+                                    if (!canvasUrl.isNullOrEmpty()) add(1 to stringResource(R.string.track_tab_canvas))
+                                    if (!TrackRef.isLocal(trackId)) add(2 to stringResource(R.string.track_tab_video))
+                                }
+                                val tabSelector: @Composable () -> Unit = {
                                     if (mediaTabs.size > 1) {
                                         Row(
                                             modifier = Modifier
@@ -798,15 +787,35 @@ fun TrackScreen(
                                             }
                                         }
                                     }
-
-                                    AbRepeatButton(audioPlayerService)
-                                    SpeedButton(audioPlayerService)
-                                    SleepTimerButton(audioPlayerService)
-                                    trackToShow.let {
-                                        IconButton(onClick = { showOptionsMenu = true }) {
-                                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+                                }
+                                // In portrait the eight controls did not fit one row and came out tiny, so
+                                // the tabs get a row of their own, centred under the buttons (5.0.1).
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (isLandscape) 8.dp else 40.dp, start = 8.dp, end = 8.dp)
+                                        .align(Alignment.TopCenter),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(onClick = onBackClick) {
+                                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                                        }
+                                        if (isLandscape) tabSelector() else Spacer(Modifier.weight(1f))
+                                        AbRepeatButton(audioPlayerService)
+                                        SpeedButton(audioPlayerService)
+                                        SleepTimerButton(audioPlayerService)
+                                        trackToShow.let {
+                                            IconButton(onClick = { showOptionsMenu = true }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+                                            }
                                         }
                                     }
+                                    if (!isLandscape) tabSelector()
                                 }
                             }
                         }
@@ -1959,11 +1968,13 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
  */
 @Composable
 private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val ab by audioPlayerService.abRepeat.collectAsState()
-    val label = when {
+    // A repeat icon with the loop's state beside it: "A-B" alone read as left/right channels (5.0.1).
+    val badge = when {
         ab.isLooping -> "A-B"
-        ab.a != null -> "A…"
-        else -> "A-B"
+        ab.a != null -> "A"
+        else -> null
     }
     val description = stringResource(
         when {
@@ -1972,16 +1983,36 @@ private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
             else -> R.string.ab_repeat_set_a
         }
     )
+    val markedA = stringResource(R.string.ab_repeat_marked_a)
+    val looping = stringResource(R.string.ab_repeat_looping)
+    val cleared = stringResource(R.string.ab_repeat_cleared)
+    fun mmss(ms: Long) = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
     IconButton(
-        onClick = { audioPlayerService.pressAbRepeat() },
+        onClick = {
+            audioPlayerService.pressAbRepeat()
+            // Say what the press did: the jump back to A when the loop starts is the loop working,
+            // and without a word it looked like the song stumbling.
+            val now = audioPlayerService.abRepeat.value
+            val text = when {
+                now.isLooping -> looping.format(mmss(now.a ?: 0), mmss(now.b ?: 0))
+                now.a != null -> markedA.format(mmss(now.a))
+                else -> cleared
+            }
+            android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_SHORT).show()
+        },
         modifier = Modifier.semantics { contentDescription = description }
     ) {
-        Text(
-            label,
-            color = if (ab.a != null) Color(0xFF1DB954) else Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Repeat,
+                contentDescription = null,
+                tint = if (ab.a != null) Color(0xFF1DB954) else Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+            if (badge != null) {
+                Text(badge, color = Color(0xFF1DB954), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

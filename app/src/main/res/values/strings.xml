@@ -867,6 +867,9 @@
     <string name="ab_repeat_set_a">A-B repeat: mark the start (A)</string>
     <string name="ab_repeat_set_b">A-B repeat: mark the end (B)</string>
     <string name="ab_repeat_clear">A-B repeat: stop looping</string>
+    <string name="ab_repeat_marked_a">A marked at %1$s: press again to mark B</string>
+    <string name="ab_repeat_looping">Repeating %1$s to %2$s</string>
+    <string name="ab_repeat_cleared">A-B repeat off</string>
     <string name="nano_chat_title">Chat with Gemini Nano</string>
     <string name="nano_chat_on_device">on this phone</string>
     <string name="nano_chat_clear">Clear chat</string>

@@ -861,6 +861,9 @@
     <string name="ab_repeat_set_a">Repetición A-B: marcar el inicio (A)</string>
     <string name="ab_repeat_set_b">Repetición A-B: marcar el final (B)</string>
     <string name="ab_repeat_clear">Repetición A-B: dejar de repetir</string>
+    <string name="ab_repeat_marked_a">Inicio (A) marcado en %1$s: vuelve a pulsar para marcar el final (B)</string>
+    <string name="ab_repeat_looping">Repitiendo de %1$s a %2$s</string>
+    <string name="ab_repeat_cleared">Repetición A-B quitada</string>
     <string name="nano_chat_title">Chat con Gemini Nano</string>
     <string name="nano_chat_on_device">en este móvil</string>
     <string name="nano_chat_clear">Borrar chat</string>
