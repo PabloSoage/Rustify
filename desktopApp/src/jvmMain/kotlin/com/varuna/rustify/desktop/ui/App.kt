@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SimplePlaylist
@@ -70,7 +71,12 @@ fun RustifyTheme(content: @Composable () -> Unit) {
     )
 }
 
-private enum class Section(val label: String) { SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), ACCOUNT("Account") }
+private enum class Section(val label: String) {
+    HOME("Home"), SEARCH("Search"), LIKED("Liked songs"), PLAYLISTS("Playlists"), ACCOUNT("Account"),
+}
+
+/** Something on Home that opens into a list of songs. */
+private data class Opened(val key: String, val title: String, val load: suspend () -> List<FullTrack>)
 
 /**
  * The desktop app: search (YouTube Music without an account, Spotify with one), the Spotify library
@@ -80,7 +86,7 @@ private enum class Section(val label: String) { SEARCH("Search"), LIKED("Liked s
 @Composable
 fun App(player: QueuePlayer, spotify: SpotifyLibrary) {
     val ui by player.ui.collectAsState()
-    var section by remember { mutableStateOf(Section.SEARCH) }
+    var section by remember { mutableStateOf(Section.HOME) }
     var user by remember { mutableStateOf<SpotifyUser?>(null) }
 
     LaunchedEffect(Unit) { user = runCatching { spotify.restore() }.getOrNull() }
@@ -93,6 +99,7 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary) {
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (section) {
+                Section.HOME -> HomeSection(player, ui, spotify)
                 Section.SEARCH -> SearchSection(player, ui, spotify, signedIn = user != null)
                 Section.LIKED -> SignedIn(user) { LikedSection(player, ui, spotify) }
                 Section.PLAYLISTS -> SignedIn(user) { PlaylistsSection(player, ui, spotify) }
@@ -194,6 +201,68 @@ private fun SearchSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLib
             }
         }
     }
+}
+
+/** Spotify's Home sections, without an account as on the phone; a playlist or album opens its songs. */
+@Composable
+private fun HomeSection(player: QueuePlayer, ui: PlayerUi, spotify: SpotifyLibrary) {
+    var open by remember { mutableStateOf<Opened?>(null) }
+    val opened = open
+    if (opened != null) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { open = null }) { Text("‹ Home") }
+                Text(opened.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Loaded(opened.key, opened.load) { tracks -> TrackList(tracks, ui, player) }
+        }
+        return
+    }
+    Loaded("home", { spotify.home() }) { sections ->
+        LazyColumn(Modifier.fillMaxSize()) {
+            sections.forEach { section ->
+                item(key = "h-${section.id}") {
+                    Text(
+                        section.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+                    )
+                }
+                // Indexed: the same playlist can appear twice in a section, and a key must not.
+                itemsIndexed(section.items, key = { i, it -> "${section.id}-$i-${keyOf(it)}" }) { _, item ->
+                    val (title, subtitle, opener) = when (item) {
+                        is BrowseSectionItem.PlaylistItem -> Triple(
+                            item.playlist.name,
+                            item.playlist.owner?.name.orEmpty(),
+                            Opened("pl-${item.playlist.id}", item.playlist.name) { spotify.playlistTracks(item.playlist.id) },
+                        )
+                        is BrowseSectionItem.AlbumItem -> Triple(
+                            item.album.name,
+                            item.album.artists.joinToString(", ") { it.name },
+                            Opened("al-${item.album.id}", item.album.name) { spotify.albumTracks(item.album.id) },
+                        )
+                    }
+                    Column(Modifier.fillMaxWidth().clickable { open = opener }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (subtitle.isNotBlank()) {
+                            Text(
+                                subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun keyOf(item: BrowseSectionItem): String = when (item) {
+    is BrowseSectionItem.PlaylistItem -> "pl-${item.playlist.id}"
+    is BrowseSectionItem.AlbumItem -> "al-${item.album.id}"
 }
 
 @Composable

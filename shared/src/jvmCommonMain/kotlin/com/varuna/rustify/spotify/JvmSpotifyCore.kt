@@ -26,4 +26,9 @@ object JvmSpotifyCore : SpotifyCore {
 
     override suspend fun search(query: String, type: String, limit: Int, offset: Int): String =
         NativeEngine.searchSpotify(query, type, limit, offset)
+
+    override suspend fun browse(limit: Int): String = NativeEngine.getSpotifyBrowse(limit)
+
+    override suspend fun albumTracks(id: String, limit: Int, offset: Int): String =
+        NativeEngine.getSpotifyAlbumTracks(id, limit, offset)
 }

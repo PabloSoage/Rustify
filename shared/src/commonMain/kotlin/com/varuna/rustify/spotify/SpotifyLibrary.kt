@@ -1,6 +1,7 @@
 // shared/src/commonMain/kotlin/com/varuna/rustify/spotify/SpotifyLibrary.kt
 package com.varuna.rustify.spotify
 
+import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LoginResult
 import com.varuna.rustify.bridge.PaginatedResponse
@@ -27,6 +28,8 @@ interface SpotifyCore {
     suspend fun savedPlaylists(limit: Int, offset: Int): String
     suspend fun playlistTracks(id: String, limit: Int, offset: Int): String
     suspend fun search(query: String, type: String, limit: Int, offset: Int): String
+    suspend fun browse(limit: Int): String
+    suspend fun albumTracks(id: String, limit: Int, offset: Int): String
 }
 
 /**
@@ -85,6 +88,14 @@ class SpotifyLibrary(private val core: SpotifyCore, private val store: KeyValueS
     suspend fun playlistTracks(id: String): List<FullTrack> =
         allPages(pageSize = 100) { limit, offset ->
             call { decodeCheckedWire<PaginatedResponse<FullTrack>>(core.playlistTracks(id, limit, offset)) }
+        }
+
+    /** Home: Spotify's own sections (playlists and albums). Works without an account, as on the phone. */
+    suspend fun home(): List<BrowseSection> = call { decodeCheckedWire(core.browse(20)) }
+
+    suspend fun albumTracks(id: String): List<FullTrack> =
+        allPages { limit, offset ->
+            call { decodeCheckedWire<PaginatedResponse<FullTrack>>(core.albumTracks(id, limit, offset)) }
         }
 
     /** Songs only; the first [limit]. A search is a screen, not a whole. */

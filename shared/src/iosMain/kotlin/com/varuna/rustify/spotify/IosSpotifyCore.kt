@@ -40,6 +40,15 @@ object IosSpotifyCore : SpotifyCore {
             put("offset", offset)
         }
 
+    override suspend fun browse(limit: Int): String = CoreCall.call("getSpotifyBrowse") { put("limit", limit) }
+
+    override suspend fun albumTracks(id: String, limit: Int, offset: Int): String =
+        CoreCall.call("getSpotifyAlbumTracks") {
+            put("id", id)
+            put("limit", limit)
+            put("offset", offset)
+        }
+
     override suspend fun search(query: String, type: String, limit: Int, offset: Int): String =
         CoreCall.call("searchSpotify") {
             put("query", query)
