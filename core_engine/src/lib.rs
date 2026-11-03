@@ -17,6 +17,8 @@ pub mod addon;
 pub mod audio;
 pub mod autoeq;
 pub mod dsp;
+#[cfg(feature = "engine")]
+pub mod engine;
 pub mod tempo;
 pub mod tonal;
 pub mod calendar;
@@ -3033,5 +3035,112 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspMatBenchNa
             .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))
             .collect();
         serde_json::Value::Array(rows).to_string()
+    })
+}
+
+
+// =============================================================================
+// DESKTOP AUDIO ENGINE (docs `24` §2) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.engine.RustAudioEngine` in the shared module's desktop source set. Same JSON
+// contract as every other bridge: commands in as `engine::Command`, events out as `engine::Event`.
+// Nothing here blocks on the network: `send` queues, and the player thread does the work.
+
+#[cfg(feature = "desktop-audio")]
+static AUDIO_ENGINE: std::sync::Mutex<Option<std::sync::Arc<engine::Engine>>> =
+    std::sync::Mutex::new(None);
+
+/// The running engine, without holding the slot's lock — `poll` waits, and a command sent meanwhile
+/// must not wait behind it.
+#[cfg(feature = "desktop-audio")]
+fn audio_engine() -> Option<std::sync::Arc<engine::Engine>> {
+    AUDIO_ENGINE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// JNI Bridge: opens the engine over the default output device. Idempotent.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_startNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let mut slot = AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let started = if slot.is_some() {
+            Ok(())
+        } else {
+            engine::Engine::start::<env::android::AndroidEnv>(Box::new(
+                engine::output::CpalOutput::new(),
+            ))
+            .map(|started| *slot = Some(std::sync::Arc::new(started)))
+        };
+        serialize_result(started.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: queues one `engine::Command` (JSON). Answers at once.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_sendNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    command_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = command_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<engine::Command>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(command) => match audio_engine() {
+                Some(engine) if engine.send(command) => {
+                    serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }))
+                }
+                _ => serialize_result::<(), _>(Err("the audio engine is not running".to_string())),
+            },
+        }
+    })
+}
+
+/// JNI Bridge: the next `engine::Event` as JSON, or `null` after `timeout_ms` with none. Blocks for
+/// up to that long — an IO thread's call, never the UI's.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_pollNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    timeout_ms: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let timeout = std::time::Duration::from_millis(timeout_ms.max(0) as u64);
+        match audio_engine().and_then(|engine| engine.poll(timeout)) {
+            Some(event) => serde_json::to_string(&event).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: stops the engine and releases the device.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_stopNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let taken = AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(taken);
+        serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
     })
 }
