@@ -21,6 +21,8 @@ pub mod dsp;
 pub mod engine;
 #[cfg(feature = "c-api")]
 pub mod ffi;
+#[cfg(feature = "media-controls")]
+pub mod media_controls;
 pub mod tempo;
 pub mod tonal;
 pub mod calendar;
@@ -3146,3 +3148,110 @@ pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_stopNative
         }))
     })
 }
+
+
+// =============================================================================
+// SYSTEM MEDIA CONTROLS (docs `25` T2.2) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.engine.SystemMediaControls`. Updates in as `media_controls::Update`, the
+// system's requests out as `media_controls::Request`, polled like the engine's events.
+
+#[cfg(feature = "media-controls")]
+static MEDIA_CONTROLS: std::sync::Mutex<Option<std::sync::Arc<media_controls::Controls>>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(feature = "media-controls")]
+fn media_controls() -> Option<std::sync::Arc<media_controls::Controls>> {
+    MEDIA_CONTROLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// JNI Bridge: registers with the system's media controls. `hwnd` is the window handle on Windows
+/// (0 elsewhere). Idempotent.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_startNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    display_name: JString<'local>,
+    hwnd: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let name = display_name.mutf8_chars(env)?.to_string();
+        let mut slot = MEDIA_CONTROLS.lock().unwrap_or_else(|e| e.into_inner());
+        let started = if slot.is_some() {
+            Ok(())
+        } else {
+            let handle = if hwnd != 0 { Some(hwnd as usize) } else { None };
+            media_controls::Controls::start(&name, handle)
+                .map(|controls| *slot = Some(std::sync::Arc::new(controls)))
+        };
+        serialize_result(started.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: one `media_controls::Update` (JSON). Queues it and answers at once.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_updateNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    update_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = update_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<media_controls::Update>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(update) => match media_controls() {
+                Some(controls) if controls.update(update) => {
+                    serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }))
+                }
+                _ => serialize_result::<(), _>(Err("media controls are not running".to_string())),
+            },
+        }
+    })
+}
+
+/// JNI Bridge: the next `media_controls::Request` as JSON, or `null` after `timeout_ms`.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_pollNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    timeout_ms: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let timeout = std::time::Duration::from_millis(timeout_ms.max(0) as u64);
+        match media_controls().and_then(|controls| controls.poll(timeout)) {
+            Some(request) => serde_json::to_string(&request).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: unregisters from the system's media controls.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_stopNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let taken = MEDIA_CONTROLS.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(taken);
+        serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+

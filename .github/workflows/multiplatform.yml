@@ -27,8 +27,8 @@ jobs:
           key: features
       # cpal's ALSA backend links libasound.
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - run: cargo test --all-targets --features mock-env,engine,c-api
-      - run: cargo clippy --all-targets --features mock-env,desktop-audio,c-api -- -D warnings
+      - run: cargo test --all-targets --features mock-env,engine,c-api,media-controls
+      - run: cargo clippy --all-targets --features mock-env,desktop-audio,c-api,media-controls -- -D warnings
 
   # The shared Kotlin module's own tests, on the desktop JVM target.
   shared:

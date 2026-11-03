@@ -25,6 +25,10 @@ desktop-audio = ["engine", "dep:cpal"]
 # static library with `cargo rustc --crate-type staticlib` (tools/ios/build-core.sh) rather than by
 # adding `staticlib` to crate-type, which would build an unused `.a` on every Android build too.
 c-api = []
+# The system's media controls on the desktop (src/media_controls.rs): SMTC on Windows, MPRIS on
+# Linux, Now Playing on macOS. Separate from desktop-audio so a platform where it fails to build or
+# register does not take the player down with it.
+media-controls = ["dep:souvlaki"]
 
 [dependencies]
 # JNI bridge with Android
@@ -113,6 +117,9 @@ symphonia = { version = "0.5", optional = true, default-features = false, featur
 # 0.15 on purpose: its API (`SampleRate(u32)`, `build_output_stream(.., None)`) is what
 # src/engine/output.rs is written against. Moving to a newer one is a deliberate, tested change.
 cpal = { version = "0.15", optional = true }
+# One API over SMTC, MPRIS and MPNowPlayingInfoCenter. zbus rather than the default libdbus binding,
+# so Linux builds need no system D-Bus headers (only libasound for cpal).
+souvlaki = { version = "0.7", optional = true, default-features = false, features = ["use_zbus"] }
 
 # --- Android only ---
 [target.'cfg(target_os = "android")'.dependencies]

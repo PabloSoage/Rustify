@@ -64,10 +64,10 @@ val cargoCommand: String = run {
 
 val buildRustCoreDesktop by tasks.registering(Exec::class) {
     group = "rust"
-    description = "Builds core_engine for this host with the desktop audio engine"
+    description = "Builds core_engine for this host with the desktop audio engine and media controls"
     workingDir = rootProject.file("core_engine")
     environment("CARGO_TARGET_DIR", coreTargetDir.absolutePath)
-    commandLine(cargoCommand, "build", "--release", "--lib", "--features", "desktop-audio")
+    commandLine(cargoCommand, "build", "--release", "--lib", "--features", "desktop-audio,media-controls")
     inputs.dir(rootProject.file("core_engine/src"))
     inputs.file(rootProject.file("core_engine/Cargo.toml"))
     outputs.file(File(coreTargetDir, "release/$coreLibraryName"))

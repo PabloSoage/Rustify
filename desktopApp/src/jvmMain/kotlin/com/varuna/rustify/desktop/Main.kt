@@ -44,6 +44,19 @@ fun main() {
             title = "Rustify",
             state = rememberWindowState(width = 1100.dp, height = 760.dp),
         ) {
+            // The window's native handle is what Windows attaches the media overlay to.
+            val handle = window.windowHandle
+            LaunchedEffect(handle) {
+                MediaKeys.run(
+                    player = player,
+                    windowHandle = handle,
+                    onRaise = { window.toFront() },
+                    onQuit = {
+                        player.shutdown()
+                        exitApplication()
+                    },
+                )
+            }
             RustifyTheme {
                 App(player)
             }
