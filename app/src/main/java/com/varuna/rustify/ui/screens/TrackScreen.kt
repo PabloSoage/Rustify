@@ -102,6 +102,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -645,6 +646,7 @@ fun TrackScreen(
                                             TrackScreenControls(
                                                 track = track,
                                                 lyricsResult = lyricsResult,
+                                                onLyricsChanged = { lyricsResult = it },
                                                 lyricsLoading = lyricsLoading,
                                                 isBuffering = isBuffering,
                                                 isPlaying = isPlaying,
@@ -670,7 +672,8 @@ fun TrackScreen(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .padding(top = 64.dp)
+                                            // Below the two-row top bar (buttons, then the tabs).
+                                            .padding(top = 120.dp)
                                             .padding(horizontal = 24.dp, vertical = 16.dp)
                                             .verticalScroll(rememberScrollState()),
                                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -699,6 +702,7 @@ fun TrackScreen(
                                         TrackScreenControls(
                                             track = track,
                                             lyricsResult = lyricsResult,
+                                            onLyricsChanged = { lyricsResult = it },
                                             lyricsLoading = lyricsLoading,
                                             isBuffering = isBuffering,
                                             isPlaying = isPlaying,
@@ -1255,7 +1259,8 @@ fun TrackScreenControls(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
-    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
+    onLyricsChanged: (LyricsResult?) -> Unit = {}
 ) {
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
@@ -1597,15 +1602,108 @@ fun TrackScreenControls(
         // Lyrics Panel
         if (showLyrics) {
             Spacer(modifier = Modifier.height(16.dp))
-            LyricsView(
-                lyricsResult = lyricsResult,
-                isLoading = lyricsLoading,
-                currentPositionMs = currentPosition,
-                offsetMs = lyricOffsetMs,
-                listState = lyricsListState,
-                trackKey = track.id
+            LyricsProviderSwitcher(track = track, current = lyricsResult, onChange = onLyricsChanged) {
+                LyricsView(
+                    lyricsResult = lyricsResult,
+                    isLoading = lyricsLoading,
+                    currentPositionMs = currentPosition,
+                    offsetMs = lyricOffsetMs,
+                    listState = lyricsListState,
+                    // The provider is part of the key: another provider's lines are other lines to translate.
+                    trackKey = track.id?.let { "$it|${lyricsResult?.providerId}" }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Lyrics from another provider by swiping sideways (5.0.1). Reported: some songs showed another
+ * song's lyrics, and nothing said where they came from or offered another source.
+ *
+ * One dot per enabled provider (the file's own first, for a local track), white for the one shown,
+ * grey for the rest, with its name beside them. A swipe or a tap on a dot asks that provider alone;
+ * when it has the song, it is remembered for this track ([LyricsRepository.choose]) and opens with
+ * it next time. When it has nothing, it says so and the lines shown stay.
+ */
+@Composable
+private fun LyricsProviderSwitcher(
+    track: FullTrack,
+    current: LyricsResult?,
+    onChange: (LyricsResult?) -> Unit,
+    content: @Composable () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val trackId = track.id
+    val providers = remember(trackId) { trackId?.let { LyricsRepository.providersFor(context, it) }.orEmpty() }
+    if (trackId == null || providers.size < 2) {
+        content()
+        return
+    }
+    val scope = rememberCoroutineScope()
+    var asking by remember(trackId) { mutableStateOf<String?>(null) }
+    var nothingFrom by remember(trackId) { mutableStateOf<String?>(null) }
+    val shown = current?.providerId
+    val index = providers.indexOf(shown).coerceAtLeast(0)
+    fun nameOf(id: String): String = if (id == LyricsRepository.LOCAL) context.getString(R.string.lyrics_provider_file)
+        else com.varuna.rustify.bridge.LyricsProviders.byId(id)?.let { context.getString(it.displayNameRes) } ?: id
+    fun open(target: Int) {
+        val id = providers.getOrNull(Math.floorMod(target, providers.size)) ?: return
+        if (id == shown || asking != null) return
+        asking = id
+        nothingFrom = null
+        scope.launch {
+            val r = LyricsRepository.fetchFrom(
+                context, trackId, id, track.artists.firstOrNull()?.name ?: "", track.name, track.durationMs / 1000
+            )
+            asking = null
+            if (r != null) {
+                LyricsRepository.choose(context, trackId, id)
+                onChange(r)
+            } else {
+                nothingFrom = id
+            }
+        }
+    }
+    Column(
+        modifier = Modifier.pointerInput(trackId, shown) {
+            var dragged = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { dragged = 0f },
+                onHorizontalDrag = { _, dx -> dragged += dx },
+                onDragEnd = {
+                    if (dragged < -120f) open(index + 1) else if (dragged > 120f) open(index - 1)
+                }
             )
         }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            providers.forEachIndexed { i, id ->
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (i == index) 8.dp else 7.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (i == index) Color.White else Color.Gray.copy(alpha = 0.6f))
+                        .clickable { open(i) }
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = when {
+                    asking != null -> stringResource(R.string.lyrics_provider_asking, nameOf(asking!!))
+                    nothingFrom != null -> stringResource(R.string.lyrics_provider_nothing, nameOf(nothingFrom!!))
+                    else -> nameOf(providers[index])
+                },
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+        content()
     }
 }
 

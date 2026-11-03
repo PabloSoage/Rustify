@@ -498,6 +498,9 @@
     <string name="dj_auto_source_discover">Descubrir (sugerencias)</string>
     <!-- Proveedores de letras (chain) + Depuración (preview de Android Auto) -->
     <string name="lyrics_provider_lrclib">LRCLIB</string>
+    <string name="lyrics_provider_file">El propio archivo</string>
+    <string name="lyrics_provider_asking">Preguntando a %1$s…</string>
+    <string name="lyrics_provider_nothing">%1$s no tiene esta canción</string>
     <string name="lyrics_provider_musixmatch">Musixmatch</string>
     <string name="lyrics_provider_genius">Genius</string>
     <string name="lyrics_provider_petitlyrics">PetitLyrics</string>
