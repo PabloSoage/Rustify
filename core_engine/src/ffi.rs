@@ -22,7 +22,9 @@ use std::ffi::{c_char, CStr, CString};
 
 use serde_json::Value;
 
-use crate::{env, get_runtime, links, player, search, serialize_result, server, spotify, youtube};
+use crate::{
+    env, get_runtime, links, metrics, player, search, serialize_result, server, spotify, youtube,
+};
 
 /// Calls `method` with `args_json` (a JSON object) and answers JSON. Free the answer with
 /// [`rustify_free`].
@@ -112,6 +114,12 @@ pub const METHODS: &[&str] = &[
     "searchQuery",
     "searchForget",
     "playerReduce",
+    "recordListening",
+    "recordPlay",
+    "importPlayHistory",
+    "allPlays",
+    "playStats",
+    "topCsv",
     "loginSpotify",
     "restoreSpotifySession",
     "isSpotifyAuthenticated",
@@ -244,6 +252,53 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             })
             .to_string()
         }
+
+        // recordListeningNative — `session` is a `player::session::Session`.
+        "recordListening" => match serde_json::from_value::<player::session::Session>(args["session"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(session) => serialize_result(
+                get_runtime()
+                    .block_on(player::session::record::<env::android::AndroidEnv>(session))
+                    .map(|_| spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }),
+            ),
+        },
+        // recordPlayNative — `event` is a `metrics::Event`.
+        "recordPlay" => match serde_json::from_value::<metrics::Event>(args["event"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(event) => serialize_result(
+                get_runtime()
+                    .block_on(metrics::record::<env::android::AndroidEnv>(event))
+                    .map(|_| spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }),
+            ),
+        },
+        // importPlayHistoryNative — `history` is the file's text.
+        "importPlayHistory" => serialize_result(
+            get_runtime().block_on(metrics::import::<env::android::AndroidEnv>(&text(args, "history"))),
+        ),
+        // allPlaysNative
+        "allPlays" => serialize_result(get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>())),
+        // playStatsNative — `zone` is `[[fromMs, offsetMs], …]`.
+        "playStats" => {
+            let zone: metrics::stats::Zone = serde_json::from_value(args["zone"].clone()).unwrap_or_default();
+            let (from, to) = (int(args, "fromMs", 0), int(args, "toMs", i64::MAX));
+            let events = get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>());
+            serialize_result(events.map(|events| metrics::stats::compute(&events, from, to, &zone)))
+        }
+        // topCsvNative — `kind` is `tracks`, `artists` or `albums`.
+        "topCsv" => match serde_json::from_value::<metrics::stats::TopKind>(Value::String(text(args, "kind"))) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(kind) => {
+                let (from, to) = (int(args, "fromMs", 0), int(args, "toMs", i64::MAX));
+                let events = get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>());
+                serialize_result(events.map(|events| metrics::stats::top_csv(&events, from, to, kind)))
+            }
+        },
 
         // loginSpotifyNative
         "loginSpotify" => {

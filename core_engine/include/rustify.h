@@ -28,6 +28,8 @@ extern "C" {
  *   parseLink {text}                   wrapLink {url, host}               unwrapLink {url, knownHosts}
  *   searchIndex {name, items}          searchQuery {name, query, limit}   searchForget {name}
  *   playerReduce {state, action}
+ *   recordListening {session}  recordPlay {event}  importPlayHistory {history}  allPlays {}
+ *   playStats {fromMs, toMs, zone}     topCsv {fromMs, toMs, kind}
  *   loginSpotify {spDc}                restoreSpotifySession {spDc, accessToken, expiration}
  *   isSpotifyAuthenticated {}          logoutSpotify {}                   getSpotifyMe {}
  *   getSpotifySavedTracks {limit, offset}     getSpotifySavedPlaylists {limit, offset}
