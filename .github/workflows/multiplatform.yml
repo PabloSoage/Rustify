@@ -63,7 +63,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config rpm
-      - run: ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS --no-daemon
+      # bash on every runner: PowerShell splits `-Prustify.desktop=true` at the dot.
+      - shell: bash
+        run: ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: rustify-desktop-${{ runner.os }}

@@ -12,7 +12,7 @@
 use std::io::ErrorKind as IoErrorKind;
 
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{Decoder as _, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream};

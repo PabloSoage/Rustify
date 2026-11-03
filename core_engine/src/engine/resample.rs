@@ -235,8 +235,9 @@ mod tests {
         let mut r = Resampler::new(44_100, 48_000, 2);
         let mut out = Vec::new();
         r.process(&interleaved, &mut out);
-        assert!(out.chunks_exact(2).all(|f| f[1].abs() < 1e-6));
-        assert!(out.chunks_exact(2).any(|f| f[0].abs() > 0.4));
+        let (frames, _) = out.as_chunks::<2>();
+        assert!(frames.iter().all(|f| f[1].abs() < 1e-6));
+        assert!(frames.iter().any(|f| f[0].abs() > 0.4));
     }
 
     #[test]
