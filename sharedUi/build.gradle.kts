@@ -45,6 +45,10 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        getByName("desktopTest").dependencies {
+            implementation(kotlin("test-junit"))
+            implementation(compose.desktop.currentOs)
+        }
     }
 }
 
