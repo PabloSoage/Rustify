@@ -19,7 +19,9 @@ import kotlinx.serialization.json.longOrNull
  * and the CPU build otherwise.
  */
 object LlamaCppAssets {
-    const val LATEST_RELEASE = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+    // Not `releases/latest`: that is the project's last numbered release (`v0.9.0`), whose only asset
+    // is a text file. The builds are on the `bNNNN` prereleases around it.
+    const val RECENT_RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
 
     enum class Os { WINDOWS, MACOS, LINUX }
     enum class Arch { X64, ARM64 }
@@ -42,14 +44,22 @@ object LlamaCppAssets {
 
     data class Asset(val name: String, val url: String, val size: Long, val sha256: String? = null)
 
-    /** A build to install: its archive and, for CUDA on Windows, the CUDA runtime archive too. */
+    /** A build to install: its archive and, for CUDA, the CUDA runtime archive too. */
     data class Choice(val asset: Asset, val backend: Backend, val extra: List<Asset> = emptyList())
 
     data class Release(val tag: String, val assets: List<Asset>)
 
-    /** GitHub's `releases/latest` answer: the tag and each asset's name, URL, size and digest. */
-    fun parseRelease(json: String): Release? {
-        val root = runCatching { Json.parseToJsonElement(json) }.getOrNull() as? JsonObject ?: return null
+    /** GitHub's list of releases, newest first: each tag and each asset's name, URL, size and digest. */
+    fun parseReleases(json: String): List<Release> {
+        val root = runCatching { Json.parseToJsonElement(json) }.getOrNull() as? JsonArray ?: return emptyList()
+        return root.mapNotNull { (it as? JsonObject)?.let(::parseRelease) }
+    }
+
+    /** The newest of [releases] with a build for [host], and that build. */
+    fun newest(releases: List<Release>, host: Host, skip: Set<Backend> = emptySet()): Pair<Release, Choice>? =
+        releases.firstNotNullOfOrNull { release -> choose(release.assets, host, skip)?.let { release to it } }
+
+    private fun parseRelease(root: JsonObject): Release? {
         val tag = (root["tag_name"] as? JsonPrimitive)?.content ?: return null
         val assets = (root["assets"] as? JsonArray).orEmpty().mapNotNull { a ->
             val o = a as? JsonObject ?: return@mapNotNull null
@@ -93,15 +103,15 @@ object LlamaCppAssets {
         }
     }
 
-    // The newest CUDA build the driver runs (all of them, oldest first, when it did not say); on
-    // Windows only one whose CUDA runtime is published beside it.
+    // The newest CUDA build the driver runs (all of them, oldest first, when it did not say), and only
+    // one whose CUDA runtime is published beside it. The backend library needs that runtime on Linux
+    // as on Windows, the build's archive does not hold it, and the driver does not bring it.
     private fun chooseCuda(candidates: List<Build>, runtimes: List<Build>, host: Host): Choice? {
         val ordered = candidates.filter { it.cuda != null }
             .filter { host.cuda == null || it.cuda!! <= host.cuda }
             .sortedWith(compareBy<Build> { it.cuda }.thenBy { it.asset.name.length })
             .let { if (host.cuda == null) it else it.reversed() }
         for (build in ordered) {
-            if (host.os != Os.WINDOWS) return Choice(build.asset, Backend.CUDA)
             val runtime = runtimes.firstOrNull { it.cuda == build.cuda } ?: continue
             return Choice(build.asset, Backend.CUDA, listOf(runtime.asset))
         }
@@ -159,8 +169,11 @@ object LlamaCppAssets {
         return Build(asset, os, arch, backend, cuda, runtime, tokens)
     }
 
-    /** `CUDA Version: 12.8` in `nvidia-smi`'s header: the newest CUDA the installed driver runs. */
+    /**
+     * `CUDA Version: 12.8`, or `CUDA UMD Version: 13.5` in newer drivers, in `nvidia-smi`'s header:
+     * the newest CUDA the installed driver runs.
+     */
     fun parseNvidiaSmi(output: String): CudaVersion? =
-        Regex("""CUDA Version:\s*(\d+)\.(\d+)""").find(output)
+        Regex("""CUDA(?: UMD)? Version:\s*(\d+)\.(\d+)""").find(output)
             ?.let { CudaVersion(it.groupValues[1].toInt(), it.groupValues[2].toInt()) }
 }

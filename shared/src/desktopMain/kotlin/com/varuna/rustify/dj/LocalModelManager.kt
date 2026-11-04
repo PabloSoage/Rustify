@@ -209,11 +209,12 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
 
     private suspend fun installRuntime(skip: Set<LlamaCppAssets.Backend>): InstalledBuild {
         _status.value = Status.Downloading("llama.cpp", 0, 0)
-        val json = withContext(Dispatchers.IO) { httpText(LlamaCppAssets.LATEST_RELEASE) }
-        val release = LlamaCppAssets.parseRelease(json) ?: throw IOException("GitHub's answer about llama.cpp could not be read")
+        val json = withContext(Dispatchers.IO) { httpText(LlamaCppAssets.RECENT_RELEASES) }
+        val releases = LlamaCppAssets.parseReleases(json)
+        if (releases.isEmpty()) throw IOException("GitHub's answer about llama.cpp could not be read")
         val host = withContext(Dispatchers.IO) { HostProbe.current() }
-        val choice = LlamaCppAssets.choose(release.assets, host, skip)
-            ?: throw IOException("llama.cpp ${release.tag} has no build for ${host.os} ${host.arch}")
+        val (release, choice) = LlamaCppAssets.newest(releases, host, skip)
+            ?: throw IOException("llama.cpp has no recent build for ${host.os} ${host.arch}")
         Log.i(TAG, "llama.cpp ${release.tag} for $host: ${choice.asset.name} (${choice.backend})" +
             choice.extra.joinToString("") { " + ${it.name}" })
         val what = "llama.cpp ${release.tag} (${choice.backend.label()})"
@@ -229,12 +230,12 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
             main.delete()
             findServer(dir) ?: throw IOException("${choice.asset.name} has no llama-server")
         }
-        // The CUDA runtime's DLLs go beside the server, where Windows looks for them.
+        // The CUDA runtime's libraries go beside the server, where the system looks for them.
         for (extra in choice.extra) {
             val archive = fetchArchive(extra, what)
             _status.value = Status.Unpacking(what)
             withContext(Dispatchers.IO) {
-                Archives.unpack(archive, server.parentFile)
+                Archives.unpackFlat(archive, server.parentFile)
                 archive.delete()
             }
         }
@@ -536,6 +537,21 @@ internal object HostProbe {
 
 /** Unpacks the build's archive with the system's own tools where they keep links, else in Java. */
 internal object Archives {
+    /** Every file of [archive] directly in [into]: Linux's runtime archive keeps them in a folder. */
+    fun unpackFlat(archive: File, into: File) {
+        val unpacked = File(into, archive.name + ".unpacked")
+        try {
+            unpack(archive, unpacked)
+            unpacked.walkTopDown().filter { it.isFile }.toList().forEach { file ->
+                val target = File(into, file.name)
+                target.delete()
+                if (!file.renameTo(target)) throw IOException("could not move ${file.name} into place")
+            }
+        } finally {
+            unpacked.deleteRecursively()
+        }
+    }
+
     fun unpack(archive: File, into: File) {
         into.mkdirs()
         val name = archive.name.lowercase()
