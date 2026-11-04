@@ -96,7 +96,7 @@ jobs:
               ;;
           esac
           ls -l "$out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-desktop-${{ matrix.name }}
           path: release-out/*
@@ -134,7 +134,7 @@ jobs:
           cp -R build/Release-iphoneos/Rustify.app Payload/
           zip -qr "../release-out/Rustify-${TAG#v}-ios-unsigned.ipa" Payload
           ls -l ../release-out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-ios
           path: release-out/*
@@ -182,12 +182,12 @@ jobs:
           cp server/rustify-server.service "$name/"
           tar -czf "release-out/$name.tar.gz" "$name"
           cp "$BIN" "docker-bin/${{ matrix.docker }}/rustify-server"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-server-${{ matrix.arch }}
           path: release-out/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docker-bin-${{ matrix.docker }}
           path: docker-bin/
@@ -202,7 +202,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: docker-bin-*
           path: server/dist
@@ -220,14 +220,14 @@ jobs:
           echo "PLATFORMS=${platforms#,}" >> "$GITHUB_ENV"
           owner="${{ github.repository_owner }}"
           echo "IMAGE=ghcr.io/${owner,,}/rustify-server" >> "$GITHUB_ENV"
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: server
           platforms: ${{ env.PLATFORMS }}
@@ -292,7 +292,7 @@ jobs:
           rm -f "$RUNNER_TEMP/release.jks"
           ls -l release-out
       - if: env.HAS_KEY == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-android
           path: release-out/*
@@ -305,7 +305,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: out
