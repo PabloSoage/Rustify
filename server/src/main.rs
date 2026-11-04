@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -51,6 +51,10 @@ struct Args {
     #[arg(long, env = "RUSTIFY_PARALLEL_CALLS", default_value_t = 16)]
     parallel_calls: usize,
 }
+
+/// The largest arguments a call takes: a backup (`restoreData`) with years of history in it is well
+/// past axum's default of 2 MiB. Only a session gets this far.
+const MAX_CALL_BYTES: usize = 64 * 1024 * 1024;
 
 /// What every handler shares. Cheap to clone: everything behind it is shared.
 #[derive(Clone)]
@@ -146,7 +150,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/healthz", get(|| async { "ok" }))
         .route("/login", get(auth::login_page).post(auth::login))
         .route("/logout", post(auth::logout))
-        .route("/api/call/{method}", post(call).layer(CompressionLayer::new()))
+        .route(
+            "/api/call/{method}",
+            post(call).layer(CompressionLayer::new()).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)),
+        )
         .route("/api/stream/{handle}", get(stream::forward));
     let router = match args.web_root.as_ref().filter(|root| root.join("index.html").is_file()) {
         Some(root) => {
