@@ -127,16 +127,29 @@ import com.varuna.rustify.player.SavedQueues
 import com.varuna.rustify.player.PlayerController
 import com.varuna.rustify.ui.LocalAppServices
 import com.varuna.rustify.ui.LyricsTranslation
+import com.varuna.rustify.platform.currentTimeMillis
 import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.formatMinSec
+import com.varuna.rustify.ui.formatMinSecUs
+import com.varuna.rustify.ui.formatTemplate
+import com.varuna.rustify.ui.formatTrimmed
+import com.varuna.rustify.ui.languageDisplayName
 import com.varuna.rustify.ui.toast
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 
 data class YouTubeTrack(
     val id: String,
@@ -146,26 +159,38 @@ data class YouTubeTrack(
     val thumbnailUrl: String
 ) {
     companion object {
-        fun fromJson(json: JSONObject): YouTubeTrack = YouTubeTrack(
-            id = json.optString("id", ""),
-            title = json.optString("title", ""),
-            author = json.optString("author", ""),
-            durationSec = json.optInt("duration_sec", 0),
-            thumbnailUrl = json.optString("thumbnail_url", "")
+        fun fromJson(json: JsonObject): YouTubeTrack = YouTubeTrack(
+            id = json["id"].optString(),
+            title = json["title"].optString(),
+            author = json["author"].optString(),
+            durationSec = json["duration_sec"].optInt(),
+            thumbnailUrl = json["thumbnail_url"].optString()
         )
 
+        /** What the core's `searchYouTube` answers; the tracks before the first that is not an object. */
         fun listFromJsonArray(jsonStr: String): List<YouTubeTrack> {
             val list = mutableListOf<YouTubeTrack>()
             try {
-                val array = JSONArray(jsonStr)
-                for (i in 0 until array.length()) {
-                    list.add(fromJson(array.getJSONObject(i)))
+                val array = Json.parseToJsonElement(jsonStr) as JsonArray
+                for (element in array) {
+                    list.add(fromJson(element as JsonObject))
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
             return list
         }
+
+        // org.json's optString(key, "") and optInt(key, 0), which this read before: absent or null
+        // is the fallback, a string is read as a number, and a number or a boolean as its text.
+        private fun JsonElement?.optString(): String = when (this) {
+            null, JsonNull -> ""
+            is JsonPrimitive -> content
+            else -> toString()
+        }
+
+        private fun JsonElement?.optInt(): Int =
+            (this as? JsonPrimitive)?.let { it.intOrNull ?: it.doubleOrNull?.toInt() } ?: 0
     }
 }
 
@@ -1399,7 +1424,7 @@ fun TrackScreenControls(
                 val totalSecs = millis / 1000
                 val minutes = totalSecs / 60
                 val seconds = totalSecs % 60
-                String.format(java.util.Locale.US, "%d:%02d", minutes, seconds)
+                formatMinSecUs(minutes, seconds)
             }
             Text(formatTime(displayPosition.toLong()), color = Color.LightGray, fontSize = 12.sp)
             Text(formatTime(totalDuration), color = Color.LightGray, fontSize = 12.sp)
@@ -1635,7 +1660,7 @@ private fun LyricsProviderSwitcher(
     val names = com.varuna.rustify.bridge.lyricsProviderNames()
     fun nameOf(id: String): String = names[id] ?: id
     fun open(target: Int) {
-        val id = providers.getOrNull(Math.floorMod(target, providers.size)) ?: return
+        val id = providers.getOrNull(target.mod(providers.size)) ?: return
         if (id == shown || asking != null) return
         asking = id
         nothingFrom = null
@@ -1728,7 +1753,7 @@ fun LyricsView(
     // Say why nothing appeared (4.7.1): the icon only turning grey read as "the button does nothing".
     LaunchedEffect(translation, partialTranslation, translateOn) {
         if (!translateOn) return@LaunchedEffect
-        fun name(code: String) = java.util.Locale.forLanguageTag(code.substringBefore('-')).displayLanguage
+        fun name(code: String) = languageDisplayName(code.substringBefore('-'))
         val msg = when (val o = translation ?: partialTranslation) {
             is LyricsTranslation.Downloading ->
                 appString(Res.string.lyrics_translate_downloading, name(o.language))
@@ -1896,10 +1921,10 @@ private fun SleepTimerButton(audioPlayerService: PlayerController) {
     val songsLeft by audioPlayerService.sleepTracks.collectAsState()
     var open by remember { mutableStateOf(false) }
     // Ticks the label down once a minute is enough; it reads the flow's deadline each time.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableStateOf(currentTimeMillis()) }
     LaunchedEffect(endsAt) {
         while (endsAt != null) {
-            now = System.currentTimeMillis()
+            now = currentTimeMillis()
             kotlinx.coroutines.delay(15_000)
         }
     }
@@ -1971,7 +1996,7 @@ private fun AbRepeatButton(audioPlayerService: PlayerController) {
     val markedA = stringResource(Res.string.ab_repeat_marked_a)
     val looping = stringResource(Res.string.ab_repeat_looping)
     val cleared = stringResource(Res.string.ab_repeat_cleared)
-    fun mmss(ms: Long) = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
+    fun mmss(ms: Long) = formatMinSec(ms / 60_000, (ms / 1000) % 60)
     IconButton(
         onClick = {
             audioPlayerService.pressAbRepeat()
@@ -1979,8 +2004,8 @@ private fun AbRepeatButton(audioPlayerService: PlayerController) {
             // and without a word it looked like the song stumbling.
             val now = audioPlayerService.abRepeat.value
             val text = when {
-                now.isLooping -> looping.format(mmss(now.a ?: 0), mmss(now.b ?: 0))
-                now.a != null -> markedA.format(mmss(now.a ?: 0))
+                now.isLooping -> formatTemplate(looping, mmss(now.a ?: 0), mmss(now.b ?: 0))
+                now.a != null -> formatTemplate(markedA, mmss(now.a ?: 0))
                 else -> cleared
             }
             platform.toast(text)
@@ -2073,4 +2098,4 @@ private fun SpeedButton(audioPlayerService: PlayerController) {
 
 /** 1.25 → "1.25", 1.5 → "1.5", 2 → "2". */
 private fun formatSpeed(speed: Float): String =
-    java.math.BigDecimal(speed.toDouble()).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    formatTrimmed(speed.toDouble(), 2)
