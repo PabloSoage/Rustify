@@ -1031,17 +1031,22 @@ pub fn tempo_of(cfg: &EffectsConfig) -> f64 {
 const SILENCE_LEVEL: f32 = 1024.0 / 32768.0;
 /// The unit silence is judged in.
 const SILENCE_CHUNK_MS: usize = 10;
-/// How much of a silent stretch is kept. A pause in the music stays a pause; the minute before a
-/// hidden track becomes half a second.
-const SILENCE_KEEP_MS: usize = 500;
+/// A silence shorter than this is left alone: media3's `DEFAULT_MINIMUM_SILENCE_DURATION_US`.
+const SILENCE_MINIMUM_MS: usize = 100;
+/// One chunk in this many of what follows is kept: media3's `DEFAULT_SILENCE_RETENTION_RATIO`, 0.2.
+const SILENCE_KEEP_ONE_IN: usize = 5;
+/// The most of one silence kept: media3's `DEFAULT_MAX_SILENCE_TO_KEEP_DURATION_US`.
+const SILENCE_KEEP_MAX_MS: usize = 2_000;
 
-/// Drops what lies past the first [`SILENCE_KEEP_MS`] of a silent stretch. Media3 shortens every
-/// silence by a ratio instead; this keeps short ones whole, which matters more for music than for
-/// the podcasts that mode was made for.
+/// Shortens a silent stretch as Android's `skipSilenceEnabled` does: a fifth of it, at most two
+/// seconds, so the same setting sounds the same on every platform. Dropping chunks of what is under
+/// the threshold rather than media3's fades: what is taken out is too quiet for the joins to show.
 #[derive(Debug, Clone, Default)]
 pub struct SilenceSkipper {
     /// Frames of silence in a row so far, across blocks.
     silent: usize,
+    /// Frames of this silence kept so far.
+    kept: usize,
 }
 
 impl SilenceSkipper {
@@ -1049,7 +1054,8 @@ impl SilenceSkipper {
     pub fn process(&mut self, samples: &mut Vec<f32>, channels: usize, rate: u32) -> usize {
         let ch = channels.max(1);
         let chunk = (rate as usize * SILENCE_CHUNK_MS / 1000).max(1);
-        let keep = rate as usize * SILENCE_KEEP_MS / 1000;
+        let minimum = rate as usize * SILENCE_MINIMUM_MS / 1000;
+        let most = rate as usize * SILENCE_KEEP_MAX_MS / 1000;
         let frames = samples.len() / ch;
         let mut write = 0usize;
         let mut dropped = 0usize;
@@ -1059,11 +1065,15 @@ impl SilenceSkipper {
             let range = f * ch..(f + n) * ch;
             let quiet = samples[range.clone()].iter().all(|x| x.abs() < SILENCE_LEVEL);
             let kept = if quiet {
-                let kept = self.silent < keep;
+                let past = self.silent.saturating_sub(minimum) / chunk;
+                let kept = self.silent < minimum || (self.kept < most && past.is_multiple_of(SILENCE_KEEP_ONE_IN));
                 self.silent += n;
+                if kept {
+                    self.kept += n;
+                }
                 kept
             } else {
-                self.silent = 0;
+                self.reset();
                 true
             };
             if kept {
@@ -1080,6 +1090,7 @@ impl SilenceSkipper {
 
     pub fn reset(&mut self) {
         self.silent = 0;
+        self.kept = 0;
     }
 }
 
@@ -1513,7 +1524,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_silence_is_cut_short_and_a_short_one_kept() {
+    fn a_silence_keeps_a_fifth_of_itself_as_on_the_phone() {
         let mut skipper = SilenceSkipper::default();
         let sound = sine(440.0, 0.5, 4_800);
         let mut samples = sound.clone();
@@ -1521,15 +1532,31 @@ mod tests {
         samples.extend_from_slice(&sound);
         let total = samples.len();
         let dropped = skipper.process(&mut samples, 1, RATE);
-        let keep = RATE as usize * SILENCE_KEEP_MS / 1000;
         assert_eq!(samples.len() + dropped, total);
-        assert_eq!(samples.len(), sound.len() * 2 + keep, "half a second of the gap is left");
+        let gap_ms = (samples.len() - sound.len() * 2) * 1000 / RATE as usize;
+        // The first 100 ms whole, then a fifth of the other 2900.
+        assert!((660..=700).contains(&gap_ms), "{gap_ms} ms of the gap is left");
+    }
+
+    #[test]
+    fn a_silence_under_the_minimum_is_left_alone() {
+        let mut skipper = SilenceSkipper::default();
+        let sound = sine(440.0, 0.5, 4_800);
         let mut short = sound.clone();
-        short.extend(std::iter::repeat_n(0.0f32, RATE as usize / 5));
+        short.extend(std::iter::repeat_n(0.0f32, RATE as usize / 20)); // 50 ms
         short.extend_from_slice(&sound);
         let before = short.len();
         assert_eq!(skipper.process(&mut short, 1, RATE), 0);
         assert_eq!(short.len(), before);
+    }
+
+    #[test]
+    fn a_very_long_silence_keeps_at_most_two_seconds() {
+        let mut skipper = SilenceSkipper::default();
+        let mut samples = vec![0.0f32; RATE as usize * 60];
+        skipper.process(&mut samples, 1, RATE);
+        let kept_ms = samples.len() * 1000 / RATE as usize;
+        assert!((2_000..=2_010).contains(&kept_ms), "{kept_ms} ms of a minute is left");
     }
 
     #[test]
