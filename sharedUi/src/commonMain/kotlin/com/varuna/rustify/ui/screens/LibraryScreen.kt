@@ -146,7 +146,8 @@ fun LibraryScreen(
     val darkBackground = Color(0xFF121212)
     val spotifyGreen = Color(0xFF1DB954)
     val platform = com.varuna.rustify.ui.LocalAppPlatform.current
-    val prefs = platform.prefs("rustify_settings")
+    // Remembered: Android answers a new store each call, and the effect below is keyed on it.
+    val prefs = remember(platform) { platform.prefs("rustify_settings") }
     val enableLocalMusic = prefs.getBoolean("enable_local_music", true)
     val enableYtmMusic = prefs.getBoolean("enable_ytm_music", true)
     var ytmResultFilter by remember { mutableStateOf("all") }
