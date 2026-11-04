@@ -58,6 +58,15 @@ val coreLibraryName: String = when (hostOs) {
     "macos" -> "libcore_engine.dylib"
     else -> "libcore_engine.so"
 }
+// The app's versionName ("5.0.0b") as jpackage accepts it ("5.0.0"). Read from app/build.gradle.kts
+// rather than repeated here, where it was once written by hand and stayed behind.
+val appPackageVersion: String = run {
+    val appBuild = rootProject.file("app/build.gradle.kts").readText()
+    val name = Regex("""versionName\s*=\s*"([^"]+)"""").find(appBuild)?.groupValues?.get(1)
+    name?.let { Regex("""^\d+\.\d+\.\d+""").find(it)?.value }
+        ?: error("app/build.gradle.kts has no versionName of the form MAJOR.MINOR.PATCH…")
+}
+
 val coreTargetDir = rootProject.file("core_engine/target/desktop")
 val cargoCommand: String = run {
     val exe = if (hostOs == "windows") "cargo.exe" else "cargo"
@@ -131,9 +140,10 @@ compose.desktop {
                 else -> targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
             }
             packageName = "Rustify"
-            // jpackage wants MAJOR.MINOR.PATCH with numbers only (an MSI refuses "5.0.0b"). The
-            // app's version name is "5.0.0b"; this is the same release without the beta letter.
-            packageVersion = "5.0.0"
+            // jpackage wants MAJOR.MINOR.PATCH with numbers only (an MSI refuses "5.0.0b"): the
+            // app's versionName without the beta letter, read from the app's build so the desktop's
+            // version (and so its update check) moves with every release instead of being pinned.
+            packageVersion = appPackageVersion
             description = "Music player over your Spotify library, with the audio from a backend you choose"
             vendor = "Pablo Soage Rodas"
             copyright = "Copyright (C) 2026 Pablo Soage Rodas. GPL-3.0."
