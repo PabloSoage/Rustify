@@ -86,13 +86,14 @@ fun main() {
             })
         }
 
-        // Closing waits, briefly, for the last listen to be stored and the Jam room to be told:
-        // launched and then exited, both were lost.
+        // Closing waits, briefly, for the last listen to be stored and scrobbled and the Jam room to
+        // be told: launched and then exited, all three were lost.
         fun quit() {
             runBlocking {
                 withTimeoutOrNull(3_000) {
                     jam.leaveNow()
                     player.close()
+                    controller.awaitScrobbles()
                 }
             }
             exitApplication()

@@ -243,6 +243,16 @@ class DesktopPlayerController(
     override val sleepTracks: StateFlow<Int> = _sleepTracks
     private var sleepJob: Job? = null
 
+    // On a scope of its own, off the window's thread: quitting blocks that thread while it waits for
+    // the last song's submits, which could not run there meanwhile.
+    private val scrobbler = com.varuna.rustify.metrics.Scrobbler(
+        platform,
+        CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO),
+    )
+
+    /** Returns once the scrobbles already launched have been sent (or failed): for quitting. */
+    suspend fun awaitScrobbles() = scrobbler.awaitSubmits()
+
     init {
         // Counted where a song ends by itself, so skipping through the queue does not use it up.
         player.onTrackEnded = {
@@ -250,7 +260,6 @@ class DesktopPlayerController(
             if (_sleepTimer.value == SLEEP_AT_TRACK_END && _sleepTracks.value == 0) _sleepTimer.value = null
         }
         // ListenBrainz and Last.fm, by the phone's rule; the history itself the player keeps.
-        val scrobbler = com.varuna.rustify.metrics.Scrobbler(platform, scope)
         player.listenObserver = object : QueuePlayer.ListenObserver {
             override fun started(track: FullTrack, startedAt: Long) = scrobbler.started(track, startedAt)
             override fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean) =
