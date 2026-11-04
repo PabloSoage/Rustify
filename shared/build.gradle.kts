@@ -58,7 +58,7 @@ kotlin {
         //
         // Wired by hand, and therefore iosMain too: an explicit dependsOn switches Kotlin's default
         // hierarchy template off (Gradle says so with a warning), and without the template nothing
-        // creates iosMain for the two iOS targets. maybeCreate, so a Kotlin version that applies the
+        // creates iosMain for the iOS targets. maybeCreate, so a Kotlin version that applies the
         // template anyway does not fail on a duplicate.
         val jvmCommonMain = maybeCreate("jvmCommonMain").apply { dependsOn(commonMain.get()) }
         androidMain.get().dependsOn(jvmCommonMain)
@@ -67,6 +67,7 @@ kotlin {
         val iosMain = maybeCreate("iosMain").apply { dependsOn(commonMain.get()) }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
+        getByName("iosX64Main").dependsOn(iosMain)
         getByName("desktopTest").dependencies {
             implementation(kotlin("test-junit"))
         }
