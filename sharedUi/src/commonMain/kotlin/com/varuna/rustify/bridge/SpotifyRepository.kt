@@ -8,24 +8,48 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.AppFile
 import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.fileExists
+import com.varuna.rustify.ui.fileName
+import com.varuna.rustify.ui.fullPath
+import com.varuna.rustify.ui.listChildren
+import com.varuna.rustify.ui.makeDirs
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeAllText
+import com.varuna.rustify.ui.writeTextAtomically
+import com.varuna.rustify.util.LockedMap
 import com.varuna.rustify.util.classifyError
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.optStringOrNull
+import com.varuna.rustify.util.parseArray
+import com.varuna.rustify.util.parseObject
 import com.varuna.rustify.util.retrying
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlin.concurrent.Volatile
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Instant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 // SpotifyEngineException lives in the shared module (bridge/SpotifyEngineException.kt) since 5.x:
 // util/Retry.kt classifies it and moved there with it. Same package, so nothing here imports it.
@@ -77,21 +101,20 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     val localArtistTracks = mutableMapOf<String, List<FullTrack>>()
     // App-lifetime cache of already-loaded Spotify Album/Artist data, so the screen does not have to
     // reload (spinner) when it is recreated after opening/closing the miniplayer.
-    val albumTracksCache: MutableMap<String, List<FullTrack>> = java.util.Collections.synchronizedMap(mutableMapOf())
-    val artistTopTracksCache: MutableMap<String, List<FullTrack>> = java.util.Collections.synchronizedMap(mutableMapOf())
-    val artistAlbumsCache: MutableMap<String, List<SimpleAlbum>> = java.util.Collections.synchronizedMap(mutableMapOf())
+    val albumTracksCache: MutableMap<String, List<FullTrack>> = LockedMap()
+    val artistTopTracksCache: MutableMap<String, List<FullTrack>> = LockedMap()
+    val artistAlbumsCache: MutableMap<String, List<SimpleAlbum>> = LockedMap()
     // Cache of resolved tracks for a local playlist (same pattern as localAlbumTracks). Accessed from
-    // the main thread (UI: PlaylistScreen/LibraryScreen) and from IO, so it is wrapped as synchronized
+    // the main thread (UI: PlaylistScreen/LibraryScreen) and from IO, so every call holds a lock
     // to avoid races when reading/writing/clearing the map concurrently.
-    val localPlaylistTracksCache: MutableMap<String, List<FullTrack>> =
-        java.util.Collections.synchronizedMap(mutableMapOf())
+    val localPlaylistTracksCache: MutableMap<String, List<FullTrack>> = LockedMap()
 
         // `normalizeName` and `isLocalMatch` used to live here. They are now
         // `core_engine/src/matcher/local.rs`, reached through [LocalMatcher] — one rule about what
         // counts as the same recording, next to the accent fold it always needed and never had.
 
         /** [filesDir] is where the scan cache lives, read when no repository is alive (a cold start from the notification). */
-        fun findLocalMatch(filesDir: java.io.File, track: FullTrack): FullTrack? {
+        fun findLocalMatch(filesDir: AppFile, track: FullTrack): FullTrack? {
             // First try the in-memory localTracks from the repository instance
             val repo = instance ?: return findLocalMatchFromDisk(filesDir, track)
             return repo.findLocalMatch(track)
@@ -99,18 +122,25 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
 
         private var memoryCacheLocalTracks: List<FullTrack>? = null
 
-        private fun findLocalMatchFromDisk(filesDir: java.io.File, track: FullTrack): FullTrack? {
+        private val trackList = ListSerializer(FullTrack.serializer())
+
+        // The track caches as the org.json helpers read and wrote them: an array of the wire form,
+        // every element through the generated decoder (one that is not a track fails the whole read).
+        private fun decodeTracks(json: String): List<FullTrack> = parseArray(json).map { decodeTrack(it) }
+
+        private fun decodeTrack(element: JsonElement): FullTrack =
+            decodeWire(element.jsonObjectOrThrow().toString())
+
+        private fun JsonElement.jsonObjectOrThrow(): JsonObject =
+            this as? JsonObject ?: throw IllegalArgumentException("not a track: $this")
+
+        private fun encodeTracks(tracks: List<FullTrack>): String = RustifyJson.encodeToString(trackList, tracks)
+
+        private fun findLocalMatchFromDisk(filesDir: AppFile, track: FullTrack): FullTrack? {
             if (memoryCacheLocalTracks == null) {
-                val localCacheFile = java.io.File(filesDir, "local_music_cache.json")
-                if (!localCacheFile.exists()) return null
                 try {
-                    val jsonStr = localCacheFile.readText()
-                    val array = org.json.JSONArray(jsonStr)
-                    val tracks = mutableListOf<FullTrack>()
-                    for (i in 0 until array.length()) {
-                        tracks.add(FullTrack.fromJson(array.getJSONObject(i)))
-                    }
-                    memoryCacheLocalTracks = tracks
+                    val jsonStr = filesDir.child("local_music_cache.json").readTextOrNull() ?: return null
+                    memoryCacheLocalTracks = decodeTracks(jsonStr)
                 } catch (e: Exception) {
                     return null
                 }
@@ -126,7 +156,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     private val likedTrackIds = mutableStateMapOf<String, Boolean>()
 
     /** Home's sections as they last loaded, for a start with no network. Personal: cleared on logout. */
-    private val homeCacheFile = java.io.File(platform.filesDir, "home_browse_cache.json")
+    private val homeCacheFile = platform.filesDir.child("home_browse_cache.json")
     private val repositoryScope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
     val likedTracks = androidx.compose.runtime.mutableStateListOf<FullTrack>()
@@ -247,26 +277,26 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     var isSyncingArtists by mutableStateOf(false)
         private set
 
-    private fun getLocalTracksCacheFile(): java.io.File {
-        return java.io.File(platform.filesDir, "local_music_cache.json")
+    private fun getLocalTracksCacheFile(): AppFile {
+        return platform.filesDir.child("local_music_cache.json")
     }
 
-    private fun getLikedTracksCacheFile(): java.io.File {
-        return java.io.File(platform.filesDir, "spotify_liked_tracks_cache.json")
+    private fun getLikedTracksCacheFile(): AppFile {
+        return platform.filesDir.child("spotify_liked_tracks_cache.json")
     }
 
     // Local data files (playlists + favorites).
-    private fun getLocalPlaylistsFile(): java.io.File =
-        java.io.File(platform.filesDir, "local_playlists.json")
+    private fun getLocalPlaylistsFile(): AppFile =
+        platform.filesDir.child("local_playlists.json")
 
-    private fun getLocalFavoritesFile(): java.io.File =
-        java.io.File(platform.filesDir, "local_favorites.json")
+    private fun getLocalFavoritesFile(): AppFile =
+        platform.filesDir.child("local_favorites.json")
 
     private fun loadLocalUserData() {
         runCatching {
-            val f = getLocalPlaylistsFile()
-            if (f.exists()) {
-                val list = LocalPlaylist.listFromJsonArray(JSONArray(f.readText()))
+            val text = getLocalPlaylistsFile().readTextOrNull()
+            if (text != null) {
+                val list = decodeWire<List<LocalPlaylist>>(parseArray(text).toString())
                 repositoryScope.launch(Dispatchers.Main) {
                     localPlaylists.clear()
                     localPlaylists.addAll(list)
@@ -274,10 +304,9 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
             }
         }
         runCatching {
-            val f = getLocalFavoritesFile()
-            if (f.exists()) {
-                val arr = JSONArray(f.readText())
-                val ids = (0 until arr.length()).map { arr.getString(it) }
+            val text = getLocalFavoritesFile().readTextOrNull()
+            if (text != null) {
+                val ids = parseArray(text).map { it.optStringOrNull() ?: error("not an id: $it") }
                 repositoryScope.launch(Dispatchers.Main) {
                     ids.forEach { localFavoriteIds[it] = true }
                 }
@@ -305,9 +334,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         val snapshot = localPlaylists.toList()
         repositoryScope.launch(Dispatchers.IO) {
             runCatching {
-                val arr = JSONArray()
-                snapshot.forEach { arr.put(it.toJson()) }
-                atomicWrite(getLocalPlaylistsFile(), arr.toString())
+                getLocalPlaylistsFile().writeTextAtomically(encodeWireString(snapshot))
             }
         }
     }
@@ -316,32 +343,24 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         val keys = localFavoriteIds.filterValues { it }.keys.toList()
         repositoryScope.launch(Dispatchers.IO) {
             runCatching {
-                val arr = JSONArray()
-                keys.forEach { arr.put(it) }
-                atomicWrite(getLocalFavoritesFile(), arr.toString())
+                getLocalFavoritesFile().writeTextAtomically(encodeWireString(keys))
             }
         }
     }
 
-    private fun atomicWrite(dst: java.io.File, content: String) {
-        val tmp = java.io.File(dst.parentFile, dst.name + ".tmp")
-        tmp.writeText(content)
-        if (!tmp.renameTo(dst)) { dst.writeText(content); tmp.delete() }
-    }
-
     private fun loadLikedTracksFromCache() {
         val file = getLikedTracksCacheFile()
-        if (!file.exists()) return
+        if (!file.fileExists()) return
         repositoryScope.launch(Dispatchers.IO) {
             try {
-                val jsonStr = file.readText()
-                val array = JSONArray(jsonStr)
-                
+                val jsonStr = file.readTextOrNull() ?: return@launch
+                val array = parseArray(jsonStr)
+
                 // Fast path for first 50 items
-                val initialBatchSize = kotlin.math.min(50, array.length())
+                val initialBatchSize = kotlin.math.min(50, array.size)
                 val initialTracks = mutableListOf<FullTrack>()
                 for (i in 0 until initialBatchSize) {
-                    initialTracks.add(FullTrack.fromJson(array.getJSONObject(i)))
+                    initialTracks.add(decodeTrack(array[i]))
                 }
                 
                 withContext(Dispatchers.Main) {
@@ -353,13 +372,13 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                 }
                 
                 // Lazy load the rest in batches
-                if (array.length() > initialBatchSize) {
+                if (array.size > initialBatchSize) {
                     var currentIdx = initialBatchSize
-                    while (currentIdx < array.length()) {
-                        val batchSize = kotlin.math.min(200, array.length() - currentIdx)
+                    while (currentIdx < array.size) {
+                        val batchSize = kotlin.math.min(200, array.size - currentIdx)
                         val batchTracks = mutableListOf<FullTrack>()
                         for (i in 0 until batchSize) {
-                            batchTracks.add(FullTrack.fromJson(array.getJSONObject(currentIdx + i)))
+                            batchTracks.add(decodeTrack(array[currentIdx + i]))
                         }
                         
                         withContext(Dispatchers.Main) {
@@ -381,11 +400,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     private fun saveLikedTracksToCache() {
         val file = getLikedTracksCacheFile()
         try {
-            val array = JSONArray()
-            likedTracks.forEach { track ->
-                array.put(track.toJson())
-            }
-            file.writeText(array.toString())
+            file.writeAllText(encodeTracks(likedTracks.toList()))
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -520,16 +535,16 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     }
 
     private suspend fun <T> loadLibraryItemsFromCache(
-        cacheFile: java.io.File,
+        cacheFile: AppFile,
         stateList: androidx.compose.runtime.snapshots.SnapshotStateList<T>,
-        fromJson: (JSONObject) -> T
+        serializer: KSerializer<T>
     ) = withContext(Dispatchers.IO) {
-        if (!cacheFile.exists()) return@withContext
+        val text = cacheFile.readTextOrNull() ?: return@withContext
         try {
-            val array = JSONArray(cacheFile.readText())
+            val array = parseArray(text)
             val items = mutableListOf<T>()
-            for (i in 0 until array.length()) {
-                items.add(fromJson(array.getJSONObject(i)))
+            for (element in array) {
+                items.add(RustifyJson.decodeFromString(serializer, element.jsonObjectOrThrow().toString()))
             }
             withContext(Dispatchers.Main) {
                 stateList.clear()
@@ -541,8 +556,8 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     private suspend fun <T> syncLibraryItems(
         fetchItems: suspend (limit: Int, offset: Int) -> PaginatedResponse<T>,
         stateList: androidx.compose.runtime.snapshots.SnapshotStateList<T>,
-        cacheFile: java.io.File,
-        toJson: (T) -> JSONObject,
+        cacheFile: AppFile,
+        serializer: KSerializer<T>,
         setSyncingFlag: (Boolean) -> Unit
     ) {
         setSyncingFlag(true)
@@ -571,9 +586,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                     stateList.addAll(allItems)
                 }
 
-                val array = JSONArray()
-                allItems.forEach { array.put(toJson(it)) }
-                cacheFile.writeText(array.toString())
+                cacheFile.writeAllText(RustifyJson.encodeToString(ListSerializer(serializer), allItems))
             }
         } catch (e: Exception) {
             // API failed — keep existing cached data, don't clear the list.
@@ -588,8 +601,8 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         syncLibraryItems(
             fetchItems = { limit, offset -> getSavedPlaylists(limit, offset) },
             stateList = savedPlaylists,
-            cacheFile = java.io.File(platform.filesDir, "spotify_saved_playlists_cache.json"),
-            toJson = { it.toJson() },
+            cacheFile = platform.filesDir.child("spotify_saved_playlists_cache.json"),
+            serializer = SimplePlaylist.serializer(),
             setSyncingFlag = { isSyncingPlaylists = it }
         )
     }
@@ -599,8 +612,8 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         syncLibraryItems(
             fetchItems = { limit, offset -> getSavedAlbums(limit, offset) },
             stateList = savedAlbums,
-            cacheFile = java.io.File(platform.filesDir, "spotify_saved_albums_cache.json"),
-            toJson = { it.toJson() },
+            cacheFile = platform.filesDir.child("spotify_saved_albums_cache.json"),
+            serializer = FullAlbum.serializer(),
             setSyncingFlag = { isSyncingAlbums = it }
         )
     }
@@ -610,8 +623,8 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         syncLibraryItems(
             fetchItems = { limit, offset -> getFollowedArtists(limit, offset) },
             stateList = followedArtists,
-            cacheFile = java.io.File(platform.filesDir, "spotify_followed_artists_cache.json"),
-            toJson = { it.toJson() },
+            cacheFile = platform.filesDir.child("spotify_followed_artists_cache.json"),
+            serializer = FullArtist.serializer(),
             setSyncingFlag = { isSyncingArtists = it }
         )
     }
@@ -637,9 +650,11 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
     fun localFavoriteTracks(): List<FullTrack> =
         localTracks.filter { it.id != null && localFavoriteIds[it.id] == true }
 
+    // Kotlin's Uuid prints as java.util.UUID did: 36 lowercase characters, version 4.
+    @OptIn(ExperimentalUuidApi::class)
     fun createLocalPlaylist(name: String): LocalPlaylist {
         val pl = LocalPlaylist(
-            id = "localpl:${java.util.UUID.randomUUID()}",
+            id = "localpl:${Uuid.random()}",
             name = name,
             trackIds = emptyList()
         )
@@ -659,7 +674,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         if (trackId in pl.trackIds) return
         localPlaylists[i] = pl.copy(
             trackIds = pl.trackIds + trackId,
-            updatedAt = System.currentTimeMillis()
+            updatedAt = currentTimeMillis()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
@@ -671,7 +686,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         val pl = localPlaylists[i]
         localPlaylists[i] = pl.copy(
             trackIds = pl.trackIds - trackId,
-            updatedAt = System.currentTimeMillis()
+            updatedAt = currentTimeMillis()
         )
         localPlaylistTracksCache.remove(playlistId)
         saveLocalPlaylists()
@@ -691,7 +706,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         val i = localPlaylists.indexOfFirst { it.id == playlistId }.takeIf { it >= 0 } ?: return
         val pl = localPlaylists[i]
         if (pl.name == trimmed) return
-        localPlaylists[i] = pl.copy(name = trimmed, updatedAt = System.currentTimeMillis())
+        localPlaylists[i] = pl.copy(name = trimmed, updatedAt = currentTimeMillis())
         saveLocalPlaylists()
         LibraryChanges.notifyChanged()
     }
@@ -705,10 +720,11 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
      * A new local playlist from an M3U/M3U8 file, its lines matched against the scanned library
      * (see [M3u.resolve]). Answers the playlist and how many lines found no track.
      */
+    @OptIn(ExperimentalUuidApi::class)
     fun importM3u(name: String, text: String): Pair<LocalPlaylist, Int> {
         val resolved = M3u.resolve(M3u.parse(text), localTracks.mapNotNull { known(it) })
         val pl = LocalPlaylist(
-            id = "localpl:${java.util.UUID.randomUUID()}",
+            id = "localpl:${Uuid.random()}",
             name = name,
             trackIds = resolved.ids.distinct()
         )
@@ -749,7 +765,7 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         // runtime — so it is the one thing here that can stay on the constructor's thread.
         NativeEngine.warmupSpotifyHashesNative()
 
-        val cacheDirPath = platform.filesDir.absolutePath
+        val cacheDirPath = platform.filesDir.fullPath
 
         // Load cache and trigger background sync
         repositoryScope.launch {
@@ -762,9 +778,9 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
                 loadLikedTracksFromCache()
 loadLocalTracksFromCache()
                 loadLocalUserData()   // Local playlists + favorites
-                loadLibraryItemsFromCache(java.io.File(platform.filesDir, "spotify_saved_playlists_cache.json"), savedPlaylists) { SimplePlaylist.fromJson(it) }
-                loadLibraryItemsFromCache(java.io.File(platform.filesDir, "spotify_saved_albums_cache.json"), savedAlbums) { FullAlbum.fromJson(it) }
-                loadLibraryItemsFromCache(java.io.File(platform.filesDir, "spotify_followed_artists_cache.json"), followedArtists) { FullArtist.fromJson(it) }
+                loadLibraryItemsFromCache(platform.filesDir.child("spotify_saved_playlists_cache.json"), savedPlaylists, SimplePlaylist.serializer())
+                loadLibraryItemsFromCache(platform.filesDir.child("spotify_saved_albums_cache.json"), savedAlbums, FullAlbum.serializer())
+                loadLibraryItemsFromCache(platform.filesDir.child("spotify_followed_artists_cache.json"), followedArtists, FullArtist.serializer())
             }
             if (isAuthenticated()) {
                 syncLikedTracks()
@@ -778,14 +794,9 @@ loadLocalTracksFromCache()
 
     private fun loadLocalTracksFromCache() {
         val file = getLocalTracksCacheFile()
-        if (!file.exists()) return
         try {
-            val jsonStr = file.readText()
-            val array = JSONArray(jsonStr)
-            val initialTracks = mutableListOf<FullTrack>()
-            for (i in 0 until array.length()) {
-                initialTracks.add(FullTrack.fromJson(array.getJSONObject(i)))
-            }
+            val jsonStr = file.readTextOrNull() ?: return
+            val initialTracks = decodeTracks(jsonStr)
             repositoryScope.launch(Dispatchers.Main) {
                 localTracks.clear()
                 localTracks.addAll(initialTracks)
@@ -798,11 +809,7 @@ loadLocalTracksFromCache()
     private fun saveLocalTracksToCache(tracks: List<FullTrack>) {
         val file = getLocalTracksCacheFile()
         try {
-            val array = JSONArray()
-            tracks.forEach { track ->
-                array.put(track.toJson())
-            }
-            file.writeText(array.toString())
+            file.writeAllText(encodeTracks(tracks))
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -828,14 +835,14 @@ loadLocalTracksFromCache()
                 // A change of artist separators re-reads every file once: the cached track holds the
                 // artists already split, not the tag they came from.
                 val separators = settingsPrefs.getString(ArtistSeparators.PREF) ?: ArtistSeparators.DEFAULT
-                val coversDir = java.io.File(platform.filesDir, "covers").also { it.mkdirs() }
+                val coversDir = platform.filesDir.child("covers").also { it.makeDirs() }
                 // Covers are deduplicated per album (see the scanner). Resolution mode: full-res (default,
                 // sharpest) vs downscaled 512px (smaller). Wipe & rebuild covers when the mode changes —
                 // this also migrates away from the old per-track full-res scheme that bloated User Data.
                 val coversFullRes = settingsPrefs.getBoolean("settings_local_covers_full_res", true)
                 val coversMode = if (coversFullRes) "full" else "512"
                 if (settingsPrefs.getString("covers_res_mode") != coversMode) {
-                    coversDir.listFiles()?.forEach { runCatching { it.delete() } }
+                    coversDir.listChildren().forEach { runCatching { it.deleteFile() } }
                     settingsPrefs.putString("covers_res_mode", coversMode)
                 }
 
@@ -846,7 +853,8 @@ loadLocalTracksFromCache()
                         excludedFolders = settingsPrefs.getStringSet(LOCAL_EXCLUDED_FOLDERS, emptySet()),
                         separators = separators,
                         resplit = settingsPrefs.getString(SEPARATORS_APPLIED) != separators,
-                        coversDir = coversDir,
+                        // LocalScanRequest still takes a java.io.File, the one JVM type left here.
+                        coversDir = java.io.File(coversDir.fullPath),
                         coversFullRes = coversFullRes,
                     )
                 )
@@ -858,7 +866,7 @@ loadLocalTracksFromCache()
                     val referenced = newLocalTracks.mapNotNull {
                         it.externalUri.removePrefix("file://").substringAfterLast('/').ifBlank { null }
                     }.toHashSet()
-                    coversDir.listFiles()?.forEach { f -> if (f.name !in referenced) runCatching { f.delete() } }
+                    coversDir.listChildren().forEach { f -> if (f.fileName !in referenced) runCatching { f.deleteFile() } }
                 }
 
                 withContext(Dispatchers.Main) {
@@ -914,7 +922,7 @@ loadLocalTracksFromCache()
      */
     suspend fun login(spDcCookie: String): LoginResult = withContext(Dispatchers.IO) {
         val json = NativeEngine.loginSpotify(spDcCookie)
-        val result = LoginResult.fromJson(JSONObject(json))
+        val result = decodeWire<LoginResult>(json)
         if (result.success) {
             prefs.putString(KEY_SP_DC, spDcCookie)
             prefs.putString(KEY_ACCESS_TOKEN, result.accessToken)
@@ -933,7 +941,7 @@ loadLocalTracksFromCache()
         prefs.remove(KEY_ACCESS_TOKEN)
         prefs.remove(KEY_EXPIRATION)
         // Home is personal; the next account must not start on the previous one's.
-        homeCacheFile.delete()
+        homeCacheFile.deleteFile()
     }
 
     /**
@@ -957,7 +965,7 @@ loadLocalTracksFromCache()
     suspend fun ensureSession(): Boolean = withContext(Dispatchers.IO) {
         val expiration = prefs.getLong(KEY_EXPIRATION, 0L)
         if (NativeEngine.isSpotifyAuthenticatedNative() &&
-            System.currentTimeMillis() + SESSION_MARGIN_MS < expiration
+            currentTimeMillis() + SESSION_MARGIN_MS < expiration
         ) return@withContext true
         val savedCookie = prefs.getString(KEY_SP_DC) ?: ""
         if (savedCookie.isEmpty()) return@withContext false
@@ -986,7 +994,7 @@ loadLocalTracksFromCache()
             return@withContext LoginResult(success = false, user = null, error = e.message,
                 accessToken = null, expiration = null)
         }
-        val result = LoginResult.fromJson(JSONObject(json))
+        val result = decodeWire<LoginResult>(json)
         if (result.success) {
             prefs.putString(KEY_ACCESS_TOKEN, result.accessToken)
             prefs.putLong(KEY_EXPIRATION, result.expiration ?: 0L)
@@ -1016,7 +1024,7 @@ loadLocalTracksFromCache()
      */
     suspend fun refreshToken(): OperationResult = withContext(Dispatchers.IO) {
         val json = NativeEngine.refreshSpotifyToken()
-        OperationResult.fromJson(JSONObject(json))
+        decodeWire<OperationResult>(json)
     }
 
     /**
@@ -1078,9 +1086,10 @@ loadLocalTracksFromCache()
                     likedTracks.removeAll { it.id == id }
                 } else {
                     likedTrackIds[id] = true
-                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-                    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                    val nowStr = sdf.format(java.util.Date())
+                    // "2026-11-04T10:20:30Z", whole seconds in UTC: SimpleDateFormat's
+                    // yyyy-MM-dd'T'HH:mm:ss'Z' as it was written here, and Instant prints no fraction
+                    // when there is none.
+                    val nowStr = Instant.fromEpochSeconds(currentTimeMillis().floorDiv(1000L)).toString()
                     val newTrack = track.copy(addedAt = nowStr)
                     likedTracks.add(0, newTrack)
                 }
@@ -1267,14 +1276,14 @@ loadLocalTracksFromCache()
      * Save albums to the user's library.
      */
     suspend fun saveAlbums(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.saveSpotifyAlbums(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.saveSpotifyAlbums(idsJson(ids)) }
     }
 
     /**
      * Remove albums from the user's library.
      */
     suspend fun unsaveAlbums(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.unsaveSpotifyAlbums(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.unsaveSpotifyAlbums(idsJson(ids)) }
     }
 
     // =========================================================================
@@ -1329,14 +1338,14 @@ loadLocalTracksFromCache()
      * Follow artists.
      */
     suspend fun followArtists(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.followSpotifyArtists(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.followSpotifyArtists(idsJson(ids)) }
     }
 
     /**
      * Unfollow artists.
      */
     suspend fun unfollowArtists(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.unfollowSpotifyArtists(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.unfollowSpotifyArtists(idsJson(ids)) }
     }
 
     // =========================================================================
@@ -1403,7 +1412,7 @@ loadLocalTracksFromCache()
     private suspend fun writeOperation(call: suspend () -> String): OperationResult =
         runCatching {
             retrying(onAuthError = { ensureSession() }) {
-                val res = OperationResult.fromJson(JSONObject(call()))
+                val res = decodeWire<OperationResult>(call())
                 if (!res.success) {
                     throw SpotifyEngineException(res.error ?: "operation failed", res.kind)
                 }
@@ -1423,7 +1432,7 @@ loadLocalTracksFromCache()
      */
     suspend fun addTracksToPlaylist(playlistId: String, trackIds: List<String>, position: Int = -1): OperationResult = withContext(Dispatchers.IO) {
         writeOperation {
-            NativeEngine.addTracksToPlaylist(playlistId, JSONArray(trackIds).toString(), position)
+            NativeEngine.addTracksToPlaylist(playlistId, idsJson(trackIds), position)
         }
     }
 
@@ -1461,7 +1470,7 @@ loadLocalTracksFromCache()
      */
     suspend fun removeTracksFromPlaylist(playlistId: String, trackIds: List<String>): OperationResult = withContext(Dispatchers.IO) {
         writeOperation {
-            NativeEngine.removeTracksFromPlaylist(playlistId, JSONArray(trackIds).toString())
+            NativeEngine.removeTracksFromPlaylist(playlistId, idsJson(trackIds))
         }
     }
 
@@ -1505,14 +1514,14 @@ loadLocalTracksFromCache()
      * Save tracks to the user's library — the heart button.
      */
     suspend fun saveTracks(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.saveSpotifyTracks(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.saveSpotifyTracks(idsJson(ids)) }
     }
 
     /**
      * Remove tracks from the user's library.
      */
     suspend fun unsaveTracks(ids: List<String>): OperationResult = withContext(Dispatchers.IO) {
-        writeOperation { NativeEngine.unsaveSpotifyTracks(JSONArray(ids).toString()) }
+        writeOperation { NativeEngine.unsaveSpotifyTracks(idsJson(ids)) }
     }
 
     /**
@@ -1532,16 +1541,15 @@ loadLocalTracksFromCache()
      */
     suspend fun getTrackCanvas(trackId: String): String? = withContext(Dispatchers.IO) {
         retrying(onAuthError = { ensureSession() }) {
-            val json = JSONObject(NativeEngine.getSpotifyCanvas(trackId))
+            val json = parseObject(NativeEngine.getSpotifyCanvas(trackId))
             // The bridge answers `{"url":…}` on success and an OperationResult on failure, so a
             // missing "url" key is the failure shape rather than "no canvas".
-            if (!json.has("url")) {
-                throw SpotifyEngineException(
-                    json.optString("error", "canvas lookup failed"),
-                    json.optString("kind").takeIf { it.isNotBlank() }
+            val url = json["url"]
+                ?: throw SpotifyEngineException(
+                    json["error"].optString("canvas lookup failed"),
+                    json["kind"].optString().takeIf { it.isNotBlank() }
                 )
-            }
-            if (json.isNull("url")) null else json.optString("url").takeIf { it.isNotBlank() }
+            if (url is JsonNull) null else url.optString().takeIf { it.isNotBlank() }
         }
     }
 
@@ -1655,7 +1663,7 @@ loadLocalTracksFromCache()
             decodeChecked<List<BrowseSection>>(json).also { sections ->
                 // Kept for the next start without network: Home used to be a spinner and then an
                 // error with nothing else on screen until a connection came back.
-                if (sections.isNotEmpty()) runCatching { atomicWrite(homeCacheFile, json) }
+                if (sections.isNotEmpty()) runCatching { homeCacheFile.writeTextAtomically(json) }
             }
         }
     }
@@ -1663,8 +1671,7 @@ loadLocalTracksFromCache()
     /** Home as it was the last time it loaded, or null when it never has. Reads disk only. */
     suspend fun cachedBrowseSections(): List<BrowseSection>? = withContext(Dispatchers.IO) {
         runCatching {
-            if (!homeCacheFile.exists()) null
-            else decodeChecked<List<BrowseSection>>(homeCacheFile.readText())
+            homeCacheFile.readTextOrNull()?.let { decodeChecked<List<BrowseSection>>(it) }
         }.getOrNull()
     }
 
@@ -1675,6 +1682,9 @@ loadLocalTracksFromCache()
      * `core_engine/src/matcher/local.rs`, and it is asked rather than repeated here. What comes back
      * is an id, which is then located in the list this side already holds.
      */
+    /** The ids a write bridge takes, as the JSON array `JSONArray(ids)` printed. */
+    private fun idsJson(ids: List<String>): String = RustifyJson.encodeToString(ids)
+
     fun findLocalMatch(track: FullTrack): FullTrack? {
         val pool = localTracks.toList()
         LocalMatcher.ensureRegistered("repo", pool)
