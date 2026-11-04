@@ -17,6 +17,8 @@
     <string name="desktop_sign_in_window_failed">No se abrió la ventana de Spotify: %1$s</string>
     <string name="desktop_screen_not_here">Esta pantalla aún no está en escritorio. Llegará en una versión próxima, igual que en el móvil.</string>
     <string name="desktop_settings_not_here">El resto de esta categoría aún no está en escritorio: llega con las funciones que configura.</string>
+    <!-- The links the desktop is handed (DesktopLinks). -->
+    <string name="desktop_link_not_understood">Rustify no sabe abrir ese enlace</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
     <string name="settings_dj_voice_none">No se ha encontrado ningún motor de voz en este ordenador, así que el DJ no habla. En Linux, instala speech-dispatcher (spd-say) o espeak-ng.</string>
     <!-- The DJ's local mode on the desktop: a model server on this computer. -->

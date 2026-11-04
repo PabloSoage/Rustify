@@ -17,6 +17,8 @@
     <string name="desktop_sign_in_window_failed">Spotify のウィンドウを開けませんでした: %1$s</string>
     <string name="desktop_screen_not_here">この画面はまだデスクトップにありません。今後のバージョンでスマホと同じものが入ります。</string>
     <string name="desktop_settings_not_here">このカテゴリのほかの設定はまだデスクトップにありません。対応する機能と一緒に追加されます。</string>
+    <!-- The links the desktop is handed (DesktopLinks). -->
+    <string name="desktop_link_not_understood">Rustify はそのリンクを開けません</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
     <string name="settings_dj_voice_none">このコンピューターには音声合成エンジンが見つからないため、DJ は話しません。Linux では speech-dispatcher（spd-say）または espeak-ng をインストールしてください。</string>
     <!-- The DJ's local mode on the desktop: a model server on this computer. -->

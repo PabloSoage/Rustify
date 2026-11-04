@@ -22,8 +22,12 @@ import com.varuna.rustify.jam.JvmJamCore
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.DesktopStores
+import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.defaultLanguage
+import com.varuna.rustify.ui.DesktopLinks
+import com.varuna.rustify.ui.SingleInstance
 import java.io.File
+import kotlin.system.exitProcess
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -34,13 +38,35 @@ private fun applyLocale(code: String) {
     java.util.Locale.setDefault(if (code == "system") systemLocale else java.util.Locale.forLanguageTag(code))
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    // One Rustify per data folder. A second launch (the browser opening a rustify:// link, a link on
+    // the command line) hands its arguments to the first and leaves, before loading anything.
+    val instance = SingleInstance.claim(AppDirs.data)
+    if (instance == null && !SingleInstance.unlockable) {
+        val forwarded = SingleInstance.forward(AppDirs.data, args.toList())
+        if (!forwarded) System.err.println("Rustify is already running for ${AppDirs.data} and did not answer.")
+        exitProcess(if (forwarded) 0 else 1)
+    }
+
     // Before anything names NativeEngine: on the desktop the library is not on java.library.path.
     CoreLoader.install()
     // The log viewer's buffer, from the first line on.
     com.varuna.rustify.util.DesktopLogBook.install()
     // The macOS title bar in dark, as Windows' (WindowStyle): AWT reads it before the first window.
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
+
+    // The links this launch was for, and the ones later launches and macOS hand over, in the
+    // phone's `intentFlow`: the root opens them once it is up (DesktopLinks).
+    DesktopLinks.installSystemHandlers()
+    args.forEach { DesktopLinks.offer(it) }
+    instance?.let {
+        runCatching {
+            it.listen { forwarded ->
+                forwarded.forEach { link -> DesktopLinks.offer(link) }
+                DesktopLinks.raise()
+            }
+        }.onFailure { e -> Log.w("Main", "a second launch will not reach this one", e) }
+    }
 
     application {
         val scope = rememberCoroutineScope()
@@ -50,7 +76,9 @@ fun main() {
 
         // What the shared screens (docs serie-4.x/26) take from the platform: the phone has these
         // over Android; here they are over the desktop's folders, preferences and the core's engine.
-        val appPlatform = remember { com.varuna.rustify.ui.DesktopAppPlatform(systemCountry = systemLocale.country) }
+        val appPlatform = remember {
+            com.varuna.rustify.ui.DesktopAppPlatform(systemCountry = systemLocale.country).also { DesktopLinks.toasts = it }
+        }
         val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope, appPlatform) }
 
         // The language picked in Settings ("system" = the computer's), the phone's `app_language`.
@@ -95,9 +123,13 @@ fun main() {
             })
         }
 
+        val windowState = rememberWindowState(width = 1100.dp, height = 760.dp)
+
         // Closing waits, briefly, for the last listen to be stored and scrobbled and the Jam room to
         // be told: launched and then exited, all three were lost.
         fun quit() {
+            // The next launch is the first again.
+            instance?.close()
             // The DJ's model server is a child process: it goes with the window.
             appServices.close()
             runBlocking {
@@ -127,8 +159,20 @@ fun main() {
             title = "Rustify",
             // The phone's launcher icon, also in the title bar and the taskbar.
             icon = androidx.compose.ui.res.painterResource("rustify.png"),
-            state = rememberWindowState(width = 1100.dp, height = 760.dp),
+            state = windowState,
         ) {
+            // Up and in front: a second launch, a link, the Dock, the media overlay.
+            LaunchedEffect(Unit) {
+                DesktopLinks.raiseRequests.collect {
+                    windowState.isMinimized = false
+                    window.toFront()
+                    // Windows keeps a window from taking the foreground on its own; a moment on top
+                    // is what lets it come up over the browser that opened the link.
+                    window.isAlwaysOnTop = true
+                    window.isAlwaysOnTop = false
+                    window.requestFocus()
+                }
+            }
             // The window's native handle is what Windows attaches the media overlay to.
             val handle = window.windowHandle
             LaunchedEffect(handle) { com.varuna.rustify.engine.WindowStyle.darkFrame(handle) }
@@ -136,7 +180,7 @@ fun main() {
                 MediaKeys.run(
                     player = player,
                     windowHandle = handle,
-                    onRaise = { window.toFront() },
+                    onRaise = DesktopLinks::raise,
                     onQuit = ::quit,
                 )
             }
@@ -154,7 +198,13 @@ fun main() {
                     RustifyTheme {
                         androidx.compose.foundation.layout.Box {
                             // The phone's app, as the tablet lays it out (docs serie-4.x/26).
-                            if (repo != null) com.varuna.rustify.ui.RustifyApp(spotifyRepo = repo, shell = shell)
+                            if (repo != null) {
+                                com.varuna.rustify.ui.RustifyApp(
+                                    spotifyRepo = repo,
+                                    shell = shell,
+                                    intentFlow = DesktopLinks.intents,
+                                )
+                            }
                             Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
                         }
                     }
