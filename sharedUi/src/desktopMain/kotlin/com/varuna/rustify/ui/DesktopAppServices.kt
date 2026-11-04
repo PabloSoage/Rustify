@@ -4,7 +4,7 @@ package com.varuna.rustify.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import com.varuna.rustify.bridge.DesktopDownloads
-import com.varuna.rustify.bridge.DesktopLocalLyrics
+import com.varuna.rustify.bridge.LocalFileLyrics
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsChain
@@ -58,7 +58,7 @@ class DesktopAppServices(
     // A file rather than Preferences: the per-song choice is a JSON map that outgrows a Preferences
     // value (8 KB). A local track's own lyrics come from its .lrc or its tag, as on the phone.
     override val lyrics: LyricsChain by lazy {
-        LyricsChain(FileStore(File(AppDirs.data, "lyrics")), readLocal = { DesktopLocalLyrics.read(it) })
+        LyricsChain(FileStore(File(AppDirs.data, "lyrics")), readLocal = { LocalFileLyrics.read(it) })
     }
 
     // ML Kit is Android's: here the model the DJ asks translates, with the whole song as context.

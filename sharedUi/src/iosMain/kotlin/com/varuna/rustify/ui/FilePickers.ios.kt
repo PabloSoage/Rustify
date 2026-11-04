@@ -121,8 +121,7 @@ actual fun rememberSaveFile(
 actual fun rememberPickFolder(write: Boolean, onResult: (String?) -> Unit): () -> Unit = {
     val picker = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeFolder))
     show(picker, onPicked = { url ->
-        // Access lasts for this run of the app; a folder kept across launches needs a bookmark.
-        url.startAccessingSecurityScopedResource()
+        IosFolders.add(url)
         onResult(url.path)
     }, onCancelled = { onResult(null) })
 }

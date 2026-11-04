@@ -3,19 +3,29 @@
 
 package com.varuna.rustify.ui
 
+import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileModificationDate
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSString
+import platform.Foundation.NSURL
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.create
 import platform.Foundation.dataWithBytes
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.stringByDeletingLastPathComponent
+import platform.Foundation.stringByResolvingSymlinksInPath
 import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
 
 /** A path under the app's own folders, over Foundation's file manager. */
@@ -64,3 +74,26 @@ actual fun AppFile.listChildren(): List<AppFile> =
 
 actual fun AppFile.byteSize(): Long =
     (files.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? platform.Foundation.NSNumber)?.longLongValue ?: 0L
+
+actual fun appFileAt(path: String): AppFile = AppFile(path)
+
+private fun AppFile.existsAsFolder(): Boolean? = memScoped {
+    val folder = alloc<BooleanVar>()
+    if (files.fileExistsAtPath(path, isDirectory = folder.ptr)) folder.value else null
+}
+
+actual fun AppFile.isFolder(): Boolean = existsAsFolder() == true
+
+actual fun AppFile.isPlainFile(): Boolean = existsAsFolder() == false
+
+actual fun AppFile.modifiedMillis(): Long {
+    val date = files.attributesOfItemAtPath(path, null)?.get(NSFileModificationDate) as? NSDate ?: return 0L
+    return (date.timeIntervalSince1970 * 1000).toLong()
+}
+
+actual fun AppFile.resolvedPath(): String? = (path as NSString).stringByResolvingSymlinksInPath
+
+actual fun AppFile.fileUri(): String = NSURL.fileURLWithPath(path).absoluteString ?: "file://$path"
+
+actual fun appFileOfUri(uri: String): AppFile? =
+    if (uri.startsWith("file:")) NSURL.URLWithString(uri)?.path?.let { AppFile(it) } else null

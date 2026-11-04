@@ -13,9 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
 import com.varuna.rustify.audio.IosAudioSources
-import com.varuna.rustify.bridge.LocalMusicScanner
-import com.varuna.rustify.bridge.LocalScanRequest
-import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.FileTreeMusicScanner
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.ios.IosController
@@ -40,17 +38,16 @@ object IosLinks {
     }
 }
 
-/** Nothing scanned yet on iOS: Settings does not offer local music here. */
-private object NoLocalMusic : LocalMusicScanner {
-    override suspend fun scan(request: LocalScanRequest): List<FullTrack> = emptyList()
-}
-
 /**
  * The phone's app on iOS, the same [RustifyApp] the phone and the desktop draw. The Swift side makes
  * [controller], and keeps what is plain Swift over it: the audio session and the lock screen.
  */
 fun MainViewController(controller: IosController): UIViewController = ComposeUIViewController {
-    val platform = remember { IosLogBook.install(); IosAppPlatform(controller.secrets) }
+    val platform = remember {
+        IosLogBook.install()
+        IosFolders.restore()
+        IosAppPlatform(controller.secrets)
+    }
     val player = remember {
         EnginePlayerController(
             controller.player,
@@ -97,7 +94,9 @@ fun MainViewController(controller: IosController): UIViewController = ComposeUIV
         LocalPlayer provides player,
     ) {
         // The repository the screens read, created once the core knows its folders.
-        val repo = remember(ready) { if (ready) SpotifyRepository(platform, NoLocalMusic) else null }
+        val repo = remember(ready) {
+            if (ready) SpotifyRepository(platform, FileTreeMusicScanner(::scaledCover, IosFolders::folderOf)) else null
+        }
         key(language) {
             RememberStringEnvironment()
             RustifyTheme {

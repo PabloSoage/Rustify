@@ -159,6 +159,7 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
             SettingsSlot.GENERAL, SettingsSlot.AUDIO -> Unit
             SettingsSlot.GENERAL_DJ -> com.varuna.rustify.ui.screens.DjSettingsSection()
             SettingsSlot.AUDIO_SOURCES -> {
+                com.varuna.rustify.ui.screens.LocalMusicSection()
                 com.varuna.rustify.ui.screens.AudioSourcesOrderSection()
                 com.varuna.rustify.ui.screens.AutoplayRadioSection()
                 com.varuna.rustify.ui.screens.BlocklistSection()

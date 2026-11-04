@@ -2,6 +2,7 @@
 package com.varuna.rustify.ui
 
 import java.io.File
+import java.net.URI
 
 // java.io, as the stores used it before they moved to common code. The same on Android and the desktop.
 
@@ -32,3 +33,18 @@ actual fun AppFile.makeDirs(): Boolean = mkdirs()
 actual fun AppFile.listChildren(): List<AppFile> = listFiles()?.toList().orEmpty()
 
 actual fun AppFile.byteSize(): Long = length()
+
+actual fun appFileAt(path: String): AppFile = File(path)
+
+actual fun AppFile.isFolder(): Boolean = isDirectory
+
+actual fun AppFile.isPlainFile(): Boolean = isFile
+
+actual fun AppFile.modifiedMillis(): Long = lastModified()
+
+actual fun AppFile.resolvedPath(): String? = runCatching { canonicalPath }.getOrNull()
+
+actual fun AppFile.fileUri(): String = absoluteFile.toPath().toUri().toString()
+
+actual fun appFileOfUri(uri: String): AppFile? =
+    if (uri.startsWith("file:")) runCatching { File(URI(uri)) }.getOrNull() else null

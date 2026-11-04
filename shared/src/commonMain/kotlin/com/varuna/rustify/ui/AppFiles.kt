@@ -48,6 +48,27 @@ expect fun AppFile.listChildren(): List<AppFile>
 /** The size in bytes: `length()`, 0 when it does not exist. */
 expect fun AppFile.byteSize(): Long
 
+/** The file at [path]: `File(path)`. */
+expect fun appFileAt(path: String): AppFile
+
+/** `isDirectory`. */
+expect fun AppFile.isFolder(): Boolean
+
+/** `isFile`. */
+expect fun AppFile.isPlainFile(): Boolean
+
+/** When it last changed, in ms since the epoch: `lastModified()`, 0 when it does not exist. */
+expect fun AppFile.modifiedMillis(): Long
+
+/** The path with its links followed: `canonicalPath`; null when that cannot be worked out. */
+expect fun AppFile.resolvedPath(): String?
+
+/** Its `file://` URI: percent-encoded, three slashes, the form the engine opens and Coil loads. */
+expect fun AppFile.fileUri(): String
+
+/** The file a `file://` URI names, or null when it names none (a phone's `content://` track). */
+expect fun appFileOfUri(uri: String): AppFile?
+
 /** The file's text, or null when there is no file. Throws when one exists and cannot be read. */
 fun AppFile.readTextOrNull(): String? = if (fileExists()) readAllText() else null
 

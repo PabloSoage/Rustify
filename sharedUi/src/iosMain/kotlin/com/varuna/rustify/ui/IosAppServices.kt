@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.unit.dp
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LocalFileLyrics
 import com.varuna.rustify.bridge.LyricsChain
 import com.varuna.rustify.dj.ChatModel
 import com.varuna.rustify.dj.DjAutoController
@@ -74,7 +75,10 @@ class IosAppServices(
 
     // Defaults of its own: the per-song choice is a map that grows with the library.
     override val lyrics: LyricsChain by lazy {
-        LyricsChain(UserDefaultsStore(NSUserDefaults(suiteName = "com.varuna.rustify.lyrics")))
+        LyricsChain(
+            UserDefaultsStore(NSUserDefaults(suiteName = "com.varuna.rustify.lyrics")),
+            readLocal = { LocalFileLyrics.read(it) },
+        )
     }
 
     override val audioSettings: AudioSettings = IosAudioSettings(platform)
