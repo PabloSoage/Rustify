@@ -30,8 +30,8 @@ import kotlin.math.abs
 import kotlin.random.Random
 
 /**
- * The Jam calls the desktop and iOS make (`core_engine/src/jam/`), JSON in and out. One per way of
- * reaching the core: `JvmJamCore` (JNI) and `IosJamCore` (C ABI).
+ * The Jam calls the desktop and iOS make (`core_engine/src/jam/`), JSON in and out. One
+ * implementation, `JvmJamCore`, over `NativeEngine` (JNI or the C ABI); `IosJamCore` is the same one.
  */
 interface JamCore {
     /** A fresh room code, as a JSON string. Memory only. */

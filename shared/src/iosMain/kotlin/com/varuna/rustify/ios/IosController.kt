@@ -3,6 +3,7 @@ package com.varuna.rustify.ios
 
 import com.varuna.rustify.bridge.CoreCall
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyUser
 import com.varuna.rustify.bridge.YtmSearchResults
 import com.varuna.rustify.bridge.decodeWire
@@ -13,11 +14,13 @@ import com.varuna.rustify.platform.UserDefaultsStore
 import com.varuna.rustify.platform.defaultLanguage
 import com.varuna.rustify.spotify.IosSpotifyCore
 import com.varuna.rustify.spotify.SpotifyLibrary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.put
+import kotlinx.coroutines.withContext
 
 /**
  * What the Swift app talks to: one object, callbacks instead of coroutines, plain types.
@@ -25,7 +28,7 @@ import kotlinx.serialization.json.put
  * Swift cannot collect a Flow or call a suspend function without a wrapper, and the app does not need
  * either — it needs "search this, tell me", "play these", and "tell me when the player changes". All
  * of it runs on the main queue ([MainScope]); the core calls themselves hop to an IO thread inside
- * [CoreCall].
+ * [NativeEngine] and [CoreCall].
  */
 class IosController {
     private val scope = MainScope()
@@ -35,9 +38,11 @@ class IosController {
     /** Call once at launch with the app's Application Support and Caches folders. */
     fun start(dataDir: String, cacheDir: String) {
         scope.launch {
-            CoreCall.call("initCacheDir") { put("dir", dataDir) }
-            CoreCall.call("initSpotifyCacheDir") { put("dir", cacheDir) }
-            CoreCall.call("setLanguage") { put("lang", defaultLanguage()) }
+            NativeEngine.initCacheDir(dataDir)
+            NativeEngine.initSpotifyCacheDir(cacheDir)
+            // Memory only, but off the main queue as it always was here.
+            val language = defaultLanguage()
+            withContext(Dispatchers.IO) { NativeEngine.setLanguageNative(language) }
             player.start()
         }
     }
@@ -45,7 +50,7 @@ class IosController {
     /** YouTube Music, no account needed — as on the phone. */
     fun search(query: String, onResult: (List<FullTrack>) -> Unit, onError: (String) -> Unit) {
         scope.launch {
-            val answer = CoreCall.call("searchYtMusic") { put("query", query) }
+            val answer = NativeEngine.searchYtMusic(query)
             runCatching { decodeWire<YtmSearchResults>(answer).tracks.map { it.toFullTrack() } }
                 .onSuccess(onResult)
                 .onFailure { onError(it.message ?: "Search failed") }

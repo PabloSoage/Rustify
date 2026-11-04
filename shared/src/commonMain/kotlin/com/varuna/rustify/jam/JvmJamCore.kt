@@ -3,7 +3,10 @@ package com.varuna.rustify.jam
 
 import com.varuna.rustify.bridge.NativeEngine
 
-/** [JamCore] over JNI: the same bridges Android's Jam calls. */
+/**
+ * [JamCore] over [NativeEngine]: the same bridges Android's Jam calls. JNI on the JVMs, the C ABI on
+ * iOS (as `IosJamCore`); the name is from when it was the JNI one.
+ */
 object JvmJamCore : JamCore {
     override fun newCode(): String = NativeEngine.jamNewCode()
     override suspend fun join(configJson: String): String = NativeEngine.jamJoin(configJson)

@@ -15,8 +15,8 @@ import com.varuna.rustify.platform.Log
 import com.varuna.rustify.util.retrying
 
 /**
- * The Spotify calls the desktop and iOS make, as JSON in and out — one implementation per way of
- * reaching the core: `JvmSpotifyCore` (JNI) and `IosSpotifyCore` (C ABI). Same answers on both.
+ * The Spotify calls the desktop and iOS make, as JSON in and out. One implementation,
+ * `JvmSpotifyCore`, over `NativeEngine` (JNI or the C ABI); `IosSpotifyCore` is the same one.
  */
 interface SpotifyCore {
     suspend fun login(spDc: String): String

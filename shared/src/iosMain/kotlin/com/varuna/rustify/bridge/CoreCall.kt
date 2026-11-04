@@ -20,6 +20,9 @@ import kotlinx.serialization.json.buildJsonObject
  * decoders in `SpotifyModels.kt` read it unchanged. Like a JNI call, a call blocks its thread until
  * the core answers, so [call] runs on `Dispatchers.IO`; [callBlocking] is for memory-only methods
  * (`parseLink`, `searchQuery`, `playerReduce`) and for callers already off the main thread.
+ *
+ * Code that is not iOS-only calls [NativeEngine], which is built on this; what calls it directly is
+ * what `NativeEngine` does not cover, the audio engine (`engine*`) and the version.
  */
 @OptIn(ExperimentalForeignApi::class)
 object CoreCall {

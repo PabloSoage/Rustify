@@ -3,7 +3,11 @@ package com.varuna.rustify.spotify
 
 import com.varuna.rustify.bridge.NativeEngine
 
-/** [SpotifyCore] over JNI, for the desktop (and Android, once its repository moves here, T1.3). */
+/**
+ * [SpotifyCore] over [NativeEngine], for the desktop and iOS (as `IosSpotifyCore`), and Android once
+ * its repository moves here (T1.3). JNI on the JVMs, the C ABI on iOS; the name is from when it was
+ * the JNI one.
+ */
 object JvmSpotifyCore : SpotifyCore {
     override suspend fun login(spDc: String): String = NativeEngine.loginSpotify(spDc)
 
