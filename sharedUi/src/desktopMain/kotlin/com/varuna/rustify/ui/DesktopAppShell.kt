@@ -5,24 +5,31 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -36,22 +43,105 @@ import com.varuna.rustify.ui.resources.desktop_screen_not_here
 import com.varuna.rustify.ui.resources.desktop_settings_not_here
 import com.varuna.rustify.ui.resources.desktop_sign_in_cookie
 import com.varuna.rustify.ui.resources.desktop_sign_in_help
+import com.varuna.rustify.ui.resources.desktop_sign_in_open_window
+import com.varuna.rustify.ui.resources.desktop_sign_in_paste_instead
+import com.varuna.rustify.ui.resources.desktop_sign_in_waiting
+import com.varuna.rustify.ui.resources.desktop_sign_in_waiting_help
+import com.varuna.rustify.ui.resources.desktop_sign_in_window_failed
 import com.varuna.rustify.ui.resources.spotify_sign_in
+import java.io.File
 import org.jetbrains.compose.resources.stringResource
 
 private val Background = Color(0xFF121212)
 private val Accent = Color(0xFF1DB954)
 
 /**
- * [AppShell] on the desktop. Signing in takes the `sp_dc` cookie pasted by hand until the embedded
- * browser lands (docs serie-4.x/27, phase H); the screens not moved yet say so, with a way back.
- * [onLanguage] is the window's: it puts the interface in the language Settings picked.
+ * [AppShell] on the desktop. Signing in is the phone's: Spotify's login page, here in the system's
+ * own webview in a window of its own (`rustify-login`, [LoginHelper]; docs serie-4.x/27, phase H),
+ * and the `sp_dc` cookie it leaves. Pasting the cookie by hand stays, for when that window cannot
+ * open and for whoever prefers it. The screens not moved yet say so, with a way back. [onLanguage]
+ * is the window's: it puts the interface in the language Settings picked.
  */
 class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell {
     @Composable
     override fun SignIn(onLogin: (String) -> Unit, onCancel: () -> Unit) {
+        val helper = remember { LoginHelper.locate() }
+        var inWindow by remember { mutableStateOf(helper != null) }
+        // Why the window is not there, said above the pasted cookie rather than swallowed.
+        var windowFailure by remember { mutableStateOf<String?>(null) }
+        if (helper != null && inWindow) {
+            WindowSignIn(
+                helper,
+                onLogin = onLogin,
+                onCancel = onCancel,
+                onPasteInstead = { failure ->
+                    windowFailure = failure
+                    inWindow = false
+                },
+            )
+        } else {
+            PasteSignIn(
+                failure = windowFailure,
+                onLogin = onLogin,
+                onCancel = onCancel,
+                onOpenWindow = if (helper == null) null else ({
+                    windowFailure = null
+                    inWindow = true
+                }),
+            )
+        }
+    }
+
+    /**
+     * The Spotify window is open and this one waits for it. Leaving this screen — Cancel, back, the
+     * cookie instead — closes it ([LoginSession.stop]); closing it is a cancel here too.
+     */
+    @Composable
+    private fun WindowSignIn(
+        helper: File,
+        onLogin: (String) -> Unit,
+        onCancel: () -> Unit,
+        onPasteInstead: (failure: String?) -> Unit,
+    ) {
+        val session = remember(helper) { LoginSession(helper) }
+        // The answer can take minutes; by then the root may have recomposed with new callbacks.
+        val loggedIn by rememberUpdatedState(onLogin)
+        val cancelled by rememberUpdatedState(onCancel)
+        val pasteInstead by rememberUpdatedState(onPasteInstead)
+        DisposableEffect(session) { onDispose { session.stop() } }
+        LaunchedEffect(session) {
+            when (val outcome = session.await()) {
+                is LoginOutcome.SignedIn -> loggedIn(outcome.spDc)
+                LoginOutcome.Closed -> cancelled()
+                is LoginOutcome.Failed -> pasteInstead(outcome.reason)
+            }
+        }
+        Page(stringResource(Res.string.spotify_sign_in), onBack = onCancel) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(22.dp), color = Accent, strokeWidth = 2.5.dp)
+                Text(stringResource(Res.string.desktop_sign_in_waiting), color = Color.White, fontSize = 17.sp)
+            }
+            Text(stringResource(Res.string.desktop_sign_in_waiting_help), color = Color.LightGray)
+            Button(onClick = onCancel) { Text(stringResource(Res.string.cancel)) }
+            TextButton(onClick = { onPasteInstead(null) }) {
+                Text(stringResource(Res.string.desktop_sign_in_paste_instead), color = Accent)
+            }
+        }
+    }
+
+    /** The `sp_dc` cookie pasted by hand: the way in before the window, and its fallback now. */
+    @Composable
+    private fun PasteSignIn(
+        failure: String?,
+        onLogin: (String) -> Unit,
+        onCancel: () -> Unit,
+        onOpenWindow: (() -> Unit)?,
+    ) {
         var cookie by remember { mutableStateOf("") }
         Page(stringResource(Res.string.spotify_sign_in), onBack = onCancel) {
+            failure?.let {
+                Text(stringResource(Res.string.desktop_sign_in_window_failed, it), color = Color(0xFFE57373), fontSize = 13.sp)
+            }
             Text(stringResource(Res.string.desktop_sign_in_help), color = Color.LightGray)
             OutlinedTextField(
                 value = cookie,
@@ -67,9 +157,15 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
                 onClick = { onLogin(cookie) },
             ) { Text(stringResource(Res.string.spotify_sign_in)) }
             Button(onClick = onCancel) { Text(stringResource(Res.string.cancel)) }
+            onOpenWindow?.let { open ->
+                TextButton(onClick = open) {
+                    Text(stringResource(Res.string.desktop_sign_in_open_window), color = Accent)
+                }
+            }
         }
     }
 
+    // Nothing to clear: every Spotify window starts with an empty cookie jar of its own.
     override fun onLoginFailed() = Unit
 
     @Composable

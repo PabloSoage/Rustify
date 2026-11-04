@@ -10,6 +10,11 @@
     <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
     <string name="desktop_sign_in_help">Rustify entra con la sesión del navegador, como en el móvil: abre open.spotify.com con tu sesión, copia el valor de la cookie sp_dc y pégalo aquí. Se queda en este ordenador.</string>
     <string name="desktop_sign_in_cookie">Cookie sp_dc</string>
+    <string name="desktop_sign_in_waiting">Iniciando sesión en la ventana de Spotify…</string>
+    <string name="desktop_sign_in_waiting_help">Entra allí como en el móvil. La ventana se cierra sola cuando Spotify te deja pasar.</string>
+    <string name="desktop_sign_in_paste_instead">Pegar la cookie en su lugar</string>
+    <string name="desktop_sign_in_open_window">Entrar en una ventana de Spotify</string>
+    <string name="desktop_sign_in_window_failed">No se abrió la ventana de Spotify: %1$s</string>
     <string name="desktop_screen_not_here">Esta pantalla aún no está en escritorio. Llegará en una versión próxima, igual que en el móvil.</string>
     <string name="desktop_settings_not_here">El resto de esta categoría aún no está en escritorio: llega con las funciones que configura.</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->

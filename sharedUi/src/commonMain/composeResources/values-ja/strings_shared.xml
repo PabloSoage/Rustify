@@ -10,6 +10,11 @@
     <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
     <string name="desktop_sign_in_help">スマホと同じくブラウザのセッションでログインします。open.spotify.com にログインし、sp_dc クッキーの値を貼り付けてください。このコンピューターにだけ保存されます。</string>
     <string name="desktop_sign_in_cookie">sp_dc クッキー</string>
+    <string name="desktop_sign_in_waiting">Spotify のウィンドウでログイン中…</string>
+    <string name="desktop_sign_in_waiting_help">スマホと同じようにそこでログインしてください。Spotify がログインを受け付けると、ウィンドウは自動で閉じます。</string>
+    <string name="desktop_sign_in_paste_instead">代わりにクッキーを貼り付ける</string>
+    <string name="desktop_sign_in_open_window">Spotify のウィンドウでログイン</string>
+    <string name="desktop_sign_in_window_failed">Spotify のウィンドウを開けませんでした: %1$s</string>
     <string name="desktop_screen_not_here">この画面はまだデスクトップにありません。今後のバージョンでスマホと同じものが入ります。</string>
     <string name="desktop_settings_not_here">このカテゴリのほかの設定はまだデスクトップにありません。対応する機能と一緒に追加されます。</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
