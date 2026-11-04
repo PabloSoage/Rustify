@@ -2,7 +2,6 @@
 package com.varuna.rustify.spotify
 
 import com.varuna.rustify.bridge.BrowseSection
-import com.varuna.rustify.bridge.BrowseSectionItem
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LoginResult
 import com.varuna.rustify.bridge.PaginatedResponse
@@ -14,8 +13,6 @@ import com.varuna.rustify.bridge.decodeCheckedWire
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.util.retrying
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 
 /**
  * The Spotify calls the desktop and iOS make, as JSON in and out — one implementation per way of
@@ -95,35 +92,6 @@ class SpotifyLibrary(private val core: SpotifyCore, private val store: KeyValueS
 
     /** Home: Spotify's personal sections (playlists and albums). Needs the account. */
     suspend fun home(): List<BrowseSection> = call { decodeCheckedWire(core.browse(20)) }
-
-    /** Playlists for [query], the first [limit]. Read with the anonymous token, so no account is needed. */
-    suspend fun searchPlaylists(query: String, limit: Int = 10): List<SimplePlaylist> =
-        call { decodeCheckedWire<PaginatedResponse<SimplePlaylist>>(core.search(query, "playlists", limit, 0)) }.items
-
-    /**
-     * Home without an account, as Android's `PublicHome` builds it: the charts (Top 50 and Viral 50,
-     * for the world and for [country], the English country name as the chart playlists spell it) and
-     * Spotify's mood playlists — the editorial ones, owned by "spotify". Titles come from the caller,
-     * which has the strings. Sections with nothing found are left out.
-     */
-    suspend fun publicHome(country: String?, chartsTitle: String, moodsTitle: String): List<BrowseSection> =
-        kotlinx.coroutines.coroutineScope {
-            suspend fun editorial(query: String): SimplePlaylist? = runCatching {
-                searchPlaylists(query).firstOrNull { it.owner?.id == "spotify" }
-            }.getOrNull()
-            fun section(id: String, title: String, found: List<SimplePlaylist>) =
-                found.takeIf { it.isNotEmpty() }?.let { list ->
-                    BrowseSection(id = id, title = title, items = list.map { BrowseSectionItem.PlaylistItem(it) })
-                }
-            val chartQueries = listOfNotNull("Top 50 Global", country?.let { "Top 50 $it" }, "Viral 50 Global", country?.let { "Viral 50 $it" })
-            val moodQueries = listOf("chill", "focus", "workout", "party", "sleep", "happy")
-            val charts = chartQueries.map { q -> async { editorial(q) } }
-            val moods = moodQueries.map { q -> async { editorial(q) } }
-            listOfNotNull(
-                section("public-charts", chartsTitle, charts.awaitAll().filterNotNull().distinctBy { it.id }),
-                section("public-moods", moodsTitle, moods.awaitAll().filterNotNull().distinctBy { it.id }),
-            )
-        }
 
     suspend fun albumTracks(id: String): List<FullTrack> =
         allPages { limit, offset ->
