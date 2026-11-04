@@ -117,6 +117,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
+      # Linking the interface does not fit the repository's 2 GB (see multiplatform.yml).
+      - run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8\norg.gradle.workers.max=1\n' >> ~/.gradle/gradle.properties
       - run: tools/ios/build-core.sh
       - run: brew install xcodegen
       - working-directory: iosApp

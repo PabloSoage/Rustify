@@ -122,6 +122,12 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
+      # Kotlin/Native runs inside Gradle's JVM: two links of the whole interface at once ran the
+      # repository's 2 GB out of heap. This runner has 7 GB, and the Gradle started by Xcode reads
+      # this file too.
+      - run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8\norg.gradle.workers.max=1\n' >> ~/.gradle/gradle.properties
       - run: tools/ios/build-core.sh
       # Device first: linking a framework needs no signing, and it is the build an .ipa is made of.
       - run: ./gradlew :sharedUi:linkDebugFrameworkIosArm64 :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon
