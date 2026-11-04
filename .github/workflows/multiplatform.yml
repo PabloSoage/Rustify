@@ -106,6 +106,8 @@ jobs:
   # compiles the Swift.
   ios:
     runs-on: macos-latest
+    # A link prints nothing while it runs, so a hang looks like progress; without this it lasts 6 hours.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -129,11 +131,11 @@ jobs:
           mkdir -p ~/.gradle
           printf 'org.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8\norg.gradle.workers.max=1\n' >> ~/.gradle/gradle.properties
       - run: tools/ios/build-core.sh
-      # Device first: linking a framework needs no signing, and it is the build an .ipa is made of.
-      - run: ./gradlew :sharedUi:linkDebugFrameworkIosArm64 :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon
-      # The shared modules' common tests again, this time compiled by Kotlin/Native and run on the
-      # simulator: the same code the iOS app runs, not the JVM's reading of it.
-      - run: ./gradlew :shared:iosSimulatorArm64Test :sharedUi:iosSimulatorArm64Test --no-daemon
+      # The device's link is left to the .ipa below, in Release: on this runner each one takes minutes.
+      - run: ./gradlew :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+      # :shared's common tests again, this time compiled by Kotlin/Native and run on the simulator: the
+      # same code the iOS app runs, not the JVM's reading of it. :sharedUi has none outside desktopTest.
+      - run: ./gradlew :shared:iosSimulatorArm64Test --no-daemon
       - run: brew install xcodegen
       # The app itself, up in a simulator, with what it drew: nothing else here runs the interface.
       - run: tools/ios/simulator-check.sh build/ios-check
