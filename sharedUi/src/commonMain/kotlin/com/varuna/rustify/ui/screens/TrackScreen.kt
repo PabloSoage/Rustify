@@ -375,7 +375,7 @@ fun TrackScreen(
 
     val isPlaying = playerState.isPlaying
     val isBuffering = playerState.isBuffering
-    val isError = playerState.isError
+    val isError = isCurrentTrack && playerState.isError
     val bufferPercent = playerState.bufferPercent
 
     val currentPosition = if (isCurrentTrack) playerState.positionMs else 0L
@@ -502,7 +502,9 @@ fun TrackScreen(
         canvasUrl = try {
             spotifyRepo.getTrackCanvas(trackId)
         } catch (e: Exception) {
-            com.varuna.rustify.platform.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
+            if (com.varuna.rustify.util.classifyError(e) != com.varuna.rustify.util.ErrorKind.AUTH) {
+                com.varuna.rustify.platform.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
+            }
             null
         }
     }
@@ -699,7 +701,8 @@ fun TrackScreen(
                                                 onAlbumClick = onAlbumClick,
                                                 onArtistClick = onArtistClick,
                                                 coroutineScope = coroutineScope,
-                                                ytmRepo = ytmRepo
+                                                ytmRepo = ytmRepo,
+                                                isError = isError
                                             )
                                         }
                                     }
@@ -755,43 +758,9 @@ fun TrackScreen(
                                             onAlbumClick = onAlbumClick,
                                             onArtistClick = onArtistClick,
                                             coroutineScope = coroutineScope,
-                                            ytmRepo = ytmRepo
+                                            ytmRepo = ytmRepo,
+                                            isError = isError
                                         )
-                                    }
-                                }
-
-                                // Error banner
-                                if (isError) {
-                                    Row(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 32.dp)
-                                            .padding(bottom = 100.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFFCC2200).copy(alpha = 0.85f))
-                                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = playerState.errorMessage.ifBlank { "No se encontró en YouTube Music" },
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        TextButton(onClick = {
-                                            val showId = trackToShow.id
-                                            val inQueue = playerState.queue.any { it.id == showId }
-                                            if (inQueue && showId != null) {
-                                                audioPlayerService.playSpecificTrackInQueue(showId)
-                                            } else {
-                                                audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow.id)
-                                            }
-                                        }) {
-                                            Text(stringResource(Res.string.general_retry), color = Color.White, fontSize = 12.sp)
-                                        }
                                     }
                                 }
 
@@ -1281,7 +1250,8 @@ fun TrackScreenControls(
     onArtistClick: (String) -> Unit,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
-    onLyricsChanged: (LyricsResult?) -> Unit = {}
+    onLyricsChanged: (LyricsResult?) -> Unit = {},
+    isError: Boolean = isCurrentTrack && playerState.isError,
 ) {
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     val lyricsListState = rememberLazyListState()
@@ -1619,6 +1589,40 @@ fun TrackScreenControls(
             } // End Right Group
         }
         
+        // Error banner: shown directly below playback controls so it never covers the slider, times, or buttons.
+        if (isError) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFCC2200).copy(alpha = 0.85f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = playerState.errorMessage.ifBlank { stringResource(Res.string.track_menu_url_not_found) },
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = {
+                    val showId = track.id
+                    val inQueue = playerState.queue.any { it.id == showId }
+                    if (inQueue && showId != null) {
+                        audioPlayerService.playSpecificTrackInQueue(showId)
+                    } else {
+                        audioPlayerService.retryCurrentTrack(fallbackTrackId = track.id)
+                    }
+                }) {
+                    Text(stringResource(Res.string.general_retry), color = Color.White, fontSize = 12.sp)
+                }
+            }
+        }
+
         // Lyrics Panel
         if (showLyrics) {
             Spacer(modifier = Modifier.height(16.dp))

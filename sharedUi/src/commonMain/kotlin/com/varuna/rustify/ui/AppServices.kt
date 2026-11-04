@@ -111,6 +111,9 @@ interface AppServices {
 
         /** Disk cache for streaming audio (ExoPlayer SimpleCache on Android; desktop and iOS engines have none). */
         AUDIO_CACHE,
+
+        /** Audio lab with effects and analysis (Android only; not implemented on iOS or desktop). */
+        AUDIO_LAB,
     }
 }
 

@@ -87,4 +87,16 @@ class RetryTest {
         assertEquals(ErrorKind.TRANSIENT, errorKindOf(null, "Network error: timed out"))
         assertEquals(ErrorKind.PERMANENT, errorKindOf(null, null))
     }
+
+    @Test
+    fun `canvas unauthenticated failure is classified as AUTH`() {
+        assertEquals(
+            ErrorKind.AUTH,
+            classifyError(SpotifyEngineException("canvas lookup failed: User not authenticated", "auth"))
+        )
+        assertEquals(
+            ErrorKind.AUTH,
+            classifyError(SpotifyEngineException("canvas lookup failed: User not authenticated", null))
+        )
+    }
 }

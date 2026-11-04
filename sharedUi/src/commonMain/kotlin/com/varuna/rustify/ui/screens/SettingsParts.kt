@@ -282,14 +282,20 @@ fun AdvancedLinks(
     onAudioLab: () -> Unit = {},
 ) {
     Spacer(Modifier.height(16.dp))
+    val services = com.varuna.rustify.ui.LocalAppServices.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(
-            stringResource(Res.string.home_metrics) to onMetrics,
-            stringResource(Res.string.settings_edit_matches) to onMatchEditor,
-            stringResource(Res.string.audio_lab_title) to onAudioLab,
-            // Named by the model it talks to: Gemini Nano on the phone, the DJ's model on the desktop.
-            stringResource(com.varuna.rustify.ui.LocalAppServices.current.chatModel()?.title ?: Res.string.nano_chat_title) to onNanoChat
-        ).forEach { (label, action) ->
+        buildList {
+            add(stringResource(Res.string.home_metrics) to onMetrics)
+            add(stringResource(Res.string.settings_edit_matches) to onMatchEditor)
+            if (services.can(com.varuna.rustify.ui.AppServices.Feature.AUDIO_LAB)) {
+                add(stringResource(Res.string.audio_lab_title) to onAudioLab)
+            }
+            val chat = services.chatModel()
+            if (chat != null) {
+                // Named by the model it talks to: Gemini Nano on the phone, the DJ's model on the desktop.
+                add(stringResource(chat.title) to onNanoChat)
+            }
+        }.forEach { (label, action) ->
             Button(onClick = action, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(label, color = Color.White, modifier = Modifier.weight(1f))
                 Text("›", color = Color.Gray)
