@@ -189,6 +189,14 @@ class DesktopPlayerController(private val player: QueuePlayer, private val scope
 
     override fun removeCachedStreamUrl(trackId: String) = Unit
 
+    override fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
+        if (tracks.isEmpty() || keepPlayingId == null || player.ui.value.current?.id != keepPlayingId) return
+        val at = tracks.indexOfFirst { it.id == keepPlayingId }
+        if (at < 0) return
+        player.editQueue(tracks, at)
+        forgetShuffle()
+    }
+
     // The core keeps the alternative and resolves through it; the desktop has no other per-track cache.
     override fun chooseRecording(trackId: String, youtubeId: String) {
         com.varuna.rustify.bridge.NativeEngine.setAlternativeTrackNative(trackId, youtubeId)

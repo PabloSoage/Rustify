@@ -97,6 +97,11 @@ class DesktopAppPlatform : AppPlatform {
         runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
     }
 
+    /** An interface that is up and not loopback; the JDK has no "has internet" to ask. */
+    override fun isOnline(): Boolean = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().asSequence().any { it.isUp && !it.isLoopback }
+    }.getOrDefault(true)
+
     override fun readClipboard(): String? = runCatching {
         Toolkit.getDefaultToolkit().systemClipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
     }.getOrNull()

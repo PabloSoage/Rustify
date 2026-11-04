@@ -1,17 +1,5 @@
 package com.varuna.rustify.ui
 
-import android.annotation.SuppressLint
-import android.content.res.Configuration
-import android.os.Build
-import android.os.Bundle
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -74,17 +62,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import coil3.compose.AsyncImage
 import com.varuna.rustify.bridge.BrowseSection
 import com.varuna.rustify.bridge.BrowseSectionItem
@@ -94,23 +75,18 @@ import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.TrackFavorites
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
-import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.screens.AlbumScreen
 import com.varuna.rustify.ui.screens.ArtistAllSongsScreen
 import com.varuna.rustify.ui.screens.ArtistScreen
-import com.varuna.rustify.ui.screens.DjScreen
 import com.varuna.rustify.ui.screens.HomeScreen
 import com.varuna.rustify.ui.screens.LibraryScreen
-import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.screens.MetricsScreen
 import com.varuna.rustify.ui.screens.NewReleasesScreen
 import com.varuna.rustify.ui.screens.PlaylistScreen
 import com.varuna.rustify.ui.screens.RadioScreen
 import com.varuna.rustify.ui.screens.SearchScreen
-import com.varuna.rustify.ui.screens.SettingsScreen
 import com.varuna.rustify.ui.screens.TrackScreen
-import com.varuna.rustify.ui.screens.TravelScreen
 import com.varuna.rustify.ui.screens.YtMusicAlbumScreen
 import com.varuna.rustify.ui.screens.YtMusicArtistScreen
 import com.varuna.rustify.ui.screens.YtMusicLocalPlaylistScreen
@@ -121,32 +97,31 @@ import com.varuna.rustify.util.LinkTarget
 import com.varuna.rustify.util.canonicalUrl
 import com.varuna.rustify.util.deepLinkToken
 import com.varuna.rustify.util.bouncingMarquee
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
-import com.varuna.rustify.R
-import com.varuna.rustify.*
-import com.varuna.rustify.bridge.*
-import com.varuna.rustify.ui.screens.*
-import com.varuna.rustify.ui.components.*
+import com.varuna.rustify.Screen
+import com.varuna.rustify.homeError
+import com.varuna.rustify.navigateDeepLink
+import com.varuna.rustify.resumeListening
+import com.varuna.rustify.ui.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RustifyApp(
+    spotifyRepo: SpotifyRepository,
+    shell: AppShell,
     modifier: Modifier = Modifier,
     initialDeepLink: String? = null,
     intentFlow: kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.emptyFlow(),
     onLanguageChanged: (String) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val spotifyRepo = remember {
-        SpotifyRepository(com.varuna.rustify.ui.AndroidAppPlatform(context), com.varuna.rustify.bridge.AndroidLocalMusicScanner(context))
-    }
+    val platform = LocalAppPlatform.current
+    val services = LocalAppServices.current
     // Single shared YTM repository so favorites/playlists stay consistent across the library tab
     // and all first-class YTM screens.
-    val ytmRepo = remember { YtMusicRepository(context.filesDir) }
+    val ytmRepo = remember { YtMusicRepository(platform.filesDir) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
-    val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
+    val audioPlayerService = com.varuna.rustify.player.LocalPlayer.current
     // Don't tear down the player on every Activity dispose (rotation/recomposition would kill
     // playback mid-song). Persist state synchronously; the foreground service + onTaskRemoved
     // handle actual teardown when the user leaves for real.
@@ -176,10 +151,6 @@ fun RustifyApp(
     /** The row being resumed, if any — it refetches the context, which is not instant. */
     var resumingSessionId by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // In-app updater: the startup check leaves the new release here (if any) and the
-    // changelog+download dialog is rendered as an overlay (visible both in the app and on the
-    // standby screen). The manual check from Settings reuses the same dialog.
-    var pendingUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
     val navigationStack = remember { mutableStateListOf<Screen>(Screen.Home) }
@@ -201,74 +172,48 @@ fun RustifyApp(
 
     LaunchedEffect(Unit) {
         if (initialDeepLink != null) {
-            navigateDeepLink(initialDeepLink, navigationStack, audioPlayerService)
+            navigateDeepLink(initialDeepLink, navigationStack, audioPlayerService, shell::resolveMapsLink)
         }
     }
 
     LaunchedEffect(intentFlow) {
         intentFlow.collect { deepLink ->
-            navigateDeepLink(deepLink, navigationStack, audioPlayerService)
+            navigateDeepLink(deepLink, navigationStack, audioPlayerService, shell::resolveMapsLink)
         }
     }
 
-    // Restore the experimental web-player mode so the transport controls keep driving the page across
-    // restarts. The WebView itself is created lazily, when the screen is first opened.
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
-        if (prefs.getBoolean("web_player_backend", false)) {
-            audioPlayerService.setWebPlayerMode(true)
-        }
-    }
-
-    // Check for updates on startup (if the toggle is enabled, which it is by default).
-    // Silent: if the network fails or you're already up to date, it stays out of the way; it only
-    // opens the dialog when a new version exists.
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
-        if (prefs.getBoolean("check_updates_on_start", true)) {
-            runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
-                .getOrNull()?.let { pendingUpdate = it }
-        }
-    }
-
-    // Silent auto-sync on app open: only if the account is linked, the "auto-sync" toggle is on,
-    // and a token is available WITHOUT prompting for consent (background refresh). If it needs a
-    // consent UI, it is deferred until the user taps "Sync now" in Settings. Never shows a dialog
-    // here.
-    LaunchedEffect(Unit) {
-        val appCtx = context.applicationContext
-        if (com.varuna.rustify.sync.DriveSyncPrefs.isLinked(appCtx) &&
-            com.varuna.rustify.sync.DriveSyncPrefs.isAutoSync(appCtx)
-        ) {
-            val drive = com.varuna.rustify.sync.GoogleDriveSync(appCtx)
-            val syncWith = { token: String ->
-                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    runCatching {
-                        com.varuna.rustify.sync.DriveSyncManager(appCtx, drive, spotifyRepo, ytmRepo).syncNow(token)
-                    }
+    // What a platform screen reaches in the root.
+    val host = ShellHost(
+        spotifyRepo = spotifyRepo,
+        ytmRepo = ytmRepo,
+        player = audioPlayerService,
+        navigate = { navigationStack.add(it) },
+        back = { if (navigationStack.size > 1) navigationStack.removeAt(navigationStack.lastIndex) },
+        isSignedIn = isLoggedIn,
+        signIn = { showWebView = true },
+        signedOut = {
+            isLoggedIn = false
+            browseSections = null
+            errorMessage = null
+        },
+        settingsCategory = settingsCategory,
+        onSettingsCategory = { settingsCategory = it },
+        onLanguageChanged = { newCode ->
+            onLanguageChanged(newCode)
+            coroutineScope.launch {
+                try {
+                    browseSections = spotifyRepo.getBrowseSections(10)
+                } catch (e: Exception) {
+                    com.varuna.rustify.platform.Log.w("RustifyApp", "Failed to refresh", e)
                 }
-                Unit
             }
-            if (com.varuna.rustify.sync.DriveSyncPrefs.authMethod(appCtx) == "browser") {
-                // Browser — silent refresh with AppAuth; if consent is needed it is deferred to Settings.
-                com.varuna.rustify.sync.AppAuthDriveAuth(appCtx).getFreshToken(
-                    onToken = syncWith,
-                    onNone = { /* requires UI; the user syncs from Settings */ },
-                    onError = { /* silent during auto-sync */ }
-                )
-            } else {
-                // Play Services — silent token if consent is cached.
-                drive.authorize(
-                    onToken = syncWith,
-                    onNeedConsent = { /* defer: requires UI; the user syncs from Settings */ },
-                    onError = { /* silent during auto-sync */ }
-                )
-            }
-        }
-    }
+        },
+    )
+    // Updates, Drive sync, the web player mode (Android's).
+    shell.StartupEffects(host)
 
     // Physical / Gesture Back Button handling
-    BackHandler(enabled = navigationStack.size > 1) {
+    PlatformBackHandler(enabled = navigationStack.size > 1) {
         navigationStack.removeAt(navigationStack.lastIndex)
     }
 
@@ -290,7 +235,7 @@ fun RustifyApp(
                 try {
                     browseSections = spotifyRepo.getBrowseSections(10)
                 } catch (e: Exception) {
-                    errorMessage = homeError(context, e.message)
+                    errorMessage = homeError(platform, e.message)
                 }
             } else if (!spotifyRepo.hasSavedSession()) {
                 // Dead session (really revoked/expired → restoreSession cleared the credentials).
@@ -300,15 +245,15 @@ fun RustifyApp(
                 sessionExpired = true
             } else {
                 // A saved session still exists = transient failure: stay with the cached Home.
-                errorMessage = homeError(context, result?.error)
+                errorMessage = homeError(platform, result?.error)
             }
             isRunning = false
         }
     }
 
     if (showWebView) {
-        SpotifyLoginWebView(
-            onLoginSuccess = { codeOrCookie ->
+        shell.SignIn(
+            onLogin = { codeOrCookie ->
                 showWebView = false
                 isRunning = true
 
@@ -325,14 +270,14 @@ fun RustifyApp(
                         try {
                             browseSections = spotifyRepo.getBrowseSections(10)
                         } catch (e: Exception) {
-                            errorMessage = homeError(context, e.message)
+                            errorMessage = homeError(platform, e.message)
                         }
                     } else {
                         errorMessage = "Authentication failed: ${result.error}"
                         // A stale `sp_dc` that persists in the WebView (from closing the app mid-login)
                         // can auto-trigger this login and fail repeatedly. On failure, clear the cookies
                         // so the next attempt shows a clean form.
-                        runCatching { CookieManager.getInstance().removeAllCookies(null) }
+                        shell.onLoginFailed()
                     }
                     isRunning = false
                 }
@@ -340,11 +285,6 @@ fun RustifyApp(
             onCancel = { showWebView = false }
         )
         return
-    }
-
-    // Updater overlay: shown over any screen (app or standby).
-    pendingUpdate?.let { info ->
-        com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
     }
 
     // No login wall since 4.0. Up to 3.7 this was a full-screen "Login to Spotify" that stood in front
@@ -377,23 +317,9 @@ fun RustifyApp(
         }
     }
 
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val view = LocalView.current
-    
-    DisposableEffect(isLandscape) {
-        val window = (view.context as? ComponentActivity)?.window
-        val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-        if (insetsController != null) {
-            if (isLandscape) {
-                insetsController.hide(WindowInsetsCompat.Type.systemBars())
-                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            } else {
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-        onDispose { }
-    }
+    val isLandscape = isLandscape()
+    shell.SystemBars(isLandscape)
+
 
     Scaffold(
         bottomBar = {
@@ -441,7 +367,7 @@ fun RustifyApp(
                                 }
                             },
                             icon = { 
-                                val activeDownloads by com.varuna.rustify.bridge.DownloadManager.activeDownloadCount.collectAsState()
+                                val activeDownloads by services.activeDownloadCount.collectAsState()
                                 if (activeDownloads > 0 && currentScreen != Screen.Home) {
                                     androidx.compose.material3.BadgedBox(
                                         badge = {
@@ -450,13 +376,13 @@ fun RustifyApp(
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home))
+                                        Icon(Icons.Default.Home, contentDescription = stringResource(Res.string.nav_home))
                                     }
                                 } else {
-                                    Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home))
+                                    Icon(Icons.Default.Home, contentDescription = stringResource(Res.string.nav_home))
                                 }
                             },
-                            label = { Text(stringResource(R.string.nav_home)) },
+                            label = { Text(stringResource(Res.string.nav_home)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -473,8 +399,8 @@ fun RustifyApp(
                                     navigationStack.add(Screen.Search)
                                 }
                             },
-                            icon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search)) },
-                            label = { Text(stringResource(R.string.nav_search)) },
+                            icon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.nav_search)) },
+                            label = { Text(stringResource(Res.string.nav_search)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -491,8 +417,8 @@ fun RustifyApp(
                                     navigationStack.add(Screen.Library)
                                 }
                             },
-                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(R.string.nav_library)) },
-                            label = { Text(stringResource(R.string.nav_library)) },
+                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(Res.string.nav_library)) },
+                            label = { Text(stringResource(Res.string.nav_library)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color(0xFF1DB954),
                                 selectedTextColor = Color(0xFF1DB954),
@@ -556,7 +482,7 @@ fun RustifyApp(
                         // Without an account Home is built from the public catalogue and your history.
                         var publicSections by remember { mutableStateOf<List<BrowseSection>>(emptyList()) }
                         LaunchedEffect(isLoggedIn) {
-                            if (!isLoggedIn) publicSections = com.varuna.rustify.bridge.PublicHome.sections(com.varuna.rustify.ui.AndroidAppPlatform(context), spotifyRepo)
+                            if (!isLoggedIn) publicSections = com.varuna.rustify.bridge.PublicHome.sections(platform, spotifyRepo)
                         }
                         HomeScreen(
                             browseSections = browseSections,
@@ -568,7 +494,7 @@ fun RustifyApp(
                             onSignIn = { showWebView = true },
                             onRetry = {
                                 if (!isLoggedIn) {
-                                    coroutineScope.launch { publicSections = com.varuna.rustify.bridge.PublicHome.sections(com.varuna.rustify.ui.AndroidAppPlatform(context), spotifyRepo, refresh = true) }
+                                    coroutineScope.launch { publicSections = com.varuna.rustify.bridge.PublicHome.sections(platform, spotifyRepo, refresh = true) }
                                     return@HomeScreen
                                 }
 
@@ -578,7 +504,7 @@ fun RustifyApp(
                                     try {
                                         browseSections = spotifyRepo.getBrowseSections(10)
                                     } catch (e: Exception) {
-                                        errorMessage = homeError(context, e.message)
+                                        errorMessage = homeError(platform, e.message)
                                     }
                                     isRunning = false
                                 }
@@ -711,12 +637,9 @@ fun RustifyApp(
                             onYtmOpenLocalPlaylist = { id -> navigationStack.add(Screen.YtmLocalPlaylistDetail(id)) },
                             onYtmOpenPlaylist = { id, title -> navigationStack.add(Screen.YtmPlaylistDetail(id, title)) },
                             onYtmPasteLink = {
-                                val pasted = try {
-                                    val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                    cb?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-                                } catch (e: Exception) { null }
+                                val pasted = platform.readClipboard()
                                 if (pasted.isNullOrBlank()) {
-                                    android.widget.Toast.makeText(context, R.string.paste_clipboard_empty, android.widget.Toast.LENGTH_SHORT).show()
+                                    platform.toast(Res.string.paste_clipboard_empty)
                                 } else when (val link = LinkTarget.parse(pasted)) {
                                     is LinkTarget.YtmTrack -> {
                                         val yt = FullTrack(
@@ -732,7 +655,7 @@ fun RustifyApp(
                                     is LinkTarget.YtmPlaylist -> navigationStack.add(Screen.YtmPlaylistDetail(link.id, ""))
                                     // A Spotify link pasted into the YouTube Music screen is a link,
                                     // just not one this screen can open.
-                                    else -> android.widget.Toast.makeText(context, R.string.paste_no_ytm_link, android.widget.Toast.LENGTH_SHORT).show()
+                                    else -> platform.toast(Res.string.paste_no_ytm_link)
                                 }
                             },
                             currentTrackId = currentTrack?.id
@@ -914,151 +837,19 @@ fun RustifyApp(
                         currentTrackId = currentTrack?.id
                     )
                 }
-                is Screen.WebPlayer -> {
-                    com.varuna.rustify.webplayer.WebPlayerScreen(
-                        onBackClick = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        // Silence Rustify's own engine so two sources never overlap — but not when
-                        // web mode is on, where pause() is forwarded to the page and would stop the
-                        // very thing this screen is showing.
-                        onEnter = {
-                            if (!audioPlayerService.isWebPlayerMode) audioPlayerService.pause()
-                        }
-                    )
-                }
-                is Screen.Settings -> {
-                    SettingsScreen(
-                        spotifyRepository = spotifyRepo,
-                        ytmRepository = ytmRepo,
-                        isSignedIn = isLoggedIn,
-                        onSignIn = { showWebView = true },
-                        onSignedOut = {
-                            isLoggedIn = false
-                            browseSections = null
-                            errorMessage = null
-                        },
-                        category = settingsCategory,
-                        onCategoryChange = { settingsCategory = it },
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onNavigateLogViewer = { navigationStack.add(Screen.LogViewer) },
-                        onNavigateNanoChat = { navigationStack.add(Screen.NanoChat) },
-                        onNavigateAudioLab = { navigationStack.add(Screen.AudioLab) },
-                        onNavigateMetrics = { navigationStack.add(Screen.Metrics) },
-                        onNavigateMatchEditor = { navigationStack.add(Screen.MatchEditor) },
-                        onNavigateCustomDownload = { navigationStack.add(Screen.CustomDownload) },
-                        onLocaleChanged = { newCode ->
-                            onLanguageChanged(newCode)
-                            coroutineScope.launch {
-                                try {
-                                    browseSections = spotifyRepo.getBrowseSections(10)
-                                } catch (e: Exception) {
-                                    android.util.Log.w("MainActivity", "Failed to refresh", e)
-                                }
-                            }
-                        }
-                    )
-                }
-                is Screen.MatchEditor -> {
-                    com.varuna.rustify.ui.screens.MatchEditorScreen(
-                        spotifyRepo = spotifyRepo,
-                        audioPlayerService = audioPlayerService,
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                }
                 is Screen.Downloads -> {
                     com.varuna.rustify.ui.screens.DownloadsScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
                         onOpenCustom = { navigationStack.add(Screen.CustomDownload) }
                     )
                 }
-                is Screen.CustomDownload -> {
-                    com.varuna.rustify.ui.screens.CustomDownloadScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                }
-                is Screen.NanoChat -> {
-                    com.varuna.rustify.ui.screens.NanoChatScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        spotifyRepo = spotifyRepo,
-                        nowPlaying = currentTrack,
-                        queue = playerState.queue,
-                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
-                        onControl = { action ->
-                            when (action) {
-                                com.varuna.rustify.dj.ChatAction.Pause -> audioPlayerService.pause()
-                                com.varuna.rustify.dj.ChatAction.Resume -> audioPlayerService.play()
-                                com.varuna.rustify.dj.ChatAction.Next -> audioPlayerService.skipToNext()
-                                com.varuna.rustify.dj.ChatAction.Previous -> audioPlayerService.skipToPrevious()
-                                else -> {}
-                            }
-                        }
-                    )
-                }
-                is Screen.AudioLab -> {
-                    com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { navigationStack.removeAt(navigationStack.lastIndex) })
-                }
-                is Screen.LogViewer -> {
-                    LogViewerScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                }
+                // Not moved yet (docs serie-4.x/27): the platform draws them.
+                is Screen.WebPlayer, is Screen.Settings, is Screen.MatchEditor, is Screen.CustomDownload,
+                is Screen.NanoChat, is Screen.AudioLab, is Screen.LogViewer, is Screen.Dj, is Screen.Travel,
+                is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
                 is Screen.Metrics -> {
                     MetricsScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                }
-                is Screen.Dj -> {
-                    DjScreen(
-                        spotifyRepo = spotifyRepo,
-                        nowPlaying = currentTrack,
-                        queue = playerState.queue,
-                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onOpenSettings = { navigationStack.add(Screen.Settings) }
-                    )
-                }
-                is Screen.Travel -> {
-                    TravelScreen(
-                        spotifyRepo = spotifyRepo,
-                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        currentTrack = currentTrack,
-                        isPlaying = playerState.isPlaying,
-                        isBuffering = playerState.isBuffering,
-                        positionMs = playerState.positionMs,
-                        durationMs = playerState.durationMs,
-                        hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
-                        hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
-                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
-                        onSkipPrev = { audioPlayerService.skipToPrevious() },
-                        onSkipNext = { audioPlayerService.skipToNext() },
-                        onMiniPlayerClick = {
-                            currentTrack?.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) }
-                        }
-                    )
-                }
-                is Screen.TravelWithDestination -> {
-                    TravelScreen(
-                        spotifyRepo = spotifyRepo,
-                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        currentTrack = currentTrack,
-                        isPlaying = playerState.isPlaying,
-                        isBuffering = playerState.isBuffering,
-                        positionMs = playerState.positionMs,
-                        durationMs = playerState.durationMs,
-                        hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
-                        hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
-                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
-                        onSkipPrev = { audioPlayerService.skipToPrevious() },
-                        onSkipNext = { audioPlayerService.skipToNext() },
-                        onMiniPlayerClick = {
-                            currentTrack?.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) }
-                        },
-                        initialDestination = com.varuna.rustify.travel.TravelRouting.Geo(
-                            lat = currentScreen.lat, lon = currentScreen.lon, label = currentScreen.label ?: ""
-                        )
                     )
                 }
             }
@@ -1083,8 +874,8 @@ fun RustifyApp(
                                 navigationStack.add(Screen.Home)
                             }
                         },
-                        icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.nav_home)) },
-                        label = { Text(stringResource(R.string.nav_home)) },
+                        icon = { Icon(Icons.Default.Home, contentDescription = stringResource(Res.string.nav_home)) },
+                        label = { Text(stringResource(Res.string.nav_home)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),
@@ -1102,8 +893,8 @@ fun RustifyApp(
                                 navigationStack.add(Screen.Search)
                             }
                         },
-                        icon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.nav_search)) },
-                        label = { Text(stringResource(R.string.nav_search)) },
+                        icon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.nav_search)) },
+                        label = { Text(stringResource(Res.string.nav_search)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),
@@ -1121,8 +912,8 @@ fun RustifyApp(
                                 navigationStack.add(Screen.Library)
                             }
                         },
-                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(R.string.nav_library)) },
-                        label = { Text(stringResource(R.string.nav_library)) },
+                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(Res.string.nav_library)) },
+                        label = { Text(stringResource(Res.string.nav_library)) },
                         colors = NavigationRailItemDefaults.colors(
                             selectedIconColor = Color(0xFF1DB954),
                             selectedTextColor = Color(0xFF1DB954),
@@ -1150,7 +941,7 @@ fun RustifyApp(
  * It goes away by itself after a few seconds; the place is kept unless "start over" is pressed.
  */
 @Composable
-private fun ResumedNotice(audioPlayerService: AudioPlayerService) {
+private fun ResumedNotice(audioPlayerService: com.varuna.rustify.player.PlayerController) {
     val resumed by audioPlayerService.resumedAt.collectAsState()
     val at = resumed ?: return
     LaunchedEffect(at) {
@@ -1166,13 +957,13 @@ private fun ResumedNotice(audioPlayerService: AudioPlayerService) {
             .padding(horizontal = 14.dp, vertical = 2.dp)
     ) {
         Text(
-            stringResource(R.string.resumed_at, formatPlace(at.second)),
+            stringResource(Res.string.resumed_at, formatPlace(at.second)),
             color = Color.White,
             fontSize = 13.sp,
             modifier = Modifier.weight(1f)
         )
         androidx.compose.material3.TextButton(onClick = { audioPlayerService.startOver() }) {
-            Text(stringResource(R.string.start_over), color = Color(0xFF1DB954))
+            Text(stringResource(Res.string.start_over), color = Color(0xFF1DB954))
         }
     }
 }

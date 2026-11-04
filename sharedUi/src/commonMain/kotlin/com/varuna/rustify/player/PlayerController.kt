@@ -63,6 +63,13 @@ interface PlayerController {
     fun removeCachedStreamUrl(trackId: String)
 
     /**
+     * Swaps the queue for [tracks] without interrupting the song playing, which must be
+     * [keepPlayingId] and be in [tracks]; otherwise nothing changes (the user moved on while the list
+     * was being fetched). How "continue listening" starts at once and fills the queue in after.
+     */
+    fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?)
+
+    /**
      * The user said [youtubeId] is the right recording of [trackId]: remembered as their choice (it
      * beats the local match), and everything keyed by the track forgets the old one — the stream
      * URL, the last good source, the stored audio and the lyrics — or the choice would look like it

@@ -2981,7 +2981,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * those seconds the user may have skipped, or started something else entirely. Replacing the
      * queue then would yank them back to a context they had left.
      */
-    fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
+    override fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
         if (tracks.isEmpty() || keepPlayingId == null) return
         val st = _state.value
         if (st.currentTrack?.id != keepPlayingId) return

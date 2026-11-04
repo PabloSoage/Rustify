@@ -65,6 +65,12 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
             ?.setPrimaryClip(ClipData.newPlainText(label, text))
     }
 
+    override fun isOnline(): Boolean {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     override fun readClipboard(): String? = runCatching {
         (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
             ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()

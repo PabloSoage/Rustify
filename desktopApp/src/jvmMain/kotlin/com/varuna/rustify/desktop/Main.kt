@@ -14,8 +14,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.varuna.rustify.bridge.NativeEngine
-import com.varuna.rustify.desktop.ui.App
-import com.varuna.rustify.desktop.ui.RustifyTheme
+import com.varuna.rustify.ui.theme.RustifyTheme
 import com.varuna.rustify.engine.JvmPlayerBackend
 import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.jam.JamSession
@@ -23,9 +22,6 @@ import com.varuna.rustify.jam.JvmJamCore
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.PreferencesStore
-import com.varuna.rustify.platform.SecureKeyValueStore
-import com.varuna.rustify.spotify.JvmSpotifyCore
-import com.varuna.rustify.spotify.SpotifyLibrary
 import com.varuna.rustify.platform.defaultLanguage
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -41,14 +37,6 @@ fun main() {
         val scope = rememberCoroutineScope()
         val player = remember {
             QueuePlayer(scope, JvmPlayerBackend, FileStore(File(AppDirs.data, "player"))).also { it.restore() }
-        }
-        // The session is three short values: Preferences holds them (the queue does not fit, see
-        // FileStore), except the cookie and the token, which go to the system's credential store.
-        val spotify = remember {
-            SpotifyLibrary(
-                JvmSpotifyCore,
-                SecureKeyValueStore(setOf(SpotifyLibrary.KEY_SP_DC, SpotifyLibrary.KEY_ACCESS_TOKEN), PreferencesStore()),
-            )
         }
 
         // What the shared screens (docs serie-4.x/26) take from the platform: the phone has these
@@ -128,8 +116,10 @@ fun main() {
                     val repo = remember(ready) {
                         if (ready) com.varuna.rustify.bridge.SpotifyRepository(appPlatform, com.varuna.rustify.ui.DesktopLocalMusicScanner()) else null
                     }
+                    val shell = remember { com.varuna.rustify.ui.DesktopAppShell() }
                     androidx.compose.foundation.layout.Box {
-                        if (repo != null) App(player, spotify, jam, repo)
+                        // The phone's app, as the tablet lays it out (docs serie-4.x/26).
+                        if (repo != null) com.varuna.rustify.ui.RustifyApp(spotifyRepo = repo, shell = shell)
                         Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
                     }
                 }

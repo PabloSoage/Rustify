@@ -8,4 +8,9 @@
     <string name="share_image_copied">Image copied to the clipboard</string>
     <!-- A feature this platform does not have yet (docs serie-4.x/27), said rather than hidden. -->
     <string name="feature_not_on_platform">Not available in this version yet</string>
+    <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
+    <string name="desktop_sign_in_help">Rustify signs in with your browser session, as on the phone: open open.spotify.com signed in, copy the value of the sp_dc cookie and paste it here. It stays on this computer.</string>
+    <string name="desktop_sign_in_cookie">sp_dc cookie</string>
+    <string name="desktop_screen_not_here">This screen is not on the desktop yet. It is coming in a later version, the same as on the phone.</string>
+    <string name="desktop_settings_account">Spotify account</string>
 </resources>

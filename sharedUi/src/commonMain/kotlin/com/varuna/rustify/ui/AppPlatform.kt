@@ -52,6 +52,9 @@ interface AppPlatform {
     /** The clipboard's text, or null when it holds none (or cannot be read). */
     fun readClipboard(): String?
 
+    /** Whether there is a network to try at all; "no" turns an error into "you are offline". */
+    fun isOnline(): Boolean
+
     enum class Kind { ANDROID, DESKTOP }
 
     companion object {

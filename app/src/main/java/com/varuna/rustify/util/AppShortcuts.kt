@@ -7,6 +7,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.varuna.rustify.MainActivity
 import com.varuna.rustify.R
+import com.varuna.rustify.ShortcutTarget
 
 /**
  * The launcher icon's long-press menu (4.9): carry on listening, search, and the DJ.
@@ -21,9 +22,9 @@ import com.varuna.rustify.R
 object AppShortcuts {
     const val ACTION = "com.varuna.rustify.action.SHORTCUT"
     const val EXTRA_TARGET = "target"
-    const val RESUME = "resume"
-    const val SEARCH = "search"
-    const val DJ = "dj"
+    const val RESUME = ShortcutTarget.RESUME
+    const val SEARCH = ShortcutTarget.SEARCH
+    const val DJ = ShortcutTarget.DJ
 
     fun publish(context: Context) {
         val list = listOf(
