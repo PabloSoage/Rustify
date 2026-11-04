@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.components
 
+import com.varuna.rustify.ui.formatTemplate
 import com.varuna.rustify.ui.toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -137,7 +138,7 @@ fun EntityOptionsMenuBottomSheet(
             isAdding = true
             try {
                 val n = spotifyRepoAddAll(playlistId, idsToAdd())
-                platform.toast(String.format(addedTemplate, n, playlistName))
+                platform.toast(formatTemplate(addedTemplate, n, playlistName))
             } catch (e: Exception) {
                 platform.toast(Res.string.entity_menu_add_error, e.message ?: "", long = true)
             } finally {
@@ -160,7 +161,7 @@ fun EntityOptionsMenuBottomSheet(
                         val created = spotifyRepoCreatePlaylist(me, name)
                         // Reuse addAllTo for the freshly created playlist.
                         val n = spotifyRepoAddAll(created.first, idsToAdd())
-                        platform.toast(String.format(addedTemplate, n, created.second))
+                        platform.toast(formatTemplate(addedTemplate, n, created.second))
                     } catch (e: Exception) {
                         platform.toast(Res.string.entity_menu_add_error, e.message ?: "", long = true)
                     } finally {

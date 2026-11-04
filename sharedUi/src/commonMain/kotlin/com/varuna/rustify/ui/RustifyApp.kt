@@ -1001,5 +1001,5 @@ private fun formatPlace(ms: Long): String {
     val h = s / 3600
     val m = (s % 3600) / 60
     val sec = s % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
+    return if (h > 0) formatHourMinSec(h, m, sec) else formatMinSec(m, sec)
 }

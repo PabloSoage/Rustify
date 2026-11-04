@@ -1,6 +1,7 @@
 
 package com.varuna.rustify.ui.components
 
+import com.varuna.rustify.ui.formatFixedUs
 import com.varuna.rustify.ui.toast
 import com.varuna.rustify.bridge.TrackRef
 import androidx.compose.foundation.clickable
@@ -74,7 +75,6 @@ import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.largest
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,7 +142,7 @@ fun TrackOptionsMenuBottomSheet(
                         TextButton(onClick = { apply(offsetMs - 500) }) { Text("-0.5s", color = Color.White) }
                         TextButton(onClick = { apply(offsetMs - 100) }) { Text("-0.1s", color = Color.White) }
                         Text(
-                            String.format(Locale.US, "%+.1f s", offsetMs / 1000f),
+                            "${formatFixedUs((offsetMs / 1000f).toDouble(), 1, signed = true)} s",
                             color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 16.sp,
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
@@ -450,10 +450,13 @@ fun TrackOptionsMenuBottomSheet(
                     var bpm by remember(tid) { mutableStateOf(services.bpmCached(tid)) }
                     var analysing by remember(tid) { mutableStateOf(false) }
                     var showBpmFix by remember(tid) { mutableStateOf(false) }
+                    // "120.5" whatever the language. Both places check bpm for null first, but a
+                    // delegated var is not smart cast.
+                    fun bpmText(): String = bpm?.let { formatFixedUs(it.toDouble(), 1) }.orEmpty()
                     if (showBpmFix && bpm != null) {
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { showBpmFix = false },
-                            title = { Text(stringResource(Res.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))) },
+                            title = { Text(stringResource(Res.string.track_menu_bpm, bpmText())) },
                             text = { Text(stringResource(Res.string.track_menu_bpm_fix)) },
                             confirmButton = {
                                 androidx.compose.material3.TextButton(onClick = {
@@ -472,7 +475,7 @@ fun TrackOptionsMenuBottomSheet(
                         icon = Icons.Default.GraphicEq,
                         label = when {
                             analysing -> stringResource(Res.string.track_menu_bpm_analysing)
-                            bpm != null -> stringResource(Res.string.track_menu_bpm, String.format(java.util.Locale.US, "%.1f", bpm))
+                            bpm != null -> stringResource(Res.string.track_menu_bpm, bpmText())
                             else -> stringResource(Res.string.track_menu_bpm_analyse)
                         },
                         onClick = {

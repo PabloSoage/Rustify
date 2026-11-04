@@ -225,7 +225,7 @@ fun formatDuration(ms: Int): String {
     val totalSecs = ms / 1000
     val mins = totalSecs / 60
     val secs = totalSecs % 60
-    return String.format(java.util.Locale.getDefault(), "%d:%02d", mins, secs)
+    return com.varuna.rustify.ui.formatMinSec(mins.toLong(), secs.toLong())
 }
 
 @Composable
