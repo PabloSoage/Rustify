@@ -1,7 +1,7 @@
 // sharedUi/src/commonMain/kotlin/com/varuna/rustify/bridge/LocalMusicScanner.kt
 package com.varuna.rustify.bridge
 
-import java.io.File
+import com.varuna.rustify.ui.AppFile
 
 /**
  * Reads the user's music folders into tracks: what [SpotifyRepository.scanLocalMusic] needs from the
@@ -26,8 +26,8 @@ data class LocalScanRequest(
     val separators: String,
     /** The separators changed since the cache was written: every file is read again. */
     val resplit: Boolean,
-    /** Where covers go, one per album. */
-    val coversDir: File,
+    /** Where covers go, one per album (`java.io.File` on Android and the desktop, where AppFile is it). */
+    val coversDir: AppFile,
     /** Keep the embedded art as it is (true) or scaled to 512 px. */
     val coversFullRes: Boolean,
 )

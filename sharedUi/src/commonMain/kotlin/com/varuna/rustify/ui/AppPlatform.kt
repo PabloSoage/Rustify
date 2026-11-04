@@ -68,7 +68,7 @@ interface AppPlatform {
     /** Whether there is a network to try at all; "no" turns an error into "you are offline". */
     fun isOnline(): Boolean
 
-    enum class Kind { ANDROID, DESKTOP }
+    enum class Kind { ANDROID, DESKTOP, IOS }
 
     companion object {
         const val SETTINGS = "rustify_settings"

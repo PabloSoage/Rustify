@@ -5,10 +5,11 @@
 //   jvmCommonMain  what Android and the desktop share because both are a JVM: NativeEngine over JNI
 //   androidMain    Android's Log and SharedPreferencesStore
 //   desktopMain    the desktop's Log, PreferencesStore, AppDirs, RustAudioEngine
-//   iosMain        CoreCall (the C ABI through cinterop), NativeEngine over it, Log, UserDefaultsStore
+//   iosMain        CoreCall (the C ABI through cinterop), NativeEngine over it, Log, UserDefaultsStore,
+//                  the Keychain store and the player's backend
 //
 // The app depends on this module, so it is part of every APK build; the desktop app and the iOS
-// framework are not (see settings.gradle.kts and tools/ios/build-core.sh).
+// framework (:sharedUi's RustifyKit) are not (see settings.gradle.kts and tools/ios/build-core.sh).
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -30,11 +31,10 @@ kotlin {
     // Devices, the Apple Silicon simulator, and the simulator on an Intel Mac (iosX64: the owner's
     // macOS VM on an AMD host is x86_64, and so is its simulator). Each is built only when asked for.
     // On a host that is not a Mac these targets are skipped with a warning, which is expected.
+    //
+    // No framework here: the iOS app links :sharedUi's (RustifyKit), which exports this module. Two
+    // Kotlin frameworks in one app would be two runtimes, each with its own copy of this code.
     listOf(iosArm64(), iosSimulatorArm64(), iosX64()).forEach { target ->
-        target.binaries.framework {
-            baseName = "RustifyShared"
-            isStatic = true
-        }
         target.compilations.getByName("main") {
             cinterops.create("rustify") {
                 definitionFile.set(project.file("src/nativeInterop/cinterop/rustify.def"))

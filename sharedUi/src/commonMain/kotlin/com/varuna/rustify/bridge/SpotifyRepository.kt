@@ -853,8 +853,7 @@ loadLocalTracksFromCache()
                         excludedFolders = settingsPrefs.getStringSet(LOCAL_EXCLUDED_FOLDERS, emptySet()),
                         separators = separators,
                         resplit = settingsPrefs.getString(SEPARATORS_APPLIED) != separators,
-                        // LocalScanRequest still takes a java.io.File, the one JVM type left here.
-                        coversDir = java.io.File(coversDir.fullPath),
+                        coversDir = coversDir,
                         coversFullRes = coversFullRes,
                     )
                 )
