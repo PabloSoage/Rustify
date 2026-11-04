@@ -3,10 +3,9 @@ package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import com.varuna.rustify.bridge.DesktopLocalLyrics
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.bridge.LocalMusicScanner
-import com.varuna.rustify.bridge.LocalScanRequest
 import com.varuna.rustify.bridge.LyricsChain
 import com.varuna.rustify.dj.DesktopDjVoice
 import com.varuna.rustify.dj.DesktopLocalDjProvider
@@ -20,7 +19,6 @@ import com.varuna.rustify.dj.LocalLlmSettings
 import com.varuna.rustify.dj.LocalModelManager
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
-import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,8 +50,10 @@ class DesktopAppServices(
     override fun inJam(): Boolean = inJam.invoke()
 
     // A file rather than Preferences: the per-song choice is a JSON map that outgrows a Preferences
-    // value (8 KB).
-    override val lyrics: LyricsChain by lazy { LyricsChain(FileStore(File(AppDirs.data, "lyrics"))) }
+    // value (8 KB). A local track's own lyrics come from its .lrc or its tag, as on the phone.
+    override val lyrics: LyricsChain by lazy {
+        LyricsChain(FileStore(File(AppDirs.data, "lyrics")), readLocal = { DesktopLocalLyrics.read(it) })
+    }
 
     // On-device translation is ML Kit's, Android only (docs serie-4.x/27 §2.9).
     override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit) =
@@ -137,17 +137,6 @@ class DesktopAppServices(
     override val activeDownloadCount: StateFlow<Int> = MutableStateFlow(0)
     override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) = Unit
     override fun clearCompleted() = Unit
-}
-
-/**
- * The desktop's local scan. Not written yet: a folder here is a path, and reading tags needs the
- * core's tag reader rather than Android's MediaMetadataRetriever. Answers nothing, and says so once.
- */
-class DesktopLocalMusicScanner : LocalMusicScanner {
-    override suspend fun scan(request: LocalScanRequest): List<FullTrack> {
-        if (request.dirs.isNotEmpty()) Log.i("LocalMusic", "local folders are not scanned on the desktop yet")
-        return emptyList()
-    }
 }
 
 /** No speech recognition on the desktop: the DJ screen says so when the microphone is pressed. */
