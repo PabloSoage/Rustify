@@ -31,12 +31,18 @@ export BINDGEN_EXTRA_CLANG_ARGS_x86_64_apple_ios="--target=x86_64-apple-ios-simu
 # can run side by side (the same lesson as the three Android ABIs).
 build() {
   local rust_target="$1" kn_target="$2"
-  rustup target add "$rust_target" >/dev/null
   CARGO_TARGET_DIR="target/ios-build/$kn_target" \
     cargo rustc --lib --release --target "$rust_target" --features "$FEATURES" --crate-type staticlib
   mkdir -p "target/ios/$kn_target"
   cp "target/ios-build/$kn_target/$rust_target/release/libcore_engine.a" "target/ios/$kn_target/"
 }
+
+# One after the other: rustup installing two targets at once fails on files they share ("detected
+# conflict"), and the build that lost then fails with it.
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null
+if [ "$(uname -m)" = "x86_64" ] || [ "${IOS_X64:-0}" = "1" ]; then
+  rustup target add x86_64-apple-ios >/dev/null
+fi
 
 build aarch64-apple-ios iosArm64 &
 device=$!
