@@ -61,11 +61,21 @@ pub struct MockState {
     /// Answer `Range` requests on `fetch_stream` with 206 and the slice, as a CDN does. Off by
     /// default, so every other test keeps seeing the whole body.
     pub honour_ranges: bool,
+    /// With `honour_ranges`, answer `Content-Range: bytes a-b/*`, as the core's proxy does when the
+    /// CDN gave no size.
+    pub hide_range_total: bool,
 }
 
 /// From here on, `fetch_stream` answers `Range` requests with 206 and the slice.
 pub fn honour_ranges() {
     state().honour_ranges = true;
+}
+
+/// As [`honour_ranges`], but without saying the total: `Content-Range: bytes a-b/*`.
+pub fn honour_ranges_without_total() {
+    let mut state = state();
+    state.honour_ranges = true;
+    state.hide_range_total = true;
 }
 
 /// Says what `host` resolves to for the rest of the test.
@@ -182,7 +192,7 @@ impl Env for MockEnv {
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("Range"))
             .map(|(_, v)| v.clone());
-        let (found, sizes, honour) = {
+        let (found, sizes, honour, hide_total) = {
             let mut state = state();
             state.requests.push(req);
             let found = state.responses.get(&url).cloned().or_else(|| {
@@ -192,7 +202,12 @@ impl Env for MockEnv {
                     .find(|(prefix, _)| url.starts_with(prefix.as_str()))
                     .map(|(_, response)| response.clone())
             });
-            (found, state.stream_chunk_sizes.clone(), state.honour_ranges)
+            (
+                found,
+                state.stream_chunk_sizes.clone(),
+                state.honour_ranges,
+                state.hide_range_total,
+            )
         };
         Box::pin(async move {
             let mut response =
@@ -205,18 +220,33 @@ impl Env for MockEnv {
                     .and_then(|r| r.split_once('-'))
                     .and_then(|(a, b)| Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?)))
                     .ok_or_else(|| EnvError::Fetch(format!("bad range {range}")))?;
-                let to = to.min(total.saturating_sub(1));
-                response.body = response.body[from..=to].to_vec();
-                response.status = 206;
                 response
                     .headers
                     .retain(|(k, _)| !k.eq_ignore_ascii_case("Content-Length"));
-                response
-                    .headers
-                    .push(("Content-Range".into(), format!("bytes {from}-{to}/{total}")));
-                response
-                    .headers
-                    .push(("Content-Length".into(), (to + 1 - from).to_string()));
+                if from >= total {
+                    // Past the end, as a CDN answers it.
+                    response.body = Vec::new();
+                    response.status = 416;
+                    response
+                        .headers
+                        .push(("Content-Range".into(), format!("bytes */{total}")));
+                } else {
+                    let to = to.min(total - 1);
+                    let total_text = if hide_total {
+                        "*".to_string()
+                    } else {
+                        total.to_string()
+                    };
+                    response.body = response.body[from..=to].to_vec();
+                    response.status = 206;
+                    response.headers.push((
+                        "Content-Range".into(),
+                        format!("bytes {from}-{to}/{total_text}"),
+                    ));
+                    response
+                        .headers
+                        .push(("Content-Length".into(), (to + 1 - from).to_string()));
+                }
             }
             let head = HttpResponseHead {
                 status: response.status,

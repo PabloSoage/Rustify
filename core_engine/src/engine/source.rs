@@ -117,14 +117,23 @@ impl HttpSource {
         if !head.is_success() {
             return Err(EngineError::Http(head.status));
         }
-        // 206 with a total: the rest comes in ranges. Anything else is the whole body.
-        let ranged_total = (head.status == 206)
+        // 206: the rest comes in ranges. With a total (`bytes 0-1048575/5818745`) they stop there;
+        // with `/*`, which the core's proxy answers when the CDN gave no size, they go on until one
+        // comes back short, empty or refused. Anything else is the whole body.
+        let ranged = head.status == 206;
+        let ranged_total = ranged
             .then(|| {
                 head.header("Content-Range")
                     .and_then(total_from_content_range)
             })
             .flatten();
-        let total = ranged_total.or_else(|| head.content_length());
+        // A 206's Content-Length is the first range's, not the file's: without a total the length
+        // stays unknown until the download ends.
+        let total = if ranged {
+            ranged_total
+        } else {
+            head.content_length()
+        };
         let mime = head
             .header("Content-Type")
             .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
@@ -154,16 +163,29 @@ impl HttpSource {
                 Ok(false) => return,
                 Err(e) => return finish(Some(e)),
             }
-            if let Some(total) = ranged_total {
+            // Without a total, a range that comes back shorter than asked was the last one.
+            let ended_short = |asked_to: u64| {
+                ranged_total.is_none()
+                    && pump
+                        .state
+                        .lock()
+                        .map(|s| (s.data.len() as u64) < asked_to)
+                        .unwrap_or(false)
+            };
+            if ranged && ended_short(CHUNK) {
+                return finish(None);
+            }
+            if ranged {
                 loop {
                     let have = match pump.state.lock() {
                         Ok(state) if !state.cancelled => state.data.len() as u64,
                         _ => return,
                     };
-                    if have >= total {
-                        break;
-                    }
-                    let to = (have + CHUNK).min(total) - 1;
+                    let to = match ranged_total {
+                        Some(total) if have >= total => break,
+                        Some(total) => (have + CHUNK).min(total) - 1,
+                        None => have + CHUNK - 1,
+                    };
                     let mut last_error = String::new();
                     let mut got = false;
                     for _ in 0..RANGE_TRIES {
@@ -172,6 +194,7 @@ impl HttpSource {
                         match E::fetch_stream(request).await {
                             Ok((head, body)) if head.status == 206 => {
                                 match drain(body, &pump).await {
+                                    Ok(true) if ended_short(to + 1) => return finish(None),
                                     Ok(true) => {
                                         got = true;
                                         break;
@@ -180,6 +203,14 @@ impl HttpSource {
                                     // A cut mid-range: the next try asks from where it stopped.
                                     Err(e) => last_error = e,
                                 }
+                            }
+                            // Without a total, asking past the end is how the end is found: 416,
+                            // or a server that stopped taking ranges. A refusal is retried below.
+                            Ok((head, _))
+                                if ranged_total.is_none()
+                                    && (head.status == 416 || head.is_success()) =>
+                            {
+                                return finish(None)
                             }
                             Ok((head, _)) => {
                                 last_error = format!("range answered HTTP {}", head.status)
@@ -388,7 +419,18 @@ mod tests {
             "the ranges join without a gap or an overlap"
         );
 
-        let asked: Vec<String> = mock::state()
+        assert_eq!(
+            ranges_asked(),
+            vec![
+                format!("bytes=0-{}", CHUNK - 1),
+                format!("bytes={}-{}", CHUNK, 2 * CHUNK - 1),
+                format!("bytes={}-{}", 2 * CHUNK, expected.len() - 1),
+            ]
+        );
+    }
+
+    fn ranges_asked() -> Vec<String> {
+        mock::state()
             .requests
             .iter()
             .filter_map(|r| {
@@ -397,15 +439,73 @@ mod tests {
                     .find(|(k, _)| k == "Range")
                     .map(|(_, v)| v.clone())
             })
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn without_a_total_ranges_go_on_until_one_comes_back_short() {
+        let _guard = mock::lock_and_reset();
+        mock::honour_ranges_without_total();
+        let expected = body((CHUNK as usize) * 2 + 12_345);
+        mock::on_url("https://cdn.test/p", HttpResponse::ok(expected.clone()));
+
+        let mut source = HttpSource::open::<MockEnv>("https://cdn.test/p").expect("opens");
         assert_eq!(
-            asked,
+            source.byte_len(),
+            None,
+            "the first range's length is not the file's"
+        );
+        let mut all = Vec::new();
+        source.read_to_end(&mut all).expect("reads");
+        assert_eq!(all.len(), expected.len());
+        assert!(all == expected, "every range arrived, in order");
+        assert_eq!(
+            source.seek(SeekFrom::End(0)).expect("the end is known now"),
+            expected.len() as u64
+        );
+        assert_eq!(
+            ranges_asked(),
             vec![
                 format!("bytes=0-{}", CHUNK - 1),
                 format!("bytes={}-{}", CHUNK, 2 * CHUNK - 1),
-                format!("bytes={}-{}", 2 * CHUNK, expected.len() - 1),
+                format!("bytes={}-{}", 2 * CHUNK, 3 * CHUNK - 1),
             ]
         );
+    }
+
+    #[test]
+    fn without_a_total_a_416_past_the_end_ends_the_download() {
+        let _guard = mock::lock_and_reset();
+        mock::honour_ranges_without_total();
+        let expected = body((CHUNK as usize) * 2);
+        mock::on_url("https://cdn.test/q", HttpResponse::ok(expected.clone()));
+
+        let mut source = HttpSource::open::<MockEnv>("https://cdn.test/q").expect("opens");
+        let mut all = Vec::new();
+        source.read_to_end(&mut all).expect("a 416 is the end, not an error");
+        assert!(all == expected);
+        assert_eq!(
+            ranges_asked(),
+            vec![
+                format!("bytes=0-{}", CHUNK - 1),
+                format!("bytes={}-{}", CHUNK, 2 * CHUNK - 1),
+                format!("bytes={}-{}", 2 * CHUNK, 3 * CHUNK - 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn without_a_total_a_short_first_range_is_the_whole_file() {
+        let _guard = mock::lock_and_reset();
+        mock::honour_ranges_without_total();
+        let expected = body(5_000);
+        mock::on_url("https://cdn.test/r", HttpResponse::ok(expected.clone()));
+
+        let mut source = HttpSource::open::<MockEnv>("https://cdn.test/r").expect("opens");
+        let mut all = Vec::new();
+        source.read_to_end(&mut all).expect("reads");
+        assert!(all == expected);
+        assert_eq!(ranges_asked(), vec![format!("bytes=0-{}", CHUNK - 1)]);
     }
 
     #[test]
