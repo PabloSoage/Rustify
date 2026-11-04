@@ -677,7 +677,7 @@ pub fn graphic_filters(bands: &[GraphicBand], rate: f64) -> (Vec<Coeffs>, f32) {
             *gain = (*gain + FIT_STEP * (target - got)).clamp(-30.0, 30.0);
         }
     }
-    let out = shape
+    let out: Vec<Coeffs> = shape
         .iter()
         .zip(&gains)
         .filter_map(|((centre, q, _), g)| Coeffs::design(FilterKind::Peak, *centre, *g, *q, rate))
