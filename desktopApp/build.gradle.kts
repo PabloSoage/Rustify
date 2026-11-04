@@ -7,7 +7,8 @@
 //   ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS
 //
 // Packages, one host per format (jpackage cannot cross-build): Windows → .msi and .exe, Linux → .deb,
-// .rpm and AppImage, macOS → .dmg. Each carries the core built for the host it was made on.
+// .rpm and AppImage, macOS → .dmg. Each carries the core and the sign-in window (desktopApp/login)
+// built for the host it was made on.
 
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -76,12 +77,44 @@ val buildRustCoreDesktop by tasks.registering(Exec::class) {
     outputs.file(File(coreTargetDir, "release/$coreLibraryName"))
 }
 
+// --- THE SIGN-IN WINDOW, BUILT FOR THIS HOST -----------------------------------------------------
+//
+// rustify-login (desktopApp/login): the Spotify login page in the system's own webview, in a process
+// of its own, answering the `sp_dc` cookie on standard output (DesktopAppShell.SignIn). It ships next
+// to the core, in the same per-OS resources. A failed cargo build fails the desktop build; only
+// `-Prustify.loginHelper=false` leaves it out, and then the app offers the pasted cookie alone.
+// On Linux it builds against libwebkit2gtk-4.1-dev and libgtk-3-dev.
+
+val loginHelperEnabled: Boolean =
+    providers.gradleProperty("rustify.loginHelper").map { it.toBoolean() }.getOrElse(true)
+val loginHelperName: String = if (hostOs == "windows") "rustify-login.exe" else "rustify-login"
+val loginTargetDir: File = layout.buildDirectory.dir("login-target").get().asFile
+
+val buildLoginHelper by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Builds rustify-login, the Spotify sign-in window over the system's webview"
+    enabled = loginHelperEnabled
+    workingDir = project.file("login")
+    environment("CARGO_TARGET_DIR", loginTargetDir.absolutePath)
+    commandLine(cargoCommand, "build", "--release")
+    inputs.dir(project.file("login/src"))
+    inputs.file(project.file("login/Cargo.toml"))
+    outputs.file(File(loginTargetDir, "release/$loginHelperName"))
+}
+
 val coreResources = layout.buildDirectory.dir("core-resources")
 
 val copyRustCoreDesktop by tasks.registering(Copy::class) {
     group = "rust"
     dependsOn(buildRustCoreDesktop)
     from(File(coreTargetDir, "release/$coreLibraryName"))
+    if (loginHelperEnabled) {
+        dependsOn(buildLoginHelper)
+        // Executable whatever the copy started from; the app also checks before running it.
+        from(File(loginTargetDir, "release/$loginHelperName")) {
+            filePermissions { unix("rwxr-xr-x") }
+        }
+    }
     into(coreResources.map { it.dir("$hostOs-$hostArch") })
 }
 
@@ -136,7 +169,8 @@ compose.desktop {
     }
 }
 
-// Every task that reads the app's resources needs the core in them first: `run`, the distributable
-// and every package. Matched by name because Compose creates them after this script runs.
+// Every task that reads the app's resources needs the core (and, through the same copy, the sign-in
+// window) in them first: `run`, the distributable and every package. Matched by name because Compose
+// creates them after this script runs.
 tasks.matching { it.name == "prepareAppResources" || it.name == "run" || it.name.startsWith("package") || it.name.startsWith("createDistributable") }
     .configureEach { dependsOn(copyRustCoreDesktop) }

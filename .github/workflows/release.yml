@@ -47,7 +47,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core_engine -> target/desktop
+          workspaces: |
+            core_engine -> target/desktop
+            desktopApp/login -> ../build/login-target
           key: release-desktop
       - uses: actions/setup-java@v5
         with:
@@ -55,7 +57,8 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config rpm
+        # The sign-in window (desktopApp/login) builds against the system's webview: WebKitGTK 4.1.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config rpm libwebkit2gtk-4.1-dev libgtk-3-dev
       # bash on every runner: PowerShell splits `-Prustify.desktop=true` at the dot.
       - shell: bash
         run: ./gradlew -Prustify.desktop=true :desktopApp:createDistributable :desktopApp:packageDistributionForCurrentOS --no-daemon
