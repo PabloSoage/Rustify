@@ -1,5 +1,6 @@
 package com.varuna.rustify.ui.screens
 
+import com.varuna.rustify.ui.formatCount
 import com.varuna.rustify.ui.toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -226,7 +227,7 @@ fun ArtistScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = stringResource(Res.string.artist_followers, java.text.NumberFormat.getIntegerInstance().format(artist.followersTotal ?: 0)),
+                                text = stringResource(Res.string.artist_followers, formatCount((artist.followersTotal ?: 0).toLong())),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Gray
                             )

@@ -30,10 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.ArtistAbout
-import java.text.NumberFormat
-import java.time.OffsetDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
+import com.varuna.rustify.ui.formatCount
+import com.varuna.rustify.ui.formatIsoDateMedium
 
 /**
  * An artist page's "About" (4.7): monthly listeners and world rank, the biography (four lines,
@@ -41,7 +39,6 @@ import java.time.format.FormatStyle
  */
 @Composable
 fun ArtistAboutSection(about: ArtistAbout) {
-    val numbers = NumberFormat.getIntegerInstance()
     val green = Color(0xFF1DB954)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Text(
@@ -55,7 +52,7 @@ fun ArtistAboutSection(about: ArtistAbout) {
         ) {
             about.monthlyListeners?.let {
                 Text(
-                    stringResource(Res.string.artist_monthly_listeners, numbers.format(it)),
+                    stringResource(Res.string.artist_monthly_listeners, formatCount(it)),
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
                 )
             }
@@ -80,7 +77,7 @@ fun ArtistAboutSection(about: ArtistAbout) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${c.city}, ${c.country}", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         Text(
-                            stringResource(Res.string.artist_city_listeners, numbers.format(c.listeners)),
+                            stringResource(Res.string.artist_city_listeners, formatCount(c.listeners)),
                             color = Color.Gray, fontSize = 12.sp
                         )
                     }
@@ -94,9 +91,8 @@ fun ArtistAboutSection(about: ArtistAbout) {
                 color = Color.White,
                 modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
             )
-            val dateFormat = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
             about.concerts.take(10).forEach { c ->
-                val date = runCatching { OffsetDateTime.parse(c.startsAt).format(dateFormat) }.getOrDefault(c.startsAt)
+                val date = formatIsoDateMedium(c.startsAt) ?: c.startsAt
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Start) {
                     Text(date, color = green, fontSize = 13.sp, modifier = Modifier.width(110.dp))
                     Column(Modifier.weight(1f)) {
