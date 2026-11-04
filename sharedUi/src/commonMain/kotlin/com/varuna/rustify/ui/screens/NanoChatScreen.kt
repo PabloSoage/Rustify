@@ -353,29 +353,11 @@ private fun label(t: FullTrack): String =
  * [template]'s `%1$.1f`, `%2$.1f`… with [values] in them, one decimal each, as `String.format` wrote
  * them on the phone: Compose Multiplatform's resources fill only `%1$s` and `%1$d`.
  */
-internal fun fillDecimals(template: String, vararg values: Double): String {
-    var out = template
-    values.forEachIndexed { i, v -> out = out.replace("%${i + 1}\$.1f", oneDecimal(v)) }
-    return out
-}
+internal fun fillDecimals(template: String, vararg values: Double): String =
+    com.varuna.rustify.ui.formatTemplate(template, *values.toTypedArray())
 
-/**
- * [x] rounded half up to one decimal (`%.1f`), with the decimal sign of the interface's language,
- * a comma where the default locale wrote one. Plain Kotlin: common code has no `String.format`.
- */
-internal fun oneDecimal(x: Double): String {
-    val tenths = kotlin.math.floor(kotlin.math.abs(x) * 10 + 0.5).toLong()
-    val sign = if (x < 0 && tenths != 0L) "-" else ""
-    val comma = androidx.compose.ui.text.intl.Locale.current.language in DECIMAL_COMMA
-    return sign + (tenths / 10) + (if (comma) "," else ".") + (tenths % 10)
-}
-
-/** The languages whose numbers take a decimal comma (CLDR, in each language's main region). */
-private val DECIMAL_COMMA = setOf(
-    "az", "be", "bg", "ca", "cs", "da", "de", "el", "es", "et", "eu", "fi", "fr", "gl", "hr", "hu", "hy",
-    "id", "is", "it", "ka", "kk", "lt", "lv", "mk", "nb", "nl", "nn", "no", "pl", "pt", "ro", "ru", "sk",
-    "sl", "sq", "sr", "sv", "tr", "uk", "vi",
-)
+/** [x] to one decimal as `%.1f` writes it in the default locale, as the phone always showed it. */
+internal fun oneDecimal(x: Double): String = com.varuna.rustify.ui.formatTemplate("%.1f", x)
 
 /**
  * The little Markdown the model writes — `**bold**` and `* ` bullets — shown as such rather than as
