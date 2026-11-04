@@ -11,6 +11,7 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalMusicScanner
 import com.varuna.rustify.bridge.LocalScanRequest
 import com.varuna.rustify.bridge.LyricsChain
+import com.varuna.rustify.dj.DesktopDjVoice
 import com.varuna.rustify.dj.DjAutoController
 import com.varuna.rustify.dj.DjListener
 import com.varuna.rustify.dj.DjProvider
@@ -30,9 +31,13 @@ import java.util.Locale
 /**
  * [AppServices] on the desktop. Tempo and downloads are Android's today (MediaCodec, the Storage
  * Access Framework), and so are translation and video; [can] says so and the screens show them as
- * unavailable. The DJ is the shared one, without a voice, a microphone or a local model yet.
+ * unavailable. The DJ is the shared one and speaks with the system's voice; it has no microphone or
+ * local model yet.
  */
 class DesktopAppServices(
+    private val platform: AppPlatform,
+    /** The DJ started (true) or stopped (false) speaking: the window lowers the music meanwhile. */
+    onVoice: (speaking: Boolean) -> Unit = {},
     /** The desktop's Jam screen, shown as the dialog (desktopApp passes it; it owns the JamSession). */
     private val jamDialog: @Composable (onDismiss: () -> Unit) -> Unit = {},
     /** Whether the JamSession is in a room. */
@@ -70,19 +75,11 @@ class DesktopAppServices(
 
     override fun djNext() = DjAutoController.next()
 
-    // Not yet: the system's voice, a microphone and a model on this computer (docs serie-4.x/27 §2.8).
-    override val djVoice: DjVoiceOutput = object : DjVoiceOutput {
-        override fun init() = Unit
-        override fun speak(text: String, force: Boolean) = Unit
-        override fun stop() = Unit
-        override val engines: List<String> = listOf("native")
-        override fun refreshConfig() = Unit
-        override fun preview(onDone: (() -> Unit)?) { onDone?.invoke() }
-        override fun queryVoices(langCode: String, onResult: (List<Pair<String, String>>) -> Unit) = onResult(emptyList())
-        override suspend fun probeEdge(): Long? = null
-        override suspend fun probeGoogleTranslate(): Long? = null
-        override suspend fun probeVoice(voice: String): Long? = null
-    }
+    // The system's own voice (SAPI, `say`, Speech Dispatcher or eSpeak NG).
+    private val voice = DesktopDjVoice(platform, onVoice)
+    override val djVoice: DjVoiceOutput get() = voice
+
+    // Not yet: a microphone and a model on this computer (docs serie-4.x/27 §2.8).
 
     override fun localDjProvider(): DjProvider = HeuristicDjProvider()
 
@@ -102,7 +99,11 @@ class DesktopAppServices(
 
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.DesktopLogBook
 
-    override fun can(feature: AppServices.Feature): Boolean = feature == AppServices.Feature.DJ
+    override fun can(feature: AppServices.Feature): Boolean = when (feature) {
+        AppServices.Feature.DJ -> true
+        AppServices.Feature.DJ_VOICE -> voice.isAvailable
+        else -> false
+    }
 
     override fun bpmCached(trackId: String): Float? = null
     override fun bpmScale(trackId: String, factor: Float): Float? = null

@@ -259,6 +259,10 @@ fun DjSettingsSection() {
                         // DJ voice (hybrid: native TTS plus an optional cloud endpoint).
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(stringResource(Res.string.settings_dj_voice), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        // Said, not hidden: the settings stay, and apply once there is a voice.
+                        if (!services.can(com.varuna.rustify.ui.AppServices.Feature.DJ_VOICE)) {
+                            Text(stringResource(Res.string.settings_dj_voice_none), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
                         val djVoiceFieldColors = TextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,

@@ -94,7 +94,12 @@ interface AppServices {
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 
-    enum class Feature { BPM, DOWNLOADS, TRANSLATION, VIDEO, DJ }
+    enum class Feature {
+        BPM, DOWNLOADS, TRANSLATION, VIDEO, DJ,
+
+        /** The DJ speaking through [djVoice]; a computer without a speech command has none. */
+        DJ_VOICE,
+    }
 }
 
 /** What translating lyrics came to; see [AppServices.translateLyrics]. */

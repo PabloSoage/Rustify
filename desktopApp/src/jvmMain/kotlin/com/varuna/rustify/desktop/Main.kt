@@ -75,7 +75,16 @@ fun main() {
             JamSession(scope, JvmJamCore, player, DesktopStores.named(null), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
         }
         val appServices = remember {
-            com.varuna.rustify.ui.DesktopAppServices(inJam = { jam.ui.collectAsState().value.role != JamSession.Role.NONE }, jamDialog = { onDismiss ->
+            // While the DJ speaks the music goes down to about a fifth, as on the phone, and back.
+            var volumeBeforeVoice = 1f
+            com.varuna.rustify.ui.DesktopAppServices(platform = appPlatform, onVoice = { speaking ->
+                if (speaking) {
+                    volumeBeforeVoice = player.ui.value.volume
+                    player.setVolume(volumeBeforeVoice * 0.22f)
+                } else {
+                    player.setVolume(volumeBeforeVoice)
+                }
+            }, inJam = { jam.ui.collectAsState().value.role != JamSession.Role.NONE }, jamDialog = { onDismiss ->
                 androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
                     androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
                         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(560.dp, 640.dp)) {
