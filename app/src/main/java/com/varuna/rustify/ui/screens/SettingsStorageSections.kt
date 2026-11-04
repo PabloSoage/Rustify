@@ -1015,70 +1015,6 @@ internal fun ShuffleSection(context: Context) {
 }
 
 /**
- * ListenBrainz (`18`): paste the token from the profile's settings page; it is checked against
- * ListenBrainz before it is kept, and the user name shown so a wrong account is obvious.
- */
-@Composable
-internal fun ListenBrainzSection(context: Context) {
-    val lb = com.varuna.rustify.metrics.ListenBrainz
-    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    var token by remember { mutableStateOf(prefs.getString(lb.PREF_TOKEN, "").orEmpty()) }
-    var user by remember { mutableStateOf(prefs.getString(lb.PREF_USER, null)) }
-    var checking by remember { mutableStateOf(false) }
-    var invalid by remember { mutableStateOf(false) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    Spacer(modifier = Modifier.height(24.dp))
-    Text(
-        "ListenBrainz",
-        color = Color(0xFF1DB954),
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(stringResource(R.string.settings_listenbrainz_desc), color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(8.dp))
-            if (user != null) {
-                Text(stringResource(R.string.settings_listenbrainz_connected, user!!), color = Color.White, fontSize = 15.sp)
-                androidx.compose.material3.TextButton(onClick = {
-                    prefs.edit().remove(lb.PREF_TOKEN).remove(lb.PREF_USER).apply()
-                    token = ""; user = null
-                }) { Text(stringResource(R.string.settings_listenbrainz_disconnect), color = Color(0xFFCC2200)) }
-            } else {
-                androidx.compose.material3.OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it; invalid = false },
-                    singleLine = true,
-                    placeholder = { Text(stringResource(R.string.settings_listenbrainz_token)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (invalid) Text(stringResource(R.string.settings_listenbrainz_invalid), color = Color(0xFFCC2200), fontSize = 12.sp)
-                androidx.compose.material3.TextButton(
-                    enabled = token.isNotBlank() && !checking,
-                    onClick = {
-                        checking = true
-                        scope.launch {
-                            val name = lb.validate(token)
-                            checking = false
-                            if (name == null) invalid = true
-                            else {
-                                prefs.edit().putString(lb.PREF_TOKEN, token.trim()).putString(lb.PREF_USER, name).apply()
-                                user = name
-                            }
-                        }
-                    }
-                ) { Text(stringResource(R.string.settings_listenbrainz_connect), color = Color(0xFF1DB954)) }
-            }
-        }
-    }
-}
-
-/**
  * AutoEq per output device (`21`): find the headphones in AutoEq's index, and their correction is
  * applied whenever music goes to this output. One profile per device.
  */
@@ -1254,67 +1190,6 @@ internal fun BlocklistSection(context: Context) {
                         Text(stringResource(R.string.settings_blocklist_unblock), color = Color(0xFF1DB954))
                     }
                 }
-            }
-        }
-    }
-}
-
-/** Last.fm scrobbling (`23` §3) with the user's own API key. See [com.varuna.rustify.metrics.LastFm]. */
-@Composable
-internal fun LastFmSection(context: Context) {
-    val lf = com.varuna.rustify.metrics.LastFm
-    var user by remember { mutableStateOf(lf.user(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
-    var apiKey by remember { mutableStateOf(lf.apiKey(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
-    var secret by remember { mutableStateOf(lf.secret(com.varuna.rustify.ui.AndroidAppPlatform(context))) }
-    var name by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    Spacer(modifier = Modifier.height(24.dp))
-    Text("Last.fm", color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(stringResource(R.string.settings_lastfm_desc), color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(8.dp))
-            if (user != null) {
-                Text(stringResource(R.string.settings_listenbrainz_connected, user!!), color = Color.White, fontSize = 15.sp)
-                androidx.compose.material3.TextButton(onClick = { lf.logout(com.varuna.rustify.ui.AndroidAppPlatform(context)); user = null }) {
-                    Text(stringResource(R.string.settings_listenbrainz_disconnect), color = Color(0xFFCC2200))
-                }
-            } else {
-                @Composable
-                fun field(value: String, hint: Int, secretText: Boolean = false, onChange: (String) -> Unit) =
-                    androidx.compose.material3.OutlinedTextField(
-                        value = value,
-                        onValueChange = { onChange(it); error = null },
-                        singleLine = true,
-                        placeholder = { Text(stringResource(hint)) },
-                        visualTransformation = if (secretText) androidx.compose.ui.text.input.PasswordVisualTransformation()
-                            else androidx.compose.ui.text.input.VisualTransformation.None,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                field(apiKey, R.string.settings_lastfm_api_key) { apiKey = it }
-                field(secret, R.string.settings_lastfm_secret, secretText = true) { secret = it }
-                field(name, R.string.settings_lastfm_user) { name = it }
-                field(password, R.string.settings_lastfm_password, secretText = true) { password = it }
-                error?.let { Text(it, color = Color(0xFFCC2200), fontSize = 12.sp) }
-                androidx.compose.material3.TextButton(
-                    enabled = !busy && apiKey.isNotBlank() && secret.isNotBlank() && name.isNotBlank() && password.isNotBlank(),
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            val why = lf.login(com.varuna.rustify.ui.AndroidAppPlatform(context), apiKey, secret, name, password)
-                            busy = false
-                            password = ""
-                            if (why == null) user = lf.user(com.varuna.rustify.ui.AndroidAppPlatform(context)) else error = why
-                        }
-                    }
-                ) { Text(stringResource(R.string.settings_listenbrainz_connect), color = Color(0xFF1DB954)) }
             }
         }
     }

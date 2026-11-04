@@ -35,6 +35,7 @@ import java.time.ZoneId
  */
 class ListeningTracker(private val platform: AppPlatform) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scrobbler = Scrobbler(platform, scope)
     private var cur: Session? = null
 
     private data class Session(
@@ -50,12 +51,7 @@ class ListeningTracker(private val platform: AppPlatform) {
         flush()
         val startedAt = System.currentTimeMillis()
         cur = Session(track, startedAt)
-        if (ListenBrainz.token(platform) != null) {
-            scope.launch { ListenBrainz.playingNow(platform, ListenBrainz.listenOf(track, startedAt)) }
-        }
-        if (LastFm.credentials(platform) != null) {
-            scope.launch { LastFm.nowPlaying(platform, ListenBrainz.listenOf(track, startedAt)) }
-        }
+        scrobbler.started(track, startedAt)
     }
 
     /**
@@ -81,17 +77,7 @@ class ListeningTracker(private val platform: AppPlatform) {
     fun flush() {
         val s = cur ?: return; cur = null
         val event = playEventOf(s.track, s.startedAt, s.listenedMs, s.completed, s.errored) ?: return
-        // ListenBrainz and Last.fm share their own, stricter rule (4 min or half); the core queues
-        // each if offline.
-        if (!s.errored && ListenBrainz.qualifies(s.listenedMs, s.track.durationMs.toLong())) {
-            val listen = ListenBrainz.listenOf(s.track, s.startedAt)
-            if (ListenBrainz.token(platform) != null) {
-                scope.launch { runCatching { ListenBrainz.submit(platform, listen) } }
-            }
-            if (LastFm.credentials(platform) != null) {
-                scope.launch { runCatching { LastFm.submit(platform, listen) } }
-            }
-        }
+        scrobbler.finished(s.track, s.startedAt, s.listenedMs, s.errored)
         scope.launch {
             migrateLegacyFile(platform)
             val answer = runCatching { NativeEngine.recordPlay(RustifyJson.encodeToString(PlayEvent.serializer(), event)) }

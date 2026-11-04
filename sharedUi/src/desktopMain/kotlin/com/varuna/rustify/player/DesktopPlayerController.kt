@@ -24,7 +24,11 @@ import kotlinx.coroutines.withContext
  * as on the phone; what the engine does not do yet — video, speed, audio effects — answers [can]
  * with false, so the shared screens show the control as unavailable rather than calling into nothing.
  */
-class DesktopPlayerController(private val player: QueuePlayer, private val scope: CoroutineScope) : PlayerController {
+class DesktopPlayerController(
+    private val player: QueuePlayer,
+    private val scope: CoroutineScope,
+    platform: com.varuna.rustify.ui.AppPlatform,
+) : PlayerController {
     /** Off, shuffle, repeat one: the phone's single button cycles through them in that order. */
     private enum class Mode { OFF, SHUFFLE, REPEAT }
 
@@ -244,6 +248,13 @@ class DesktopPlayerController(private val player: QueuePlayer, private val scope
         player.onTrackEnded = {
             if (_sleepTracks.value > 0) setSleepTracks(_sleepTracks.value - 1)
             if (_sleepTimer.value == SLEEP_AT_TRACK_END && _sleepTracks.value == 0) _sleepTimer.value = null
+        }
+        // ListenBrainz and Last.fm, by the phone's rule; the history itself the player keeps.
+        val scrobbler = com.varuna.rustify.metrics.Scrobbler(platform, scope)
+        player.listenObserver = object : QueuePlayer.ListenObserver {
+            override fun started(track: FullTrack, startedAt: Long) = scrobbler.started(track, startedAt)
+            override fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean) =
+                scrobbler.finished(track, startedAt, listenedMs, errored)
         }
     }
 

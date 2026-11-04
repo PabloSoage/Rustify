@@ -51,7 +51,7 @@ fun main() {
         // What the shared screens (docs serie-4.x/26) take from the platform: the phone has these
         // over Android; here they are over the desktop's folders, preferences and the core's engine.
         val appPlatform = remember { com.varuna.rustify.ui.DesktopAppPlatform() }
-        val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope) }
+        val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope, appPlatform) }
 
         // The language picked in Settings ("system" = the computer's), the phone's `app_language`.
         // Applied as the JVM's default locale, which is what Compose's resources read; the window's

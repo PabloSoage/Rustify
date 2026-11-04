@@ -91,6 +91,12 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
     @Composable
     override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
         if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.GENERAL_DJ || slot == SettingsSlot.AUDIO) return
+        // The shared sections the phone has further down Audio: here they go after its own, which
+        // are not on the desktop yet.
+        if (slot == SettingsSlot.AUDIO_SOURCES) {
+            com.varuna.rustify.ui.screens.ListenBrainzSection()
+            com.varuna.rustify.ui.screens.LastFmSection()
+        }
         Text(
             stringResource(Res.string.desktop_settings_not_here),
             color = Color.Gray,

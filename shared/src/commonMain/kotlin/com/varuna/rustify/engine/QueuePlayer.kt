@@ -159,11 +159,21 @@ class QueuePlayer(
 
     private var listening: Listening? = null
 
+    /** Told when a listen starts and how much of it was heard when it ends (the desktop scrobbles from it). */
+    interface ListenObserver {
+        fun started(track: FullTrack, startedAt: Long)
+        fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean)
+    }
+
+    var listenObserver: ListenObserver? = null
+
     private fun startListening(token: Long) {
         finishListening(completed = false, errored = false)
         val index = indexOfToken[token] ?: return
         val track = tracks.getOrNull(index) ?: return
-        listening = Listening(track, currentTimeMillis())
+        val l = Listening(track, currentTimeMillis())
+        listening = l
+        listenObserver?.started(track, l.startedAt)
     }
 
     private fun progressListening(positionMs: Long) {
@@ -184,6 +194,7 @@ class QueuePlayer(
     private fun takeListening(completed: Boolean, errored: Boolean): PlayEvent? {
         val l = listening ?: return null
         listening = null
+        listenObserver?.finished(l.track, l.startedAt, l.listenedMs, errored)
         return playEventOf(l.track, l.startedAt, l.listenedMs, completed, errored)
     }
 
