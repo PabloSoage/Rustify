@@ -26,6 +26,13 @@ interface AppPlatform {
     /** The version the user sees ("5.0.0b"); empty when it is not known (a run from the IDE). */
     val appVersion: String
 
+    /**
+     * The country the system is set to ("ES"; empty when it names none), whatever language the app
+     * was given. Not the JVM's default locale's: a language picked in Settings replaces that with a
+     * language alone, and the country goes with it.
+     */
+    val systemCountry: String
+
     /** A preferences file by its Android name (`rustify_settings`, `rustify_spotify_prefs`…). */
     fun prefs(name: String = SETTINGS): KeyValueStore
 

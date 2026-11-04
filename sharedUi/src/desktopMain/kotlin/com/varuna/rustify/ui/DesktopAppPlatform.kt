@@ -24,8 +24,11 @@ import java.util.prefs.Preferences
  * app's (so `rustify_settings` keeps its keys apart from `rustify_spotify_prefs`, as on the phone);
  * toasts are a line the window shows at its bottom ([toasts]); sharing copies to the clipboard,
  * because a desktop has no share sheet, and says so.
+ *
+ * [systemCountry] comes from the locale the JVM started with, captured before Settings' language
+ * replaced the default.
  */
-class DesktopAppPlatform : AppPlatform {
+class DesktopAppPlatform(override val systemCountry: String) : AppPlatform {
     override val kind = AppPlatform.Kind.DESKTOP
 
     // jpackage's launcher sets this to the installer's packageVersion; a run from Gradle has none.

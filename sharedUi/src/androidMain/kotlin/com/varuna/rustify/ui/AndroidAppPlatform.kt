@@ -21,6 +21,11 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
         runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: ""
     }
 
+    // The system's resources keep the device's locale; the app's own configuration and the JVM's
+    // default carry the language picked in Settings.
+    override val systemCountry: String
+        get() = runCatching { android.content.res.Resources.getSystem().configuration.locales[0].country }.getOrNull() ?: ""
+
     override fun prefs(name: String): KeyValueStore =
         SharedPreferencesStore(app.getSharedPreferences(name, Context.MODE_PRIVATE))
 
