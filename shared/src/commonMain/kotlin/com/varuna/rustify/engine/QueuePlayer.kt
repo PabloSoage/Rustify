@@ -544,6 +544,17 @@ class QueuePlayer(
      */
     var localCopy: (suspend (FullTrack) -> String?)? = null
 
+    /**
+     * The platform's chain of audio sources, when it has one (the desktop: the phone's chain, in the
+     * order and with the settings chosen in Settings); null resolves through the core's resolver and
+     * InnerTube. See [StreamResolver.sources].
+     */
+    var sources: StreamResolver.Sources?
+        get() = resolver.sources
+        set(value) {
+            resolver.sources = value
+        }
+
     private suspend fun resolve(track: FullTrack): StreamResolver.Stream? = resolver.resolve(track, localCopy)
 
     /** YouTube's own player turns a loud recording down by its `loudnessDb`, and never up. */

@@ -155,7 +155,7 @@ object InvidiousInstances {
             client.newCall(videos).await().use { r ->
                 val body = if (r.isSuccessful) r.body.string() else ""
                 Log.d(TAG, "${inst.baseUrl} api ${r.code}, ${body.length} bytes, ${elapsed()} ms")
-                bestAudioFrom(body) to r.header("Content-Security-Policy")
+                bestAudioFrom(body, env.decodesOpus) to r.header("Content-Security-Policy")
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -179,8 +179,10 @@ object InvidiousInstances {
         }
 
         for (companion in companionsFor(inst.baseUrl, csp)) {
-            // Opus first (~160 kb/s), AAC 128 if the video has no Opus track.
-            for ((itag, label) in listOf(251 to "opus", 140 to "aac")) {
+            // Opus first (~160 kb/s), AAC 128 if the video has no Opus track. AAC alone for a player
+            // that cannot decode Opus (the core's engine).
+            val itags = if (env.decodesOpus) listOf(251 to "opus", 140 to "aac") else listOf(140 to "aac")
+            for ((itag, label) in itags) {
                 val url = "$companion/companion/latest_version?id=$videoId&itag=$itag&local=true"
                 val found = attempt { verified(client, url, "companion $label ${companion.substringAfter("://")}") }
                 Log.d(TAG, "$companion itag $itag ${if (found != null) "plays" else "failed"}, ${elapsed()} ms")
@@ -208,8 +210,11 @@ object InvidiousInstances {
     @Volatile private var lastGood: String? = null
     private const val DEAD_FOR_MS = 10 * 60 * 1000L
 
-    /** Highest-bitrate audio-only format in a `/api/v1/videos` answer, or the first muxed one. */
-    private fun bestAudioFrom(body: String): String? {
+    /**
+     * Highest-bitrate audio-only format in a `/api/v1/videos` answer, or the first muxed one. Without
+     * [opus], only MP4 audio (AAC) counts: WebM audio is Opus.
+     */
+    private fun bestAudioFrom(body: String, opus: Boolean = true): String? {
         if (body.isBlank()) return null
         val obj = parseJsonObject(body) ?: return null
         var bestUrl: String? = null
@@ -218,6 +223,7 @@ object InvidiousInstances {
             for (i in adaptive.indices) {
                 val f = adaptive.optObject(i) ?: continue
                 if (!f.optString("type").startsWith("audio", true)) continue
+                if (!opus && !f.optString("type").startsWith("audio/mp4", true)) continue
                 val br = f.optString("bitrate").toLongOrNull() ?: f.optLong("bitrate", 0)
                 val u = f.optString("url")
                 if (u.isNotBlank() && br > bestBitrate) { bestBitrate = br; bestUrl = u }

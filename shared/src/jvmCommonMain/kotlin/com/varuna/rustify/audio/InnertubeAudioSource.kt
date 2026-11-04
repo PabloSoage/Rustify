@@ -82,7 +82,8 @@ class InnertubeAudioSource(private val env: AudioSourceEnvironment) : AudioSourc
         Result.failure(UnsupportedOperationException("innertube streams only; downloads use yt-dlp"))
 
     private fun prefsJson(): String {
-        val prefer = env.settings.getString(PREF_FORMAT) ?: "opus"
+        // A player with no Opus decoder (the core's engine) gets AAC whatever the setting says.
+        val prefer = if (!env.decodesOpus) "aac" else env.settings.getString(PREF_FORMAT) ?: "opus"
         return """{"prefer":"$prefer","maxKbps":0}"""
     }
 

@@ -47,7 +47,9 @@ import java.util.concurrent.TimeUnit
  */
 class DesktopDownloads(
     private val platform: AppPlatform,
-    private val resolver: StreamResolver = StreamResolver(JvmPlayerBackend),
+    // The player's sources, the phone's chain (DesktopAudioSources), so the file is what plays.
+    private val resolver: StreamResolver =
+        StreamResolver(JvmPlayerBackend, com.varuna.rustify.audio.DesktopAudioSources.install(platform.prefs())),
 ) {
     private val _downloads = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloads: StateFlow<List<DownloadTask>> = _downloads.asStateFlow()

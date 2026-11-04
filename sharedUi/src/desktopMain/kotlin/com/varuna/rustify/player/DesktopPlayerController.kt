@@ -291,6 +291,8 @@ class DesktopPlayerController(
         // the user chose beats the local copy, and the copy is the core's match, never a name
         // compared here.
         player.localCopy = { track -> localCopyOf(platform, track) }
+        // The phone's audio sources, in the order and with the settings chosen in Settings.
+        player.sources = com.varuna.rustify.audio.DesktopAudioSources.install(platform.prefs())
         // ListenBrainz and Last.fm, by the phone's rule; the history itself the player keeps.
         player.listenObserver = object : QueuePlayer.ListenObserver {
             override fun started(track: FullTrack, startedAt: Long) = scrobbler.started(track, startedAt)
