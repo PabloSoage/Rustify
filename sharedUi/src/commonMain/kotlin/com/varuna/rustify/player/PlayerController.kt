@@ -70,6 +70,12 @@ interface PlayerController {
     fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?)
 
     /**
+     * Replaces everything after the song playing with [tracks], leaving that song alone: the
+     * autonomous DJ's next block takes the place of the one it had queued, not a place after it.
+     */
+    fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>)
+
+    /**
      * The user said [youtubeId] is the right recording of [trackId]: remembered as their choice (it
      * beats the local match), and everything keyed by the track forgets the old one — the stream
      * URL, the last good source, the stored audio and the lyrics — or the choice would look like it

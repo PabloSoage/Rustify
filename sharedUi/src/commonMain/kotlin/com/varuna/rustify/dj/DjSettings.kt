@@ -1,11 +1,10 @@
 package com.varuna.rustify.dj
 
-import android.content.Context
-import com.varuna.rustify.dj.DjSettings.ttsEngine
+import com.varuna.rustify.ui.AppPlatform
 
 /**
- * Persistence of the DJ configuration in `rustify_settings` (SharedPreferences), in line with the
- * rest of the app's settings (no Room, no new dependencies).
+ * Persistence of the DJ configuration in `rustify_settings` (the platform's preferences, Android's
+ * SharedPreferences), in line with the rest of the app's settings (no Room, no new dependencies).
  */
 object DjSettings {
     const val PREFS = "rustify_settings"
@@ -23,32 +22,27 @@ object DjSettings {
     const val DEFAULT_API_BASE_URL = "https://text.pollinations.ai/openai"
     const val DEFAULT_API_MODEL = "openai"
 
-    fun mode(context: Context): DjMode {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return when (prefs.getString(KEY_MODE, "heuristic")) {
+    fun mode(platform: AppPlatform): DjMode {
+        val prefs = platform.prefs(PREFS)
+        return when (prefs.getString(KEY_MODE) ?: "heuristic") {
             "api" -> DjMode.API
             "local" -> DjMode.LOCAL
             else -> DjMode.HEURISTIC
         }
     }
 
-    fun apiBaseUrl(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_API_BASE_URL, DEFAULT_API_BASE_URL)?.ifBlank { DEFAULT_API_BASE_URL }
-            ?: DEFAULT_API_BASE_URL
+    fun apiBaseUrl(platform: AppPlatform): String {
+        val prefs = platform.prefs(PREFS)
+        return (prefs.getString(KEY_API_BASE_URL) ?: DEFAULT_API_BASE_URL).ifBlank { DEFAULT_API_BASE_URL }
     }
 
-    fun apiModel(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_API_MODEL, DEFAULT_API_MODEL)?.ifBlank { DEFAULT_API_MODEL }
-            ?: DEFAULT_API_MODEL
+    fun apiModel(platform: AppPlatform): String {
+        val prefs = platform.prefs(PREFS)
+        return (prefs.getString(KEY_API_MODEL) ?: DEFAULT_API_MODEL).ifBlank { DEFAULT_API_MODEL }
     }
 
     /** Optional API key; empty string => no authentication (keyless endpoint). */
-    fun apiKey(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_API_KEY, "") ?: ""
-    }
+    fun apiKey(platform: AppPlatform): String = platform.prefs(PREFS).getString(KEY_API_KEY) ?: ""
 
     // ── Voice (spoken DJ) ─────────────────────────────────────────────────────────────
     const val KEY_VOICE_ENABLED = "dj_voice_enabled"       // the DJ speaks the intros/transitions
@@ -98,38 +92,38 @@ object DjSettings {
     // ── Autonomous mode (automix by moods, one-button) ────────────────────────────────────
     const val KEY_AUTO_SOURCE = "dj_auto_source"           // "favorites" | "balanced" | "discover"
 
-    fun voiceEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_VOICE_ENABLED, true)
+    fun voiceEnabled(platform: AppPlatform): Boolean =
+        platform.prefs(PREFS).getBoolean(KEY_VOICE_ENABLED, true)
 
     /** Voice language code (e.g. "es", "en"); blank ⇒ use the app / system language. */
-    fun voiceLanguage(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_LANG, "") ?: ""
+    fun voiceLanguage(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_VOICE_LANG) ?: ""
 
-    fun voiceCloudUrl(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_URL, "") ?: ""
+    fun voiceCloudUrl(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_VOICE_CLOUD_URL) ?: ""
 
-    fun voiceCloudKey(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_KEY, "") ?: ""
+    fun voiceCloudKey(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_VOICE_CLOUD_KEY) ?: ""
 
-    fun voiceCloudVoice(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_CLOUD_VOICE, "alloy") ?: "alloy"
+    fun voiceCloudVoice(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_VOICE_CLOUD_VOICE) ?: "alloy"
 
     /** Specific native voice (Voice.name); blank ⇒ whichever Android picks for the language. */
-    fun voiceNativeName(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VOICE_NATIVE_NAME, "") ?: ""
+    fun voiceNativeName(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_VOICE_NATIVE_NAME) ?: ""
 
     /**
      * Effective voice engine. If the user never chose one explicitly, we derive it: if a cloud
      * endpoint is configured ⇒ "openai", otherwise ⇒ "native".
      */
-    fun ttsEngine(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val explicit = prefs.getString(KEY_TTS_ENGINE, "") ?: ""
+    fun ttsEngine(platform: AppPlatform): String {
+        val prefs = platform.prefs(PREFS)
+        val explicit = prefs.getString(KEY_TTS_ENGINE) ?: ""
         if (explicit.isNotBlank()) return explicit
-        return if ((prefs.getString(KEY_VOICE_CLOUD_URL, "") ?: "").isNotBlank()) "openai" else "native"
+        return if ((prefs.getString(KEY_VOICE_CLOUD_URL) ?: "").isNotBlank()) "openai" else "native"
     }
 
     /** favorites = favorites only · balanced = favorites + some suggestions · discover = mostly suggestions. */
-    fun autoSource(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_AUTO_SOURCE, "balanced") ?: "balanced"
+    fun autoSource(platform: AppPlatform): String =
+        platform.prefs(PREFS).getString(KEY_AUTO_SOURCE) ?: "balanced"
 }

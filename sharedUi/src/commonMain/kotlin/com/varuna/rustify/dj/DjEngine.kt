@@ -1,8 +1,8 @@
 package com.varuna.rustify.dj
 
-import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.AppPlatform
 
 /**
  * DJ engine. Orchestrates the full flow:
@@ -12,12 +12,16 @@ import com.varuna.rustify.bridge.SpotifyRepository
  *     artists/tracks/queries + radio of the best seed), deduplicates, and spreads by artist for
  *     smooth transitions.
  *
- * Does not touch AudioPlayerService: it returns the result and the caller (DjScreen) enqueues with
- * the public `loadPlaylist` / `enqueueAll` methods.
+ * Does not touch the player: it returns the result and the caller (DjScreen) enqueues with the
+ * public `loadPlaylist` / `enqueueAll` methods.
+ *
+ * [localProvider] is the platform's "local" mode (`AppServices.localDjProvider`: Gemini Nano on
+ * Android).
  */
 class DjEngine(
-    private val context: Context,
-    private val repo: SpotifyRepository
+    private val platform: AppPlatform,
+    private val repo: SpotifyRepository,
+    private val localProvider: () -> DjProvider
 ) {
     data class Result(val intro: String, val tracks: List<FullTrack>)
 
@@ -30,7 +34,7 @@ class DjEngine(
         queue: List<FullTrack>,
         targetCount: Int = 30
     ): Result {
-        val djContext = DjContextBuilder.build(context, nowPlaying, queue)
+        val djContext = DjContextBuilder.build(platform, nowPlaying, queue)
         val provider = providerFor()
         val plan = provider.plan(djContext, request)
 
@@ -49,13 +53,13 @@ class DjEngine(
         return Result(intro = plan.intro, tracks = ordered)
     }
 
-    private fun providerFor(): DjProvider = when (DjSettings.mode(context)) {
+    private fun providerFor(): DjProvider = when (DjSettings.mode(platform)) {
         DjMode.HEURISTIC -> HeuristicDjProvider()
-        DjMode.LOCAL -> LocalDjProvider()
+        DjMode.LOCAL -> localProvider()
         DjMode.API -> ApiDjProvider(
-            baseUrl = DjSettings.apiBaseUrl(context),
-            model = DjSettings.apiModel(context),
-            apiKey = DjSettings.apiKey(context)
+            baseUrl = DjSettings.apiBaseUrl(platform),
+            model = DjSettings.apiModel(platform),
+            apiKey = DjSettings.apiKey(platform)
         )
     }
 

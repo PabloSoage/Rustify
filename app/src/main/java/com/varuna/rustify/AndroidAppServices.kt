@@ -73,7 +73,23 @@ class AndroidAppServices(context: Context) : AppServices {
     @Composable
     override fun djActive(): Boolean = DjAutoController.state.collectAsState().value != null
 
-    override fun djNext() = DjAutoController.next(app)
+    override fun djNext() = DjAutoController.next()
+
+    override val djVoice: com.varuna.rustify.dj.DjVoiceOutput = com.varuna.rustify.dj.AndroidDjVoice(app)
+
+    override fun localDjProvider(): com.varuna.rustify.dj.DjProvider = com.varuna.rustify.dj.LocalDjProvider()
+
+    // Gemini Nano, loaded while the user is still choosing: 12.5 s cold against 6.9 s warm, measured on
+    // a POCO F8 Ultra.
+    override suspend fun warmUpLocalDj() {
+        com.varuna.rustify.dj.OnDeviceModel.init(app)
+        if (com.varuna.rustify.dj.OnDeviceModel.refresh() == com.varuna.rustify.dj.OnDeviceModel.Status.READY) {
+            com.varuna.rustify.dj.OnDeviceModel.warmup()
+        }
+    }
+
+    @Composable
+    override fun rememberDjListener(): com.varuna.rustify.dj.DjListener = com.varuna.rustify.dj.rememberAndroidDjListener()
 
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.LogCapture
 }

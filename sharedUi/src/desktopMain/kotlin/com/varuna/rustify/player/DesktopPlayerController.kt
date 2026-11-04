@@ -201,6 +201,19 @@ class DesktopPlayerController(
         forgetShuffle()
     }
 
+    // The DJ's blocks are the whole of what follows the song playing (the phone's, without its
+    // separate queue of songs added by hand, which the desktop does not keep apart yet).
+    override fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>) {
+        if (tracks.isEmpty()) return
+        val ui = player.ui.value
+        if (ui.current == null || ui.index !in ui.queue.indices) {
+            loadPlaylist(tracks, 0)
+            return
+        }
+        player.editQueue(ui.queue.subList(0, ui.index + 1) + tracks, ui.index)
+        forgetShuffle()
+    }
+
     // The core keeps the alternative and resolves through it; the desktop has no other per-track cache.
     override fun chooseRecording(trackId: String, youtubeId: String) {
         com.varuna.rustify.bridge.NativeEngine.setAlternativeTrackNative(trackId, youtubeId)

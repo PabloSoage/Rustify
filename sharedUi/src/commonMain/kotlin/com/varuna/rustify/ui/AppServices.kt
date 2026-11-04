@@ -74,6 +74,19 @@ interface AppServices {
     /** Asks the running DJ for the next mood. */
     fun djNext()
 
+    /** The DJ's voice, one for the process (Android: TextToSpeech and the cloud voices). */
+    val djVoice: com.varuna.rustify.dj.DjVoiceOutput
+
+    /** The provider behind the DJ's "local" mode (Android: Gemini Nano, on the phone's NPU). */
+    fun localDjProvider(): com.varuna.rustify.dj.DjProvider
+
+    /** Gets the local mode's model ready while the DJ screen is open, so the first answer is not the slow one. */
+    suspend fun warmUpLocalDj()
+
+    /** The microphone, for a spoken request to the DJ; remembered by the screen that listens. */
+    @Composable
+    fun rememberDjListener(): com.varuna.rustify.dj.DjListener
+
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 

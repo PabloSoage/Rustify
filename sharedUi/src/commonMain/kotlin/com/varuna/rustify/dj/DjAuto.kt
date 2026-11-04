@@ -1,17 +1,23 @@
 package com.varuna.rustify.dj
 
-import android.annotation.SuppressLint
-import android.content.Context
-import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
-import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.player.PlayerController
+import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.resources.Res
+import com.varuna.rustify.ui.resources.dj_mood_chill
+import com.varuna.rustify.ui.resources.dj_mood_energetic
+import com.varuna.rustify.ui.resources.dj_mood_focus
+import com.varuna.rustify.ui.resources.dj_mood_happy
+import com.varuna.rustify.ui.resources.dj_mood_melancholic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * A mood of the autonomous DJ: a vibe with its search query (English keywords, which match best on
@@ -20,18 +26,19 @@ import kotlinx.coroutines.launch
 data class DjMood(
     val id: String,
     val query: String,
-    val labelRes: Int
+    val labelRes: StringResource
 ) {
-    fun label(context: Context): String = context.getString(labelRes)
+    /** In the interface's language. */
+    suspend fun label(): String = appString(labelRes)
 }
 
 object DjMoods {
     val MOODS: List<DjMood> = listOf(
-        DjMood("chill", "chill relax calm lofi", R.string.dj_mood_chill),
-        DjMood("energetic", "energetic upbeat dance workout", R.string.dj_mood_energetic),
-        DjMood("happy", "happy feel good upbeat", R.string.dj_mood_happy),
-        DjMood("focus", "focus study instrumental concentration", R.string.dj_mood_focus),
-        DjMood("melancholic", "melancholic sad emotional", R.string.dj_mood_melancholic),
+        DjMood("chill", "chill relax calm lofi", Res.string.dj_mood_chill),
+        DjMood("energetic", "energetic upbeat dance workout", Res.string.dj_mood_energetic),
+        DjMood("happy", "happy feel good upbeat", Res.string.dj_mood_happy),
+        DjMood("focus", "focus study instrumental concentration", Res.string.dj_mood_focus),
+        DjMood("melancholic", "melancholic sad emotional", Res.string.dj_mood_melancholic),
     )
 }
 
@@ -41,7 +48,8 @@ object DjMoods {
  * (button or the DJ icon on the Track screen) it changes mood.
  *
  * Singleton: keeps the session alive so the player icon can advance without re-creating anything.
- * Enqueues via [AudioPlayerService] (public methods) without modifying it.
+ * Enqueues through the [PlayerController] it is started with, and speaks through the platform's
+ * [DjVoiceOutput].
  *
  * Robustness:
  *  - Immediate feedback: `State.preparing` is set as soon as you press, so the UI shows a spinner and
@@ -68,9 +76,11 @@ object DjAutoController {
     private var moodIndex = 0
     private var moodOrder: List<Int> = DjMoods.MOODS.indices.toList()
     private var favoritesProvider: (suspend () -> List<FullTrack>)? = null
-    // SpotifyRepository only retains the applicationContext (see appCtx), not an Activity → no real leak.
-    @SuppressLint("StaticFieldLeak")
     private var repoRef: SpotifyRepository? = null
+    // The app's own objects, one each for the process: what the session reads, plays and speaks with.
+    private var platformRef: AppPlatform? = null
+    private var playerRef: PlayerController? = null
+    private var voiceRef: DjVoiceOutput? = null
     private var observerJob: kotlinx.coroutines.Job? = null
     private var segmentJob: kotlinx.coroutines.Job? = null
     private var advanceGuardId: String? = null
@@ -79,18 +89,27 @@ object DjAutoController {
 
     val isActive: Boolean get() = _state.value != null
 
-    fun start(context: Context, repo: SpotifyRepository, favoritesProvider: suspend () -> List<FullTrack>) {
+    fun start(
+        platform: AppPlatform,
+        player: PlayerController,
+        voice: DjVoiceOutput,
+        repo: SpotifyRepository,
+        favoritesProvider: suspend () -> List<FullTrack>
+    ) {
         // Already active → ignore the re-press (avoids restarting the session and a second voice).
         if (isActive) return
+        this.platformRef = platform
+        this.playerRef = player
+        this.voiceRef = voice
         this.repoRef = repo
         this.favoritesProvider = favoritesProvider
         // Shuffle the initial mood + rotation order: it does not always start on "chill".
         this.moodOrder = DjMoods.MOODS.indices.shuffled()
         this.moodIndex = 0
         this.recentTrackIds.clear()
-        DjVoice.init(context)
-        runSegment(context.applicationContext, first = true)
-        startObserver(context.applicationContext)
+        voice.init()
+        runSegment(first = true)
+        startObserver(player)
     }
 
     /**
@@ -98,12 +117,11 @@ object DjAutoController {
      * automatically (without the user pressing anything). It does not advance while a block is being
      * prepared/built (avoids overlaps).
      */
-    private fun startObserver(context: Context) {
+    private fun startObserver(player: PlayerController) {
         observerJob?.cancel()
         advanceGuardId = null
         observerJob = scope.launch {
-            val svc = AudioPlayerService.getInstance(context)
-            svc.state.collect { st ->
+            player.state.collect { st ->
                 val cs = _state.value ?: return@collect
                 if (cs.preparing || segmentJob?.isActive == true) return@collect
                 val cur = st.currentTrack ?: return@collect
@@ -113,17 +131,17 @@ object DjAutoController {
                 if (isLast && nearEnd && cur.id != advanceGuardId) {
                     advanceGuardId = cur.id
                     moodIndex++
-                    runSegment(context, first = false)
+                    runSegment(first = false)
                 }
             }
         }
     }
 
     /** Advances to the next mood ("change mood" button / DJ icon on Track). */
-    fun next(context: Context) {
+    fun next() {
         if (!isActive) return
         moodIndex++
-        runSegment(context.applicationContext, first = false)
+        runSegment(first = false)
     }
 
     fun stop() {
@@ -131,11 +149,13 @@ object DjAutoController {
         observerJob?.cancel(); observerJob = null
         advanceGuardId = null
         _state.value = null
-        DjVoice.stop()
+        voiceRef?.stop()
     }
 
-    private fun runSegment(context: Context, first: Boolean) {
+    private fun runSegment(first: Boolean) {
         val repo = repoRef ?: return
+        val platform = platformRef ?: return
+        val svc = playerRef ?: return
         // Single-flight: cancel any build in progress; only the latest request counts.
         segmentJob?.cancel()
         // Immediate (synchronous) feedback: the UI sees `preparing` before the async work starts.
@@ -144,30 +164,29 @@ object DjAutoController {
         if (moodIndex > 0 && moodIndex % moodOrder.size == 0) moodOrder = DjMoods.MOODS.indices.shuffled()
         val mood = DjMoods.MOODS[moodOrder[moodIndex % moodOrder.size]]
         segmentJob = scope.launch {
-            val tracks = buildSegment(context, repo, mood)
+            val tracks = buildSegment(platform, repo, mood)
             if (tracks.isEmpty()) {
                 // Nothing to play: if this was the start, release the session (the button returns to
                 // "Start"); if it was an advance, just drop the spinner and keep the current block.
                 if (first) stop() else _state.value = _state.value?.copy(preparing = false)
                 return@launch
             }
-            val svc = AudioPlayerService.getInstance(context)
             // `first` starts the session from scratch. On advances (mood change or auto-advance) we
             // replace the pending block after the current track instead of stacking it on top of the
             // previous one; otherwise the old mood's songs would linger in the queue.
             if (first) svc.loadPlaylist(tracks, 0) else svc.replaceAutoQueueAfterCurrent(tracks)
             recentTrackIds.addAll(tracks.mapNotNull { it.id })
             while (recentTrackIds.size > 60) recentTrackIds.removeFirst()
-            _state.value = State(mood.id, mood.label(context), moodIndex + 1, preparing = false)
+            _state.value = State(mood.id, mood.label(), moodIndex + 1, preparing = false)
             // Spoken text uses the VOICE language (separate from app language), from DjPhrases.
-            val phrase = DjPhrases.announce(DjSettings.voiceLanguage(context), mood.id, first)
-            DjVoice.speak(context, phrase)
+            val phrase = DjPhrases.announce(DjSettings.voiceLanguage(platform), mood.id, first)
+            voiceRef?.speak(phrase)
         }
     }
 
-    private suspend fun buildSegment(context: Context, repo: SpotifyRepository, mood: DjMood): List<FullTrack> {
+    private suspend fun buildSegment(platform: AppPlatform, repo: SpotifyRepository, mood: DjMood): List<FullTrack> {
         val size = 5
-        val source = DjSettings.autoSource(context)
+        val source = DjSettings.autoSource(platform)
         val favs = runCatching { favoritesProvider?.invoke() ?: emptyList() }.getOrDefault(emptyList())
         // Shuffle the suggestions so we do not always serve Spotify's first results.
         val suggestions = runCatching { repo.searchTracks(mood.query, limit = 20).items }

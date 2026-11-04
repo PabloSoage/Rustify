@@ -35,7 +35,6 @@ import com.varuna.rustify.player.AudioPlayerService
 import com.varuna.rustify.ui.AppShell
 import com.varuna.rustify.ui.ShellHost
 import com.varuna.rustify.ui.SpotifyLoginWebView
-import com.varuna.rustify.ui.screens.DjScreen
 import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.SettingsSlot
 import com.varuna.rustify.ui.screens.AndroidSettingsActions
@@ -241,17 +240,6 @@ class AndroidAppShell(context: Context) : AppShell {
             }
             is Screen.AudioLab -> {
                 com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { host.back() })
-            }
-            is Screen.Dj -> {
-                DjScreen(
-                    spotifyRepo = host.spotifyRepo,
-                    nowPlaying = currentTrack,
-                    queue = playerState.queue,
-                    onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                    onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
-                    onBack = { host.back() },
-                    onOpenSettings = { host.navigate(Screen.Settings) }
-                )
             }
             is Screen.Travel -> {
                 TravelScreen(

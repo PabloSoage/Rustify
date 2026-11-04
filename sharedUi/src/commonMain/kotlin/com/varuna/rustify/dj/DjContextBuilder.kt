@@ -1,8 +1,8 @@
 package com.varuna.rustify.dj
 
-import android.content.Context
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.metrics.ListeningTracker
+import com.varuna.rustify.ui.AppPlatform
 
 /**
  * Builds the [DjContext] from signals that already exist, read-only:
@@ -14,13 +14,13 @@ import com.varuna.rustify.metrics.ListeningTracker
 object DjContextBuilder {
 
     suspend fun build(
-        context: Context,
+        platform: AppPlatform,
         nowPlaying: FullTrack?,
         queue: List<FullTrack>,
         topN: Int = 10
     ): DjContext {
         val stats = runCatching {
-            ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), 0L, System.currentTimeMillis() + 1)
+            ListeningTracker.stats(platform, 0L, System.currentTimeMillis() + 1)
         }.getOrNull()
 
         val topArtists = stats?.topArtists.orEmpty().map { it.name }.filter { it.isNotBlank() }.take(topN)

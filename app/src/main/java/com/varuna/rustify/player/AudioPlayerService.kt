@@ -3422,7 +3422,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * `userQueue` because, in DJ mode, those items were exactly the automatically enqueued segments
      * (not a manual user queue).
      */
-    fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>) {
+    override fun replaceAutoQueueAfterCurrent(tracks: List<FullTrack>) {
         if (tracks.isEmpty()) return
         val st = _state.value
         val current = st.currentTrack

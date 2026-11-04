@@ -114,6 +114,9 @@ fun NanoChatScreen(
     onControl: (ChatAction) -> Unit,
 ) {
     val context = LocalContext.current
+    // The DJ's engine reads its settings and its local mode through these, as the DJ screen does.
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val services = com.varuna.rustify.ui.LocalAppServices.current
     val scope = rememberCoroutineScope()
     val green = Color(0xFF1DB954)
     val status by OnDeviceModel.status.collectAsState()
@@ -161,7 +164,7 @@ fun NanoChatScreen(
                 else String.format(doneStrings.results, action.query) to found
             }
             is ChatAction.Dj -> {
-                val result = DjEngine(context, spotifyRepo).run(request = action.request, nowPlaying = nowPlaying, queue = queue)
+                val result = DjEngine(platform, spotifyRepo) { services.localDjProvider() }.run(request = action.request, nowPlaying = nowPlaying, queue = queue)
                 if (result.tracks.isEmpty()) String.format(doneStrings.notFound, action.request) to emptyList()
                 else {
                     onPlayTracks(result.tracks)

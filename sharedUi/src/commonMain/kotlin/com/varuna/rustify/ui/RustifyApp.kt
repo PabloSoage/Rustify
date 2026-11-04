@@ -846,8 +846,21 @@ fun RustifyApp(
                 }
                 // Not moved yet (docs serie-4.x/27): the platform draws them.
                 is Screen.WebPlayer, is Screen.CustomDownload,
-                is Screen.NanoChat, is Screen.AudioLab, is Screen.Dj, is Screen.Travel,
+                is Screen.NanoChat, is Screen.AudioLab, is Screen.Travel,
                 is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
+                is Screen.Dj -> {
+                    // currentTrack and playerState are read through their State, so the DJ sees the
+                    // song and queue of the moment it is asked, not of when the screen opened.
+                    com.varuna.rustify.ui.screens.DjScreen(
+                        spotifyRepo = spotifyRepo,
+                        nowPlaying = currentTrack,
+                        queue = playerState.queue,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
+                        onBack = { host.back() },
+                        onOpenSettings = { navigationStack.add(Screen.Settings) }
+                    )
+                }
                 is Screen.Settings -> com.varuna.rustify.ui.screens.SettingsScreen(shell, host)
                 is Screen.MatchEditor -> {
                     com.varuna.rustify.ui.screens.MatchEditorScreen(
