@@ -1,10 +1,10 @@
+// shared/src/commonMain/kotlin/com/varuna/rustify/bridge/AddonRepository.kt
 package com.varuna.rustify.bridge
 
-import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import com.varuna.rustify.platform.Log
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * One installed audio backend, as the core stored it.
@@ -31,8 +31,8 @@ data class InstalledAddon(
     fun handlesKind(kind: String): Boolean = trackKinds.isEmpty() || kind in trackKinds
 
     companion object {
-        fun fromJson(json: JSONObject): InstalledAddon? = runCatching {
-            val manifest = json.optJSONObject("manifest") ?: return null
+        fun fromJson(json: JsonObject): InstalledAddon? = runCatching {
+            val manifest = json.optObject("manifest") ?: return null
             InstalledAddon(
                 id = manifest.optString("id").ifBlank { return null },
                 name = manifest.optString("name").ifBlank { return null },
@@ -40,14 +40,14 @@ data class InstalledAddon(
                 description = manifest.optString("description").takeIf { it.isNotBlank() },
                 baseUrl = json.optString("base_url"),
                 enabled = json.optBoolean("enabled", true),
-                resources = manifest.optJSONArray("resources").toStringSet(),
-                trackKinds = manifest.optJSONArray("trackKinds").toStringSet()
+                resources = manifest.optArray("resources").toStringSet(),
+                trackKinds = manifest.optArray("trackKinds").toStringSet()
             )
         }.getOrNull()
 
-        private fun JSONArray?.toStringSet(): Set<String> {
+        private fun JsonArray?.toStringSet(): Set<String> {
             if (this == null) return emptySet()
-            return (0 until length()).mapNotNull { optString(it).takeIf(String::isNotBlank) }.toSet()
+            return indices.mapNotNull { optString(it).takeIf(String::isNotBlank) }.toSet()
         }
     }
 }
@@ -55,28 +55,29 @@ data class InstalledAddon(
 /**
  * Installing, listing and ordering audio backends.
  *
- * All of it crosses JNI, and **a JNI call blocks the thread that makes it**, so every function here
- * is `suspend` and dispatches to IO. That is not politeness: it is the shape of the bug tracked as
- * point N in `docs/stremio-core/PLAN-3.x.md`, where a blocking native call on the main thread
- * becomes an ANR the moment the connection is slow. Installing an addon fetches a manifest from the
- * internet, so it is the last place to get that wrong.
+ * All of it crosses into the core, and **a call into the core blocks the thread that makes it**, so
+ * every function here is `suspend` over [NativeEngine]'s suspending calls, which move themselves off
+ * the calling thread. That is not politeness: it is the shape of the bug tracked as point N in
+ * `docs/stremio-core/PLAN-3.x.md`, where a blocking native call on the main thread becomes an ANR the
+ * moment the connection is slow. Installing an addon fetches a manifest from the internet, so it is
+ * the last place to get that wrong.
  */
 object AddonRepository {
 
     private const val TAG = "AddonRepository"
 
     /** Installed backends, in the order they are tried. */
-    suspend fun list(): List<InstalledAddon> = withContext(Dispatchers.IO) {
+    suspend fun list(): List<InstalledAddon> =
         runCatching {
-            val array = JSONArray(NativeEngine.listAddons())
-            (0 until array.length()).mapNotNull { i ->
-                array.optJSONObject(i)?.let(InstalledAddon::fromJson)
+            val raw = NativeEngine.listAddons()
+            val array = parseJsonArray(raw) ?: error("not a JSON array: ${raw.take(200)}")
+            array.indices.mapNotNull { i ->
+                array.optObject(i)?.let(InstalledAddon::fromJson)
             }
         }.getOrElse {
             Log.e(TAG, "could not read the installed addons", it)
             emptyList()
         }
-    }
 
     /**
      * Installs the addon served at [url].
@@ -85,35 +86,32 @@ object AddonRepository {
      * credentials in the URL, a size-capped manifest, and a name that cannot lie about its shape.
      * A failure here means it was refused, and the message says why.
      */
-    suspend fun install(url: String): Result<InstalledAddon> = withContext(Dispatchers.IO) {
+    suspend fun install(url: String): Result<InstalledAddon> =
         runCatching {
-            val json = JSONObject(NativeEngine.installAddon(url.trim()))
-            if (json.has("success") && !json.optBoolean("success")) {
+            val raw = NativeEngine.installAddon(url.trim())
+            val json = parseJsonObject(raw) ?: error("not a JSON object: ${raw.take(200)}")
+            if (json.containsKey("success") && !json.optBoolean("success")) {
                 error(json.optString("error", "the addon was refused"))
             }
             InstalledAddon.fromJson(json) ?: error("the core returned an addon it could not describe")
         }
-    }
 
-    suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun uninstall(id: String): Result<Unit> =
         runCatching { checkOk(NativeEngine.uninstallAddon(id)) }
-    }
 
-    suspend fun setEnabled(id: String, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun setEnabled(id: String, enabled: Boolean): Result<Unit> =
         runCatching { checkOk(NativeEngine.setAddonEnabled(id, enabled)) }
-    }
 
     /** Reorders the fallback chain. Ids not named keep their relative order at the end. */
-    suspend fun reorder(ids: List<String>): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun reorder(ids: List<String>): Result<Unit> =
         runCatching {
-            val array = JSONArray().also { a -> ids.forEach { a.put(it) } }
+            val array = JsonArray(ids.map { JsonPrimitive(it) })
             checkOk(NativeEngine.reorderAddons(array.toString()))
         }
-    }
 
     private fun checkOk(raw: String) {
-        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
-        if (json.has("success") && !json.optBoolean("success")) {
+        val json = parseJsonObject(raw) ?: return
+        if (json.containsKey("success") && !json.optBoolean("success")) {
             error(json.optString("error", "the core refused the change"))
         }
     }

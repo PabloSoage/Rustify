@@ -144,13 +144,15 @@ import java.io.File
 internal fun InvidiousBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
+    val env = remember { com.varuna.rustify.audio.AudioSourceRegistry.environment ?: com.varuna.rustify.audio.AndroidAudioSources.environment(context) }
+    val store = env.settings
     val inv = com.varuna.rustify.audio.InvidiousSettings
-    var mode by remember { mutableStateOf(inv.mode(context)) }
-    var fixed by remember { mutableStateOf(inv.fixedInstance(context)) }
-    var torOn by remember { mutableStateOf(inv.torEnabled(context)) }
-    var anonOn by remember { mutableStateOf(inv.allowAnonNetworks(context)) }
+    var mode by remember { mutableStateOf(inv.mode(store)) }
+    var fixed by remember { mutableStateOf(inv.fixedInstance(store)) }
+    var torOn by remember { mutableStateOf(inv.torEnabled(store)) }
+    var anonOn by remember { mutableStateOf(inv.allowAnonNetworks(store)) }
     var custom by remember { mutableStateOf("") }
-    var customList by remember { mutableStateOf(inv.customInstances(context)) }
+    var customList by remember { mutableStateOf(inv.customInstances(store)) }
     var instances by remember { mutableStateOf<List<com.varuna.rustify.audio.InvidiousInstances.Instance>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var pings by remember { mutableStateOf(mapOf<String, Boolean?>()) }
@@ -161,7 +163,7 @@ internal fun InvidiousBackendSection(context: Context) {
     fun refresh(force: Boolean) {
         loading = true
         scope.launch(Dispatchers.IO) {
-            val list = com.varuna.rustify.audio.InvidiousInstances.list(context, force).take(15)
+            val list = com.varuna.rustify.audio.InvidiousInstances.list(env, force).take(15)
             withContext(Dispatchers.Main) { instances = list; loading = false }
         }
     }
@@ -175,14 +177,14 @@ internal fun InvidiousBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
                 listOf("auto" to stringResource(R.string.inv_mode_auto), "fixed" to stringResource(R.string.inv_mode_fixed)).forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { mode = code; inv.setMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { mode = code; inv.setMode(store, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = mode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
             if (mode == "fixed") {
-                OutlinedTextField(value = fixed, onValueChange = { fixed = it; inv.setFixedInstance(context, it) },
+                OutlinedTextField(value = fixed, onValueChange = { fixed = it; inv.setFixedInstance(store, it) },
                     label = { Text(stringResource(R.string.inv_fixed_url_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -202,7 +204,7 @@ internal fun InvidiousBackendSection(context: Context) {
                             Text(healthText + anonText, color = Color.Gray, fontSize = 10.sp)
                         }
                         Text(when { pings.containsKey(inst.baseUrl) && pings[inst.baseUrl] == null -> "⏳"; pings[inst.baseUrl] == true -> "✅"; pings[inst.baseUrl] == false -> "❌"; else -> "" }, fontSize = 12.sp)
-                        TextButton(onClick = { scope.launch { pings = pings + (inst.baseUrl to null); val ok = com.varuna.rustify.audio.InvidiousInstances.probe(context, inst); pings = pings + (inst.baseUrl to ok) } }) {
+                        TextButton(onClick = { scope.launch { pings = pings + (inst.baseUrl to null); val ok = com.varuna.rustify.audio.InvidiousInstances.probe(env, inst); pings = pings + (inst.baseUrl to ok) } }) {
                             Text(stringResource(R.string.inv_test), color = green, fontSize = 11.sp)
                         }
                     }
@@ -211,12 +213,12 @@ internal fun InvidiousBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = custom, onValueChange = { custom = it }, label = { Text(stringResource(R.string.inv_add_custom_label)) }, singleLine = true, modifier = Modifier.weight(1f), colors = backendFieldColors())
-                TextButton(onClick = { if (custom.isNotBlank()) { inv.addCustomInstance(context, custom); customList = inv.customInstances(context); custom = "" } }) { Text(stringResource(R.string.inv_add), color = green) }
+                TextButton(onClick = { if (custom.isNotBlank()) { inv.addCustomInstance(store, custom); customList = inv.customInstances(store); custom = "" } }) { Text(stringResource(R.string.inv_add), color = green) }
             }
             customList.forEach { c ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(c, color = Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                    TextButton(onClick = { inv.removeCustomInstance(context, c); customList = inv.customInstances(context) }) { Text(stringResource(R.string.inv_remove), color = Color(0xFFCC3333), fontSize = 11.sp) }
+                    TextButton(onClick = { inv.removeCustomInstance(store, c); customList = inv.customInstances(store) }) { Text(stringResource(R.string.inv_remove), color = Color(0xFFCC3333), fontSize = 11.sp) }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -225,11 +227,11 @@ internal fun InvidiousBackendSection(context: Context) {
                     Text(stringResource(R.string.inv_allow_anon), color = Color.White, fontSize = 13.sp)
                     Text(stringResource(R.string.inv_allow_anon_desc), color = Color.Gray, fontSize = 11.sp)
                 }
-                Switch(checked = anonOn, onCheckedChange = { anonOn = it; inv.setAllowAnonNetworks(context, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
+                Switch(checked = anonOn, onCheckedChange = { anonOn = it; inv.setAllowAnonNetworks(store, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.inv_tor_route), color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(checked = torOn, onCheckedChange = { torOn = it; inv.setTorEnabled(context, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
+                Switch(checked = torOn, onCheckedChange = { torOn = it; inv.setTorEnabled(store, it) }, colors = com.varuna.rustify.ui.theme.RustifySwitch.colors())
             }
 
             // Test playback of the current track via Invidious (resolves like the real backend).
@@ -242,7 +244,7 @@ internal fun InvidiousBackendSection(context: Context) {
                 scope.launch(Dispatchers.IO) {
                     val track = com.varuna.rustify.player.AudioPlayerService.instance?.state?.value?.currentTrack
                     if (track == null) { withContext(Dispatchers.Main) { invTpStatus = invNoTrack; invTpBusy = false }; return@launch }
-                    val r = com.varuna.rustify.audio.InvidiousAudioSource(context).resolveStreamUrl(track, null)
+                    val r = com.varuna.rustify.audio.InvidiousAudioSource(env).resolveStreamUrl(track, null)
                     withContext(Dispatchers.Main) {
                         invTpStatus = r.fold(onSuccess = { invOkFmt.format("stream ✓") }, onFailure = { invFailFmt.format(it.message ?: "error") })
                         invTpBusy = false
@@ -260,11 +262,12 @@ internal fun InvidiousBackendSection(context: Context) {
 internal fun DeezerBackendSection(context: Context) {
     val green = Color(0xFF1DB954)
     val scope = rememberCoroutineScope()
+    val store = remember { com.varuna.rustify.audio.AndroidAudioSources.settings(context) }
     val dz = com.varuna.rustify.audio.DeezerSettings
-    var arlMode by remember { mutableStateOf(dz.arlMode(context)) }
-    var arl by remember { mutableStateOf(dz.arl(context)) }
-    var source by remember { mutableStateOf(dz.sourceUrl(context)) }
-    var quality by remember { mutableStateOf(dz.quality(context)) }
+    var arlMode by remember { mutableStateOf(dz.arlMode(store)) }
+    var arl by remember { mutableStateOf(dz.arl(store)) }
+    var source by remember { mutableStateOf(dz.sourceUrl(store)) }
+    var quality by remember { mutableStateOf(dz.quality(store)) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     // ARL source tester: lists the ARLs from the web, tests each one (✅/❌), and lets the user pick which to use.
@@ -272,7 +275,7 @@ internal fun DeezerBackendSection(context: Context) {
     // arl -> ArlCheck (tested) or null (testing). Absent key = not yet tested.
     var entryStatus by remember { mutableStateOf(mapOf<String, com.varuna.rustify.audio.DeezerClient.ArlCheck?>()) }
     var fetchedAt by remember { mutableLongStateOf(0L) }
-    var workingArl by remember { mutableStateOf(dz.workingArl(context)) }
+    var workingArl by remember { mutableStateOf(dz.workingArl(store)) }
     // End-to-end playback tester (auth + match + get_url) without changing the backend order.
     var tpStatus by remember { mutableStateOf("") }
     var tpBusy by remember { mutableStateOf(false) }
@@ -291,7 +294,7 @@ internal fun DeezerBackendSection(context: Context) {
     LaunchedEffect(arlMode) {
         if (arlMode == "source" && source.isNotBlank() && entries.isEmpty() && !busy) {
             busy = true; status = ""
-            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
+            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(source.trim())
             entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
             status = if (res.entries.isEmpty()) (res.error?.let { "$noArlsMsg ($it)" } ?: noArlsMsg) else ""
         }
@@ -305,31 +308,31 @@ internal fun DeezerBackendSection(context: Context) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
                 listOf("single" to stringResource(R.string.dz_mode_single), "source" to stringResource(R.string.dz_mode_source)).forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { arlMode = code; dz.setArlMode(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { arlMode = code; dz.setArlMode(store, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = arlMode == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
             if (arlMode == "single") {
-                OutlinedTextField(value = arl, onValueChange = { arl = it; dz.setArl(context, it) }, label = { Text(stringResource(R.string.dz_arl_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                OutlinedTextField(value = arl, onValueChange = { arl = it; dz.setArl(store, it) }, label = { Text(stringResource(R.string.dz_arl_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
                 TextButton(onClick = {
                     busy = true; status = ""
                     scope.launch(Dispatchers.IO) {
                         val ok = com.varuna.rustify.audio.DeezerClient().testArl(arl.trim())
-                        if (ok) { dz.setWorkingArl(context, arl.trim()) }
-                        withContext(Dispatchers.Main) { status = if (ok) validMsg else invalidMsg; busy = false; workingArl = dz.workingArl(context) }
+                        if (ok) { dz.setWorkingArl(store, arl.trim()) }
+                        withContext(Dispatchers.Main) { status = if (ok) validMsg else invalidMsg; busy = false; workingArl = dz.workingArl(store) }
                     }
                 }, enabled = !busy) { Text(stringResource(R.string.dz_test_arl), color = green) }
             } else {
-                OutlinedTextField(value = source, onValueChange = { source = it; dz.setSourceUrl(context, it) }, label = { Text(stringResource(R.string.dz_source_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
+                OutlinedTextField(value = source, onValueChange = { source = it; dz.setSourceUrl(store, it) }, label = { Text(stringResource(R.string.dz_source_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = backendFieldColors())
                 Spacer(Modifier.height(8.dp))
                 // A filled button so it clearly reads as a button and users recognize it as tappable.
                 Button(
                     onClick = {
                         busy = true; status = ""; entryStatus = emptyMap()
                         scope.launch(Dispatchers.IO) {
-                            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(context, source.trim())
+                            val res = com.varuna.rustify.audio.DeezerArl.fetchDetailed(source.trim())
                             withContext(Dispatchers.Main) {
                                 entries = res.entries; fetchedAt = System.currentTimeMillis(); busy = false
                                 // Shows the actual failure reason (HTTP 403 / timeout / 0 ARLs, etc.)
@@ -373,14 +376,14 @@ internal fun DeezerBackendSection(context: Context) {
                                     val res = com.varuna.rustify.audio.DeezerClient().checkArl(e.arl)
                                     withContext(Dispatchers.Main) {
                                         entryStatus = entryStatus + (e.arl to res)
-                                        if (res.canStream) { dz.setWorkingArl(context, e.arl); workingArl = e.arl }
+                                        if (res.canStream) { dz.setWorkingArl(store, e.arl); workingArl = e.arl }
                                     }
                                 }
                             }) { Text(stringResource(R.string.dz_test), color = green, fontSize = 11.sp) }
                             if (workingArl == e.arl) {
                                 Text(stringResource(R.string.dz_in_use), color = green, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
                             } else {
-                                TextButton(onClick = { dz.setWorkingArl(context, e.arl); workingArl = e.arl }) { Text(stringResource(R.string.dz_use), color = Color.White, fontSize = 11.sp) }
+                                TextButton(onClick = { dz.setWorkingArl(store, e.arl); workingArl = e.arl }) { Text(stringResource(R.string.dz_use), color = Color.White, fontSize = 11.sp) }
                             }
                         }
                     }
@@ -390,7 +393,7 @@ internal fun DeezerBackendSection(context: Context) {
             Text(stringResource(R.string.dz_quality), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Row(Modifier.fillMaxWidth()) {
                 listOf("flac" to "FLAC", "mp3_320" to "MP3 320", "mp3_128" to "MP3 128").forEach { (code, label) ->
-                    Row(Modifier.weight(1f).clickable { quality = code; dz.setQuality(context, code) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clickable { quality = code; dz.setQuality(store, code) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = quality == code, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = green))
                         Text(label, color = Color.White, fontSize = 11.sp)
                     }
@@ -412,12 +415,12 @@ internal fun DeezerBackendSection(context: Context) {
                         return@launch
                     }
                     val result = runCatching {
-                        val a = com.varuna.rustify.audio.DeezerArl.ensureArl(context) ?: error("no working ARL (testea un ARL primero)")
+                        val a = com.varuna.rustify.audio.DeezerArl.ensureArl(store) ?: error("no working ARL (testea un ARL primero)")
                         val client = com.varuna.rustify.audio.DeezerClient()
                         // Step by step to report what fails: auth vs not-found vs no stream rights.
                         val session = client.auth(a) ?: error("ARL auth failed (inválido/caducado)")
                         val id = client.deezerTrackId(track) ?: error("track not found on Deezer (ISRC/búsqueda)")
-                        val media = client.media(session, id, dz.formatChain(context))
+                        val media = client.media(session, id, dz.formatChain(store))
                             ?: error("get_url vacío (ARL sin premium/HiFi o región) — prueba un ARL con ✅")
                         media.format
                     }
@@ -442,6 +445,7 @@ internal fun DeezerBackendSection(context: Context) {
 
 @Composable
 internal fun AudioBackendsSection(context: Context) {
+    val store = remember { com.varuna.rustify.audio.AndroidAudioSources.settings(context) }
     // Bumped by [AddonsSection] whenever the installed add-ons change. Without it these three
     // `remember`s would be computed once and an add-on installed a moment later would be missing
     // from the order lists until the screen was left and reopened — which reads as "installing did
@@ -452,8 +456,8 @@ internal fun AudioBackendsSection(context: Context) {
 
     val knownIds = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.knownIds() }
     val catalog = remember(backendsRevision) { com.varuna.rustify.audio.AudioSourceRegistry.catalog().associateBy { it.id } }
-    var streamOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
-    var downloadOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, knownIds)) }
+    var streamOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(store, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, knownIds)) }
+    var downloadOrder by remember(backendsRevision) { mutableStateOf(com.varuna.rustify.audio.AudioBackendSettings.loadOrder(store, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, knownIds)) }
 
     Spacer(modifier = Modifier.height(24.dp))
     Text(stringResource(R.string.settings_audio_backends), color = Color(0xFF1DB954), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
@@ -461,7 +465,7 @@ internal fun AudioBackendsSection(context: Context) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(stringResource(R.string.settings_backends_stream_order), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            ReorderableBackendList(streamOrder, catalog) { newOrder -> streamOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, newOrder) }
+            ReorderableBackendList(streamOrder, catalog) { newOrder -> streamOrder = newOrder; com.varuna.rustify.audio.AudioBackendSettings.saveOrder(store, com.varuna.rustify.audio.AudioBackendSettings.KEY_STREAM, newOrder) }
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.settings_backends_download_order), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
@@ -471,7 +475,7 @@ internal fun AudioBackendsSection(context: Context) {
             ReorderableBackendList(downloadOrder.filter { canDownload(it.id) }, catalog) { newOrder ->
                 val full = newOrder + downloadOrder.filterNot { canDownload(it.id) }
                 downloadOrder = full
-                com.varuna.rustify.audio.AudioBackendSettings.saveOrder(context, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, full)
+                com.varuna.rustify.audio.AudioBackendSettings.saveOrder(store, com.varuna.rustify.audio.AudioBackendSettings.KEY_DOWNLOAD, full)
             }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.settings_backends_drag_hint), color = Color.Gray, fontSize = 12.sp)
@@ -506,8 +510,9 @@ internal fun AudioBackendsSection(context: Context) {
 /** The user's own Subsonic server (`20`): address, user, password, checked with `ping`. */
 @Composable
 internal fun SubsonicBackendSection(context: Context) {
+    val store = remember { com.varuna.rustify.audio.AndroidAudioSources.settings(context) }
     val ss = com.varuna.rustify.audio.SubsonicSettings
-    val initial = remember { ss.load(context) }
+    val initial = remember { ss.load(store) }
     var server by remember { mutableStateOf(initial.server) }
     var user by remember { mutableStateOf(initial.user) }
     var password by remember { mutableStateOf(initial.password) }
@@ -539,13 +544,13 @@ internal fun SubsonicBackendSection(context: Context) {
                 enabled = !busy && server.isNotBlank() && user.isNotBlank(),
                 onClick = {
                     val config = com.varuna.rustify.audio.SubsonicSettings.Config(server.trim(), user.trim(), password)
-                    ss.save(context, config)
+                    ss.save(store, config)
                     busy = true
                     scope.launch {
                         val r = ss.ping(config)
                         busy = false
                         if (r.isSuccess) com.varuna.rustify.audio.AudioBackendSettings.enable(
-                            context, com.varuna.rustify.audio.SubsonicAudioSource.ID
+                            store, com.varuna.rustify.audio.SubsonicAudioSource.ID
                         )
                         status = r.fold({ okTemplate.format(it) }, { failTemplate.format(it.message ?: "") })
                     }

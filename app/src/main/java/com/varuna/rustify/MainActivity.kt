@@ -422,7 +422,7 @@ class MainActivity : ComponentActivity() {
         
         // Audio backends bootstrap centralized in AudioSourceRegistry. yt-dlp remains the default
         // provider; new backends (Invidious/Deemix) are initialized here as well.
-        com.varuna.rustify.audio.AudioSourceRegistry.initialize(application)
+        com.varuna.rustify.audio.AndroidAudioSources.initialize(application)
 
         // The audio disk cache opens its database and scans its directory when first built, and
         // the first composable to ask for the player would build it on the main thread. Started
@@ -437,7 +437,7 @@ class MainActivity : ComponentActivity() {
         //
         // Off the main thread: it crosses JNI to read the installed list.
         lifecycleScope.launch {
-            runCatching { com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons(application) }
+            runCatching { com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons() }
                 .onFailure { android.util.Log.e("MainActivity", "could not load add-ons", it) }
         }
 

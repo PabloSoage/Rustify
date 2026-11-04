@@ -1,6 +1,5 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -46,7 +45,7 @@ object AudioHttp {
     }
 
     /** Downloads [url] to [dst] reporting progress 0..100 (indeterminate when there is no Content-Length). */
-    fun download(context: Context, url: String, dst: File, onProgress: (Int) -> Unit = {}, http: OkHttpClient = client) {
+    fun download(url: String, dst: File, onProgress: (Int) -> Unit = {}, http: OkHttpClient = client) {
         val req = Request.Builder().url(url).header("User-Agent", "Rustify/1.0").build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} for download")

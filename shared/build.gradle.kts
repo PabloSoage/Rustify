@@ -64,6 +64,7 @@ kotlin {
         // creates iosMain for the iOS targets. maybeCreate, so a Kotlin version that applies the
         // template anyway does not fail on a duplicate.
         val jvmCommonMain = maybeCreate("jvmCommonMain").apply { dependsOn(commonMain.get()) }
+        jvmCommonMain.dependencies { implementation(libs.okhttp) } // the audio sources' HTTP, the app's OkHttp
         androidMain.get().dependsOn(jvmCommonMain)
         getByName("desktopMain").dependsOn(jvmCommonMain)
         // Ktor's engine on both JVMs: OkHttp, which the app and Coil already carry.

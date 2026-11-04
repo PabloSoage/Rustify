@@ -1,16 +1,20 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
-import androidx.core.content.edit
-import org.json.JSONArray
-import org.json.JSONObject
+import com.varuna.rustify.bridge.optBoolean
+import com.varuna.rustify.bridge.optObject
+import com.varuna.rustify.bridge.optString
+import com.varuna.rustify.bridge.parseJsonArray
+import com.varuna.rustify.platform.KeyValueStore
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Persists the order and activation state of the audio backends.
  *
  * There are two separate lists (streaming vs download), each reorderable and with
- * its own set of toggles. They are stored as two independent JSON arrays in
- * `SharedPreferences("rustify_settings")`:
+ * its own set of toggles. They are stored as two independent JSON arrays in the
+ * sources' settings store (on Android `SharedPreferences("rustify_settings")`, as always):
  *
  * ```json
  * // key: "audio_backends_stream_order"  |  "audio_backends_download_order"
@@ -23,7 +27,6 @@ import org.json.JSONObject
  */
 object AudioBackendSettings {
 
-    private const val PREFS = "rustify_settings"
     const val KEY_STREAM = "audio_backends_stream_order"
     const val KEY_DOWNLOAD = "audio_backends_download_order"
 
@@ -36,7 +39,7 @@ object AudioBackendSettings {
      * blocked by YouTube/Cloudflare (they answer /stats so they look healthy, then fail to resolve
      * audio). Leaving them on by default only produced slow, confusing fallbacks.
      */
-    private val DEFAULT_ON = setOf(InnertubeAudioSource.ID, YtDlpAudioSource.ID)
+    private val DEFAULT_ON = setOf(InnertubeAudioSource.ID, AudioSourceRegistry.YTDLP_ID)
 
     /**
      * Providers that, on upgrade, arrive **enabled and first** instead of disabled at the end.
@@ -67,11 +70,13 @@ object AudioBackendSettings {
      * -1. **Subsonic** — the user's own server (`20`): their own files at their own quality, and a
      *    track it does not have is passed over at once. Ships off, like everything that needs setup;
      *    once on, it is asked first.
+     *
+     * Public, with [ranked], for the app's tests (`AudioBackendRankTest`), which pin them.
      */
-    internal fun defaultRank(id: String): Int = when (id) {
+    fun defaultRank(id: String): Int = when (id) {
         SubsonicAudioSource.ID -> -1
         InnertubeAudioSource.ID -> 0
-        YtDlpAudioSource.ID -> 1
+        AudioSourceRegistry.YTDLP_ID -> 1
         InvidiousAudioSource.ID -> 8
         DeezerAudioSource.ID -> 9
         else -> 2
@@ -84,15 +89,14 @@ object AudioBackendSettings {
      * [entries] in [defaultRank] order, keeping each one's on/off and, within a rank, the user's
      * relative order (the sort is stable).
      */
-    internal fun ranked(entries: List<BackendEntry>): List<BackendEntry> = entries.sortedBy { defaultRank(it.id) }
+    fun ranked(entries: List<BackendEntry>): List<BackendEntry> = entries.sortedBy { defaultRank(it.id) }
 
     /**
      * Reads the stored order for [key], appending any missing [knownIds] at the end
      * as `enabled=false`. Never throws: if the JSON is corrupt, it falls back to the default.
      */
-    fun loadOrder(context: Context, key: String, knownIds: List<String>): List<BackendEntry> {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val raw = prefs.getString(key, null)
+    fun loadOrder(prefs: KeyValueStore, key: String, knownIds: List<String>): List<BackendEntry> {
+        val raw = prefs.getString(key)
         val parsed = mutableListOf<BackendEntry>()
         // Sane default: on a fresh install only the providers in DEFAULT_ON start enabled, so the
         // user hears audio without touching Settings but isn't silently routed through backends that
@@ -100,18 +104,7 @@ object AudioBackendSettings {
         // instances are widely blocked by YouTube/Cloudflare). Appending new providers as disabled
         // only applies when prefs already existed, so upgrades preserve the user's choices.
         val isFirstRun = raw.isNullOrBlank()
-        if (!isFirstRun) {
-            runCatching {
-                val arr = JSONArray(raw)
-                for (i in 0 until arr.length()) {
-                    val o = arr.optJSONObject(i)
-                    if (o != null) {
-                        val id = o.optString("id", "")
-                        if (id.isNotBlank()) parsed.add(BackendEntry(id, o.optBoolean("enabled", false)))
-                    }
-                }
-            }
-        }
+        if (!isFirstRun) raw?.let { entriesIn(it) }?.let { parsed.addAll(it) }
         // Append missing known providers: on first run only the DEFAULT_ON ones start enabled;
         // on upgrade anything new arrives disabled so it can't change existing behaviour.
         val present = parsed.map { it.id }.toMutableSet()
@@ -139,8 +132,8 @@ object AudioBackendSettings {
         val rankedKey = "${KEY_RANKED}_$key"
         if (!prefs.getBoolean(rankedKey, false)) {
             val reordered = ranked(known)
-            prefs.edit { putBoolean(rankedKey, true) }
-            if (reordered != known) saveOrder(context, key, reordered)
+            prefs.putBoolean(rankedKey, true)
+            if (reordered != known) saveOrder(prefs, key, reordered)
             return reordered
         }
         return known
@@ -157,22 +150,12 @@ object AudioBackendSettings {
      * Ids already present are left exactly as they are, so turning an add-on off in the backend
      * order survives every later refresh.
      */
-    fun adoptNewProviders(context: Context, ids: List<String>) {
+    fun adoptNewProviders(prefs: KeyValueStore, ids: List<String>) {
         if (ids.isEmpty()) return
         for (key in listOf(KEY_STREAM, KEY_DOWNLOAD)) {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val raw = prefs.getString(key, null)
+            val raw = prefs.getString(key)
             val stored = mutableListOf<BackendEntry>()
-            if (!raw.isNullOrBlank()) {
-                runCatching {
-                    val arr = JSONArray(raw)
-                    for (i in 0 until arr.length()) {
-                        val o = arr.optJSONObject(i) ?: continue
-                        val id = o.optString("id", "")
-                        if (id.isNotBlank()) stored.add(BackendEntry(id, o.optBoolean("enabled", false)))
-                    }
-                }
-            }
+            if (!raw.isNullOrBlank()) entriesIn(raw)?.let { stored.addAll(it) }
             val present = stored.map { it.id }.toSet()
             val missing = ids.filter { it !in present }
             if (missing.isEmpty()) continue
@@ -180,7 +163,7 @@ object AudioBackendSettings {
             // purpose, those two are last for being unreliable.
             val at = stored.indexOfFirst { defaultRank(it.id) > defaultRank(missing.first()) }.let { if (it < 0) stored.size else it }
             stored.addAll(at, missing.map { BackendEntry(it, enabled = true) })
-            saveOrder(context, key, stored)
+            saveOrder(prefs, key, stored)
         }
     }
 
@@ -194,38 +177,39 @@ object AudioBackendSettings {
      * opt-in, as installing an add-on is. Leaving it off after "Connected" made the server look
      * ignored — found on the tablet, where a track the server had kept playing from YouTube.
      */
-    fun enable(context: Context, id: String) {
+    fun enable(prefs: KeyValueStore, id: String) {
         enabledElsewhere.value++
-        adoptNewProviders(context, listOf(id))
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        adoptNewProviders(prefs, listOf(id))
         for (key in listOf(KEY_STREAM, KEY_DOWNLOAD)) {
-            val raw = prefs.getString(key, null) ?: continue
-            val arr = runCatching { JSONArray(raw) }.getOrNull() ?: continue
-            val entries = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-                .map { BackendEntry(it.optString("id", ""), it.optBoolean("enabled", false)) }
-                .filter { it.id.isNotBlank() }
+            val raw = prefs.getString(key) ?: continue
+            val entries = entriesIn(raw) ?: continue
             if (entries.any { it.id == id && !it.enabled }) {
-                saveOrder(context, key, entries.map { if (it.id == id) it.copy(enabled = true) else it })
+                saveOrder(prefs, key, entries.map { if (it.id == id) it.copy(enabled = true) else it })
             }
         }
     }
 
-    fun saveOrder(context: Context, key: String, entries: List<BackendEntry>) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val arr = JSONArray()
-        entries.forEach { e ->
-            arr.put(JSONObject().apply { put("id", e.id); put("enabled", e.enabled) })
-        }
-        val next = arr.toString()
-        val changed = prefs.getString(key, null) != next
-        prefs.edit { putString(key, next) }
+    /** The entries stored in [raw] that have an id, or null when [raw] is not a JSON array. */
+    private fun entriesIn(raw: String): List<BackendEntry>? {
+        val arr = parseJsonArray(raw) ?: return null
+        return arr.indices.mapNotNull { arr.optObject(it) }
+            .map { BackendEntry(it.optString("id", ""), it.optBoolean("enabled", false)) }
+            .filter { it.id.isNotBlank() }
+    }
+
+    fun saveOrder(prefs: KeyValueStore, key: String, entries: List<BackendEntry>) {
+        // The text org.json wrote (`[{"id":"ytdlp","enabled":true}]`, keys in that order, nothing
+        // between), so a list saved again unchanged compares equal below and moves no generation.
+        val next = JsonArray(entries.map { e -> buildJsonObject { put("id", e.id); put("enabled", e.enabled) } }).toString()
+        val changed = prefs.getString(key) != next
+        prefs.putString(key, next)
 
         // Reordering or disabling a backend changes which one produces the audio, so what is
         // already stored may no longer be what the user wants. Bumping the generation puts the
-        // whole cache out of reach in one integer instead of deleting anything — see
-        // [StreamRouting]. Guarded on an actual change, because a needless bump costs the user a
+        // whole cache out of reach in one integer instead of deleting anything — see Android's
+        // `StreamRouting`. Guarded on an actual change, because a needless bump costs the user a
         // re-download of everything they had.
-        if (changed) StreamRouting.bumpGeneration(context)
+        if (changed) AudioSourceRegistry.streamCache.bumpGeneration()
     }
 
     /** Enabled ids in priority order — what the chain consumes. */

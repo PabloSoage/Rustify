@@ -1,7 +1,7 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
 import com.varuna.rustify.audio.DeezerArl.fetch
+import com.varuna.rustify.platform.KeyValueStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -40,13 +40,13 @@ object DeezerArl {
     )
 
     /** Fetches the page and extracts the ARL list (country + token). Empty = silent failure. */
-    suspend fun fetch(context: Context, sourceUrl: String): List<ArlEntry> = fetchDetailed(context, sourceUrl).entries
+    suspend fun fetch(sourceUrl: String): List<ArlEntry> = fetchDetailed(sourceUrl).entries
 
     /**
      * Like [fetch] but returns the failure reason. The UI shows it verbatim so "no ARL appears" is no
      * longer a mystery (HTTP 403 / timeout / DNS / 0 ARLs on the page, etc.).
      */
-    suspend fun fetchDetailed(context: Context, sourceUrl: String): FetchResult = withContext(Dispatchers.IO) {
+    suspend fun fetchDetailed(sourceUrl: String): FetchResult = withContext(Dispatchers.IO) {
         if (sourceUrl.isBlank()) return@withContext FetchResult(emptyList(), "empty url")
         val url = sourceUrl.trim().let { if (it.startsWith("http", true)) it else "https://$it" }
         try {
@@ -104,16 +104,16 @@ object DeezerArl {
      * Tests the ARLs from the page (starting with [preferCountry] if given) and saves the first one
      * that works as the active ARL. Returns that ARL, or null if none work.
      */
-    suspend fun refreshWorkingArl(context: Context, preferCountry: String? = null): String? {
-        val src = DeezerSettings.sourceUrl(context)
-        val entries = fetch(context, src)
+    suspend fun refreshWorkingArl(settings: KeyValueStore, preferCountry: String? = null): String? {
+        val src = DeezerSettings.sourceUrl(settings)
+        val entries = fetch(src)
         if (entries.isEmpty()) return null
         val ordered = if (preferCountry.isNullOrBlank()) entries
             else entries.sortedByDescending { it.country.equals(preferCountry, true) }
         val client = DeezerClient()
         for (e in ordered) {
             if (client.testArl(e.arl)) {
-                DeezerSettings.setWorkingArl(context, e.arl)
+                DeezerSettings.setWorkingArl(settings, e.arl)
                 return e.arl
             }
         }
@@ -124,16 +124,16 @@ object DeezerArl {
      * Returns a usable ARL: the cached one if still valid; otherwise per the mode (own, or test the
      * page). Validates the cached one with a quick auth and rotates if needed.
      */
-    suspend fun ensureArl(context: Context): String? {
+    suspend fun ensureArl(settings: KeyValueStore): String? {
         val client = DeezerClient()
-        val cached = DeezerSettings.workingArl(context)
+        val cached = DeezerSettings.workingArl(settings)
         if (cached.isNotBlank() && client.testArl(cached)) return cached
-        return when (DeezerSettings.arlMode(context)) {
+        return when (DeezerSettings.arlMode(settings)) {
             "single" -> {
-                val own = DeezerSettings.arl(context)
-                if (own.isNotBlank() && client.testArl(own)) { DeezerSettings.setWorkingArl(context, own); own } else null
+                val own = DeezerSettings.arl(settings)
+                if (own.isNotBlank() && client.testArl(own)) { DeezerSettings.setWorkingArl(settings, own); own } else null
             }
-            else -> refreshWorkingArl(context)
+            else -> refreshWorkingArl(settings)
         }
     }
 }

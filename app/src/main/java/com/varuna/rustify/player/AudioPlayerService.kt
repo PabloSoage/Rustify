@@ -1455,7 +1455,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
                         // UI thread. Wrapping the whole chain call here guarantees the main thread stays
                         // free during a slow/hung backend resolution.
                         val res = withContext(Dispatchers.IO) {
-                            com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                            com.varuna.rustify.audio.AudioSourceRegistry.streamChain()
                                 .resolveStreamUrl(track, hint = effectiveYoutubeId)
                         }
                         res.onSuccess { (providerId, info) ->
@@ -1947,7 +1947,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
             // Pre-buffer through the same backend chain as playTrack
             // (single source of truth: one resolveStreamUrl, without duplicating the yt-dlp pattern).
             val res = withContext(Dispatchers.IO) {
-                com.varuna.rustify.audio.AudioSourceRegistry.streamChain(context)
+                com.varuna.rustify.audio.AudioSourceRegistry.streamChain()
                     .resolveStreamUrl(nextTrack, hint = null)
             }
             res.onSuccess { (_, info) ->

@@ -155,7 +155,7 @@ internal fun AddonsSection(context: Context, onAddonsChanged: () -> Unit) {
 
     suspend fun reload() {
         addons = com.varuna.rustify.bridge.AddonRepository.list()
-        com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons(context)
+        com.varuna.rustify.audio.AudioSourceRegistry.refreshAddons()
         onAddonsChanged()
     }
 
@@ -317,7 +317,16 @@ internal fun ReorderableBackendList(
                     Icon(Icons.Default.DragHandle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(caps?.displayNameRes ?: R.string.backend_ytdlp), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        // By id: the sources moved to :shared, where there is no R.string to hand over.
+                        val nameRes = when {
+                            entry.id == com.varuna.rustify.audio.InnertubeAudioSource.ID -> R.string.backend_innertube
+                            entry.id == com.varuna.rustify.audio.InvidiousAudioSource.ID -> R.string.backend_invidious
+                            entry.id == com.varuna.rustify.audio.DeezerAudioSource.ID -> R.string.backend_deezer
+                            entry.id == com.varuna.rustify.audio.SubsonicAudioSource.ID -> R.string.backend_subsonic
+                            com.varuna.rustify.audio.AddonAudioSource.addonIdOf(entry.id) != null -> R.string.backend_addon
+                            else -> caps?.displayNameRes?.takeIf { it != 0 } ?: R.string.backend_ytdlp
+                        }
+                        Text(stringResource(nameRes), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         val badges = buildList {
                             if (caps?.canStream == true) add(stringResource(R.string.backend_stream))
                             if (caps?.canDownload == true) add(stringResource(R.string.backend_download))

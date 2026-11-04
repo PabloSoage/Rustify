@@ -1,12 +1,10 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
-import android.util.Log
-import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
 import com.varuna.rustify.bridge.TrackRef
+import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -42,11 +40,10 @@ data class InnertubeAudio(
  * Streaming only. Downloads stay on yt-dlp, which tags and (optionally) converts what the download pipeline names
  * its files after; this hands back WebM/MP4 as YouTube serves it.
  */
-class InnertubeAudioSource(private val appContext: Context) : AudioSourceProvider {
+class InnertubeAudioSource(private val env: AudioSourceEnvironment) : AudioSourceProvider {
 
     override val capabilities = AudioSourceCapabilities(
         id = ID,
-        displayNameRes = R.string.backend_innertube,
         canStream = true,
         canDownload = false,
         requiresToken = false,
@@ -85,8 +82,7 @@ class InnertubeAudioSource(private val appContext: Context) : AudioSourceProvide
         Result.failure(UnsupportedOperationException("innertube streams only; downloads use yt-dlp"))
 
     private fun prefsJson(): String {
-        val prefs = appContext.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-        val prefer = prefs.getString(PREF_FORMAT, "opus") ?: "opus"
+        val prefer = env.settings.getString(PREF_FORMAT) ?: "opus"
         return """{"prefer":"$prefer","maxKbps":0}"""
     }
 

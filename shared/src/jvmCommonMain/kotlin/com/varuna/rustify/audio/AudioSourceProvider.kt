@@ -46,7 +46,9 @@ data class CacheHint(
  */
 data class AudioSourceCapabilities(
     val id: String,                   // stable key: "ytdlp" | "invidious" | "deezer"
-    val displayNameRes: Int,          // R.string.* for the UI
+    // An Android string resource, from when the settings lived in the app. The shared settings name
+    // a source by its [id] (`AudioSourceNames` in :sharedUi), so the sources in :shared leave it 0.
+    val displayNameRes: Int = 0,
     val canStream: Boolean,
     val canDownload: Boolean,
     val requiresToken: Boolean = false,

@@ -1,10 +1,8 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
-import android.util.Log
-import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
+import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -12,13 +10,12 @@ import java.io.File
 /**
  * Invidious provider. Given the YouTube videoId (already resolved by the core via ISRC/name), it asks
  * a healthy instance `/api/v1/videos/{id}` and picks the best audio-only format. No yt-dlp.
- * Effectively cross-platform (HTTP+JSON only), though it currently lives on Android.
+ * Cross-platform (HTTP+JSON only): the phone and the desktop run this same class.
  */
-class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvider {
+class InvidiousAudioSource(private val env: AudioSourceEnvironment) : AudioSourceProvider {
 
     override val capabilities = AudioSourceCapabilities(
         id = ID,
-        displayNameRes = R.string.backend_invidious,
         canStream = true,
         canDownload = true,
         requiresToken = false,
@@ -28,7 +25,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
     )
 
     override suspend fun isAvailableFor(track: FullTrack): Boolean =
-        InvidiousInstances.selected(appContext).isNotEmpty()
+        InvidiousInstances.selected(env).isNotEmpty()
 
     override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> = withContext(Dispatchers.IO) {
         runCatching {
@@ -36,10 +33,10 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
             val videoId = (if (!hint.isNullOrBlank()) hint
                            else NativeEngine.resolveYouTubeId(trackId, "")).trim()
             require(videoId.isNotBlank()) { "no YouTube id" }
-            val instances = InvidiousInstances.selected(appContext)
+            val instances = InvidiousInstances.selected(env)
             require(instances.isNotEmpty()) { "no Invidious instances configured" }
             for (inst in InvidiousInstances.inTryOrder(instances).take(6)) {
-                val found = InvidiousInstances.resolveAudio(appContext, inst, videoId) ?: continue
+                val found = InvidiousInstances.resolveAudio(env, inst, videoId) ?: continue
                 Log.d(TAG, "$videoId via ${inst.baseUrl} (${found.via})")
                 return@runCatching StreamInfo(
                     uri = found.url,
@@ -57,7 +54,7 @@ class InvidiousAudioSource(private val appContext: Context) : AudioSourceProvide
         runCatching {
             val info = resolveStreamUrl(track, null).getOrThrow()
             if (dst.exists()) dst.delete()
-            AudioHttp.download(appContext, info.uri, dst, onProgress)
+            AudioHttp.download(info.uri, dst, onProgress)
             require(dst.exists() && dst.length() > 0) { "download produced empty file" }
             dst
         }

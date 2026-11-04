@@ -1,7 +1,10 @@
+// shared/src/commonMain/kotlin/com/varuna/rustify/bridge/LocalStreamServer.kt
 package com.varuna.rustify.bridge
 
-import android.util.Log
-import org.json.JSONObject
+import com.varuna.rustify.platform.Log
+import kotlin.concurrent.Volatile
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Kotlin face of the loopback streaming server in `core_engine/src/server/`.
@@ -49,7 +52,7 @@ object LocalStreamServer {
             .getOrNull() ?: return false
 
         return runCatching {
-            val json = JSONObject(answer)
+            val json = parseJsonObject(answer) ?: error("not a JSON object")
             if (!json.optBoolean("success", true)) {
                 Log.w(TAG, "server refused to start: ${json.optString("error")}")
                 return false
@@ -86,7 +89,7 @@ object LocalStreamServer {
     ): String? {
         if (cacheKey.isBlank() || cacheRoot.isBlank()) return null
 
-        val request = JSONObject().apply {
+        val request = buildJsonObject {
             put("upstreamUrl", upstreamUrl)
             put("cacheKey", cacheKey)
             put("cacheRoot", cacheRoot)
@@ -99,7 +102,7 @@ object LocalStreamServer {
             .getOrNull() ?: return null
 
         return runCatching {
-            val json = JSONObject(raw)
+            val json = parseJsonObject(raw) ?: error("not a JSON object")
             when (json.optString("status")) {
                 "ready" -> json.optString("url").takeIf { it.isNotBlank() }
                 "refused" -> {
@@ -138,7 +141,7 @@ object LocalStreamServer {
         if (upstreamUrl.isBlank() || sngId.isBlank()) return null
         if (!ensureStarted()) return null
 
-        val request = JSONObject().apply {
+        val request = buildJsonObject {
             put("mode", "proxy")
             put("upstreamUrl", upstreamUrl)
             put("deezerSngId", sngId)
@@ -156,7 +159,7 @@ object LocalStreamServer {
             .getOrNull() ?: return null
 
         return runCatching {
-            JSONObject(raw).takeIf { it.optString("status") == "ready" }
+            (parseJsonObject(raw) ?: error("not a JSON object")).takeIf { it.optString("status") == "ready" }
                 ?.optString("url")
                 ?.takeIf { it.isNotBlank() }
         }.getOrElse {

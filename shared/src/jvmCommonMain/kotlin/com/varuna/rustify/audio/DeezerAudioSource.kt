@@ -1,7 +1,5 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
-import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,11 +16,10 @@ import java.io.File
  * that used to be the alternative was deleted once this replaced it; see
  * `docs/stremio-core/DEEZER-CRYPTO.md` §5.
  */
-class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
+class DeezerAudioSource(private val env: AudioSourceEnvironment) : AudioSourceProvider {
 
     override val capabilities = AudioSourceCapabilities(
         id = ID,
-        displayNameRes = R.string.backend_deezer,
         canStream = true,
         canDownload = true,
         requiresToken = true,
@@ -31,15 +28,15 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
 
     override suspend fun isAvailableFor(track: FullTrack): Boolean {
         // Cheap check: it is enough to have an ARL configured (own / cached / source). No auth here.
-        return DeezerSettings.workingArl(appContext).isNotBlank() ||
-            DeezerSettings.arl(appContext).isNotBlank() ||
-            DeezerSettings.sourceUrl(appContext).isNotBlank()
+        return DeezerSettings.workingArl(env.settings).isNotBlank() ||
+            DeezerSettings.arl(env.settings).isNotBlank() ||
+            DeezerSettings.sourceUrl(env.settings).isNotBlank()
     }
 
     override suspend fun resolveStreamUrl(track: FullTrack, hint: String?): Result<StreamInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val arl = DeezerArl.ensureArl(appContext) ?: error("no working Deezer ARL")
-            val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(appContext))
+            val arl = DeezerArl.ensureArl(env.settings) ?: error("no working Deezer ARL")
+            val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(env.settings))
                 ?: error("Deezer resolve failed (track not on Deezer or format unavailable)")
             val mime = if (media.format.contains("FLAC", true)) "audio/flac" else "audio/mpeg"
 
@@ -53,16 +50,17 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
             // the next one.
             //
             // Storing is separate, and is what the "Stored songs" switch governs. With it off the
-            // track still plays — nothing is kept.
+            // track still plays — nothing is kept. A platform without a stream cache keeps nothing.
             val trackId = track.id
-            val keepACopy = StreamRouting.isEnabled(appContext) && !trackId.isNullOrBlank()
+            val cache = env.streamCache
+            val keepACopy = cache.isEnabled() && !trackId.isNullOrBlank()
 
             val proxied = com.varuna.rustify.bridge.LocalStreamServer.registerDeezerProxy(
                 upstreamUrl = media.url,
                 sngId = media.sngId,
                 mime = mime,
-                cacheKey = if (keepACopy) StreamRouting.keyFor(appContext, trackId) else null,
-                cacheRoot = if (keepACopy) StreamRouting.cacheRoot(appContext) else null
+                cacheKey = if (keepACopy && trackId != null) cache.keyFor(trackId) else null,
+                cacheRoot = if (keepACopy) cache.cacheRoot() else null
             ) ?: error("the local player server is not running, so Deezer cannot be decrypted")
 
             StreamInfo(
@@ -84,8 +82,8 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
      */
     override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            val arl = DeezerArl.ensureArl(appContext) ?: error("no working Deezer ARL")
-            val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(appContext))
+            val arl = DeezerArl.ensureArl(env.settings) ?: error("no working Deezer ARL")
+            val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(env.settings))
                 ?: error("Deezer resolve failed")
 
             // No cache key: a download is going to the user's own storage, and keeping a second
@@ -97,7 +95,7 @@ class DeezerAudioSource(private val appContext: Context) : AudioSourceProvider {
             ) ?: error("the local player server is not running, so Deezer cannot be decrypted")
 
             if (dst.exists()) dst.delete()
-            AudioHttp.download(appContext, decrypted, dst, onProgress)
+            AudioHttp.download(decrypted, dst, onProgress)
             require(dst.exists() && dst.length() > 0) { "empty Deezer download" }
             dst
         }

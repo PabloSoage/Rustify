@@ -1,11 +1,16 @@
 package com.varuna.rustify.audio
 
-import android.content.Context
-import android.util.Log
-import androidx.core.content.edit
+import com.varuna.rustify.bridge.optArray
+import com.varuna.rustify.bridge.optBoolean
+import com.varuna.rustify.bridge.optDouble
+import com.varuna.rustify.bridge.optLong
+import com.varuna.rustify.bridge.optObject
+import com.varuna.rustify.bridge.optString
+import com.varuna.rustify.bridge.parseJsonArray
+import com.varuna.rustify.bridge.parseJsonObject
+import com.varuna.rustify.platform.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
@@ -18,7 +23,6 @@ import java.util.concurrent.TimeUnit
  * the list and run our own health-check (a short GET) because that is the reliable signal.
  */
 object InvidiousInstances {
-    private const val PREFS = "rustify_settings"
     private const val K_CACHE = "inv_instances_cache"
     private const val K_CACHE_TS = "inv_instances_cache_ts"
     private const val LIST_URL = "https://api.invidious.io/instances.json?pretty=0"
@@ -57,22 +61,22 @@ object InvidiousInstances {
     }
 
     /** Client for .onion/.i2p instances via SOCKS (Orbot 9050). Best-effort/experimental. */
-    fun torClient(ctx: Context): OkHttpClient {
-        val host = InvidiousSettings.torHost(ctx); val port = InvidiousSettings.torPort(ctx)
+    fun torClient(env: AudioSourceEnvironment): OkHttpClient {
+        val host = InvidiousSettings.torHost(env.settings); val port = InvidiousSettings.torPort(env.settings)
         return OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress(host, port)))
             .connectTimeout(20, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS)
             .build()
     }
 
-    fun clientFor(ctx: Context, inst: Instance): OkHttpClient =
-        if (inst.isAnon && InvidiousSettings.torEnabled(ctx)) torClient(ctx) else plainClient
+    fun clientFor(env: AudioSourceEnvironment, inst: Instance): OkHttpClient =
+        if (inst.isAnon && InvidiousSettings.torEnabled(env.settings)) torClient(env) else plainClient
 
     /** Combined list (cached remote + user custom), excluding hidden ones. */
-    suspend fun list(ctx: Context, forceRefresh: Boolean = false): List<Instance> {
-        val remote = cachedOrFetch(ctx, forceRefresh)
-        val custom = InvidiousSettings.customInstances(ctx).map { Instance(it, guessType(it), true, null, custom = true) }
-        val hidden = InvidiousSettings.hiddenInstances(ctx)
+    suspend fun list(env: AudioSourceEnvironment, forceRefresh: Boolean = false): List<Instance> {
+        val remote = cachedOrFetch(env, forceRefresh)
+        val custom = InvidiousSettings.customInstances(env.settings).map { Instance(it, guessType(it), true, null, custom = true) }
+        val hidden = InvidiousSettings.hiddenInstances(env.settings)
         return (custom + remote).distinctBy { it.baseUrl }.filter { it.baseUrl !in hidden }
     }
 
@@ -81,15 +85,15 @@ object InvidiousInstances {
      *  - "fixed" mode -> only the user's fixed (or custom) instance;
      *  - "auto" mode  -> clearnet with api, ordered by health; + anonymous ones at the end if allowed.
      */
-    suspend fun selected(ctx: Context): List<Instance> {
-        val all = list(ctx)
-        if (InvidiousSettings.mode(ctx) == "fixed") {
-            val fixed = InvidiousSettings.fixedInstance(ctx)
+    suspend fun selected(env: AudioSourceEnvironment): List<Instance> {
+        val all = list(env)
+        if (InvidiousSettings.mode(env.settings) == "fixed") {
+            val fixed = InvidiousSettings.fixedInstance(env.settings)
             return all.filter { it.baseUrl.equals(fixed, true) }.ifEmpty {
                 if (fixed.isNotBlank()) listOf(Instance(fixed, guessType(fixed), true, null, custom = true)) else emptyList()
             }
         }
-        val allowAnon = InvidiousSettings.allowAnonNetworks(ctx)
+        val allowAnon = InvidiousSettings.allowAnonNetworks(env.settings)
         val clear = all.filter { it.type == "https" && it.apiUp }
             .sortedByDescending { it.health ?: 0.0 }
         val anon = if (allowAnon) all.filter { it.isAnon } else emptyList()
@@ -109,8 +113,8 @@ object InvidiousInstances {
      * instances as healthy that could not play anything: answering 200 is not the same as returning
      * audio, and since 2025 the two have come apart (see [resolveAudio]).
      */
-    suspend fun probe(ctx: Context, inst: Instance): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        runCatching { resolveAudio(ctx, inst, CANARY_VIDEO) != null }.getOrDefault(false)
+    suspend fun probe(env: AudioSourceEnvironment, inst: Instance): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching { resolveAudio(env, inst, CANARY_VIDEO) != null }.getOrDefault(false)
     }
 
     /** A playable audio stream, as resolved through one instance. */
@@ -138,8 +142,8 @@ object InvidiousInstances {
      * answer is a googlevideo URL minted for **their** IP (`ip=` in the query), which this phone is
      * not — it happened to play when measured, and nothing promises it will.
      */
-    suspend fun resolveAudio(ctx: Context, inst: Instance, videoId: String): Resolved? {
-        val client = clientFor(ctx, inst)
+    suspend fun resolveAudio(env: AudioSourceEnvironment, inst: Instance, videoId: String): Resolved? {
+        val client = clientFor(env, inst)
         val started = System.currentTimeMillis()
         fun elapsed() = System.currentTimeMillis() - started
 
@@ -207,12 +211,12 @@ object InvidiousInstances {
     /** Highest-bitrate audio-only format in a `/api/v1/videos` answer, or the first muxed one. */
     private fun bestAudioFrom(body: String): String? {
         if (body.isBlank()) return null
-        val obj = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return null
+        val obj = parseJsonObject(body) ?: return null
         var bestUrl: String? = null
         var bestBitrate = -1L
-        obj.optJSONArray("adaptiveFormats")?.let { adaptive ->
-            for (i in 0 until adaptive.length()) {
-                val f = adaptive.optJSONObject(i) ?: continue
+        obj.optArray("adaptiveFormats")?.let { adaptive ->
+            for (i in adaptive.indices) {
+                val f = adaptive.optObject(i) ?: continue
                 if (!f.optString("type").startsWith("audio", true)) continue
                 val br = f.optString("bitrate").toLongOrNull() ?: f.optLong("bitrate", 0)
                 val u = f.optString("url")
@@ -220,7 +224,7 @@ object InvidiousInstances {
             }
         }
         return bestUrl
-            ?: obj.optJSONArray("formatStreams")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
+            ?: obj.optArray("formatStreams")?.optObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
     }
 
     /**
@@ -257,7 +261,8 @@ object InvidiousInstances {
      * Where this instance's Companion lives: the `https` origins its CSP allows media or connections
      * from, minus YouTube's own, then the instance itself.
      */
-    internal fun companionsFor(instanceBase: String, csp: String?): List<String> {
+    // Public for the app's tests (`InvidiousCompanionTest`).
+    fun companionsFor(instanceBase: String, csp: String?): List<String> {
         val fromCsp = csp.orEmpty().split(';')
             .map { it.trim() }
             .filter { it.startsWith("media-src", true) || it.startsWith("connect-src", true) }
@@ -286,12 +291,14 @@ object InvidiousInstances {
         null
     }
 
-    private suspend fun cachedOrFetch(ctx: Context, force: Boolean): List<Instance> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private suspend fun cachedOrFetch(env: AudioSourceEnvironment, force: Boolean): List<Instance> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        // The source's own cache store: `rustify_settings` on Android, as always; a file on the
+        // desktop, where one preference value holds 8 KiB and the directory is several times that.
+        val prefs = env.cacheStore
         val ts = prefs.getLong(K_CACHE_TS, 0L)
         val fresh = System.currentTimeMillis() - ts < CACHE_TTL_MS
         if (!force && fresh) {
-            val cached = prefs.getString(K_CACHE, null)
+            val cached = prefs.getString(K_CACHE)
             if (cached != null) return@withContext parse(cached)
         }
         // `await`, not `execute`: this runs from `isAvailableFor`, inside the chain's timeout, and a
@@ -303,23 +310,24 @@ object InvidiousInstances {
         if (fetched != null) {
             val parsed = parse(fetched)
             if (parsed.isNotEmpty()) {
-                prefs.edit { putString(K_CACHE, fetched); putLong(K_CACHE_TS, System.currentTimeMillis()) }
+                prefs.putString(K_CACHE, fetched)
+                prefs.putLong(K_CACHE_TS, System.currentTimeMillis())
                 parsed
             } else {
                 // Directory reachable but empty/format changed -> fall back to cache, then bootstrap.
-                prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
+                prefs.getString(K_CACHE)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
             }
         } else {
             // Directory unreachable -> last-known cache, else bootstrap so Invidious still has candidates.
-            prefs.getString(K_CACHE, null)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
+            prefs.getString(K_CACHE)?.let { parse(it) }?.takeIf { it.isNotEmpty() } ?: BOOTSTRAP
         }
     }
 
     private fun parse(json: String): List<Instance> = runCatching {
-        val arr = JSONArray(json)
-        (0 until arr.length()).mapNotNull { i ->
-            val pair = arr.optJSONArray(i) ?: return@mapNotNull null
-            val d = pair.optJSONObject(1) ?: return@mapNotNull null
+        val arr = parseJsonArray(json) ?: return emptyList()
+        arr.indices.mapNotNull { i ->
+            val pair = arr.optArray(i) ?: return@mapNotNull null
+            val d = pair.optObject(1) ?: return@mapNotNull null
             val uri = d.optString("uri").trimEnd('/')
             if (!isValidInstanceUri(uri)) return@mapNotNull null
             // The URL suffix wins for anonymous networks (the directory `type` is sometimes wrong,
@@ -332,10 +340,10 @@ object InvidiousInstances {
             }
             val api = d.optBoolean("api", type == "https")
             // monitor.uptime varies; try several fields leniently.
-            val monitor = d.optJSONObject("monitor")
+            val monitor = d.optObject("monitor")
             val health = monitor?.let {
-                it.optJSONObject("30dRatio")?.optString("ratio")?.toDoubleOrNull()
-                    ?: it.optJSONObject("90dRatio")?.optString("ratio")?.toDoubleOrNull()
+                it.optObject("30dRatio")?.optString("ratio")?.toDoubleOrNull()
+                    ?: it.optObject("90dRatio")?.optString("ratio")?.toDoubleOrNull()
                     ?: it.optDouble("uptime", Double.NaN).takeIf { v -> !v.isNaN() }
             }
             Instance(uri, type, api, health)

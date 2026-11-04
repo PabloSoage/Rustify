@@ -114,7 +114,7 @@ object DownloadManager {
                 album = null
             )
 
-            val res = com.varuna.rustify.audio.AudioSourceRegistry.downloadChain(context)
+            val res = com.varuna.rustify.audio.AudioSourceRegistry.downloadChain()
                 .downloadTo(track, tempFile) { progress ->
                     if (scope.isActive) {
                         scope.launch {
