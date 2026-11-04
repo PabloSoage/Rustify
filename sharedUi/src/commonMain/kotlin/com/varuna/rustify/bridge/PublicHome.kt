@@ -19,21 +19,24 @@ import java.util.Locale
  * for your country) and Spotify's own mood playlists. Same [BrowseSection] shape as the personal
  * Home, so the screen draws them the same way.
  *
- * Kept for the process: the charts change weekly, and Home is drawn often.
+ * Kept for the process: the charts change weekly, and Home is drawn often. Kept with the language its
+ * titles were written in, too: Settings changes the language without ending the process, and Home
+ * kept "Played lately" under a Spanish interface until the app was restarted.
  */
 object PublicHome {
-    @Volatile private var cached: List<BrowseSection>? = null
+    @Volatile private var cached: Pair<String, List<BrowseSection>>? = null
 
     suspend fun sections(platform: AppPlatform, repo: SpotifyRepository, refresh: Boolean = false): List<BrowseSection> =
         withContext(Dispatchers.IO) {
-            if (!refresh) cached?.let { return@withContext it }
+            val language = Locale.getDefault().toLanguageTag()
+            if (!refresh) cached?.takeIf { it.first == language }?.let { return@withContext it.second }
             val built = coroutineScope {
                 val recent = async { recentAlbums(platform) }
                 val charts = async { charts(platform, repo) }
                 val moods = async { moods(platform, repo) }
                 listOfNotNull(recent.await(), charts.await(), moods.await())
             }
-            if (built.isNotEmpty()) cached = built
+            if (built.isNotEmpty()) cached = language to built
             built
         }
 
