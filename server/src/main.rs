@@ -152,7 +152,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/logout", post(auth::logout))
         .route(
             "/api/call/{method}",
-            post(call).layer(CompressionLayer::new()).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)),
+            post(call)
+                .layer::<_, std::convert::Infallible>(CompressionLayer::new())
+                .layer(DefaultBodyLimit::max(MAX_CALL_BYTES)),
         )
         .route("/api/stream/{handle}", get(stream::forward));
     let router = match args.web_root.as_ref().filter(|root| root.join("index.html").is_file()) {
