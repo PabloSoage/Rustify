@@ -1,4 +1,4 @@
-// sharedUi/src/iosMain/kotlin/com/varuna/rustify/ui/Formats.ios.kt
+// shared/src/iosMain/kotlin/com/varuna/rustify/ui/Formats.ios.kt
 package com.varuna.rustify.ui
 
 import platform.Foundation.*

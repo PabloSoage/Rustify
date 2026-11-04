@@ -1,4 +1,4 @@
-// sharedUi/src/desktopMain/kotlin/com/varuna/rustify/ui/Formats.desktop.kt
+// shared/src/androidMain/kotlin/com/varuna/rustify/ui/Formats.android.kt
 package com.varuna.rustify.ui
 
 import java.math.BigDecimal

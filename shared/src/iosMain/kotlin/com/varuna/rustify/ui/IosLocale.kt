@@ -1,4 +1,4 @@
-// sharedUi/src/iosMain/kotlin/com/varuna/rustify/ui/IosLocale.kt
+// shared/src/iosMain/kotlin/com/varuna/rustify/ui/IosLocale.kt
 package com.varuna.rustify.ui
 
 import com.varuna.rustify.platform.defaultLanguage
