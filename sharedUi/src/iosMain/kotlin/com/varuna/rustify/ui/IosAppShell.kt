@@ -182,7 +182,7 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
             SettingsSlot.DOWNLOADS -> com.varuna.rustify.ui.screens.DownloadFolderSection()
             SettingsSlot.INTEGRATIONS ->
                 Text(stringResource(Res.string.feature_not_on_platform), color = Color.Gray)
-            SettingsSlot.ADVANCED -> Unit
+            SettingsSlot.ADVANCED -> com.varuna.rustify.ui.screens.DiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
         }
     }
 

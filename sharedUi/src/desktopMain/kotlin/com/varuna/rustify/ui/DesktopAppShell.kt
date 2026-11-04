@@ -200,7 +200,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
         if (slot == SettingsSlot.AUDIO) return
         if (slot == SettingsSlot.ADVANCED) {
             DesktopUpdatesSection()
-            DesktopDiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
+            com.varuna.rustify.ui.screens.DiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
         }
         // The shared sections the phone has further down Audio, in its order: local music, the
         // audio sources' order and the add-ons, how the queue moves and how it sounds, the data and

@@ -155,27 +155,6 @@ internal fun DesktopUpdatesSection() {
     }
 }
 
-/**
- * Advanced: the log viewer, the phone's Diagnostics. There is no capture switch: the desktop always
- * keeps what it logs ([com.varuna.rustify.util.DesktopLogBook]), in memory.
- */
-@Composable
-internal fun DesktopDiagnosticsSection(onViewLogs: () -> Unit) {
-    Spacer(Modifier.height(16.dp))
-    SectionTitle(stringResource(Res.string.settings_diagnostics))
-    SectionCard {
-        Text(stringResource(Res.string.desktop_logs_desc), color = Color.Gray, fontSize = 12.sp)
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = onViewLogs,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(Res.string.settings_view_logs), color = Color.White)
-        }
-    }
-}
-
 /** Settings' top bar: the phone's refresh button, which checks for an update. */
 @Composable
 internal fun DesktopUpdateAction() {

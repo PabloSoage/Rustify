@@ -12,10 +12,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 // A star import, as in IosLocale: Foundation declares much of these in categories.
 import platform.Foundation.*
+import platform.Network.nw_path_get_status
+import platform.Network.nw_path_monitor_create
+import platform.Network.nw_path_monitor_set_queue
+import platform.Network.nw_path_monitor_set_update_handler
+import platform.Network.nw_path_monitor_start
+import platform.Network.nw_path_monitor_t
+import platform.Network.nw_path_status_satisfied
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UIImage
 import platform.UIKit.UIPasteboard
+import platform.darwin.dispatch_get_main_queue
+import kotlin.concurrent.Volatile
 
 /**
  * [AppPlatform] on iOS. The Spotify session keeps its cookie and token in the Keychain ([secrets]) and
@@ -24,6 +33,10 @@ import platform.UIKit.UIPasteboard
  * interface shows ([toasts]), as on the desktop.
  */
 class IosAppPlatform(private val secrets: SecretStorage) : AppPlatform {
+    init {
+        IosNetworkMonitor.start()
+    }
+
     override val kind = AppPlatform.Kind.IOS
 
     override val appVersion: String =
@@ -88,11 +101,34 @@ class IosAppPlatform(private val secrets: SecretStorage) : AppPlatform {
 
     override fun readClipboard(): String? = UIPasteboard.generalPasteboard.string
 
-    // iOS does not answer this synchronously: requests fail by themselves, and say why, when it is not.
-    override fun isOnline(): Boolean = true
+    override fun isOnline(): Boolean = IosNetworkMonitor.isOnline
 
     private companion object {
         const val TAG = "IosAppPlatform"
         const val SPOTIFY_PREFS = "rustify_spotify_prefs"
+    }
+}
+
+/**
+ * Monitors iOS network connectivity via [NWPathMonitor] (`platform.Network`).
+ * Lives for the whole application lifetime and updates [isOnline] when path status changes.
+ */
+private object IosNetworkMonitor {
+    @Volatile
+    var isOnline: Boolean = true
+        private set
+
+    private val monitor: nw_path_monitor_t = nw_path_monitor_create()
+
+    fun start() {
+        // Accessing this function ensures the singleton object is initialized.
+    }
+
+    init {
+        nw_path_monitor_set_update_handler(monitor) { path ->
+            isOnline = path != null && nw_path_get_status(path) == nw_path_status_satisfied
+        }
+        nw_path_monitor_set_queue(monitor, dispatch_get_main_queue())
+        nw_path_monitor_start(monitor)
     }
 }

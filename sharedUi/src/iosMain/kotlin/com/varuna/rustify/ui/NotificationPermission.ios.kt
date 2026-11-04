@@ -3,6 +3,6 @@ package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
 
-/** Nothing to ask: iOS has no downloads that notify (AppServices.can(DOWNLOADS) is false there). */
+/** Nothing to ask: downloads on iOS do not notify. */
 @Composable
 actual fun rememberNotificationPermissionRequest(): () -> Unit = {}
