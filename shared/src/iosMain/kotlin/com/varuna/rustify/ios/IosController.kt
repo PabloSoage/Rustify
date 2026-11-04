@@ -94,6 +94,15 @@ class IosController(secrets: SecretStorage) {
 
     fun togglePause() = player.togglePause()
 
+    /** Plays if paused; for the lock screen's play button and the end of an interruption. */
+    fun play() = player.play()
+
+    /** Pauses if playing; for the lock screen's pause button, an interruption or unplugged headphones. */
+    fun pause() = player.pause()
+
+    /** Whether the player is playing now, for callers that ask rather than [observe]. */
+    val isPlaying: Boolean get() = player.ui.value.playing
+
     fun next() = player.next()
 
     fun previous() = player.previous()

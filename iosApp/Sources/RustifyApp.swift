@@ -2,9 +2,8 @@
 //
 // The iOS shell: SwiftUI over IosController (shared/src/iosMain/.../ios/IosController.kt), which is
 // the same QueuePlayer the desktop runs, over the same core through its C ABI. Audio plays through
-// the core's engine (cpal → CoreAudio); this file only sets up the audio session iOS requires.
+// the core's engine (cpal → CoreAudio); the audio session iOS requires is AudioSession.swift.
 
-import AVFoundation
 import RustifyShared
 import SwiftUI
 
@@ -31,9 +30,10 @@ final class PlayerModel: ObservableObject {
     @Published var searching = false
     @Published var searchError: String?
     private var observation: Kotlinx_coroutines_coreJob?
+    private var audio: AudioSession?
 
     init() {
-        configureAudioSession()
+        audio = AudioSession(controller: controller)
         let fm = FileManager.default
         let data = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let cache = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -41,19 +41,14 @@ final class PlayerModel: ObservableObject {
         try? fm.createDirectory(at: cache, withIntermediateDirectories: true)
         controller.start(dataDir: data.path, cacheDir: cache.path)
         observation = controller.observe { [weak self] ui in
-            self?.ui = ui
+            guard let self else { return }
+            // Whatever started it (the core moving on, a restored queue), playing needs the session.
+            if ui.playing && self.ui?.playing != true { self.audio?.activate() }
+            self.ui = ui
         }
         controller.restoreSpotify { [weak self] user in
             self?.user = user
         }
-    }
-
-    /// Playback category: plays with the silent switch on and keeps going in the background
-    /// (with UIBackgroundModes = audio in Info.plist).
-    private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
     }
 
     func search(_ query: String) {
@@ -71,7 +66,12 @@ final class PlayerModel: ObservableObject {
     }
 
     func play(at index: Int) {
+        audio?.activate()
         controller.playAll(tracks: results, start: Int32(index))
+    }
+
+    func togglePause() {
+        if controller.isPlaying { controller.pause() } else { audio?.play() }
     }
 
     func signIn(_ cookie: String) {
@@ -163,7 +163,7 @@ struct NowPlayingBar: View {
                 }
                 Spacer()
                 Button { model.controller.previous() } label: { Image(systemName: "backward.fill") }
-                Button { model.controller.togglePause() } label: {
+                Button { model.togglePause() } label: {
                     Image(systemName: (ui?.playing ?? false) ? "pause.fill" : "play.fill")
                 }
                 .font(.title2)
