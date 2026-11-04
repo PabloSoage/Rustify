@@ -62,11 +62,25 @@ PY
 mkdir -p "$data/Documents"
 afconvert -d aac -f m4af "$tone/tone.wav" "$data/Documents/Walkthrough Ñandú.m4a"
 
-# The app used, not only looked at (iosApp/UITests). Last: its result is what the step ends with.
+# The network the walkthrough plays and downloads over; the simulator shares the Mac's loopback.
+python3 tools/ios/own-server.py 8765 "$out/own-server.log" &
+server=$!
+trap 'kill "$logger" "$server" 2>/dev/null || true; xcrun simctl shutdown "$device" || true' EXIT
+sleep 3
+
+# The app used, not only looked at (iosApp/UITests).
 (
   cd iosApp
   TEST_RUNNER_CHECK_DIR="$out" xcodebuild test -project Rustify.xcodeproj -scheme Rustify \
     -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/test \
     -resultBundlePath "$out/walkthrough.xcresult" ARCHS=arm64 CODE_SIGNING_ALLOWED=NO | tail -40
 )
+
+# What the screen cannot tell: that the audio came over the network, further than its first bytes (the
+# engine asks in ranges, one that starts past zero is it going on reading), and that a file came of it.
+grep -E '^STREAM .* from [1-9]' "$out/own-server.log" >/dev/null \
+  || { echo "the app never read past the start of the stream" >&2; exit 1; }
+ls -l "$data/Documents" | tee "$out/documents.txt"
+[ "$(find "$data/Documents" -name '*Around the World*' -size +1M | wc -l)" -ge 1 ] \
+  || { echo "the download left no file in Documents" >&2; exit 1; }
 echo "walked through it; screenshots in $out"

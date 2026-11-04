@@ -20,6 +20,7 @@ final class WalkthroughTests: XCTestCase {
         link()
         localMusic()
         settings()
+        ownServer()
     }
 
     private func home() {
@@ -79,6 +80,55 @@ final class WalkthroughTests: XCTestCase {
         guard tap("View logs") else { return }
         // The button is gone with the screen it was on; what the viewer holds is read on the screenshot.
         gone("logs", "View logs")
+    }
+
+    /// Sets up the server own-server.py is, as a person would, then plays from it and downloads from it.
+    /// That the bytes came from there is for simulator-check.sh to read, in the server's log.
+    private func ownServer() {
+        guard tap("Back"), tap("Back"), tap("Audio & backends") else { return }
+        guard fill("Server address", "http://127.0.0.1:8765"), fill("User", "walkthrough") else { return }
+        guard scrollTo(element("Save and test")) else { return }
+        element("Save and test").tap()
+        step("own-server", shows: "Connected: walkthrough 1", timeout: 20)
+
+        guard tap("Back"), tap("Home"), tap("Search") else { return }
+        if !element("Around the World").waitForExistence(timeout: 5) {
+            guard tap("What do you want to listen to?") else { return }
+            app.typeText("Around the World Daft Punk\n")
+        }
+        guard tap("Around the World") else { return }
+        step("own-server-playing", shows: "Pause", timeout: 30)
+        // Long enough for the engine to want its second range.
+        sleep(25)
+        record("own-server-after-25s")
+        guard tap("Pause") else { return }
+        gone("own-server-paused", "Pause")
+
+        guard tap("More options"), tap("Download track") else { return }
+        step("own-server-downloaded", shows: "Track downloaded", timeout: 60)
+    }
+
+    /// The text field labelled exactly [label], further down a screen of many.
+    private func fill(_ label: String, _ text: String) -> Bool {
+        let field = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", label, label + " ")).firstMatch
+        guard scrollTo(field) else { return false }
+        field.tap()
+        app.typeText(text + "\n")
+        sleep(1)
+        record("filled-\(label)")
+        return true
+    }
+
+    private func scrollTo(_ target: XCUIElement) -> Bool {
+        for _ in 0..<40 where !(target.exists && target.isHittable) {
+            app.swipeUp()
+        }
+        guard target.exists && target.isHittable else {
+            XCTFail("could not reach \(target)")
+            record("unreachable")
+            return false
+        }
+        return true
     }
 
     private func element(_ text: String) -> XCUIElement {

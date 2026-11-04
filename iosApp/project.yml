@@ -38,6 +38,10 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         # Keeps playing with the screen off or the app in the background.
         UIBackgroundModes: [audio]
+        # The user's own server, as often as not plain http on the LAN (Subsonic, as on the phone).
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Rustify plays from your own music server on this network when you set one up.
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:
       base:
