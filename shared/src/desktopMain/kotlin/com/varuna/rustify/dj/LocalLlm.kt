@@ -66,6 +66,18 @@ object LocalLlmSettings {
         val model = chosenModel.takeIf { it in server.models } ?: server.models.first()
         return Target(server.kind, server.baseUrl, model)
     }
+
+    /**
+     * What the "local" mode asks now, by what [prefs] chose: a server found on loopback ([pick]), else
+     * Rustify's own ([managed]) when the choice allows it; null when nothing will answer. The DJ and
+     * the desktop's chat and lyrics translation ask the same one.
+     */
+    suspend fun target(prefs: KeyValueStore, managed: suspend () -> Target?): Target? {
+        val source = source(prefs)
+        val servers = if (source == LocalLlmServer.Kind.MANAGED.code) emptyList() else LocalLlmDetector.detect()
+        return pick(source, model(prefs), servers)
+            ?: if (source == AUTO || source == LocalLlmServer.Kind.MANAGED.code) managed() else null
+    }
 }
 
 /**

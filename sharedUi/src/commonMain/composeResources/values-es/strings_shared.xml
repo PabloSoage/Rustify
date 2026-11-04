@@ -47,4 +47,12 @@
     <string name="settings_dj_local_start">Arrancar</string>
     <string name="settings_dj_local_stop">Parar</string>
     <string name="settings_dj_local_delete">Borrar el modelo</string>
+    <!-- El chat con el modelo del DJ en el escritorio (NanoChatScreen sobre DesktopChatModel). -->
+    <string name="chat_title_desktop">Chat con el modelo del DJ</string>
+    <string name="chat_empty_desktop">Pregunta lo que quieras, o pídele que ponga, añada a la cola o busque música, que haga una mezcla, que pause o que salte. Es el modelo al que pregunta el DJ: un servidor de modelos en este ordenador (Ollama, LM Studio, llama.cpp o el de Rustify), o la IA externa elegida para el DJ en Ajustes cuando usa una. Con un modelo local la conversación no sale de este ordenador; cuando pone o busca algo, solo sale esa búsqueda, como cualquier búsqueda de la app.</string>
+    <string name="chat_no_model">No hay ningún modelo con el que hablar: no hay ninguno en marcha en este ordenador. Arranca Ollama, LM Studio o llama-server, o descarga el de Rustify aquí debajo; o elige IA externa para el DJ en Ajustes.</string>
+    <string name="chat_no_model_short">ningún modelo en marcha</string>
+    <string name="chat_no_images">Aquí no hay fotos: al modelo se le pregunta solo con texto, porque un servidor de modelos solo lee imágenes con un modelo de visión, y el que está en marcha puede no serlo.</string>
+    <string name="chat_no_token_count">Cada respuesta muestra sus tiempos pero no su velocidad en tokens por segundo: no todos los servidores de modelos dicen cuántos tokens han escrito.</string>
+    <string name="chat_stats_times">primera palabra %1$s s · total %2$s s</string>
 </resources>

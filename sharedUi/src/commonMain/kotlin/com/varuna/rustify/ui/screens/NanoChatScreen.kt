@@ -181,7 +181,8 @@ fun NanoChatScreen(
             val result = runCatching {
                 val system = ChatActions.systemPrompt(
                     nowPlaying?.let { label(it) },
-                    queue.dropWhile { it.id != nowPlaying?.id }.drop(1).map { label(it) }
+                    queue.dropWhile { it.id != nowPlaying?.id }.drop(1).map { label(it) },
+                    device = chat.device,
                 )
                 chat.stream(system, history, question, attached) { text ->
                     if (firstTokenMs < 0) firstTokenMs = started.elapsedNow().inWholeMilliseconds
@@ -196,8 +197,11 @@ fun NanoChatScreen(
                 val text = answer.toString().ifBlank { whole }
                 val tokens = chat.countTokens(text)
                 val genMs = (totalMs - firstTokenMs.coerceAtLeast(0)).coerceAtLeast(1)
-                val stats = tokens?.let {
-                    fillDecimals(statsTemplate, firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, it * 1000.0 / genMs)
+                // A model that does not count tokens gets its times without the speed.
+                val stats = if (tokens != null) {
+                    fillDecimals(statsTemplate, firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, tokens * 1000.0 / genMs)
+                } else {
+                    appString(Res.string.chat_stats_times, oneDecimal(firstTokenMs.coerceAtLeast(0) / 1000.0), oneDecimal(totalMs / 1000.0))
                 }
                 val action = ChatActions.parse(text)?.takeIf { ChatActions.isRequest(question) }
                 messages[answerIndex] = ChatMessage(false, ChatActions.visibleText(text), stats = stats)
@@ -254,6 +258,13 @@ fun NanoChatScreen(
             ) {
                 if (messages.isEmpty()) {
                     item { Text(stringResource(chat.intro), color = Color.Gray, fontSize = 14.sp) }
+                    // What this model cannot do, said where the photo button and the speed would be missed.
+                    if (!chat.supportsImages) {
+                        item { Text(stringResource(Res.string.chat_no_images), color = Color.Gray, fontSize = 12.sp) }
+                    }
+                    if (!chat.countsTokens) {
+                        item { Text(stringResource(Res.string.chat_no_token_count), color = Color.Gray, fontSize = 12.sp) }
+                    }
                 }
                 items(messages) { m ->
                     Bubble(m, green, onPlay = { t -> onPlayTracks(listOf(t)) }, onQueue = { t -> onEnqueueTracks(listOf(t)) })

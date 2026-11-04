@@ -287,7 +287,8 @@ fun AdvancedLinks(
             stringResource(Res.string.home_metrics) to onMetrics,
             stringResource(Res.string.settings_edit_matches) to onMatchEditor,
             stringResource(Res.string.audio_lab_title) to onAudioLab,
-            stringResource(Res.string.nano_chat_title) to onNanoChat
+            // Named by the model it talks to: Gemini Nano on the phone, the DJ's model on the desktop.
+            stringResource(com.varuna.rustify.ui.LocalAppServices.current.chatModel()?.title ?: Res.string.nano_chat_title) to onNanoChat
         ).forEach { (label, action) ->
             Button(onClick = action, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(label, color = Color.White, modifier = Modifier.weight(1f))

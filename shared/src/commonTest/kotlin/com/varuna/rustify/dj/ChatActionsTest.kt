@@ -56,4 +56,11 @@ class ChatActionsTest {
         assertEquals("A", ChatActions.visibleText("A"))
         assertEquals("Just talking.", ChatActions.visibleText("Just talking."))
     }
+
+    @Test
+    fun theInstructionsSayWhereTheAppRuns() {
+        val phone = "You are the music assistant inside Rustify, a music player app, running on this phone. "
+        assertEquals(true, ChatActions.systemPrompt(null, emptyList()).startsWith(phone))
+        assertEquals(true, ChatActions.systemPrompt(null, emptyList(), device = "this computer").contains("running on this computer. "))
+    }
 }

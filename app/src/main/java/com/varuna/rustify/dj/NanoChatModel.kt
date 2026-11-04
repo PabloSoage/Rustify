@@ -43,6 +43,7 @@ class NanoChatModel(context: Context) : ChatModel {
 
     override val title: StringResource = Res.string.nano_chat_title
     override val intro: StringResource = Res.string.nano_chat_empty
+    override val device: String = "this phone"
     override val supportsImages: Boolean = true
     override val countsTokens: Boolean = true
 

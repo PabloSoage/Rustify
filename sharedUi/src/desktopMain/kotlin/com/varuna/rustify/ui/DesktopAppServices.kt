@@ -32,7 +32,8 @@ import java.util.Locale
  * [AppServices] on the desktop. Downloads are [DesktopDownloads]; tempo is Android's today
  * (MediaCodec), and so are translation and video; [can] says so and the screens show them as
  * unavailable. The DJ is the shared one: it speaks with the system's voice, and its "local" mode is a
- * model server on this computer, one already there or Rustify's own; it has no microphone.
+ * model server on this computer, one already there or Rustify's own; it has no microphone. The chat
+ * talks to the model the DJ asks ([DesktopChatModel]).
  */
 class DesktopAppServices(
     private val platform: AppPlatform,
@@ -118,8 +119,12 @@ class DesktopAppServices(
     @Composable
     override fun LocalDjSettings() = DesktopLocalDjPanel(platform, localModels)
 
-    // Not yet: the chat asks Gemini Nano, and the shell says the screen is not here.
-    override fun chatModel(): com.varuna.rustify.dj.ChatModel? = null
+    // The model the DJ asks: its external AI when it uses one, else the local mode's server.
+    private val chat by lazy {
+        DesktopChatModel(platform, localModels, localTarget = { LocalLlmSettings.target(platform.prefs(), managed = { managedTarget() }) })
+    }
+
+    override fun chatModel(): com.varuna.rustify.dj.ChatModel = chat
 
     /** The window is closing: the model server and the voice stop with it. */
     fun close() {

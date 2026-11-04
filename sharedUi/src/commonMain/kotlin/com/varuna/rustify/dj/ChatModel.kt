@@ -24,6 +24,9 @@ interface ChatModel {
     /** What the empty conversation says: what to ask, and where the conversation goes. */
     val intro: StringResource
 
+    /** Where the app runs, as its instructions say it ("this phone"): see [ChatActions.systemPrompt]. */
+    val device: String
+
     /** Whether a photo can go with a question. */
     val supportsImages: Boolean
 

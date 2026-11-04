@@ -84,21 +84,6 @@ class ApiDjProvider(
         return text
     }
 
-    /**
-     * Accepts base URLs with or without a path. If it already contains `/openai` or
-     * `/chat/completions` it is kept as-is; if it ends in `/v1`, `/chat/completions` is appended;
-     * otherwise the standard OpenAI layout is assumed.
-     */
-    private fun resolveEndpoint(base: String): String {
-        val b = base.trim().trimEnd('/')
-        return when {
-            b.endsWith("/openai") -> b
-            b.endsWith("/chat/completions") -> b
-            b.endsWith("/v1") -> "$b/chat/completions"
-            else -> "$b/v1/chat/completions"
-        }
-    }
-
     /** Extracts `choices[0].message.content` from the OpenAI-compatible response. */
     private fun extractAssistantContent(raw: String): String {
         val obj = Json.parseToJsonElement(raw) as? JsonObject ?: return ""
@@ -106,6 +91,23 @@ class ApiDjProvider(
         val first = choices.firstOrNull() as? JsonObject ?: return ""
         val message = first["message"] as? JsonObject
         return if (message != null) message["content"].text() else first["text"].text()
+    }
+
+    internal companion object {
+        /**
+         * Accepts base URLs with or without a path. If it already contains `/openai` or
+         * `/chat/completions` it is kept as-is; if it ends in `/v1`, `/chat/completions` is appended;
+         * otherwise the standard OpenAI layout is assumed. The desktop's chat asks the same endpoint.
+         */
+        fun resolveEndpoint(base: String): String {
+            val b = base.trim().trimEnd('/')
+            return when {
+                b.endsWith("/openai") -> b
+                b.endsWith("/chat/completions") -> b
+                b.endsWith("/v1") -> "$b/chat/completions"
+                else -> "$b/v1/chat/completions"
+            }
+        }
     }
 
     /** org.json's `optString`, which this read before 5.x: absent or null is "". */

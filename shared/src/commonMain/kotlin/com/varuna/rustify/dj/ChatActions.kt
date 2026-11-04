@@ -5,8 +5,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * What the Gemini Nano chat can do in the app (4.8.1), besides talking: play, queue, search, start a
- * DJ mix and the transport buttons.
+ * What the chat with the DJ's model (Gemini Nano on the phone) can do in the app (4.8.1), besides
+ * talking: play, queue, search, start a DJ mix and the transport buttons.
  *
  * The Prompt API has no function calling, so the model is asked for the same thing the DJ asks it
  * for: plain text plus one machine-readable line, here `ACTION: {"do": …}` at the end of the answer.
@@ -27,9 +27,12 @@ sealed interface ChatAction {
 object ChatActions {
     private const val MARKER = "ACTION:"
 
-    /** The instructions that go before the conversation: who the assistant is and what it can do. */
-    fun systemPrompt(nowPlaying: String?, upNext: List<String>): String = buildString {
-        append("You are the music assistant inside Rustify, a music player app, running on this phone. ")
+    /**
+     * The instructions that go before the conversation: who the assistant is and what it can do.
+     * [device] is where the app runs ("this computer" on the desktop).
+     */
+    fun systemPrompt(nowPlaying: String?, upNext: List<String>, device: String = "this phone"): String = buildString {
+        append("You are the music assistant inside Rustify, a music player app, running on ").append(device).append(". ")
         append("Talk about music normally. You can also control the app: when the user asks you to play, ")
         append("queue or find music, start a mix, or pause, resume or skip, answer with one short sentence ")
         append("and end with one last line exactly like this:\n")
