@@ -146,7 +146,6 @@ fun DownloadRow(task: DownloadTask) {
                             DownloadStatus.QUEUED -> stringResource(Res.string.track_menu_connecting)
                             DownloadStatus.RESOLVING -> stringResource(Res.string.track_menu_getting_url)
                             DownloadStatus.DOWNLOADING -> stringResource(Res.string.track_menu_download_progress, task.progress)
-                            else -> ""
                         },
                         color = Color(0xFF1DB954),
                         style = MaterialTheme.typography.labelSmall

@@ -104,7 +104,7 @@ object AudioBackendSettings {
         // instances are widely blocked by YouTube/Cloudflare). Appending new providers as disabled
         // only applies when prefs already existed, so upgrades preserve the user's choices.
         val isFirstRun = raw.isNullOrBlank()
-        if (!isFirstRun) raw?.let { entriesIn(it) }?.let { parsed.addAll(it) }
+        if (!isFirstRun) entriesIn(raw)?.let { parsed.addAll(it) }
         // Append missing known providers: on first run only the DEFAULT_ON ones start enabled;
         // on upgrade anything new arrives disabled so it can't change existing behaviour.
         val present = parsed.map { it.id }.toMutableSet()

@@ -63,7 +63,7 @@ class DeezerAudioSource(private val env: AudioSourceEnvironment) : AudioSourcePr
                 upstreamUrl = media.url,
                 sngId = media.sngId,
                 mime = mime,
-                cacheKey = if (keepACopy && trackId != null) cache.keyFor(trackId) else null,
+                cacheKey = if (keepACopy) cache.keyFor(trackId) else null,
                 cacheRoot = if (keepACopy) cache.cacheRoot() else null
             ) ?: error("the local player server is not running, so Deezer cannot be decrypted")
 

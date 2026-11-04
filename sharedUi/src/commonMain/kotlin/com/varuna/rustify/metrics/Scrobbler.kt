@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 class Scrobbler(private val platform: AppPlatform, private val scope: CoroutineScope) {
     /** Parent of the submits still on their way; a child of [scope]'s job, so it ends with it. */
     private val submits = SupervisorJob(scope.coroutineContext[Job])
+    private val submitScope = CoroutineScope(scope.coroutineContext + submits)
 
     fun started(track: FullTrack, startedAt: Long) {
         if (ListenBrainz.token(platform) != null) {
@@ -32,10 +33,10 @@ class Scrobbler(private val platform: AppPlatform, private val scope: CoroutineS
         if (errored || !ListenBrainz.qualifies(listenedMs, track.durationMs.toLong())) return
         val listen = ListenBrainz.listenOf(track, startedAt)
         if (ListenBrainz.token(platform) != null) {
-            scope.launch(submits) { runCatching { ListenBrainz.submit(platform, listen) } }
+            submitScope.launch { runCatching { ListenBrainz.submit(platform, listen) } }
         }
         if (LastFm.credentials(platform) != null) {
-            scope.launch(submits) { runCatching { LastFm.submit(platform, listen) } }
+            submitScope.launch { runCatching { LastFm.submit(platform, listen) } }
         }
     }
 

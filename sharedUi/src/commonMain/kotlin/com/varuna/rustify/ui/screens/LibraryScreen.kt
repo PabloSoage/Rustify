@@ -869,7 +869,7 @@ fun LibraryLocalMusic(
     var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
 
     val prefs = platform.prefs("rustify_settings")
-    val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()
+    val localMusicDirs = prefs.getStringSet("local_music_directories", emptySet())
     
     LaunchedEffect(localMusicDirs) {
         spotifyRepo.scanLocalMusic()

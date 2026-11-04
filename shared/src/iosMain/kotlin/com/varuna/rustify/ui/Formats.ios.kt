@@ -176,10 +176,10 @@ actual fun formatIsoDateMedium(isoOffsetDateTime: String): String? = runCatching
 
 private fun dateFormatter(): NSDateFormatter = NSDateFormatter().apply { locale = IosLocale.current }
 
-actual fun monthName(index: Int): String = dateFormatter().monthSymbols?.getOrNull(index) as? String ?: ""
+actual fun monthName(index: Int): String = dateFormatter().monthSymbols.getOrNull(index) as? String ?: ""
 
 // Foundation lists the weekdays from Sunday; the core counts Monday as 0.
-actual fun weekdayName(weekday: Int): String = dateFormatter().weekdaySymbols?.getOrNull((weekday + 1) % 7) as? String ?: ""
+actual fun weekdayName(weekday: Int): String = dateFormatter().weekdaySymbols.getOrNull((weekday + 1) % 7) as? String ?: ""
 
 /** The user's calendar in this device's zone, its first weekday the interface's locale's. */
 private fun calendar(): NSCalendar = NSCalendar.currentCalendar.also { it.locale = IosLocale.current }
