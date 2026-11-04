@@ -1,12 +1,21 @@
 package com.varuna.rustify.dj
 
+import com.varuna.rustify.platform.httpClient
 import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.parseArray
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
+import kotlin.time.TimeSource
 
 /**
  * Catalog of AI providers for the DJ's API mode.
@@ -53,15 +62,14 @@ object DjProviders {
     fun customProviders(platform: AppPlatform): List<DjApiProvider> {
         val raw = prefs(platform).getString(KEY_CUSTOM) ?: return emptyList()
         return runCatching {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
+            parseArray(raw).map { element ->
+                val o = element as JsonObject
                 DjApiProvider(
-                    id = o.optString("id"),
-                    label = o.optString("label"),
-                    baseUrl = o.optString("baseUrl"),
-                    model = o.optString("model"),
-                    apiKey = o.optString("apiKey", ""),
+                    id = o["id"].optString(),
+                    label = o["label"].optString(),
+                    baseUrl = o["baseUrl"].optString(),
+                    model = o["model"].optString(),
+                    apiKey = o["apiKey"].optString(""),
                     builtIn = false
                 )
             }
@@ -91,12 +99,13 @@ object DjProviders {
     }
 
     private fun persistCustom(platform: AppPlatform, list: List<DjApiProvider>) {
-        val arr = JSONArray()
-        list.forEach { p ->
-            arr.put(JSONObject().apply {
-                put("id", p.id); put("label", p.label); put("baseUrl", p.baseUrl)
-                put("model", p.model); put("apiKey", p.apiKey)
-            })
+        val arr = buildJsonArray {
+            list.forEach { p ->
+                addJsonObject {
+                    put("id", p.id); put("label", p.label); put("baseUrl", p.baseUrl)
+                    put("model", p.model); put("apiKey", p.apiKey)
+                }
+            }
         }
         prefs(platform).putString(KEY_CUSTOM, arr.toString())
     }
@@ -135,20 +144,20 @@ object DjProviders {
      */
     suspend fun measureLatency(baseUrl: String): Long? = withContext(Dispatchers.IO) {
         runCatching {
-            val start = System.nanoTime()
-            val conn = (URL(baseUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 4000
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "Rustify-DJ")
-            }
-            try {
-                conn.connect()
-                conn.responseCode // forces the round-trip
-            } finally {
-                conn.disconnect()
-            }
-            (System.nanoTime() - start) / 1_000_000
+            val start = TimeSource.Monotonic.markNow()
+            // Up to the status line, as HttpURLConnection's responseCode was: the body is not read.
+            latencyHttp.prepareGet(baseUrl) { header(HttpHeaders.UserAgent, "Rustify-DJ") }.execute { it.status }
+            start.elapsedNow().inWholeMilliseconds
         }.getOrNull()
+    }
+
+    /** Four seconds to connect and four between bytes, the probe's timeouts before it moved to Ktor. */
+    private val latencyHttp by lazy {
+        httpClient {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 4_000
+                socketTimeoutMillis = 4_000
+            }
+        }
     }
 }
