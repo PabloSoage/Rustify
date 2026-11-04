@@ -45,6 +45,13 @@ interface AppShell {
     @Composable
     fun SettingsSections(slot: SettingsSlot, host: ShellHost)
 
+    /**
+     * The page the Settings easter egg ends on: Android shows it over the app, in a full-screen
+     * WebView with a close button; the desktop opens it in the browser and closes at once.
+     */
+    @Composable
+    fun EasterEggPage(url: String, onClose: () -> Unit)
+
     /** The Settings menu's top-bar actions (Android: check for an update). */
     @Composable
     fun SettingsActions(host: ShellHost)

@@ -154,7 +154,7 @@ fun SettingsScreen(shell: AppShell, host: ShellHost) {
                 RustifyLinkSection()
                 shell.SettingsSections(SettingsSlot.GENERAL_DJ, host)
                 SessionSection(host)
-                VersionLine()
+                VersionLine(shell)
                 Spacer(modifier = Modifier.height(32.dp))
             }
           }
@@ -386,13 +386,15 @@ private fun SessionSection(host: ShellHost) {
 }
 
 // Easter egg (level 1): tap the version 7 times to reveal an animated crab. Tap it 9 more times to
-// trigger the nested egg (level 2), which opens standle.net in the app's language.
+// trigger the nested egg (level 2), which opens standle.net in the app's language (the platform's
+// page: over the app on Android, the browser on the desktop).
 @Composable
-private fun ColumnScope.VersionLine() {
+private fun ColumnScope.VersionLine(shell: AppShell) {
     val platform = LocalAppPlatform.current
     var eggTaps by remember { mutableIntStateOf(0) }
     var showEgg by remember { mutableStateOf(false) }
     var showJojo by remember { mutableStateOf(false) }
+    var showWeb by remember { mutableStateOf(false) }
     var oraCount by remember { mutableIntStateOf(0) }
     // Resolved here, in the screen's composition, so the dialogs show the app's language.
     val eggTitle = stringResource(Res.string.egg_found_title)
@@ -426,8 +428,12 @@ private fun ColumnScope.VersionLine() {
     if (showJojo) {
         JojoTimeStop(
             message = eggJojoMsg,
-            onContinue = { showJojo = false; platform.openUrl("https://standle.net/$webLang") },
+            onContinue = { showJojo = false; showWeb = true },
             onDismiss = { showJojo = false }
         )
+    }
+
+    if (showWeb) {
+        shell.EasterEggPage("https://standle.net/$webLang", onClose = { showWeb = false })
     }
 }

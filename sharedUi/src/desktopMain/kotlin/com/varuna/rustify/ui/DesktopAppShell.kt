@@ -18,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,6 +105,15 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             fontSize = 13.sp,
             modifier = Modifier.padding(vertical = 12.dp),
         )
+    }
+
+    @Composable
+    override fun EasterEggPage(url: String, onClose: () -> Unit) {
+        val platform = LocalAppPlatform.current
+        LaunchedEffect(url) {
+            platform.openUrl(url)
+            onClose()
+        }
     }
 
     @Composable
