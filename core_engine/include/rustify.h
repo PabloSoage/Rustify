@@ -66,11 +66,17 @@ extern "C" {
  * exactly as their JNI twins do.
  *
  *   searchYtMusic {query}              getYtmAlbum {id}  getYtmArtist {id}  getYtmPlaylist {id}
- *   resolveInnertubeAudio {videoId, prefs}
+ *   searchYouTube {query}              resolveInnertubeAudio {videoId, prefs}
+ *   setInnertubeClients {clients}
  *   registerTrackMetadata {id, name, artists, durationMs, isrc}   resolveYouTubeId {spotifyId, youtubeId}
+ *   setAlternativeTrack {spotifyId, youtubeId}  getAlternativeTrack {spotifyId}  updateQueue {trackIds}
+ *   installAddon {url}  listAddons {}  uninstallAddon {id}  setAddonEnabled {id, enabled}
+ *   reorderAddons {ids}  resolveViaAddon {addonId, query}
  *   jamNewCode {}  jamJoin {config}  jamPoll {timeoutMs}  jamPublishState {state}
  *   jamSend {command}  jamKick {id}  jamLeave {}
- *   startLocalServer {}
+ *   startLocalServer {}  registerLocalStream {request}  forgetLocalStream {handle}
+ *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
+ *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}
  *
  * The list is kept in step with ffi::METHODS by the tests in src/ffi.rs.

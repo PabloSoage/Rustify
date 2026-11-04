@@ -1098,91 +1098,94 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocal
         let raw = request_json.mutf8_chars(env)?.to_string();
         match serde_json::from_str::<RegisterStreamRequest>(&raw) {
             Err(_) => r#"{"status":"refused","reason":"bad request"}"#.to_string(),
-            Ok(request) if request.mode == "proxy" => {
-                let answer = match server::register_proxy::<env::android::AndroidEnv>(
-                    &request.upstream_url,
-                    &request.deezer_sng_id,
-                    if request.mime.is_empty() {
-                        None
-                    } else {
-                        Some(request.mime)
-                    },
-                    if request.ttl_ms > 0 {
-                        Some(request.ttl_ms)
-                    } else {
-                        None
-                    },
-                    // Where a copy lands as it plays. Absent when the user has storing off, which
-                    // is the same switch that governs everything else the server does.
-                    if request.cache_root.is_empty() || request.cache_key.is_empty() {
-                        None
-                    } else {
-                        Some((request.cache_root.as_str(), request.cache_key.as_str()))
-                    },
-                ) {
-                    Some(url) => RegisterStreamAnswer {
-                        status: "ready",
-                        url: Some(url),
-                        reason: None,
-                    },
-                    // The server is not up, or the request was not something to proxy. Either way
-                    // the caller falls back to playing it the way it did before.
-                    None => RegisterStreamAnswer {
-                        status: "notCached",
-                        url: None,
-                        reason: None,
-                    },
-                };
-                serde_json::to_string(&answer)
-                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
-            }
-            Ok(request) => {
-                let cache_root = request.cache_root;
-                let registration = server::Registration {
-                    upstream_url: request.upstream_url,
-                    cache_key: request.cache_key,
-                    mime: if request.mime.is_empty() {
-                        None
-                    } else {
-                        Some(request.mime)
-                    },
-                    deezer_sng_id: if request.deezer_sng_id.is_empty() {
-                        None
-                    } else {
-                        Some(request.deezer_sng_id)
-                    },
-                    ttl_ms: if request.ttl_ms > 0 {
-                        Some(request.ttl_ms)
-                    } else {
-                        None
-                    },
-                };
-
-                let answer =
-                    match server::register::<env::android::AndroidEnv>(registration, &cache_root) {
-                        server::Registered::Ready(url) => RegisterStreamAnswer {
-                            status: "ready",
-                            url: Some(url),
-                            reason: None,
-                        },
-                        server::Registered::NotCached => RegisterStreamAnswer {
-                            status: "notCached",
-                            url: None,
-                            reason: None,
-                        },
-                        server::Registered::Refused(reason) => RegisterStreamAnswer {
-                            status: "refused",
-                            url: None,
-                            reason: Some(reason),
-                        },
-                    };
-                // The fallback is `notCached` and not an error object: whatever went wrong here,
-                // the caller's correct move is to play the upstream URL.
-                serde_json::to_string(&answer)
-                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
-            }
+            Ok(request) => register_local_stream(request),
         }
     })
+}
+
+/// The answer to a request that parsed, for `registerLocalStreamNative` and the C ABI's
+/// `registerLocalStream` alike.
+fn register_local_stream(request: RegisterStreamRequest) -> String {
+    if request.mode == "proxy" {
+        let answer = match server::register_proxy::<env::android::AndroidEnv>(
+            &request.upstream_url,
+            &request.deezer_sng_id,
+            if request.mime.is_empty() {
+                None
+            } else {
+                Some(request.mime)
+            },
+            if request.ttl_ms > 0 {
+                Some(request.ttl_ms)
+            } else {
+                None
+            },
+            // Where a copy lands as it plays. Absent when the user has storing off, which is the
+            // same switch that governs everything else the server does.
+            if request.cache_root.is_empty() || request.cache_key.is_empty() {
+                None
+            } else {
+                Some((request.cache_root.as_str(), request.cache_key.as_str()))
+            },
+        ) {
+            Some(url) => RegisterStreamAnswer {
+                status: "ready",
+                url: Some(url),
+                reason: None,
+            },
+            // The server is not up, or the request was not something to proxy. Either way the
+            // caller falls back to playing it the way it did before.
+            None => RegisterStreamAnswer {
+                status: "notCached",
+                url: None,
+                reason: None,
+            },
+        };
+        return serde_json::to_string(&answer)
+            .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string());
+    }
+
+    let cache_root = request.cache_root;
+    let registration = server::Registration {
+        upstream_url: request.upstream_url,
+        cache_key: request.cache_key,
+        mime: if request.mime.is_empty() {
+            None
+        } else {
+            Some(request.mime)
+        },
+        deezer_sng_id: if request.deezer_sng_id.is_empty() {
+            None
+        } else {
+            Some(request.deezer_sng_id)
+        },
+        ttl_ms: if request.ttl_ms > 0 {
+            Some(request.ttl_ms)
+        } else {
+            None
+        },
+    };
+
+    let answer = match server::register::<env::android::AndroidEnv>(registration, &cache_root) {
+        server::Registered::Ready(url) => RegisterStreamAnswer {
+            status: "ready",
+            url: Some(url),
+            reason: None,
+        },
+        server::Registered::NotCached => RegisterStreamAnswer {
+            status: "notCached",
+            url: None,
+            reason: None,
+        },
+        server::Registered::Refused(reason) => RegisterStreamAnswer {
+            status: "refused",
+            url: None,
+            reason: Some(reason),
+        },
+    };
+    // The fallback is `notCached` and not an error object: whatever went wrong here, the caller's
+    // correct move is to play the upstream URL.
+    serde_json::to_string(&answer).unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
 }
 
 /// JNI Bridge: how many bytes the stream cache is using. For the Settings screen.

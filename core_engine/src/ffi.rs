@@ -23,8 +23,8 @@ use std::ffi::{c_char, CStr, CString};
 use serde_json::Value;
 
 use crate::{
-    audio, autoeq, calendar, env, export, get_runtime, jam, links, listened, matcher, metrics, player,
-    scrobble, search, serialize_result, server, spotify, subsonic, tempo, youtube,
+    addon, audio, autoeq, calendar, env, export, get_runtime, jam, links, listened, matcher, metrics,
+    player, scrobble, search, serialize_result, server, spotify, subsonic, tempo, youtube,
 };
 
 /// Calls `method` with `args_json` (a JSON object) and answers JSON. Free the answer with
@@ -213,9 +213,20 @@ pub const METHODS: &[&str] = &[
     "getYtmAlbum",
     "getYtmArtist",
     "getYtmPlaylist",
+    "searchYouTube",
     "resolveInnertubeAudio",
+    "setInnertubeClients",
     "registerTrackMetadata",
     "resolveYouTubeId",
+    "setAlternativeTrack",
+    "getAlternativeTrack",
+    "updateQueue",
+    "installAddon",
+    "listAddons",
+    "uninstallAddon",
+    "setAddonEnabled",
+    "reorderAddons",
+    "resolveViaAddon",
     "jamNewCode",
     "jamJoin",
     "jamPoll",
@@ -224,6 +235,14 @@ pub const METHODS: &[&str] = &[
     "jamKick",
     "jamLeave",
     "startLocalServer",
+    "registerLocalStream",
+    "forgetLocalStream",
+    "streamCacheSize",
+    "clearStreamCache",
+    "openCastListener",
+    "closeCastListener",
+    "castUrlFor",
+    "castSession",
     "engineStart",
     "engineSend",
     "enginePoll",
@@ -844,6 +863,14 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 get_runtime().block_on(youtube::ytmusic::ytm_get_playlist(&text(args, "id")));
             serde_json::to_string(&playlist).unwrap_or_else(|_| "null".to_string())
         }
+        // searchYouTubeNative — a list of `YouTubeTrack`.
+        "searchYouTube" => {
+            let query = text(args, "query");
+            serialize_result(get_runtime().block_on(async {
+                let scraper = youtube::scraper::YouTubeScraper::new();
+                scraper.search(&query).await
+            }))
+        }
         // resolveInnertubeAudioNative. iOS plays AAC (AVPlayer and the engine both); pass
         // `{"prefer":"aac"}` in `prefs`.
         "resolveInnertubeAudio" => {
@@ -854,6 +881,18 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             >(
                 &text(args, "videoId"), &prefs
             )))
+        }
+        // setInnertubeClientsNative — `clients` is a JSON array of
+        // `youtube::innertube::ClientProfile`; `[]` restores the built-in table.
+        "setInnertubeClients" => {
+            match serde_json::from_value::<Vec<youtube::innertube::ClientProfile>>(args["clients"].clone()) {
+                Err(e) => serialize_result::<(), _>(Err(e)),
+                Ok(list) => serialize_result(
+                    get_runtime()
+                        .block_on(youtube::innertube::set_clients::<env::android::AndroidEnv>(&list))
+                        .map(|_| crate::ok_result()),
+                ),
+            }
         }
 
         // registerTrackMetadataNative — `artists` is a JSON array of names here, not a string of one.
@@ -883,6 +922,82 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             ));
             Value::String(found.unwrap_or_default()).to_string()
         }
+        // setAlternativeTrackNative — the write to disk runs in the background.
+        "setAlternativeTrack" => {
+            youtube::server::set_alternative_track::<env::android::AndroidEnv>(
+                text(args, "spotifyId"),
+                text(args, "youtubeId"),
+            );
+            ok()
+        }
+        // getAlternativeTrackNative — the video id as a JSON string, "" when there is no override.
+        "getAlternativeTrack" => Value::String(
+            youtube::server::get_alternative_track(&text(args, "spotifyId")).unwrap_or_default(),
+        )
+        .to_string(),
+        // updateQueueNative — `trackIds` is a JSON array, in queue order.
+        "updateQueue" => {
+            youtube::server::update_playback_queue::<env::android::AndroidEnv>(strings(args, "trackIds"));
+            ok()
+        }
+
+        // installAddonNative — the installed add-on, or a failure.
+        "installAddon" => serialize_result(
+            get_runtime().block_on(addon::registry::install::<env::android::AndroidEnv>(&text(args, "url"))),
+        ),
+        // listAddonsNative — in the order they are tried.
+        "listAddons" => {
+            let addons = get_runtime().block_on(addon::registry::list::<env::android::AndroidEnv>());
+            serde_json::to_string(&addons).unwrap_or_else(|_| "[]".to_string())
+        }
+        // uninstallAddonNative
+        "uninstallAddon" => serialize_result(
+            get_runtime()
+                .block_on(addon::registry::uninstall::<env::android::AndroidEnv>(&text(args, "id")))
+                .map(|_| spotify::models::OperationResult::ok()),
+        ),
+        // setAddonEnabledNative
+        "setAddonEnabled" => serialize_result(
+            get_runtime()
+                .block_on(addon::registry::set_enabled::<env::android::AndroidEnv>(
+                    &text(args, "id"),
+                    flag(args, "enabled"),
+                ))
+                .map(|_| spotify::models::OperationResult::ok()),
+        ),
+        // reorderAddonsNative — `ids` is a JSON array of add-on ids.
+        "reorderAddons" => serialize_result(
+            get_runtime()
+                .block_on(addon::registry::reorder::<env::android::AndroidEnv>(&strings(args, "ids")))
+                .map(|_| spotify::models::OperationResult::ok()),
+        ),
+        // resolveViaAddonNative — `query` is an `addon::TrackQuery`. `{}` when the add-on does not
+        // have the track, which means "ask the next provider", not a failure.
+        "resolveViaAddon" => match serde_json::from_value::<addon::TrackQuery>(args["query"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(query) => {
+                let id = text(args, "addonId");
+                get_runtime().block_on(async {
+                    let installed = addon::registry::list::<env::android::AndroidEnv>().await;
+                    match installed.iter().find(|a| a.manifest.id == id) {
+                        None => serialize_result::<(), _>(Err(addon::AddonError::Refused(
+                            "no such addon".into(),
+                        ))),
+                        Some(found) => {
+                            match addon::transport::resolve_stream::<env::android::AndroidEnv>(found, &query)
+                                .await
+                            {
+                                Ok(None) => "{}".to_string(),
+                                Ok(Some(answer)) => {
+                                    serde_json::to_string(&answer).unwrap_or_else(|_| "{}".to_string())
+                                }
+                                Err(e) => serialize_result::<(), _>(Err(e)),
+                            }
+                        }
+                    }
+                })
+            }
+        },
 
         // jamNewCode — the code as a JSON string.
         "jamNewCode" => serialize_result::<_, String>(Ok(jam::new_code())),
@@ -921,6 +1036,66 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         "startLocalServer" => match get_runtime().block_on(server::start::<env::android::AndroidEnv>()) {
             Ok(handle) => serde_json::json!({ "port": handle.port, "token": handle.token }).to_string(),
             Err(e) => serialize_result::<(), _>(Err(e)),
+        },
+        // registerLocalStreamNative — `request` is `{upstreamUrl, cacheKey, cacheRoot, mime,
+        // deezerSngId, ttlMs, mode}`. Never touches the network.
+        "registerLocalStream" => match serde_json::from_value::<crate::RegisterStreamRequest>(args["request"].clone()) {
+            Err(_) => r#"{"status":"refused","reason":"bad request"}"#.to_string(),
+            Ok(request) => crate::register_local_stream(request),
+        },
+        // forgetLocalStreamNative
+        "forgetLocalStream" => {
+            server::handles::forget(&text(args, "handle"));
+            ok()
+        }
+        // streamCacheSizeNative — bytes, as a JSON number.
+        "streamCacheSize" => get_runtime().block_on(server::cache::size(&text(args, "cacheRoot"))).to_string(),
+        // clearStreamCacheNative — the bytes freed, as a JSON number.
+        "clearStreamCache" => get_runtime().block_on(server::cache::clear(&text(args, "cacheRoot"))).to_string(),
+
+        // openCastListenerNative — `bindTo` is this device's address on the network (never
+        // 0.0.0.0, which the core refuses); `device` is the one peer that gets an answer.
+        "openCastListener" => {
+            let (bind_str, device_str) = (text(args, "bindTo"), text(args, "device"));
+            let parsed = bind_str
+                .parse::<std::net::IpAddr>()
+                .map_err(|e| format!("{bind_str} is not an address: {e}"))
+                .and_then(|b| {
+                    device_str
+                        .parse::<std::net::IpAddr>()
+                        .map_err(|e| format!("{device_str} is not an address: {e}"))
+                        .map(|d| (b, d))
+                });
+            match parsed {
+                Err(message) => serde_json::json!({ "success": false, "error": message }).to_string(),
+                Ok((bind_ip, device_ip)) => {
+                    match get_runtime().block_on(server::lan::open::<env::android::AndroidEnv>(bind_ip, device_ip)) {
+                        Ok(port) => serde_json::json!({ "success": true, "port": port }).to_string(),
+                        Err(e) => serde_json::json!({ "success": false, "error": e.message() }).to_string(),
+                    }
+                }
+            }
+        }
+        // closeCastListenerNative
+        "closeCastListener" => {
+            server::lan::close::<env::android::AndroidEnv>();
+            ok()
+        }
+        // castUrlForNative — `{"url":…}`, or `{}` when no session is open.
+        "castUrlFor" => match server::lan::url_for(&text(args, "handle")) {
+            Some(url) => serde_json::json!({ "url": url }).to_string(),
+            None => "{}".to_string(),
+        },
+        // castSessionNative — `{"active":true,"boundTo":…,"port":…,"device":…}` or `{"active":false}`.
+        "castSession" => match server::lan::current() {
+            None => r#"{"active":false}"#.to_string(),
+            Some(session) => serde_json::json!({
+                "active": true,
+                "boundTo": session.bound_to.to_string(),
+                "port": session.port,
+                "device": session.device.to_string(),
+            })
+            .to_string(),
         },
 
         // The audio engine (RustAudioEngine*Native on the desktop JVM). Needs `desktop-audio`.
@@ -1063,6 +1238,9 @@ mod tests {
             "arrangeReleases",
             "tempoOf",
             "autoEqBands",
+            "getAlternativeTrack",
+            "castUrlFor",
+            "castSession",
         ];
         for method in offline {
             assert!(!call(method, "{}").contains("unknown method"), "{method}");
@@ -1079,6 +1257,14 @@ mod tests {
         for method in METHODS {
             assert!(header.contains(&format!(" {method} {{")), "{method} is not in rustify.h");
         }
+    }
+
+    #[test]
+    fn a_stream_request_that_does_not_parse_is_refused_as_over_jni() {
+        assert_eq!(
+            call("registerLocalStream", "{}"),
+            r#"{"status":"refused","reason":"bad request"}"#
+        );
     }
 
     #[test]
