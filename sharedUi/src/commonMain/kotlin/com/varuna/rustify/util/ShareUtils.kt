@@ -1,20 +1,31 @@
 package com.varuna.rustify.util
 
+import com.varuna.rustify.platform.httpClient
+import com.varuna.rustify.ui.AppFile
 import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.ui.byteSize
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.listChildren
+import com.varuna.rustify.ui.makeDirs
 import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.ui.toast
+import com.varuna.rustify.ui.writeAllBytes
 import com.varuna.rustify.bridge.maximiseThumbnail
 import com.varuna.rustify.util.ShareUtils.shareRustifyLink
 import com.varuna.rustify.util.ShareUtils.shareSpotifyLink
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Robust sharing of Spotify entity links.
@@ -31,11 +42,14 @@ import java.util.concurrent.TimeUnit
 object ShareUtils {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Ten seconds to connect and fifteen between bytes, OkHttp's settings here before Ktor.
     private val http by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .build()
+        httpClient {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 10_000
+                socketTimeoutMillis = 15_000
+            }
+        }
     }
 
     /** @param type one of "track", "album", "playlist", "artist". */
@@ -120,20 +134,18 @@ object ShareUtils {
      * The full-resolution variant is tried first and the URL as given is kept as a fallback, so a
      * rewrite that stops being valid degrades to the original image instead of to no image at all.
      */
-    private fun downloadCover(cacheDir: File, imageUrl: String): File? {
-        val dir = File(cacheDir, "share").apply { mkdirs() }
-        dir.listFiles()?.forEach { runCatching { it.delete() } }
-        val out = File(dir, "cover.jpg")
+    private suspend fun downloadCover(cacheDir: AppFile, imageUrl: String): AppFile? {
+        val dir = cacheDir.child("share").apply { makeDirs() }
+        dir.listChildren().forEach { runCatching { it.deleteFile() } }
+        val out = dir.child("cover.jpg")
         for (candidate in listOf(highResCover(imageUrl), imageUrl).distinct()) {
             val ok = runCatching {
-                http.newCall(Request.Builder().url(candidate).build()).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use false
-                    val body = resp.body
-                    out.outputStream().use { dst -> body.byteStream().use { it.copyTo(dst) } }
-                    true
-                }
+                val resp = http.get(candidate) { header(HttpHeaders.UserAgent, coverDownloadUserAgent()) }
+                if (!resp.status.isSuccess()) return@runCatching false
+                out.writeAllBytes(resp.body<ByteArray>())
+                true
             }.getOrDefault(false)
-            if (ok && out.length() > 0) return out
+            if (ok && out.byteSize() > 0) return out
         }
         return null
     }

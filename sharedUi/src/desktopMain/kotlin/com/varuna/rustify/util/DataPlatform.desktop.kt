@@ -10,3 +10,5 @@ actual fun countryNameInEnglish(regionCode: String): String =
     Locale.Builder().setRegion(regionCode).build().getDisplayCountry(Locale.ENGLISH)
 
 actual fun deviceZoneOffsetsJson(): String = zoneOffsetsJson()
+
+actual fun coverDownloadUserAgent(): String = "okhttp/" + okhttp3.OkHttp.VERSION

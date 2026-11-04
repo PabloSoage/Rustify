@@ -59,10 +59,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.varuna.rustify.ui.formatCount
 import com.varuna.rustify.ui.monthName
+import com.varuna.rustify.ui.shareFile
 import com.varuna.rustify.ui.startOfYearMillis
 import com.varuna.rustify.ui.toPngBytes
 import com.varuna.rustify.ui.weekdayName
-import java.io.File
 
 /**
  * "Your year" (4.7): the listening history of one year as cards you swipe through — minutes, top
@@ -160,10 +160,8 @@ private fun RecapPager(r: Recap) {
                 scope.launch {
                     val bitmap = layer.toImageBitmap()
                     // cacheDir/share is what Android's FileProvider exposes (file_paths.xml).
-                    // The screen's one JVM type: rememberShareImage takes a java.io.File.
                     val file = withContext(Dispatchers.IO) {
-                        val dir = File(platform.cacheDir, "share").apply { mkdirs() }
-                        File(dir, "rustify_recap_${r.year}.png").apply { writeBytes(bitmap.toPngBytes()) }
+                        platform.shareFile("rustify_recap_${r.year}.png", bitmap.toPngBytes())
                     }
                     shareImage(file, "", "image/png")
                 }

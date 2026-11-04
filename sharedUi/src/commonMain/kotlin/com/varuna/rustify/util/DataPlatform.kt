@@ -23,3 +23,9 @@ expect fun countryNameInEnglish(regionCode: String): String
  * time zones do not list their transitions, so each platform reads its own.
  */
 expect fun deviceZoneOffsetsJson(): String
+
+/**
+ * The `User-Agent` a cover shared with its link is fetched with: OkHttp's own (`okhttp/<version>`)
+ * on Android and the desktop, as when [ShareUtils] called OkHttp directly.
+ */
+expect fun coverDownloadUserAgent(): String

@@ -12,7 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
-import java.io.File
+import kotlin.concurrent.Volatile
 
 /**
  * What the shared screens used Android's `Context` for (docs serie-4.x/26, measured: preferences,
@@ -37,10 +37,10 @@ interface AppPlatform {
     fun prefs(name: String = SETTINGS): KeyValueStore
 
     /** Where the app keeps its own files (Android's `filesDir`). */
-    val filesDir: File
+    val filesDir: AppFile
 
     /** What may be deleted to make room (Android's `cacheDir`). */
-    val cacheDir: File
+    val cacheDir: AppFile
 
     /** A short message over the interface (Android's `Toast`). */
     fun toast(message: String, long: Boolean = false)
@@ -58,7 +58,7 @@ interface AppPlatform {
      * Shares an image file of type [mimeType] with [text] as its caption (none when blank); false
      * when nothing could take it. A screen sharing what it shows uses [rememberShareImage].
      */
-    fun shareImage(file: File, text: String, mimeType: String = "image/*"): Boolean
+    fun shareImage(file: AppFile, text: String, mimeType: String = "image/*"): Boolean
 
     fun copyToClipboard(label: String, text: String)
 
