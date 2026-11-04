@@ -26,7 +26,9 @@ import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.defaultLanguage
 import com.varuna.rustify.ui.DesktopLinks
 import com.varuna.rustify.ui.SingleInstance
+import com.varuna.rustify.ui.UrlScheme
 import java.io.File
+import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -67,6 +69,8 @@ fun main(args: Array<String>) {
             }
         }.onFailure { e -> Log.w("Main", "a second launch will not reach this one", e) }
     }
+    // rustify:// for this user where the installer could not register it (Windows, Linux).
+    thread(name = "rustify-url-scheme", isDaemon = true) { UrlScheme.registerIfNeeded() }
 
     application {
         val scope = rememberCoroutineScope()

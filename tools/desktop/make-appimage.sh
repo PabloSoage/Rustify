@@ -33,14 +33,17 @@ exec "$HERE/usr/bin/Rustify" "$@"
 RUN
 chmod +x "$OUT_DIR/Rustify.AppDir/AppRun"
 
+# %u and the MimeType: rustify:// links open the AppImage once an integrator (appimaged,
+# AppImageLauncher) installs this entry. Without one, the app registers itself at first run (UrlScheme).
 cat > "$OUT_DIR/Rustify.AppDir/rustify.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
 Name=Rustify
 Comment=Music player over your Spotify library
-Exec=Rustify
+Exec=Rustify %u
 Icon=rustify
 Categories=AudioVideo;Audio;Player;
+MimeType=x-scheme-handler/rustify;
 DESKTOP
 
 # The launcher icon jpackage put in the folder, if any; appimagetool insists on one.

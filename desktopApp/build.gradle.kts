@@ -153,17 +153,41 @@ compose.desktop {
                 perUserInstall = true
                 // The phone's launcher icon (app/src/main/res/playstore-icon.png), in each system's format.
                 iconFile.set(project.file("icons/rustify.ico"))
+                // rustify:// is not written by the MSI: this DSL has no URL schemes and jpackage only
+                // associates file extensions. The app registers it for the user at first run, under
+                // HKCU\Software\Classes\rustify (sharedUi's UrlScheme).
             }
             linux {
                 packageName = "rustify"
                 appCategory = "AudioVideo"
                 shortcut = true
                 iconFile.set(project.file("icons/rustify.png"))
+                // Nor by the .deb/.rpm: jpackage's .desktop template has no MimeType and no %u, and the
+                // resource folder that could replace it is cleared by Compose before each package. The
+                // app adds its own hidden handler entry at first run (UrlScheme); the AppImage's entry
+                // declares the scheme itself (tools/desktop/make-appimage.sh).
             }
             macOS {
                 bundleID = "com.varuna.rustify.desktop"
                 iconFile.set(project.file("icons/rustify.icns"))
                 // Unsigned until there is an Apple developer account (docs 24 §5): Gatekeeper will ask.
+                // rustify:// opens this app; the link arrives through Desktop.setOpenURIHandler
+                // (sharedUi's DesktopLinks), not as an argument.
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>CFBundleURLTypes</key>
+                        <array>
+                            <dict>
+                                <key>CFBundleURLName</key>
+                                <string>com.varuna.rustify.desktop</string>
+                                <key>CFBundleURLSchemes</key>
+                                <array>
+                                    <string>rustify</string>
+                                </array>
+                            </dict>
+                        </array>
+                    """.trimIndent()
+                }
             }
         }
     }
