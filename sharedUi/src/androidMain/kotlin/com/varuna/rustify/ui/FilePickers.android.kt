@@ -54,8 +54,18 @@ actual fun rememberSaveFile(
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mimeType)) { uri ->
         val write = pending[0]
         pending[0] = null
-        if (uri == null || write == null) {
+        if (uri == null) {
             onResult(null)
+            return@rememberLauncherForActivityResult
+        }
+        if (write == null) {
+            // The activity was recreated while the picker was open, and the writer went with it. The
+            // picker has already created the file: remove it rather than leave it empty, and say the
+            // save failed, since the user did choose a place.
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { DocumentFile.fromSingleUri(context, uri)?.delete() } }
+                onResult(Result.failure(IllegalStateException("nothing to write to $uri: the screen was recreated")))
+            }
             return@rememberLauncherForActivityResult
         }
         scope.launch {
