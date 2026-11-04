@@ -39,9 +39,13 @@ import platform.posix.shutdown
 import platform.posix.sockaddr_in
 import platform.posix.socket
 import platform.posix.socklen_tVar
+import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionCategoryPlayback
+import platform.AVFAudio.setActive
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CpuArchitecture
 import kotlin.native.Platform
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -74,8 +78,8 @@ class IosEngineStreamTest {
             IosPlayerBackend.send(EngineCommand.Seek(20_000))
             await(token) { it is EngineEvent.Position && it.token == token && it.positionMs >= 20_000 }
             assertTrue(server.furthestRange.value > 0, "asked for more than the first range")
-        } catch (e: NoAudioDevice) {
-            println("Not checked here, the simulator has no audio device: ${e.message}")
+        } catch (e: NoOutputHere) {
+            println("Not checked here, no audio output: ${e.message}")
         } finally {
             IosPlayerBackend.send(EngineCommand.Stop)
             server.close()
@@ -106,7 +110,7 @@ class IosEngineStreamTest {
         withTimeout(TIMEOUT_MS) {
             IosPlayerBackend.events().first {
                 if (it is EngineEvent.Error && it.token == token) {
-                    if (it.code == "output" && Platform.cpuArchitecture == CpuArchitecture.X64) throw NoAudioDevice(it.message)
+                    if (it.code == "output" && Platform.cpuArchitecture == CpuArchitecture.X64) throw NoOutputHere(it.message)
                     fail("the engine failed: $it")
                 }
                 matching(it)
@@ -114,10 +118,18 @@ class IosEngineStreamTest {
         }
 
     /**
-     * The x86_64 simulator of the Mac VM has no audio device, so the engine cannot open its output there.
-     * Only there: on arm64, which is what the CI runs, this is a failure like any other.
+     * The x86_64 simulator of the Mac VM cannot open the output even with the session active, which is
+     * as far as that was looked into. Only there: on arm64, which the CI runs, this fails like anything else.
      */
-    private class NoAudioDevice(message: String) : Exception(message)
+    private class NoOutputHere(message: String) : Exception(message)
+
+    /** What the app's AudioSession.swift does at launch: the output will not open without it. */
+    @BeforeTest
+    fun activateAudioSession() {
+        val session = AVAudioSession.sharedInstance()
+        assertTrue(session.setCategory(AVAudioSessionCategoryPlayback, error = null), "the session takes the category")
+        assertTrue(session.setActive(true, error = null), "the session activates")
+    }
 
     /** A mono 16-bit WAV of a 440 Hz tone, as a square wave so it needs no maths library. */
     private fun wavTone(seconds: Int): ByteArray {
