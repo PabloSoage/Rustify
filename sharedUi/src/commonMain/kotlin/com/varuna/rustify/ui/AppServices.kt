@@ -74,6 +74,9 @@ interface AppServices {
     /** Asks the running DJ for the next mood. */
     fun djNext()
 
+    /** The app's own log, for the log viewer. */
+    val logs: com.varuna.rustify.util.LogBook
+
     enum class Feature { BPM, DOWNLOADS, TRANSLATION, VIDEO, DJ }
 }
 

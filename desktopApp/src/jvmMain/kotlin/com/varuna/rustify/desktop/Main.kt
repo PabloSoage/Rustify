@@ -30,6 +30,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 fun main() {
     // Before anything names NativeEngine: on the desktop the library is not on java.library.path.
     CoreLoader.install()
+    // The log viewer's buffer, from the first line on.
+    com.varuna.rustify.util.DesktopLogBook.install()
     // The macOS title bar in dark, as Windows' (WindowStyle): AWT reads it before the first window.
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
 

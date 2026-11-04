@@ -74,4 +74,6 @@ class AndroidAppServices(context: Context) : AppServices {
     override fun djActive(): Boolean = DjAutoController.state.collectAsState().value != null
 
     override fun djNext() = DjAutoController.next(app)
+
+    override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.LogCapture
 }

@@ -1,40 +1,37 @@
 package com.varuna.rustify.util
 
 import android.content.Context
-import com.varuna.rustify.util.LogCapture.flow
 import com.varuna.rustify.util.LogCapture.start
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 /**
- * In-app log capture that reads the logcat of the app's OWN process.
+ * In-app log capture that reads the logcat of the app's OWN process: Android's [LogBook].
  *
  * An app can read its own logcat without special permissions (by filtering with `--pid=<my_pid>`).
  * A long-lived `logcat` process is started in stream mode, its stdout is read on a daemon thread,
- * each line is parsed into an [Entry] and enqueued in a bounded buffer exposed by [flow].
+ * each line is parsed into a [LogEntry] and enqueued in a bounded buffer exposed by [entries].
  *
  * **Crash-resistant persistence:** each entry is also written to `filesDir/rustify_log.txt`.
  * On startup, if the file exists (from a previous session that crashed), it is loaded into the
  * buffer, so logs survive a crash and are available when the app reopens.
  */
-object LogCapture {
+object LogCapture : LogBook {
 
-    /** A parsed entry from a logcat line. `level` = V/D/I/W/E/F, `tag` = the tag. */
-    data class Entry(val raw: String, val level: Char, val tag: String)
 
     /** Cap of the in-memory circular buffer. */
     private const val CAP = 3000
     /** Cap of the persistence file (bytes). It rotates once exceeded. */
     private const val MAX_FILE_BYTES = 512_000L
 
-    private val buf = ArrayDeque<Entry>(CAP)
-    private val _flow = MutableStateFlow<List<Entry>>(emptyList())
-    val flow: StateFlow<List<Entry>> = _flow
+    private val buf = ArrayDeque<LogEntry>(CAP)
+    private val _flow = MutableStateFlow<List<LogEntry>>(emptyList())
+    override val entries: StateFlow<List<LogEntry>> = _flow
 
     /** Last startup error (e.g. logcat unavailable on the ROM), to surface in the viewer. */
     private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error
+    override val error: StateFlow<String?> = _error
 
     private var proc: Process? = null
     private var readerThread: Thread? = null
@@ -123,7 +120,7 @@ object LogCapture {
     }
 
     /** Empties the in-memory buffer and truncates the file. */
-    fun clear() {
+    override fun clear() {
         synchronized(buf) {
             buf.clear()
             _flow.value = emptyList()
@@ -132,13 +129,13 @@ object LogCapture {
     }
 
     /** Dumps the buffer as plain text (one `raw` line per entry). */
-    fun exportText(): String = synchronized(buf) { buf.joinToString("\n") { it.raw } }
+    override fun exportText(): String = synchronized(buf) { buf.joinToString("\n") { it.raw } }
 
     /**
      * One-off snapshot of the process's own logcat without relying on the stream (the `-d` option).
      * Useful as a fallback if `start()` fails on the ROM.
      */
-    fun dumpNow(): String = try {
+    override fun dumpNow(): String = try {
         val pid = android.os.Process.myPid()
         Runtime.getRuntime()
             .exec(arrayOf("logcat", "-d", "-v", "threadtime", "--pid=$pid"))
@@ -149,7 +146,7 @@ object LogCapture {
 
     // ── file persistence ──────────────────────────────────────────────────
 
-    private fun appendToFile(e: Entry) {
+    private fun appendToFile(e: LogEntry) {
         val file = logFile ?: return
         try {
             // Rotate if the file is getting too large: keep only the second half
@@ -189,16 +186,16 @@ object LogCapture {
      */
     private var lastLevel = 'I'
     private var lastTag = ""
-    private fun parseLine(line: String): Entry {
+    private fun parseLine(line: String): LogEntry {
         val m = threadtimeRe.find(line)
         return if (m != null) {
             val level = m.groupValues[1].uppercase()[0]
             val tag = m.groupValues[2].trim()
             lastLevel = level
             lastTag = tag
-            Entry(line, level, tag)
+            LogEntry(line, level, tag)
         } else {
-            Entry(line, lastLevel, lastTag)
+            LogEntry(line, lastLevel, lastTag)
         }
     }
 }

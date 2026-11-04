@@ -204,11 +204,6 @@ class AndroidAppShell(context: Context) : AppShell {
             is Screen.AudioLab -> {
                 com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { host.back() })
             }
-            is Screen.LogViewer -> {
-                LogViewerScreen(
-                    onBack = { host.back() }
-                )
-            }
             is Screen.Dj -> {
                 DjScreen(
                     spotifyRepo = host.spotifyRepo,

@@ -2,11 +2,7 @@
 
 package com.varuna.rustify.ui.screens
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import com.varuna.rustify.ui.toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,13 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.varuna.rustify.R
-import com.varuna.rustify.util.LogCapture
+import com.varuna.rustify.ui.resources.*
 
 /** Color for each log level. */
 private fun levelColor(level: Char): Color = when (level) {
@@ -65,7 +59,7 @@ private fun levelColor(level: Char): Color = when (level) {
 
 /**
  * In-app log viewer.
- * Observes [LogCapture.flow]: monospaced, colored by level, with tag/level filters, autoscroll,
+ * Observes [com.varuna.rustify.util.LogBook.entries]: monospaced, colored by level, with tag/level filters, autoscroll,
  * and actions to share, export (SAF), clear, and dump now.
  */
 @Composable
@@ -73,9 +67,10 @@ fun LogViewerScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val logs by LogCapture.flow.collectAsState()
-    val error by LogCapture.error.collectAsState()
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val book = com.varuna.rustify.ui.LocalAppServices.current.logs
+    val logs by book.entries.collectAsState()
+    val error by book.error.collectAsState()
 
     var tagFilter by remember { mutableStateOf("") }
     var levelFilter by remember { mutableStateOf<Char?>(null) } // null = all levels
@@ -92,20 +87,10 @@ fun LogViewerScreen(
         }
     }
 
-    // Export to .txt via SAF.
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(LogCapture.exportText().toByteArray())
-                }
-                Toast.makeText(context, R.string.log_exported, Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, e.message ?: "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
+    // Export to a .txt file the user picks.
+    val exportedMsg = stringResource(Res.string.log_exported)
+    val export = com.varuna.rustify.ui.rememberSaveTextFile("text/plain") { ok ->
+        if (ok == true) platform.toast(exportedMsg) else if (ok == false) platform.toast("Error")
     }
 
     // Autoscroll to the end when new entries arrive.
@@ -120,7 +105,7 @@ fun LogViewerScreen(
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.log_viewer_title), color = Color.White) },
+                title = { Text(stringResource(Res.string.log_viewer_title), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
@@ -131,48 +116,35 @@ fun LogViewerScreen(
                     IconButton(onClick = { autoScroll = !autoScroll }) {
                         Icon(
                             Icons.Default.VerticalAlignBottom,
-                            contentDescription = stringResource(R.string.log_autoscroll),
+                            contentDescription = stringResource(Res.string.log_autoscroll),
                             tint = if (autoScroll) Color(0xFF1DB954) else Color.Gray
                         )
                     }
                     // Dump now: shares a one-off logcat snapshot.
                     IconButton(onClick = {
-                        val dump = LogCapture.dumpNow()
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, dump)
-                        }
-                        val chooser = Intent.createChooser(send, null)
-                            .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                        context.startActivity(chooser)
+                        platform.share(book.dumpNow())
                     }) {
-                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.log_dump_now), tint = Color.White)
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.log_dump_now), tint = Color.White)
                     }
                     // Share the current buffer.
                     IconButton(onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, LogCapture.exportText())
-                        }
-                        val chooser = Intent.createChooser(send, null)
-                            .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                        context.startActivity(chooser)
+                        platform.share(book.exportText())
                     }) {
-                        Icon(Icons.Default.Share, contentDescription = stringResource(R.string.log_share), tint = Color.White)
+                        Icon(Icons.Default.Share, contentDescription = stringResource(Res.string.log_share), tint = Color.White)
                     }
                     // Export to a .txt file.
-                    IconButton(onClick = { exportLauncher.launch("rustify_log.txt") }) {
-                        Icon(Icons.Default.Download, contentDescription = stringResource(R.string.log_export), tint = Color.White)
+                    IconButton(onClick = { export("rustify_log.txt") { book.exportText() } }) {
+                        Icon(Icons.Default.Download, contentDescription = stringResource(Res.string.log_export), tint = Color.White)
                     }
                     // Clear the buffer.
-                    IconButton(onClick = { LogCapture.clear() }) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.log_clear), tint = Color.White)
+                    IconButton(onClick = { book.clear() }) {
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.log_clear), tint = Color.White)
                     }
                     // Info: explain log levels
                     IconButton(onClick = { showLevelHelp = !showLevelHelp }) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = stringResource(R.string.log_level_help),
+                            contentDescription = stringResource(Res.string.log_level_help),
                             tint = if (showLevelHelp) Color(0xFF1DB954) else Color.White
                         )
                     }
@@ -187,7 +159,7 @@ fun LogViewerScreen(
             // Warn if logcat capture failed to start on this ROM.
             if (error != null) {
                 Text(
-                    stringResource(R.string.log_capture_error, error ?: ""),
+                    stringResource(Res.string.log_capture_error, error ?: ""),
                     color = Color(0xFFFFB74D),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -198,7 +170,7 @@ fun LogViewerScreen(
             OutlinedTextField(
                 value = tagFilter,
                 onValueChange = { tagFilter = it },
-                label = { Text(stringResource(R.string.log_filter_tag)) },
+                label = { Text(stringResource(Res.string.log_filter_tag)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 colors = TextFieldDefaults.colors(
@@ -216,7 +188,7 @@ fun LogViewerScreen(
             ) {
                 val levels = listOf(null, 'V', 'D', 'I', 'W', 'E')
                 levels.forEach { lvl ->
-                    val label = lvl?.toString() ?: stringResource(R.string.log_level_all)
+                    val label = lvl?.toString() ?: stringResource(Res.string.log_level_all)
                     FilterChip(
                         selected = levelFilter == lvl,
                         onClick = { levelFilter = lvl },
@@ -236,9 +208,9 @@ fun LogViewerScreen(
                 Column(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text(stringResource(R.string.logs_levels),
+                    Text(stringResource(Res.string.logs_levels),
                         color = legendColor, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text(stringResource(R.string.logs_levels_hint),
+                    Text(stringResource(Res.string.logs_levels_hint),
                         color = legendColor.copy(alpha = 0.7f), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }

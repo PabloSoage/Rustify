@@ -2,9 +2,14 @@
 package com.varuna.rustify.platform
 
 actual object Log {
+    /** Also handed every line (level, tag, message): the in-app log viewer's buffer. */
+    @Volatile
+    var sink: ((level: Char, tag: String, message: String) -> Unit)? = null
+
     private fun line(level: Char, tag: String, message: String, error: Throwable?) {
         System.err.println("$level/$tag: $message")
         error?.printStackTrace()
+        sink?.invoke(level, tag, if (error != null) "$message\n${error.stackTraceToString()}" else message)
     }
 
     actual fun d(tag: String, message: String) = line('D', tag, message, null)

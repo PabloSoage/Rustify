@@ -58,6 +58,8 @@ class DesktopAppServices(
 
     override fun djNext() = Unit
 
+    override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.DesktopLogBook
+
     override fun can(feature: AppServices.Feature): Boolean = false
 
     override fun bpmCached(trackId: String): Float? = null

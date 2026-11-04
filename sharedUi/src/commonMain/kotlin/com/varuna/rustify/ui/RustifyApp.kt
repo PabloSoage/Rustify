@@ -845,12 +845,17 @@ fun RustifyApp(
                 }
                 // Not moved yet (docs serie-4.x/27): the platform draws them.
                 is Screen.WebPlayer, is Screen.Settings, is Screen.CustomDownload,
-                is Screen.NanoChat, is Screen.AudioLab, is Screen.LogViewer, is Screen.Dj, is Screen.Travel,
+                is Screen.NanoChat, is Screen.AudioLab, is Screen.Dj, is Screen.Travel,
                 is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
                 is Screen.MatchEditor -> {
                     com.varuna.rustify.ui.screens.MatchEditorScreen(
                         spotifyRepo = spotifyRepo,
                         audioPlayerService = audioPlayerService,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
+                }
+                is Screen.LogViewer -> {
+                    com.varuna.rustify.ui.screens.LogViewerScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
