@@ -43,9 +43,12 @@ fun rememberOpenTextFile(mimeTypes: List<String>, onResult: (Result<PickedText>?
         onResult = onResult,
     )
 
-/** [rememberSaveFile] for a text file (an exported M3U): the text is produced once a place is chosen. */
+/**
+ * [rememberSaveFile] for a text file (an exported M3U, the log): the text is produced once a place is
+ * chosen, and [onResult] gets what [rememberSaveFile] answers.
+ */
 @Composable
-fun rememberSaveTextFile(mimeType: String, onResult: (Boolean?) -> Unit): (suggestedName: String, text: () -> String) -> Unit {
-    val save = rememberSaveFile(mimeType) { onResult(it?.isSuccess) }
+fun rememberSaveTextFile(mimeType: String, onResult: (Result<Unit>?) -> Unit): (suggestedName: String, text: () -> String) -> Unit {
+    val save = rememberSaveFile(mimeType, onResult)
     return { name, text -> save(name) { it.write(text().toByteArray(Charsets.UTF_8)) } }
 }

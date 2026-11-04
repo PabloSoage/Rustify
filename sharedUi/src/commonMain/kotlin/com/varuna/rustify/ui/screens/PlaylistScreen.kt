@@ -152,8 +152,8 @@ fun PlaylistScreen(
     var showEntityMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteLocalDialog by remember { mutableStateOf(false) }
-    val exportM3u = com.varuna.rustify.ui.rememberSaveTextFile("audio/x-mpegurl") { ok ->
-        if (ok != null) platform.toast(if (ok) Res.string.m3u_exported else Res.string.m3u_export_failed)
+    val exportM3u = com.varuna.rustify.ui.rememberSaveTextFile("audio/x-mpegurl") { result ->
+        if (result != null) platform.toast(if (result.isSuccess) Res.string.m3u_exported else Res.string.m3u_export_failed)
     }
     var showRenameLocalDialog by remember { mutableStateOf(false) }
     var meId by remember { mutableStateOf<String?>(null) }

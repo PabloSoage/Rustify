@@ -89,8 +89,8 @@ fun LogViewerScreen(
 
     // Export to a .txt file the user picks.
     val exportedMsg = stringResource(Res.string.log_exported)
-    val export = com.varuna.rustify.ui.rememberSaveTextFile("text/plain") { ok ->
-        if (ok == true) platform.toast(exportedMsg) else if (ok == false) platform.toast("Error")
+    val export = com.varuna.rustify.ui.rememberSaveTextFile("text/plain") { result ->
+        result?.onSuccess { platform.toast(exportedMsg) }?.onFailure { platform.toast(it.message ?: "Error") }
     }
 
     // Autoscroll to the end when new entries arrive.
