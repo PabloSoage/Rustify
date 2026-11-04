@@ -2,10 +2,19 @@ package com.varuna.rustify.bridge
 
 import com.varuna.rustify.bridge.LyricsOffsetStore.set
 import com.varuna.rustify.bridge.LyricsOffsetStore.version
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeAllText
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
+import com.varuna.rustify.util.optLong
+import com.varuna.rustify.util.parseObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONObject
-import java.io.File
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlin.concurrent.Volatile
 
 /**
  * Manual per-track lyric synchronization offset (in ms). Positive advances the lyrics (they appear
@@ -18,20 +27,21 @@ import java.io.File
 object LyricsOffsetStore {
     private const val FILE = "lyric_offsets.json"
     private val cache = HashMap<String, Long>()
+    private val lock = Lock()
     @Volatile private var loaded = false
 
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
 
-    private fun ensure(dir: File) {
+    private fun ensure(dir: AppFile) {
         if (loaded) return
-        synchronized(this) {
+        lock.locked {
             if (loaded) return
             runCatching {
-                val f = File(dir, FILE)
-                if (f.exists()) {
-                    val obj = JSONObject(f.readText())
-                    obj.keys().forEach { k -> cache[k] = obj.optLong(k, 0L) }
+                val text = dir.child(FILE).readTextOrNull()
+                if (text != null) {
+                    val obj = parseObject(text)
+                    obj.forEach { (k, v) -> cache[k] = v.optLong(0L) }
                 }
             }
             loaded = true
@@ -40,13 +50,13 @@ object LyricsOffsetStore {
 
     /** Offset in ms for [trackId] (0 if no adjustment). */
     /** [dir] is the app's files folder. */
-    fun get(dir: File, trackId: String): Long {
+    fun get(dir: AppFile, trackId: String): Long {
         if (trackId.isBlank()) return 0L
         ensure(dir)
         return cache[trackId] ?: 0L
     }
 
-    fun set(dir: File, trackId: String, offsetMs: Long) {
+    fun set(dir: AppFile, trackId: String, offsetMs: Long) {
         if (trackId.isBlank()) return
         ensure(dir)
         if (offsetMs == 0L) cache.remove(trackId) else cache[trackId] = offsetMs
@@ -54,11 +64,10 @@ object LyricsOffsetStore {
         _version.value += 1
     }
 
-    private fun persist(dir: File) {
+    private fun persist(dir: AppFile) {
         runCatching {
-            val obj = JSONObject()
-            cache.forEach { (k, v) -> obj.put(k, v) }
-            File(dir, FILE).writeText(obj.toString())
+            val obj = JsonObject(cache.mapValues { JsonPrimitive(it.value) })
+            dir.child(FILE).writeAllText(obj.toString())
         }
     }
 }

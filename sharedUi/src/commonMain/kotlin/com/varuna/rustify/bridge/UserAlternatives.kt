@@ -1,7 +1,16 @@
 package com.varuna.rustify.bridge
 
-import org.json.JSONArray
-import java.io.File
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeAllText
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.parseArray
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlin.concurrent.Volatile
 
 /**
  * Set of Spotify trackIds for which the user explicitly chose a YouTube alternative
@@ -17,18 +26,20 @@ import java.io.File
  */
 object UserAlternatives {
     private const val FILE = "user_alternatives.json"
-    private val ids = java.util.Collections.synchronizedSet(HashSet<String>())
+    // Guarded by [lock], which is what the synchronized set and the loader's monitor used to be.
+    private val ids = HashSet<String>()
+    private val lock = Lock()
     @Volatile private var loaded = false
 
-    private fun ensure(filesDir: File) {
+    private fun ensure(filesDir: AppFile) {
         if (loaded) return
-        synchronized(this) {
+        lock.locked {
             if (loaded) return
             runCatching {
-                val f = File(filesDir, FILE)
-                if (f.exists()) {
-                    val arr = JSONArray(f.readText())
-                    for (i in 0 until arr.length()) ids.add(arr.optString(i))
+                val text = filesDir.child(FILE).readTextOrNull()
+                if (text != null) {
+                    val arr = parseArray(text)
+                    for (element in arr) ids.add(element.optString())
                 }
             }
             loaded = true
@@ -39,36 +50,35 @@ object UserAlternatives {
      * Drops the in-memory cache and re-reads the file. Needed after a Drive restore rewrites it
      * behind our back, otherwise every restored mapping keeps showing up as "auto".
      */
-    fun reload(filesDir: File) {
-        synchronized(this) {
+    fun reload(filesDir: AppFile) {
+        lock.locked {
             ids.clear()
             loaded = false
         }
         ensure(filesDir)
     }
 
-    fun isUserSet(filesDir: File, trackId: String?): Boolean {
+    fun isUserSet(filesDir: AppFile, trackId: String?): Boolean {
         if (trackId.isNullOrBlank()) return false
         ensure(filesDir)
-        return ids.contains(trackId)
+        return lock.locked { ids.contains(trackId) }
     }
 
-    fun add(filesDir: File, trackId: String) {
+    fun add(filesDir: AppFile, trackId: String) {
         if (trackId.isBlank()) return
         ensure(filesDir)
-        if (ids.add(trackId)) persist(filesDir)
+        if (lock.locked { ids.add(trackId) }) persist(filesDir)
     }
 
-    fun remove(filesDir: File, trackId: String) {
+    fun remove(filesDir: AppFile, trackId: String) {
         ensure(filesDir)
-        if (ids.remove(trackId)) persist(filesDir)
+        if (lock.locked { ids.remove(trackId) }) persist(filesDir)
     }
 
-    private fun persist(filesDir: File) {
+    private fun persist(filesDir: AppFile) {
         runCatching {
-            val arr = JSONArray()
-            synchronized(ids) { ids.forEach { arr.put(it) } }
-            File(filesDir, FILE).writeText(arr.toString())
+            val arr = JsonArray(lock.locked { ids.map { JsonPrimitive(it) } })
+            filesDir.child(FILE).writeAllText(arr.toString())
         }
     }
 }

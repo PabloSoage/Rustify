@@ -2,9 +2,14 @@ package com.varuna.rustify.player
 
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.RustifyJson
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeTextAtomically
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import java.io.File
 
 /**
  * Several saved queues (4.10, Musicolet 3.1): name the queue you have, start another, come back to
@@ -43,21 +48,18 @@ object SavedQueues {
             .first { n -> list.none { it.name.equals(n, ignoreCase = true) } }
 
     private val serializer = ListSerializer(SavedQueue.serializer())
+    private val lock = Lock()
 
-    @Synchronized
-    fun load(dir: File): List<SavedQueue> = runCatching {
-        val file = File(dir, FILE)
-        if (!file.exists()) emptyList() else RustifyJson.decodeFromString(serializer, file.readText())
-    }.getOrDefault(emptyList())
-
-    @Synchronized
-    fun store(dir: File, list: List<SavedQueue>) {
+    fun load(dir: AppFile): List<SavedQueue> = lock.locked {
         runCatching {
-            val text = RustifyJson.encodeToString(serializer, list)
-            val tmp = File(dir, "$FILE.tmp")
-            val dst = File(dir, FILE)
-            tmp.writeText(text)
-            if (!tmp.renameTo(dst)) { dst.writeText(text); tmp.delete() }
+            val text = dir.child(FILE).readTextOrNull()
+            if (text == null) emptyList<SavedQueue>() else RustifyJson.decodeFromString(serializer, text)
+        }.getOrDefault(emptyList())
+    }
+
+    fun store(dir: AppFile, list: List<SavedQueue>) {
+        lock.locked {
+            runCatching { dir.child(FILE).writeTextAtomically(RustifyJson.encodeToString(serializer, list)) }
         }
     }
 }

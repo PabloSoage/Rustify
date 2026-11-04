@@ -1,8 +1,11 @@
 package com.varuna.rustify.bridge
 
-import java.io.File
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 
 /**
  * One answer to "is this song saved, and how do I flip it" for every kind of track Rustify plays.
@@ -25,9 +28,10 @@ object TrackFavorites {
 
     /** Process-wide, like the state it reads: rebuilding one per recomposition would reload it. */
     @Volatile private var ytmRepo: YtMusicRepository? = null
+    private val lock = Lock()
 
-    private fun ytm(filesDir: File): YtMusicRepository =
-        ytmRepo ?: synchronized(this) {
+    private fun ytm(filesDir: AppFile): YtMusicRepository =
+        ytmRepo ?: lock.locked {
             ytmRepo ?: YtMusicRepository(filesDir).also { ytmRepo = it }
         }
 
@@ -39,7 +43,7 @@ object TrackFavorites {
      * `snapshotFlow { }` outside composition emits — which is how the notification keeps its icon
      * honest while the song is hearted from somewhere else.
      */
-    fun isSaved(filesDir: File, track: FullTrack?): Boolean =
+    fun isSaved(filesDir: AppFile, track: FullTrack?): Boolean =
         when (val ref = TrackRef.parse(track?.id)) {
             is TrackRef.Ytm -> ytm(filesDir).isFavorite(ref.videoId)
             is TrackRef.Local -> SpotifyRepository.instance?.isLocalFavorite(ref.raw) == true
@@ -60,7 +64,7 @@ object TrackFavorites {
      * observing, and that is the thread the screens already write them from. Only the Spotify path
      * touches the network, and it does its own dispatching.
      */
-    suspend fun toggle(filesDir: File, track: FullTrack?): Boolean {
+    suspend fun toggle(filesDir: AppFile, track: FullTrack?): Boolean {
         if (track == null) return false
         return when (val ref = TrackRef.parse(track.id)) {
             is TrackRef.Ytm -> {

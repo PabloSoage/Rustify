@@ -3,9 +3,17 @@ package com.varuna.rustify.player
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.bridge.FullTrack
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
+import com.varuna.rustify.util.optObject
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.optStringOrNull
+import com.varuna.rustify.util.parseArray
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
 
 /**
  * Songs and artists the user never wants to hear (`23` §2; Spotube 6 calls it the blacklist).
@@ -41,11 +49,12 @@ object Blocklist {
     val lists: StateFlow<Lists> = _lists
 
     @Volatile private var loaded = false
+    private val lock = Lock()
 
     fun current(prefs: KeyValueStore): Lists {
-        if (!loaded) synchronized(this) {
+        if (!loaded) lock.locked {
             if (!loaded) {
-                                _lists.value = Lists(decode(prefs.getString(KEY_TRACKS)), decode(prefs.getString(KEY_ARTISTS)))
+                _lists.value = Lists(decode(prefs.getString(KEY_TRACKS)), decode(prefs.getString(KEY_ARTISTS)))
                 loaded = true
             }
         }
@@ -86,12 +95,15 @@ object Blocklist {
         return null
     }
 
-    fun encode(entries: List<Entry>): String = JSONArray().apply {
-        entries.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("detail", it.detail)) }
+    fun encode(entries: List<Entry>): String = buildJsonArray {
+        entries.forEach { addJsonObject { put("id", it.id); put("name", it.name); put("detail", it.detail) } }
     }.toString()
 
+    // An entry without an id is not one: org.json's getString threw, and the whole list read as empty.
     fun decode(raw: String?): List<Entry> = runCatching {
-        val a = JSONArray(raw ?: return emptyList())
-        (0 until a.length()).map { a.getJSONObject(it) }.map { Entry(it.getString("id"), it.optString("name"), it.optString("detail")) }
+        val a = parseArray(raw ?: return emptyList())
+        a.map { it.optObject() ?: error("not an object") }.map { o ->
+            Entry(o["id"].optStringOrNull() ?: error("no id"), o["name"].optString(), o["detail"].optString())
+        }
     }.getOrDefault(emptyList())
 }

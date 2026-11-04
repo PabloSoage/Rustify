@@ -1,7 +1,8 @@
 package com.varuna.rustify.util
 
 import com.varuna.rustify.platform.KeyValueStore
-import org.json.JSONArray
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * What the user searched lately, newest first (4.7), shown on the empty Search screen.
@@ -15,7 +16,7 @@ object RecentSearches {
 
     fun list(prefs: KeyValueStore): List<String> {
         val raw = prefs.getString(KEY) ?: return emptyList()
-        return runCatching { JSONArray(raw).let { a -> List(a.length()) { a.getString(it) } } }.getOrDefault(emptyList())
+        return runCatching { parseArray(raw).map { it.optStringOrNull() ?: error("not a query") } }.getOrDefault(emptyList())
     }
 
     fun add(prefs: KeyValueStore, query: String): List<String> = save(prefs, push(list(prefs), query))
@@ -32,7 +33,7 @@ object RecentSearches {
     }
 
     private fun save(prefs: KeyValueStore, items: List<String>): List<String> {
-        prefs.putString(KEY, JSONArray(items).toString())
+        prefs.putString(KEY, JsonArray(items.map { JsonPrimitive(it) }).toString())
         return items
     }
 }

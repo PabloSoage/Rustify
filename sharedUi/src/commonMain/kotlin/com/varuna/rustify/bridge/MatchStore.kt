@@ -1,10 +1,18 @@
 package com.varuna.rustify.bridge
 
 import com.varuna.rustify.player.PlayerController
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.fullPath
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeAllText
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.parseObject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.File
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Kotlin access to the YouTube match file (`filesDir/youtube_mappings.json`,
@@ -19,24 +27,22 @@ import java.io.File
  * are persisted to disk but never reflected in the running engine.
  */
 object MatchStore {
-    private fun file(filesDir: File) = File(filesDir, "youtube_mappings.json")
+    private fun file(filesDir: AppFile) = filesDir.child("youtube_mappings.json")
 
     /** All matches (trackId to youtubeId). */
-    suspend fun readAll(filesDir: File): Map<String, String> = withContext(Dispatchers.IO) {
+    suspend fun readAll(filesDir: AppFile): Map<String, String> = withContext(Dispatchers.IO) {
         runCatching {
-            val f = file(filesDir)
-            if (!f.exists()) return@runCatching emptyMap()
-            val obj = JSONObject(f.readText())
-            buildMap { obj.keys().forEach { k -> put(k, obj.optString(k)) } }
+            val text = file(filesDir).readTextOrNull() ?: return@runCatching emptyMap()
+            val obj = parseObject(text)
+            buildMap { obj.forEach { (k, v) -> put(k, v.optString()) } }
         }.getOrDefault(emptyMap())
     }
 
-    private suspend fun writeAll(filesDir: File, map: Map<String, String>) {
+    private suspend fun writeAll(filesDir: AppFile, map: Map<String, String>) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val obj = JSONObject()
-                map.forEach { (k, v) -> obj.put(k, v) }
-                file(filesDir).writeText(obj.toString())
+                val obj = JsonObject(map.mapValues { JsonPrimitive(it.value) })
+                file(filesDir).writeAllText(obj.toString())
             }
         }
         reload(filesDir)
@@ -47,7 +53,7 @@ object MatchStore {
      * ([PlayerController.chooseRecording]: marked, set in the core's live map, and the recording
      * that was wrong forgotten everywhere it was kept, the stored audio included).
      */
-    suspend fun put(filesDir: File, player: PlayerController, trackId: String, youtubeId: String) {
+    suspend fun put(filesDir: AppFile, player: PlayerController, trackId: String, youtubeId: String) {
         if (trackId.isBlank() || youtubeId.isBlank()) return
         val m = readAll(filesDir).toMutableMap()
         m[trackId] = youtubeId
@@ -56,13 +62,13 @@ object MatchStore {
     }
 
     /** Removes a match (and its user mark): back to the automatic match or the local file. */
-    suspend fun remove(filesDir: File, player: PlayerController, trackId: String) {
+    suspend fun remove(filesDir: AppFile, player: PlayerController, trackId: String) {
         val m = readAll(filesDir).toMutableMap()
         if (m.remove(trackId) != null) writeAll(filesDir, m)
         player.clearRecording(trackId)
     }
 
-    private suspend fun reload(filesDir: File) {
-        runCatching { NativeEngine.initCacheDir(filesDir.absolutePath) }
+    private suspend fun reload(filesDir: AppFile) {
+        runCatching { NativeEngine.initCacheDir(filesDir.fullPath) }
     }
 }
