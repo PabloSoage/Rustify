@@ -50,11 +50,20 @@ kotlinxCoroutines = "1.10.2"
 # Compose Multiplatform for :sharedUi, the interface the APK and the desktop share (docs serie-4.x/26),
 # and the desktop app. 1.12 rather than 1.9: 1.9's resources plugin calls an AGP API that 9.4 changed.
 composeMultiplatform = "1.12.2"
+# Not composeMultiplatform's number: these two are versioned apart, and these are the ones 1.12.2 resolved to.
+composeMultiplatformMaterial3 = "1.9.0"
+composeMultiplatformMaterialIconsExtended = "1.7.3"
 # The few requests common code makes itself (lyrics, the DJ's API, a cover to share), over the
 # platform's engine: OkHttp on Android and the desktop, Darwin (NSURLSession) on iOS. :shared's
 # platform/Http.kt names it.
 ktor = "3.6.1"
 [libraries]
+compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime", version.ref = "composeMultiplatform" }
+compose-foundation = { group = "org.jetbrains.compose.foundation", name = "foundation", version.ref = "composeMultiplatform" }
+compose-material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "composeMultiplatformMaterial3" }
+compose-material-icons-extended = { group = "org.jetbrains.compose.material", name = "material-icons-extended", version.ref = "composeMultiplatformMaterialIconsExtended" }
+compose-ui = { group = "org.jetbrains.compose.ui", name = "ui", version.ref = "composeMultiplatform" }
+compose-components-resources = { group = "org.jetbrains.compose.components", name = "components-resources", version.ref = "composeMultiplatform" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }

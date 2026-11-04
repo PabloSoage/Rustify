@@ -19,6 +19,9 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
 
     android {
         namespace = "com.varuna.rustify.shared"

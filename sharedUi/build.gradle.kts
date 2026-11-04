@@ -21,6 +21,9 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
 
     android {
         namespace = "com.varuna.rustify.ui"
@@ -52,12 +55,12 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":shared"))
-            api(compose.runtime)
-            api(compose.foundation)
-            api(compose.material3)
-            api(compose.materialIconsExtended)
-            api(compose.ui)
-            api(compose.components.resources)
+            api(libs.compose.runtime)
+            api(libs.compose.foundation)
+            api(libs.compose.material3)
+            api(libs.compose.material.icons.extended)
+            api(libs.compose.ui)
+            api(libs.compose.components.resources)
             api(libs.coil.compose)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
