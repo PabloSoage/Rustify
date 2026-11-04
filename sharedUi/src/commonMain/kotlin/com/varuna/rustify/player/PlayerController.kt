@@ -77,6 +77,9 @@ interface PlayerController {
      */
     fun chooseRecording(trackId: String, youtubeId: String)
 
+    /** The user's choice for [trackId] is gone: back to the automatic match, nothing stale kept. */
+    fun clearRecording(trackId: String)
+
     fun startOver()
     fun dismissResumed()
     fun pressAbRepeat()

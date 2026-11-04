@@ -1,6 +1,5 @@
 package com.varuna.rustify.bridge
 
-import android.content.Context
 import org.json.JSONArray
 import java.io.File
 
@@ -21,12 +20,12 @@ object UserAlternatives {
     private val ids = java.util.Collections.synchronizedSet(HashSet<String>())
     @Volatile private var loaded = false
 
-    private fun ensure(context: Context) {
+    private fun ensure(filesDir: File) {
         if (loaded) return
         synchronized(this) {
             if (loaded) return
             runCatching {
-                val f = File(context.filesDir, FILE)
+                val f = File(filesDir, FILE)
                 if (f.exists()) {
                     val arr = JSONArray(f.readText())
                     for (i in 0 until arr.length()) ids.add(arr.optString(i))
@@ -40,36 +39,36 @@ object UserAlternatives {
      * Drops the in-memory cache and re-reads the file. Needed after a Drive restore rewrites it
      * behind our back, otherwise every restored mapping keeps showing up as "auto".
      */
-    fun reload(context: Context) {
+    fun reload(filesDir: File) {
         synchronized(this) {
             ids.clear()
             loaded = false
         }
-        ensure(context)
+        ensure(filesDir)
     }
 
-    fun isUserSet(context: Context, trackId: String?): Boolean {
+    fun isUserSet(filesDir: File, trackId: String?): Boolean {
         if (trackId.isNullOrBlank()) return false
-        ensure(context)
+        ensure(filesDir)
         return ids.contains(trackId)
     }
 
-    fun add(context: Context, trackId: String) {
+    fun add(filesDir: File, trackId: String) {
         if (trackId.isBlank()) return
-        ensure(context)
-        if (ids.add(trackId)) persist(context)
+        ensure(filesDir)
+        if (ids.add(trackId)) persist(filesDir)
     }
 
-    fun remove(context: Context, trackId: String) {
-        ensure(context)
-        if (ids.remove(trackId)) persist(context)
+    fun remove(filesDir: File, trackId: String) {
+        ensure(filesDir)
+        if (ids.remove(trackId)) persist(filesDir)
     }
 
-    private fun persist(context: Context) {
+    private fun persist(filesDir: File) {
         runCatching {
             val arr = JSONArray()
             synchronized(ids) { ids.forEach { arr.put(it) } }
-            File(context.filesDir, FILE).writeText(arr.toString())
+            File(filesDir, FILE).writeText(arr.toString())
         }
     }
 }

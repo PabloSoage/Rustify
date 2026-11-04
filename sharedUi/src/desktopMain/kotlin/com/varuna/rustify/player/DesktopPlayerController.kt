@@ -200,6 +200,11 @@ class DesktopPlayerController(private val player: QueuePlayer, private val scope
     // The core keeps the alternative and resolves through it; the desktop has no other per-track cache.
     override fun chooseRecording(trackId: String, youtubeId: String) {
         com.varuna.rustify.bridge.NativeEngine.setAlternativeTrackNative(trackId, youtubeId)
+        com.varuna.rustify.bridge.UserAlternatives.add(AppDirs.data, trackId)
+    }
+
+    override fun clearRecording(trackId: String) {
+        com.varuna.rustify.bridge.UserAlternatives.remove(AppDirs.data, trackId)
     }
 
     override fun dismissResumed() = Unit

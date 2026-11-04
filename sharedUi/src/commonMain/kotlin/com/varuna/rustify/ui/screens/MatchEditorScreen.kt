@@ -43,8 +43,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.res.stringResource
-import com.varuna.rustify.R
+import org.jetbrains.compose.resources.stringResource
+import com.varuna.rustify.ui.resources.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -55,7 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,7 +64,7 @@ import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.MatchStore
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.UserAlternatives
-import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.player.PlayerController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -82,10 +81,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun MatchEditorScreen(
     spotifyRepo: SpotifyRepository,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: PlayerController,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val green = Color(0xFF1DB954)
 
     // Loaded in a `LaunchedEffect` rather than in the `remember` initialiser: reading it is disk
@@ -113,11 +112,11 @@ fun MatchEditorScreen(
     }
 
 
-    LaunchedEffect(Unit) { mappings = MatchStore.readAll(context).toList() }
+    LaunchedEffect(Unit) { mappings = MatchStore.readAll(platform.filesDir).toList() }
 
     // Which matches are user-chosen, for filtering. Recomputed only when the list changes.
     val userSet = remember(mappings) {
-        mappings.mapNotNull { (tid, _) -> tid.takeIf { UserAlternatives.isUserSet(context, it) } }.toSet()
+        mappings.mapNotNull { (tid, _) -> tid.takeIf { UserAlternatives.isUserSet(platform.filesDir, it) } }.toSet()
     }
     // Preload the names of all matches in the background so title search covers the whole list,
     // not just visible rows. Best-effort; the map fills in progressively.
@@ -144,7 +143,7 @@ fun MatchEditorScreen(
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.match_editor_title), color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(Res.string.match_editor_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
@@ -167,14 +166,14 @@ fun MatchEditorScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.match_editor_add), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(Res.string.match_editor_add), fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.match_editor_search_hint)) },
+                    label = { Text(stringResource(Res.string.match_editor_search_hint)) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = Color.White, unfocusedTextColor = Color.White,
@@ -208,7 +207,7 @@ fun MatchEditorScreen(
                     }
                 }
                 val ft = names[tid]
-                val isUser = UserAlternatives.isUserSet(context, tid)
+                val isUser = UserAlternatives.isUserSet(platform.filesDir, tid)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -254,7 +253,7 @@ fun MatchEditorScreen(
                             Icon(
                                 if (isNowPlaying) Icons.AutoMirrored.Filled.VolumeUp
                                 else Icons.Default.PlayArrow,
-                                contentDescription = stringResource(R.string.match_play),
+                                contentDescription = stringResource(Res.string.match_play),
                                 tint = green
                             )
                         }
@@ -269,7 +268,7 @@ fun MatchEditorScreen(
                         Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
                     }
                     // Delete.
-                    IconButton(onClick = { editorScope.launch { MatchStore.remove(context, tid); mappings = MatchStore.readAll(context).toList() } }) {
+                    IconButton(onClick = { editorScope.launch { MatchStore.remove(platform.filesDir, audioPlayerService, tid); mappings = MatchStore.readAll(platform.filesDir).toList() } }) {
                         Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFCC3333))
                     }
                 }
@@ -295,8 +294,8 @@ fun MatchEditorScreen(
             onDismiss = { editTrack = null },
             onMappingSelected = { yt ->
                 editorScope.launch {
-                    t.id?.let { MatchStore.put(context, it, yt) }
-                    mappings = MatchStore.readAll(context).toList()
+                    t.id?.let { MatchStore.put(platform.filesDir, audioPlayerService, it, yt) }
+                    mappings = MatchStore.readAll(platform.filesDir).toList()
                 }
                 editTrack = null
             }
@@ -339,21 +338,21 @@ private fun SongPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF1E1E1E),
-        title = { Text(stringResource(R.string.match_editor_find_song), color = Color.White) },
+        title = { Text(stringResource(Res.string.match_editor_find_song), color = Color.White) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.match_editor_name_hint)) },
+                    label = { Text(stringResource(Res.string.match_editor_name_hint)) },
                     singleLine = true
                 )
                 Button(
                     onClick = { search() },
                     colors = ButtonDefaults.buttonColors(containerColor = green, contentColor = Color.Black),
                     modifier = Modifier.padding(top = 8.dp).align(Alignment.End)
-                ) { Text(stringResource(R.string.common_search)) }
+                ) { Text(stringResource(Res.string.common_search)) }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f, fill = false)) {
                     items(results) { t ->
@@ -373,11 +372,11 @@ private fun SongPickerDialog(
                             }
                         }
                     }
-                    if (searching) item { Text(stringResource(R.string.common_searching), color = Color.Gray, modifier = Modifier.padding(8.dp)) }
+                    if (searching) item { Text(stringResource(Res.string.common_searching), color = Color.Gray, modifier = Modifier.padding(8.dp)) }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close), color = green) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.settings_close), color = green) } }
     )
 }

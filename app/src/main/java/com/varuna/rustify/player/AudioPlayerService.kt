@@ -1404,7 +1404,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
                         localMatch = { localStreamFor(track, effectiveYoutubeId) },
                         hasUserAlternative = {
                             NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() &&
-                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context.filesDir, trackId)
                         },
                         // Honour StreamInfo.expiresAtMs — a URL past its expiry would 403 on ExoPlayer.
                         urlExpired = { urlExpiryCache[trackId]?.let { System.currentTimeMillis() >= it } == true },
@@ -1444,7 +1444,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
                             resolvedStreamUrls.remove(trackId)
                             com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
                             val alternative = NativeEngine.getAlternativeTrackNative(trackId).isNotBlank() &&
-                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+                                com.varuna.rustify.bridge.UserAlternatives.isUserSet(context.filesDir, trackId)
                             if (alternative) com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
                         }
 
@@ -1815,7 +1815,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         if (dirs.isEmpty()) return null
 
         val hasUserAlternative = !youtubeIdHint.isNullOrBlank() ||
-            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context, trackId)
+            com.varuna.rustify.bridge.UserAlternatives.isUserSet(context.filesDir, trackId)
         if (hasUserAlternative) {
             android.util.Log.d("AudioPlayerService", "User YouTube alternative present for $trackId — skipping local match")
             return null
@@ -3480,11 +3480,17 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     // SharedPreferences "cached_url_$id" entry.
     override fun chooseRecording(trackId: String, youtubeId: String) {
         NativeEngine.setAlternativeTrackNative(trackId, youtubeId)
-        com.varuna.rustify.bridge.UserAlternatives.add(context, trackId)
+        com.varuna.rustify.bridge.UserAlternatives.add(context.filesDir, trackId)
         com.varuna.rustify.bridge.LyricsRepository.invalidateLyrics(trackId)
         removeCachedStreamUrl(trackId)
         com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
         // The stored audio too: the stream cache would otherwise keep serving the wrong recording.
+        com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
+    }
+
+    override fun clearRecording(trackId: String) {
+        com.varuna.rustify.bridge.UserAlternatives.remove(context.filesDir, trackId)
+        removeCachedStreamUrl(trackId)
         com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
     }
 

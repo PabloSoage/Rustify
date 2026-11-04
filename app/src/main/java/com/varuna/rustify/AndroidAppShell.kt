@@ -177,13 +177,6 @@ class AndroidAppShell(context: Context) : AppShell {
                     onLocaleChanged = host.onLanguageChanged
                 )
             }
-            is Screen.MatchEditor -> {
-                com.varuna.rustify.ui.screens.MatchEditorScreen(
-                    spotifyRepo = host.spotifyRepo,
-                    audioPlayerService = audioPlayerService,
-                    onBack = { host.back() }
-                )
-            }
             is Screen.CustomDownload -> {
                 com.varuna.rustify.ui.screens.CustomDownloadScreen(
                     onBack = { host.back() }

@@ -154,7 +154,7 @@ object RustifyBackup {
         container.optJSONArray("userAlternatives")?.let {
             atomicWrite(File(dir, F_USER_ALTS), it.toString())
             // The set is cached in memory on first use, so force a re-read.
-            com.varuna.rustify.bridge.UserAlternatives.reload(ctx)
+            com.varuna.rustify.bridge.UserAlternatives.reload(ctx.filesDir)
         }
 
         // local — write files and reload in-memory state
