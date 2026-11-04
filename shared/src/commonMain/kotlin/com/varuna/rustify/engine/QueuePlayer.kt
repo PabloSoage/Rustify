@@ -58,6 +58,15 @@ interface PlayerBackend {
 
     /** Stores one play in the core's listening history (`metrics::record`); [eventJson] is a `PlayEvent`. */
     suspend fun recordPlay(eventJson: String): String
+
+    /** The place kept for a long track (`player::bookmark`), or -1 when there is none. */
+    suspend fun trackPlace(trackId: String): Long
+
+    /** Keeps the place in a long track; the core removes it when barely started or finished. */
+    suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String
+
+    /** Drops the place in a long track, because the person chose to start it over. */
+    suspend fun forgetTrackPlace(trackId: String): String
 }
 
 /** What a screen shows. Top-level rather than nested so Swift sees it as `PlayerUi`. */
@@ -102,6 +111,42 @@ class QueuePlayer(
 
     private val _ui = MutableStateFlow(PlayerUi())
     val ui: StateFlow<PlayerUi> = _ui.asStateFlow()
+
+    private val _resumedAt = MutableStateFlow<Pair<String, Long>?>(null)
+    val resumedAt: StateFlow<Pair<String, Long>?> = _resumedAt.asStateFlow()
+
+    /** Below this the core keeps no place anyway (`player::bookmark::MIN_DURATION_MS`), as on the phone. */
+    private fun isLong(track: FullTrack?) = (track?.durationMs ?: 0) >= 20 * 60_000
+
+    /** The last place written, so the position events do not rewrite the file each time. */
+    private var lastPlace: Pair<String, Long>? = null
+
+    /**
+     * [force] for the moments that matter: a pause, leaving the track, finishing it. Otherwise only
+     * every 30 s of progress. The core removes a place below a minute, so a position nothing has
+     * reported yet must never get here: it would read as zero and lose the place being resumed.
+     */
+    private fun rememberPlace(track: FullTrack?, positionMs: Long, force: Boolean = false) {
+        val id = track?.id ?: return
+        if (!isLong(track)) return
+        val last = lastPlace
+        if (!force && last != null && last.first == id && kotlin.math.abs(positionMs - last.second) < 30_000) return
+        lastPlace = id to positionMs
+        val duration = track.durationMs.toLong()
+        scope.launch { runCatching { backend.recordTrackPlace(id, positionMs, duration) } }
+    }
+
+    /** "Start over" on the resumed notice: back to zero, and the place is forgotten. */
+    fun startOver() {
+        val (id, _) = _resumedAt.value ?: return
+        _resumedAt.value = null
+        seek(0L)
+        scope.launch { runCatching { backend.forgetTrackPlace(id) } }
+    }
+
+    fun dismissResumed() {
+        _resumedAt.value = null
+    }
 
     /** For callers without coroutines (Swift): [onChange] on every change, until the job is cancelled. */
     fun observe(onChange: (PlayerUi) -> Unit): Job = scope.launch { ui.collect { onChange(it) } }
@@ -181,8 +226,18 @@ class QueuePlayer(
     }
 
     private fun finishListening(completed: Boolean, errored: Boolean) {
+        if (completed) {
+            listening?.let { rememberPlace(it.track, it.track.durationMs.toLong(), force = true) }
+        } else {
+            rememberHeardPlace()
+        }
         val event = takeListening(completed, errored) ?: return
         scope.launch { record(event) }
+    }
+
+    /** The place the listen in progress has reached, once the engine has reported one. */
+    private fun rememberHeardPlace() {
+        listening?.takeIf { it.lastTickAt > 0L }?.let { rememberPlace(it.track, it.lastPos, force = true) }
     }
 
     /** Ends the listen in progress and answers its event, if it is one to store. */
@@ -255,7 +310,7 @@ class QueuePlayer(
      * played as that video, a `local:` file from its path, anything else goes through the core's
      * resolver, as on the phone. Tracks with no id cannot play here and are dropped.
      */
-    fun playAll(list: List<FullTrack>, start: Int, startMs: Long = 0) {
+    fun playAll(list: List<FullTrack>, start: Int, startMs: Long = 0, isAutoRetry: Boolean = false) {
         val playable = list.filter { it.id != null }
         // By position, not by equality: a playlist can hold the same song twice, and starting at the
         // second copy must not land on the first. Tracks dropped above shift the index down.
@@ -270,7 +325,7 @@ class QueuePlayer(
             put("type", "set_queue")
             put("tracks", JsonArray(playable.map { JsonPrimitive(it.id.orEmpty()) }))
             put("start", first)
-        }, startMs = startMs)
+        }, startMs = startMs, isAutoRetry = isAutoRetry)
     }
 
     /**
@@ -413,10 +468,10 @@ class QueuePlayer(
      * song resolves to: the local copy is not asked, and only the sources that can honour a video id
      * are (see [StreamResolver.Sources]). Used once: the next load of the song resolves it as usual.
      */
-    fun jumpTo(index: Int, startMs: Long = 0, youtubeId: String? = null) {
+    fun jumpTo(index: Int, startMs: Long = 0, youtubeId: String? = null, isAutoRetry: Boolean = false) {
         if (index !in tracks.indices) return
         hintFor = youtubeId?.takeIf { it.isNotBlank() }?.let { index to it }
-        playAll(tracks, index, startMs)
+        playAll(tracks, index, startMs, isAutoRetry = isAutoRetry)
     }
 
     /** The row and video [jumpTo] was given, for the load it causes; cleared by that load. */
@@ -483,6 +538,7 @@ class QueuePlayer(
             _ui.value.playing -> {
                 backend.send(EngineCommand.Pause)
                 save()
+                rememberHeardPlace()
             }
             else -> backend.send(EngineCommand.Play)
         }
@@ -538,7 +594,7 @@ class QueuePlayer(
      * [moving]: the queue is moving on by itself or with next/previous, so it steps over [blocked],
      * and when everything that way is blocked nothing more plays and it stays where it was.
      */
-    private fun reduce(action: JsonObject, skipPlay: Boolean = false, startMs: Long = 0, moving: Boolean = false) {
+    private fun reduce(action: JsonObject, skipPlay: Boolean = false, startMs: Long = 0, moving: Boolean = false, isAutoRetry: Boolean = false) {
         val answer = runReducer(state, action) ?: return
         val allowed = if (moving && answer.plays) allowedFrom(state.index, answer.state.index) ?: return else answer.state.index
         state = answer.state.copy(index = allowed)
@@ -546,7 +602,7 @@ class QueuePlayer(
         for (effect in answer.effects) {
             when (effect["type"]?.jsonPrimitive?.content) {
                 "play" -> if (!skipPlay) {
-                    load(state.index, (effect["positionMs"]?.jsonPrimitive?.long ?: 0).takeIf { it > 0 } ?: startMs)
+                    load(state.index, (effect["positionMs"]?.jsonPrimitive?.long ?: 0).takeIf { it > 0 } ?: startMs, isAutoRetry = isAutoRetry)
                 }
                 "seek" -> {
                     val at = effect["positionMs"]?.jsonPrimitive?.long ?: 0
@@ -574,8 +630,12 @@ class QueuePlayer(
     // The engine
     // ---------------------------------------------------------------------------------------------
 
-    private fun load(index: Int, startMs: Long) {
+    private fun load(index: Int, startMs: Long, isAutoRetry: Boolean = false) {
         val track = tracks.getOrNull(index) ?: return
+        val trackId = track.id
+        if (_resumedAt.value?.first != trackId) {
+            _resumedAt.value = null
+        }
         val hint = hintFor?.takeIf { it.first == index }?.second
         hintFor = null
         // A skip, or a new queue: the track that was playing ends here, not completed.
@@ -587,14 +647,31 @@ class QueuePlayer(
         dropPreload()
         _ui.update { it.copy(loading = true, positionMs = startMs, durationMs = null, error = null) }
         scope.launch {
+            // A long track started from the top picks up where it was left.
+            var startAt = startMs
+            if (startAt == 0L && !isAutoRetry && trackId != null) {
+                val place = placeOf(track)
+                if (token != currentToken) return@launch // Skipped while asking.
+                if (place > 0L) {
+                    startAt = place
+                    _resumedAt.value = trackId to place
+                    _ui.update { it.copy(positionMs = place) }
+                }
+            }
             val audio = resolve(track, hint)
             if (token != currentToken) return@launch // Skipped while resolving.
             if (audio == null) {
                 failed("Could not resolve \"${track.name}\"")
                 return@launch
             }
-            backend.send(EngineCommand.Load(token, audio.url, startMs, gainOf(audio), play = true))
+            backend.send(EngineCommand.Load(token, audio.url, startAt, gainOf(audio), play = true))
         }
+    }
+
+    /** The place kept for [track], or -1: a song has none, and asking would cost a call per song. */
+    private suspend fun placeOf(track: FullTrack): Long {
+        val id = track.id?.takeIf { isLong(track) } ?: return -1L
+        return runCatching { backend.trackPlace(id) }.getOrDefault(-1L)
     }
 
     /** The index the queue would move to when the current track ends, if any. */
@@ -618,6 +695,9 @@ class QueuePlayer(
         preloadedToken = token
         preloadedIndex = index
         scope.launch {
+            // Not behind a track with a place: the engine would run into it from the top, and its first
+            // position would erase the place. Left out, the end of this song loads it, and load resumes.
+            if (placeOf(track) > 0L) return@launch
             val audio = resolve(track) ?: return@launch
             if (token != preloadedToken) return@launch
             backend.send(EngineCommand.Preload(token, audio.url, gainOf(audio)))
@@ -640,6 +720,7 @@ class QueuePlayer(
                 progressListening(event.positionMs)
                 state = state.copy(positionMs = event.positionMs)
                 _ui.update { it.copy(positionMs = event.positionMs) }
+                tracks.getOrNull(state.index)?.let { rememberPlace(it, event.positionMs, force = false) }
             }
             is EngineEvent.Transitioned -> if (event.to == preloadedToken) {
                 finishListening(completed = true, errored = false)

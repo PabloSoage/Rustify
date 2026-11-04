@@ -70,7 +70,7 @@ class EnginePlayerController(
 
     override val preloadedLyrics: StateFlow<LyricsResult?> = MutableStateFlow(null)
     override val preloadedLyricsTrackId: String? = null
-    override val resumedAt: StateFlow<Pair<String, Long>?> = MutableStateFlow(null)
+    override val resumedAt: StateFlow<Pair<String, Long>?> = player.resumedAt
     override val isWebPlayerMode: Boolean = false
 
     override fun can(feature: PlayerFeature): Boolean = feature == PlayerFeature.SPEED
@@ -121,7 +121,7 @@ class EnginePlayerController(
         // A forced re-resolution: the source that served it last is not trusted as the good one.
         track.id?.let { com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it) }
         val sameTrack = fallbackTrackId == null || fallbackTrackId == ui.current?.id
-        player.jumpTo(i, startMs = if (sameTrack) ui.positionMs.coerceAtLeast(0) else 0, youtubeId = youtubeId)
+        player.jumpTo(i, startMs = if (sameTrack) ui.positionMs.coerceAtLeast(0) else 0, youtubeId = youtubeId, isAutoRetry = isAutoRetry)
     }
 
     override fun play() = player.play()
@@ -130,7 +130,7 @@ class EnginePlayerController(
     override fun seekTo(positionMs: Long) = player.seek(positionMs)
     override fun skipToNext() = player.next()
     override fun skipToPrevious() = player.previous()
-    override fun startOver() = player.seek(0)
+    override fun startOver() = player.startOver()
 
     // Speed and pitch are two of the effects: all of them go again, from the settings.
     override fun applyPlaybackSpeed() = applyEffects()
@@ -275,7 +275,7 @@ class EnginePlayerController(
         com.varuna.rustify.bridge.UserAlternatives.remove(platform.filesDir, trackId)
     }
 
-    override fun dismissResumed() = Unit
+    override fun dismissResumed() = player.dismissResumed()
 
     // ── A-B repeat ──────────────────────────────────────────────────────────────────────────────
 

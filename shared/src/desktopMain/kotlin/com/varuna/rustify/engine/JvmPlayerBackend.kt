@@ -32,4 +32,11 @@ object JvmPlayerBackend : PlayerBackend {
     override suspend fun resolveYouTubeId(spotifyId: String): String = NativeEngine.resolveYouTubeId(spotifyId, "")
 
     override suspend fun recordPlay(eventJson: String): String = NativeEngine.recordPlay(eventJson)
+
+    override suspend fun trackPlace(trackId: String): Long = NativeEngine.trackPlace(trackId)
+
+    override suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String =
+        NativeEngine.recordTrackPlace(trackId, positionMs, durationMs)
+
+    override suspend fun forgetTrackPlace(trackId: String): String = NativeEngine.forgetTrackPlace(trackId)
 }

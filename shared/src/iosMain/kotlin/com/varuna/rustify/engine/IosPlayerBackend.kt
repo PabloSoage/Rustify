@@ -57,4 +57,11 @@ object IosPlayerBackend : PlayerBackend {
 
     override suspend fun resolveAudio(videoId: String, prefsJson: String): String =
         NativeEngine.resolveInnertubeAudio(videoId, prefsJson)
+
+    override suspend fun trackPlace(trackId: String): Long = NativeEngine.trackPlace(trackId)
+
+    override suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String =
+        NativeEngine.recordTrackPlace(trackId, positionMs, durationMs)
+
+    override suspend fun forgetTrackPlace(trackId: String): String = NativeEngine.forgetTrackPlace(trackId)
 }

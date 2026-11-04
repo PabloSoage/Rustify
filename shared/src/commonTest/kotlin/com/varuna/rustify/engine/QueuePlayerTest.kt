@@ -1,6 +1,7 @@
 package com.varuna.rustify.engine
 
 import com.varuna.rustify.bridge.FullTrack
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,10 @@ class QueuePlayerTest {
                 val moved = JsonObject(state + ("index" to JsonPrimitive(next)))
                 return """{"state":$moved,"effects":[{"type":"play"}]}"""
             }
+            if (type == "seek") {
+                val ms = action["ms"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                return """{"state":$stateJson,"effects":[{"type":"seek","positionMs":$ms}]}"""
+            }
             val queue = action["tracks"]?.jsonArray ?: return """{"state":$stateJson,"effects":[]}"""
             val start = action["start"]?.jsonPrimitive?.int ?: 0
             return """{"state":{"queue":$queue,"index":$start,"position_ms":0,"repeat":"off","shuffle":false},""" +
@@ -50,6 +55,21 @@ class QueuePlayerTest {
         override fun registerTrackMetadata(track: FullTrack) = Unit
         override suspend fun resolveYouTubeId(spotifyId: String) = ""
         override suspend fun recordPlay(eventJson: String) = """{"success":true}"""
+
+        val places = mutableMapOf<String, Long>()
+        var placeGate: CompletableDeferred<Unit>? = null
+        override suspend fun trackPlace(trackId: String): Long {
+            placeGate?.await()
+            return places[trackId] ?: -1L
+        }
+        override suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String {
+            places[trackId] = positionMs
+            return """{"success":true}"""
+        }
+        override suspend fun forgetTrackPlace(trackId: String): String {
+            places.remove(trackId)
+            return """{"success":true}"""
+        }
     }
 
     private fun ytm(video: String, name: String) = FullTrack(id = "ytm:$video", name = name)
@@ -331,5 +351,246 @@ class QueuePlayerTest {
         val resumed = lastLoad(backend)
         assertEquals("https://audio.test/aaaaaaaaaaa", resumed.uri)
         assertEquals(30_000L, resumed.startMs)
+    }
+
+    @Test
+    fun `a long track with a saved place resumes where it was left`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long1", name = "Podcast Episode", durationMs = 25 * 60_000)
+        backend.places["ytm:long1"] = 600_000L
+
+        player.playAll(listOf(longTrack), 0)
+
+        val load = backend.sent.filterIsInstance<EngineCommand.Load>().lastOrNull()
+        assertEquals(600_000L, load?.startMs)
+        assertEquals("ytm:long1" to 600_000L, player.resumedAt.value)
+    }
+
+    @Test
+    fun `a long track does not resume when startMs is explicitly provided`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long2", name = "Podcast Episode", durationMs = 25 * 60_000)
+        backend.places["ytm:long2"] = 600_000L
+
+        player.playAll(listOf(longTrack), 0, startMs = 120_000L)
+
+        val load = backend.sent.filterIsInstance<EngineCommand.Load>().lastOrNull()
+        assertEquals(120_000L, load?.startMs)
+        assertEquals(null, player.resumedAt.value)
+    }
+
+    @Test
+    fun `a long track does not resume on auto-retry`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long3", name = "Podcast Episode", durationMs = 25 * 60_000)
+        backend.places["ytm:long3"] = 600_000L
+        player.playAll(listOf(longTrack), 0, startMs = 100L)
+
+        player.jumpTo(0, startMs = 0L, isAutoRetry = true)
+
+        val load = backend.sent.filterIsInstance<EngineCommand.Load>().lastOrNull()
+        assertEquals(0L, load?.startMs)
+        assertEquals(null, player.resumedAt.value)
+    }
+
+    @Test
+    fun `a short song does not resume from a bookmark`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val shortTrack = FullTrack(id = "ytm:short", name = "Short Song", durationMs = 3 * 60_000)
+        backend.places["ytm:short"] = 60_000L
+
+        player.playAll(listOf(shortTrack), 0)
+
+        val load = backend.sent.filterIsInstance<EngineCommand.Load>().lastOrNull()
+        assertEquals(0L, load?.startMs)
+        assertEquals(null, player.resumedAt.value)
+    }
+
+    @Test
+    fun `an audition does not resume from a bookmark`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long4", name = "Long Set", durationMs = 30 * 60_000)
+        backend.places["ytm:long4"] = 500_000L
+
+        player.audition(longTrack, "sample_vid")
+
+        val load = backend.sent.filterIsInstance<EngineCommand.Load>().lastOrNull()
+        assertEquals(0L, load?.startMs)
+        assertEquals(null, player.resumedAt.value)
+    }
+
+    @Test
+    fun `resumedAt is cleared when moving to another track`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long5", name = "Long Set", durationMs = 30 * 60_000)
+        val otherTrack = FullTrack(id = "ytm:other", name = "Other Song", durationMs = 3 * 60_000)
+        backend.places["ytm:long5"] = 500_000L
+
+        player.playAll(listOf(longTrack, otherTrack), 0)
+        assertEquals("ytm:long5" to 500_000L, player.resumedAt.value)
+
+        player.next()
+        assertEquals(null, player.resumedAt.value)
+    }
+
+    @Test
+    fun `startOver clears resumedAt seeks to zero and forgets the saved place`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long6", name = "Long Set", durationMs = 30 * 60_000)
+        backend.places["ytm:long6"] = 500_000L
+
+        player.playAll(listOf(longTrack), 0)
+        assertEquals("ytm:long6" to 500_000L, player.resumedAt.value)
+
+        player.startOver()
+
+        assertEquals(null, player.resumedAt.value)
+        val seek = backend.sent.filterIsInstance<EngineCommand.Seek>().lastOrNull()
+        assertEquals(0L, seek?.positionMs)
+        assertEquals(-1L, backend.places["ytm:long6"] ?: -1L)
+    }
+
+    @Test
+    fun `dismissResumed clears resumedAt without forgetting the saved place`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val longTrack = FullTrack(id = "ytm:long7", name = "Long Set", durationMs = 30 * 60_000)
+        backend.places["ytm:long7"] = 500_000L
+
+        player.playAll(listOf(longTrack), 0)
+        assertEquals("ytm:long7" to 500_000L, player.resumedAt.value)
+
+        player.dismissResumed()
+
+        assertEquals(null, player.resumedAt.value)
+        assertEquals(500_000L, backend.places["ytm:long7"])
+    }
+
+    private val longSet = FullTrack(id = "ytm:longset", name = "Long Set", durationMs = 30 * 60_000)
+    private val song = FullTrack(id = "ytm:song", name = "Song", durationMs = 3 * 60_000)
+
+    /** A player resuming [longSet] at 500 s, its engine ready and not yet at the first position. */
+    private fun resuming(backend: FakeBackend, vararg queue: FullTrack = arrayOf(longSet, song)): Pair<QueuePlayer, Long> {
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.start()
+        backend.places.getOrPut(longSet.id!!) { 500_000L }
+        player.playAll(queue.toList(), 0)
+        val token = backend.sent.filterIsInstance<EngineCommand.Load>().last().token
+        backend.incoming.tryEmit(EngineEvent.Ready(token))
+        backend.incoming.tryEmit(EngineEvent.State(playing = true))
+        return player to token
+    }
+
+    @Test
+    fun `leaving before the first position keeps the place being resumed`() {
+        val backend = FakeBackend()
+        val (player, _) = resuming(backend)
+
+        player.next()
+
+        assertEquals(500_000L, backend.places[longSet.id])
+    }
+
+    @Test
+    fun `a failure before the first position keeps the place being resumed`() {
+        val backend = FakeBackend()
+        val (_, token) = resuming(backend)
+
+        backend.incoming.tryEmit(EngineEvent.Error(token, "the connection dropped"))
+
+        assertEquals(500_000L, backend.places[longSet.id])
+    }
+
+    @Test
+    fun `pausing before the first position keeps the place being resumed`() {
+        val backend = FakeBackend()
+        val (player, _) = resuming(backend)
+
+        player.pause()
+
+        assertEquals(500_000L, backend.places[longSet.id])
+    }
+
+    @Test
+    fun `pausing and leaving store the place reached`() {
+        val backend = FakeBackend()
+        val (player, token) = resuming(backend)
+
+        backend.incoming.tryEmit(EngineEvent.Position(token, 510_000L))
+        player.pause()
+        assertEquals(510_000L, backend.places[longSet.id], "paused")
+
+        backend.incoming.tryEmit(EngineEvent.Position(token, 515_000L))
+        player.next()
+        assertEquals(515_000L, backend.places[longSet.id], "left")
+    }
+
+    @Test
+    fun `pausing an audition writes nothing over the long track of the queue`() {
+        val backend = FakeBackend()
+        val (player, _) = resuming(backend)
+        player.audition(song, "sample_vid")
+        val audition = backend.sent.filterIsInstance<EngineCommand.Load>().last().token
+        backend.incoming.tryEmit(EngineEvent.Ready(audition))
+        backend.incoming.tryEmit(EngineEvent.State(playing = true))
+        backend.incoming.tryEmit(EngineEvent.Position(audition, 120_000L))
+
+        player.pause()
+
+        assertEquals(500_000L, backend.places[longSet.id])
+    }
+
+    @Test
+    fun `a long track with a place is not preloaded and resumes when the queue reaches it`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.start()
+        backend.places[longSet.id!!] = 500_000L
+        player.playAll(listOf(song, longSet), 0)
+        val token = backend.sent.filterIsInstance<EngineCommand.Load>().last().token
+
+        backend.incoming.tryEmit(EngineEvent.Ready(token))
+        assertTrue(backend.sent.none { it is EngineCommand.Preload })
+
+        backend.incoming.tryEmit(EngineEvent.Ended(token))
+        assertEquals(500_000L, backend.sent.filterIsInstance<EngineCommand.Load>().last().startMs)
+        assertEquals(longSet.id to 500_000L, player.resumedAt.value)
+    }
+
+    @Test
+    fun `a long track with no place is still preloaded`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.start()
+        player.playAll(listOf(song, longSet), 0)
+
+        backend.incoming.tryEmit(EngineEvent.Ready(backend.sent.filterIsInstance<EngineCommand.Load>().last().token))
+
+        assertEquals(1, backend.sent.count { it is EngineCommand.Preload })
+    }
+
+    @Test
+    fun `skipping while the place is being read leaves no notice of the track left`() {
+        val backend = FakeBackend()
+        val gate = CompletableDeferred<Unit>()
+        backend.placeGate = gate
+        backend.places[longSet.id!!] = 500_000L
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+
+        player.playAll(listOf(longSet, song), 0)
+        backend.placeGate = null
+        player.next()
+        gate.complete(Unit)
+
+        assertEquals(null, player.resumedAt.value)
+        assertEquals(0L, player.ui.value.positionMs)
+        assertEquals(1, backend.sent.count { it is EngineCommand.Load }, "only the song is loaded")
     }
 }
