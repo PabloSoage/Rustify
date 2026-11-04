@@ -106,6 +106,17 @@ pub struct InnertubeAudio {
     pub client: String,
 }
 
+/// A playable video with its own sound in one stream, for a player that can read it (AVPlayer, ffmpeg).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InnertubeVideo {
+    pub url: String,
+    /// An HLS manifest rather than one file.
+    pub hls: bool,
+    /// Which [`ClientProfile::key`] produced it.
+    pub client: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum InnertubeError {
     /// The request did not complete.
@@ -273,6 +284,28 @@ pub fn pick(player: &Value, prefs: &AudioPrefs, client: &str) -> Result<Innertub
     })
 }
 
+/// The video to show from a `/player` answer, or says why there is none: the HLS manifest, which adapts
+/// to the connection, or else the best progressive MP4. Adaptive formats are not looked at: each holds
+/// only the picture or only the sound.
+pub fn pick_video(player: &Value, client: &str) -> Result<InnertubeVideo, String> {
+    let status = player["playabilityStatus"]["status"].as_str().unwrap_or("");
+    if status != "OK" {
+        let reason = player["playabilityStatus"]["reason"].as_str().unwrap_or("");
+        return Err(format!("{status} {reason}").trim().to_string());
+    }
+    if let Some(url) = player["streamingData"]["hlsManifestUrl"].as_str() {
+        return Ok(InnertubeVideo { url: url.to_string(), hls: true, client: client.to_string() });
+    }
+    let formats = player["streamingData"]["formats"].as_array().cloned().unwrap_or_default();
+    formats
+        .iter()
+        .filter(|f| f["mimeType"].as_str().is_some_and(|m| m.starts_with("video/mp4")))
+        .filter(|f| f["url"].as_str().is_some())
+        .max_by_key(|f| f["bitrate"].as_u64().unwrap_or(0))
+        .map(|f| InnertubeVideo { url: f["url"].as_str().unwrap_or_default().to_string(), hls: false, client: client.to_string() })
+        .ok_or_else(|| "no directly playable video format".to_string())
+}
+
 fn expire_param(url: &str) -> Option<i64> {
     let query = url.split_once('?')?.1;
     query
@@ -285,6 +318,18 @@ fn expire_param(url: &str) -> Option<i64> {
 /// Resolves a YouTube video to a playable audio stream, trying each client in order — the one that
 /// worked last first.
 pub async fn resolve_audio<E: Env>(video_id: &str, prefs: &AudioPrefs) -> Result<InnertubeAudio, InnertubeError> {
+    resolve_with::<E, _>(video_id, |player, client| pick(player, prefs, client)).await
+}
+
+/// The same, for the video itself ([`pick_video`]).
+pub async fn resolve_video<E: Env>(video_id: &str) -> Result<InnertubeVideo, InnertubeError> {
+    resolve_with::<E, _>(video_id, pick_video).await
+}
+
+async fn resolve_with<E: Env, T>(
+    video_id: &str,
+    choose: impl Fn(&Value, &str) -> Result<T, String>,
+) -> Result<T, InnertubeError> {
     let mut list = clients::<E>().await;
     if let Some(last) = LAST_GOOD.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
         if let Some(i) = list.iter().position(|c| c.key == last) {
@@ -325,10 +370,10 @@ pub async fn resolve_audio<E: Env>(video_id: &str, prefs: &AudioPrefs) -> Result
                 continue;
             }
         };
-        match pick(&player, prefs, &c.key) {
-            Ok(audio) => {
+        match choose(&player, &c.key) {
+            Ok(found) => {
                 *LAST_GOOD.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(c.key.clone());
-                return Ok(audio);
+                return Ok(found);
             }
             Err(reason) => reasons.push(format!("{}: {reason}", c.key)),
         }
@@ -367,6 +412,28 @@ mod tests {
             {"itag": 253, "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 500_000, "url": "https://a/253", "isDrc": true},
             {"itag": 254, "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 600_000, "url": "https://a/254", "audioTrack": {"audioIsDefault": false}}
         ])
+    }
+
+    #[test]
+    fn a_video_prefers_the_manifest_then_the_best_progressive_mp4_and_never_an_adaptive_one() {
+        let ok = |data: Value| json!({"playabilityStatus": {"status": "OK"}, "streamingData": data});
+        let formats = json!([
+            {"mimeType": "video/mp4; codecs=\"avc1\"", "bitrate": 400_000, "url": "https://v/18"},
+            {"mimeType": "video/mp4; codecs=\"avc1\"", "bitrate": 900_000, "url": "https://v/22"},
+            {"mimeType": "video/webm", "bitrate": 2_000_000, "url": "https://v/43"},
+            {"mimeType": "video/mp4", "bitrate": 3_000_000, "signatureCipher": "s=xx"}
+        ]);
+
+        let both = pick_video(&ok(json!({"hlsManifestUrl": "https://m/x.m3u8", "formats": formats})), "c").unwrap();
+        assert_eq!(both, InnertubeVideo { url: "https://m/x.m3u8".into(), hls: true, client: "c".into() });
+
+        let plain = pick_video(&ok(json!({"formats": formats})), "c").unwrap();
+        assert_eq!((plain.url.as_str(), plain.hls), ("https://v/22", false));
+
+        // Picture or sound alone: there is nothing here that shows the video with its sound.
+        assert!(pick_video(&ok(json!({"adaptiveFormats": super::tests::formats()})), "c").is_err());
+        let refused = json!({"playabilityStatus": {"status": "LOGIN_REQUIRED", "reason": "Sign in"}});
+        assert_eq!(pick_video(&refused, "c").unwrap_err(), "LOGIN_REQUIRED Sign in");
     }
 
     fn mock_visitor() {

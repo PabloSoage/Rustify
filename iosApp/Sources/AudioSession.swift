@@ -33,7 +33,10 @@ final class AudioSession {
             },
             // The media server restarted: every session setting is gone and has to be set again.
             center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: .main) {
-                [weak self] _ in self?.configure()
+                [weak self] _ in
+                self?.configure()
+                self?.activate()
+                self?.controller.reopenOutput()
             },
         ]
     }
@@ -77,6 +80,10 @@ final class AudioSession {
             resumeAfterInterruption = controller.isPlaying
             controller.pause()
         case .ended:
+            // The interruption stopped the audio unit under the engine, which would say "playing" in
+            // silence from here on. The session has to be active before the output opens.
+            activate()
+            controller.reopenOutput()
             let rawOptions = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
             if resumeAfterInterruption && shouldResume { play() }

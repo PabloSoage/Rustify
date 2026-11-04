@@ -1313,6 +1313,19 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativ
     })
 }
 
+/// JNI Bridge: a YouTube video with its sound, for the desktop's player. See `youtube::innertube`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveInnertubeVideoNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    video_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let video = video_id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(youtube::innertube::resolve_video::<env::android::AndroidEnv>(&video)))
+    })
+}
+
 /// JNI Bridge: a YouTube video's audio stream, with one request and no yt-dlp (4.1). `prefs_json` is
 /// `{"prefer":"opus"|"aac"|"","maxKbps":0}`. See `youtube::innertube`.
 #[no_mangle]

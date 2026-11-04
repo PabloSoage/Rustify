@@ -230,6 +230,7 @@ pub const METHODS: &[&str] = &[
     "getYtmPlaylist",
     "searchYouTube",
     "resolveInnertubeAudio",
+    "resolveInnertubeVideo",
     "setInnertubeClients",
     "registerTrackMetadata",
     "resolveYouTubeId",
@@ -899,6 +900,10 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 scraper.search(&query).await
             }))
         }
+        // resolveInnertubeVideoNative.
+        "resolveInnertubeVideo" => serialize_result(get_runtime().block_on(youtube::innertube::resolve_video::<
+            env::android::AndroidEnv,
+        >(&text(args, "videoId")))),
         // resolveInnertubeAudioNative. iOS plays AAC (AVPlayer and the engine both); pass
         // `{"prefer":"aac"}` in `prefs`.
         "resolveInnertubeAudio" => {

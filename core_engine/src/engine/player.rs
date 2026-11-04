@@ -345,6 +345,7 @@ impl<E: Env> Player<E> {
                 self.apply_fade();
             }
             Msg::Cmd(Command::SetEffects { effects }) => self.set_effects(*effects),
+            Msg::Cmd(Command::ReopenOutput) => self.output.reopen(),
             Msg::Cmd(Command::Shutdown) => return false,
             Msg::Opened {
                 token,

@@ -301,6 +301,11 @@ class QueuePlayer(
         if (engineRunning) backend.send(EngineCommand.SetEffects(config))
     }
 
+    /** The system stopped the output behind the engine's back (an interruption on iOS). */
+    fun reopenOutput() {
+        if (engineRunning) backend.send(EngineCommand.ReopenOutput)
+    }
+
     // ---------------------------------------------------------------------------------------------
     // What the window asks for
     // ---------------------------------------------------------------------------------------------

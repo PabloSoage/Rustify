@@ -56,7 +56,7 @@ private class IosAudioSettings(platform: AppPlatform) : AudioSettings(platform.p
 /**
  * [AppServices] on iOS. Lyrics, the DJ and the audio settings are the shared ones; the DJ speaks with
  * the system's voice, and with no model on the phone its "local" mode is the heuristic. What is not
- * here yet ([can] says so, and the screens with it): tempo, video and translation. Downloads stop if
+ * here yet ([can] says so, and the screens with it): tempo and translation. Downloads stop if
  * the system suspends the app, which only keeps playing audio in the background.
  */
 class IosAppServices(
@@ -65,7 +65,7 @@ class IosAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO -> true
         else -> false
     }
 
@@ -104,13 +104,14 @@ class IosAppServices(
 
     override fun translationTarget(): String = IosLocale.languageCode
 
-    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? = null
+    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? =
+        resolveVideoFromCore(youtubeId)
 
     @Composable
-    override fun CanvasVideo(url: String, fitWidth: Boolean) = Unit
+    override fun CanvasVideo(url: String, fitWidth: Boolean) = IosCanvasVideo(url, fitWidth)
 
     @Composable
-    override fun PlayerVideo(video: Pair<String, String?>) = Unit
+    override fun PlayerVideo(video: Pair<String, String?>) = IosPlayerVideo(video.first)
 
     @Composable
     override fun JamDialog(onDismiss: () -> Unit) {

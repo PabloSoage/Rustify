@@ -80,6 +80,11 @@ sealed class EngineCommand {
     @SerialName("setFadeMs")
     data class SetFadeMs(val ms: Int) : EngineCommand()
 
+    /** Opens the device again: on iOS an interruption leaves the output stopped, and cpal is not told. */
+    @Serializable
+    @SerialName("reopenOutput")
+    data object ReopenOutput : EngineCommand()
+
     /** Every audio effect at once ([EffectsConfig]); the engine applies what changed. */
     @Serializable
     @SerialName("setEffects")

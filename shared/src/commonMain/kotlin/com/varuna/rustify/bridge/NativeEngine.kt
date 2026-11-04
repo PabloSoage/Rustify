@@ -202,6 +202,9 @@ expect object NativeEngine {
     /** A YouTube video's audio stream from one player request; an `InnertubeAudio` or the failure envelope. */
     suspend fun resolveInnertubeAudio(videoId: String, prefsJson: String): String
 
+    /** A YouTube video with its sound, from one player request; an `InnertubeVideo` or the failure envelope. */
+    suspend fun resolveInnertubeVideo(videoId: String): String
+
     /** Replaces the client table; `[]` restores the built-in one. */
     suspend fun setInnertubeClients(clientsJson: String): String
 

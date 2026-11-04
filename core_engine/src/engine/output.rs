@@ -41,6 +41,10 @@ pub trait AudioOutput: Send {
     fn current_format(&self) -> Option<Format> {
         None
     }
+
+    /// Opens the device again if it is running, keeping what it plays. Does nothing where nothing
+    /// outside the output can stop it.
+    fn reopen(&mut self) {}
 }
 
 // =============================================================================
@@ -65,6 +69,8 @@ pub struct NullOutput {
     thread: Option<JoinHandle<()>>,
     /// Set by a test to play a device that moved to another rate ([`NullOutput::switchable`]).
     moved: Option<Arc<std::sync::Mutex<Option<Format>>>>,
+    /// How many times it was asked to reopen, for a test ([`NullOutput::counting_reopens`]).
+    reopens: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// A test's handle for [`NullOutput::switchable`]: "the device now runs at this format".
@@ -87,7 +93,13 @@ impl NullOutput {
             running: Arc::new(AtomicBool::new(false)),
             thread: None,
             moved: None,
+            reopens: Arc::default(),
         }
+    }
+
+    /// A counter of the times it was asked to reopen.
+    pub fn counting_reopens(&self) -> Arc<std::sync::atomic::AtomicUsize> {
+        self.reopens.clone()
     }
 
     /// An output whose format a test can change while it plays, as a real one does when the device
@@ -150,6 +162,10 @@ impl AudioOutput for NullOutput {
             .as_ref()
             .and_then(|m| m.lock().ok().and_then(|f| *f))
     }
+
+    fn reopen(&mut self) {
+        self.reopens.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl Drop for NullOutput {
@@ -187,6 +203,8 @@ mod cpal_output {
         thread: Option<JoinHandle<()>>,
         /// The running format, packed as `rate << 8 | channels`; 0 before the first start.
         format: Arc<std::sync::atomic::AtomicU64>,
+        /// Set when the stream died, or to have the output thread open it again regardless.
+        lost: Arc<AtomicBool>,
     }
 
     impl CpalOutput {
@@ -195,6 +213,7 @@ mod cpal_output {
                 stop_tx: None,
                 thread: None,
                 format: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                lost: Arc::new(AtomicBool::new(false)),
             }
         }
     }
@@ -335,11 +354,12 @@ mod cpal_output {
             let (ready_tx, ready_rx) = mpsc::channel::<Result<Format, EngineError>>();
             let (stop_tx, stop_rx) = mpsc::channel::<()>();
             let current = self.format.clone();
+            let lost = self.lost.clone();
             let thread = std::thread::Builder::new()
                 .name("rustify-audio-output".into())
                 .spawn(move || {
                     let consumer: SharedConsumer = Arc::new(std::sync::Mutex::new(consumer));
-                    let lost = Arc::new(AtomicBool::new(false));
+                    lost.store(false, Ordering::Release);
                     let (first, format) = match open_device(wanted, consumer.clone(), lost.clone())
                     {
                         Ok(opened) => opened,
@@ -415,6 +435,10 @@ mod cpal_output {
 
         fn current_format(&self) -> Option<Format> {
             unpack(self.format.load(Ordering::Acquire))
+        }
+
+        fn reopen(&mut self) {
+            self.lost.store(true, Ordering::Release);
         }
     }
 

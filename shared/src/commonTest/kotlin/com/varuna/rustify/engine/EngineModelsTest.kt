@@ -62,6 +62,11 @@ class EngineModelsTest {
     }
 
     @Test
+    fun reopenOutputEncodesInTheShapeRustPins() {
+        assertEquals("""{"type":"reopenOutput"}""", EngineCommand.ReopenOutput.toJson())
+    }
+
+    @Test
     fun defaultEffectsEncodeInTheShapeRustPins() {
         assertEquals(DEFAULT_EFFECTS, EngineJson.encodeToString(EffectsConfig.serializer(), EffectsConfig()))
         assertEquals("""{"type":"setEffects","effects":$DEFAULT_EFFECTS}""", EngineCommand.SetEffects(EffectsConfig()).toJson())

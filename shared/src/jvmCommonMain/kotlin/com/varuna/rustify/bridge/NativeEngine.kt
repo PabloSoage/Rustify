@@ -432,6 +432,11 @@ actual object NativeEngine {
     actual suspend fun resolveInnertubeAudio(videoId: String, prefsJson: String): String =
         io { resolveInnertubeAudioNative(videoId, prefsJson) }
 
+    private external fun resolveInnertubeVideoNative(videoId: String): String
+
+    actual suspend fun resolveInnertubeVideo(videoId: String): String =
+        io { resolveInnertubeVideoNative(videoId) }
+
     private external fun setInnertubeClientsNative(clientsJson: String): String
 
     /** Replaces the client table; `[]` restores the built-in one. */

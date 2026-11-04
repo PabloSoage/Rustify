@@ -256,6 +256,9 @@ actual object NativeEngine {
             put("prefs", json(prefsJson))
         }
 
+    actual suspend fun resolveInnertubeVideo(videoId: String): String =
+        io("resolveInnertubeVideo") { put("videoId", videoId) }
+
     actual suspend fun setInnertubeClients(clientsJson: String): String =
         io("setInnertubeClients") { put("clients", json(clientsJson)) }
 

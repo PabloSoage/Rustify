@@ -273,6 +273,22 @@ fn events_serialise_in_the_shape_the_bridges_send() {
 }
 
 #[test]
+fn asking_to_reopen_reaches_the_output_and_the_song_goes_on() {
+    let output = NullOutput::new(Pace::RealTime { speed: 4.0 });
+    let reopens = output.counting_reopens();
+    let engine = engine(output);
+    let file = TempWav::new(44_100, 2, 2.0);
+    engine.send(load(1, file.uri(), true));
+    collect_until(&engine, |e| matches!(e, Event::Position { token: 1, .. }));
+
+    let reopen: Command = serde_json::from_str(r#"{"type":"reopenOutput"}"#).unwrap();
+    engine.send(reopen);
+
+    collect_until(&engine, |e| matches!(e, Event::Ended { token: 1 }));
+    assert_eq!(reopens.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn commands_deserialise_from_the_shape_the_app_sends() {
     let load: Command = serde_json::from_str(
         r#"{"type":"load","token":4,"uri":"https://x/a.m4a","startMs":1500,"gainDb":-3.5,"play":true}"#,

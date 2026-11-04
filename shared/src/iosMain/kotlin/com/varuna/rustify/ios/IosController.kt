@@ -111,6 +111,9 @@ class IosController(val secrets: SecretStorage) {
     /** Pauses if playing; for the lock screen's pause button, an interruption or unplugged headphones. */
     fun pause() = player.pause()
 
+    /** After an interruption, or the media server restarting: the output they stopped stays stopped. */
+    fun reopenOutput() = player.reopenOutput()
+
     /** Whether the player is playing now, for callers that ask rather than [observe]. */
     val isPlaying: Boolean get() = player.ui.value.playing
 

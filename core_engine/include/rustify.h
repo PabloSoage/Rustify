@@ -68,6 +68,7 @@ extern "C" {
  *
  *   searchYtMusic {query}              getYtmAlbum {id}  getYtmArtist {id}  getYtmPlaylist {id}
  *   searchYouTube {query}              resolveInnertubeAudio {videoId, prefs}
+ *   resolveInnertubeVideo {videoId}
  *   setInnertubeClients {clients}
  *   registerTrackMetadata {id, name, artists, durationMs, isrc}   resolveYouTubeId {spotifyId, youtubeId}
  *   setAlternativeTrack {spotifyId, youtubeId}  getAlternativeTrack {spotifyId}  updateQueue {trackIds}

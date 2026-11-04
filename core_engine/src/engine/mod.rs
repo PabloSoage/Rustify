@@ -97,6 +97,9 @@ pub enum Command {
     SetVolume { volume: f32 },
     /// The fade on pause, resume and volume changes; 0 turns it off.
     SetFadeMs { ms: u32 },
+    /// Open the device again. For what the system does to the output without telling cpal: on iOS an
+    /// interruption (a call, an alarm) stops the audio unit, and it stays stopped.
+    ReopenOutput,
     /// Every effect at once (`effects::EffectsConfig`): equaliser, AutoEq, level, stereo tools,
     /// fades and crossfade, speed and pitch, skipping silence. Missing fields take their defaults,
     /// which leave the audio as it is.
