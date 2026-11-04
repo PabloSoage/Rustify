@@ -1,6 +1,18 @@
 package com.varuna.rustify.dj
 
+import com.varuna.rustify.platform.httpClient
+import com.varuna.rustify.platform.systemHttpUserAgent
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,13 +23,12 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * External AI provider. Calls an OpenAI-compatible endpoint (`/v1/chat/completions` or `/openai`)
- * using `java.net.HttpURLConnection` (no new dependencies). JVM-only for that reason, so it lives in
- * the source set Android and the desktop share; the JSON is kotlinx since 5.x, as on every target.
+ * over the platform's Ktor client (`platform/Http.kt`), with the request `HttpURLConnection` made
+ * before: the same headers, the system's own User-Agent, fifteen seconds to connect. The JSON is
+ * kotlinx since 5.x, as on every target.
  *
  * Defaults to Pollinations AI (keyless, free, best-effort). [apiKey] is optional: when blank, no
  * Authorization header is sent (public endpoint). No third-party private key is embedded.
@@ -64,22 +75,21 @@ class ApiDjProvider(
         put("temperature", 0.8)
     }.toString()
 
-    private fun postChatCompletions(body: String): String {
+    private suspend fun postChatCompletions(body: String): String {
         val url = resolveEndpoint(baseUrl)
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15_000
-            readTimeout = readTimeoutMs
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
+        val response = http.post(url) {
+            timeout {
+                connectTimeoutMillis = 15_000
+                socketTimeoutMillis = readTimeoutMs.toLong()
+            }
+            header(HttpHeaders.UserAgent, systemHttpUserAgent())
+            header(HttpHeaders.Accept, "application/json")
+            if (apiKey.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $apiKey")
+            setBody(TextContent(body, ContentType.Application.Json))
         }
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-        conn.disconnect()
+        val code = response.status.value
+        // The answer, or what the server said about refusing it, as UTF-8.
+        val text = response.body<ByteArray>().decodeToString()
         if (code !in 200..299) throw RuntimeException("DJ API HTTP $code: ${text.take(200)}")
         return text
     }
@@ -108,6 +118,10 @@ class ApiDjProvider(
                 else -> "$b/v1/chat/completions"
             }
         }
+
+        // One client for every provider: the timeouts are set per request, and each OkHttp client
+        // keeps its own threads.
+        private val http by lazy { httpClient { install(HttpTimeout) } }
     }
 
     /** org.json's `optString`, which this read before 5.x: absent or null is "". */
