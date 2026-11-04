@@ -217,7 +217,7 @@ class RustifyForegroundService : MediaLibraryService() {
                 .map { it.currentTrack }
                 .distinctUntilChanged { a, b -> a?.id == b?.id }
                 .collectLatest { track ->
-                    snapshotFlow { TrackFavorites.isSaved(this@RustifyForegroundService, track) }
+                    snapshotFlow { TrackFavorites.isSaved(filesDir, track) }
                         .distinctUntilChanged()
                         .collect { saved -> lastSaved = saved; applySaveButton(track, saved) }
                 }
@@ -360,7 +360,7 @@ class RustifyForegroundService : MediaLibraryService() {
             // asked for, and a save that fails leaves the button correct.
             val track = AudioPlayerService.instance?.state?.value?.currentTrack
             autoScope.launch {
-                runCatching { TrackFavorites.toggle(this@RustifyForegroundService, track) }
+                runCatching { TrackFavorites.toggle(filesDir, track) }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }

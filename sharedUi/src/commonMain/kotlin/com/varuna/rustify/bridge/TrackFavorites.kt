@@ -1,6 +1,6 @@
 package com.varuna.rustify.bridge
 
-import android.content.Context
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -26,9 +26,9 @@ object TrackFavorites {
     /** Process-wide, like the state it reads: rebuilding one per recomposition would reload it. */
     @Volatile private var ytmRepo: YtMusicRepository? = null
 
-    private fun ytm(context: Context): YtMusicRepository =
+    private fun ytm(filesDir: File): YtMusicRepository =
         ytmRepo ?: synchronized(this) {
-            ytmRepo ?: YtMusicRepository(context.filesDir).also { ytmRepo = it }
+            ytmRepo ?: YtMusicRepository(filesDir).also { ytmRepo = it }
         }
 
     /**
@@ -39,9 +39,9 @@ object TrackFavorites {
      * `snapshotFlow { }` outside composition emits — which is how the notification keeps its icon
      * honest while the song is hearted from somewhere else.
      */
-    fun isSaved(context: Context, track: FullTrack?): Boolean =
+    fun isSaved(filesDir: File, track: FullTrack?): Boolean =
         when (val ref = TrackRef.parse(track?.id)) {
-            is TrackRef.Ytm -> ytm(context).isFavorite(ref.videoId)
+            is TrackRef.Ytm -> ytm(filesDir).isFavorite(ref.videoId)
             is TrackRef.Local -> SpotifyRepository.instance?.isLocalFavorite(ref.raw) == true
             is TrackRef.Spotify -> SpotifyRepository.instance?.isTrackLiked(ref.id) == true
             // A local file inside a Spotify playlist has no Spotify id, so there is nothing to like
@@ -60,11 +60,11 @@ object TrackFavorites {
      * observing, and that is the thread the screens already write them from. Only the Spotify path
      * touches the network, and it does its own dispatching.
      */
-    suspend fun toggle(context: Context, track: FullTrack?): Boolean {
+    suspend fun toggle(filesDir: File, track: FullTrack?): Boolean {
         if (track == null) return false
         return when (val ref = TrackRef.parse(track.id)) {
             is TrackRef.Ytm -> {
-                val repo = ytm(context)
+                val repo = ytm(filesDir)
                 withContext(Dispatchers.Main) {
                     repo.toggleFavorite(
                         YtmTrack(
