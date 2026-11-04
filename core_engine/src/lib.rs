@@ -304,6 +304,51 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readEmbeddedL
     })
 }
 
+/// JNI Bridge: the tags and duration of a local file, for the desktop's local scan. Answers a
+/// `LocalTags`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readTagsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::tags::read(&path))
+    })
+}
+
+/// JNI Bridge: the embedded cover of a local file as `{"mimeType":…,"data":<base64>}`, or `null`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readCoverNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::tags::read_cover(&path))
+    })
+}
+
+/// JNI Bridge: writes a `TagsToWrite` (JSON) into the file at `path`, for a download.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_writeTagsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    tags_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        let raw = tags_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<audio::tags::TagsToWrite>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(tags) => serialize_result(audio::tags::write(&path, &tags).map(|_| ok_result())),
+        }
+    })
+}
+
 /// JNI Bridge: queue one listen for ListenBrainz and send the queue. Answers a `scrobble::Report`.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzSubmitNative<'local>(

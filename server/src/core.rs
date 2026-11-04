@@ -21,6 +21,9 @@ pub const RESERVED: &[&str] = &[
     "startLocalServer",
     "readReplayGain",
     "readEmbeddedLyrics",
+    "readTags",
+    "readCover",
+    "writeTags",
     "openCastListener",
     "closeCastListener",
 ];
@@ -130,7 +133,16 @@ mod tests {
 
     #[test]
     fn the_browser_cannot_point_the_core_elsewhere() {
-        for method in ["initCacheDir", "initSpotifyCacheDir", "startLocalServer", "readEmbeddedLyrics", "openCastListener"] {
+        for method in [
+            "initCacheDir",
+            "initSpotifyCacheDir",
+            "startLocalServer",
+            "readEmbeddedLyrics",
+            "readTags",
+            "readCover",
+            "writeTags",
+            "openCastListener",
+        ] {
             assert!(vet(method, "{}".into(), "/srv/cache").is_err());
         }
         assert_eq!(vet("searchSpotify", r#"{"query":"x"}"#.into(), "/srv/cache").unwrap(), r#"{"query":"x"}"#);

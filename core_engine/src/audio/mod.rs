@@ -11,3 +11,4 @@
 pub mod deezer;
 pub mod embedded_lyrics;
 pub mod replaygain;
+pub mod tags;

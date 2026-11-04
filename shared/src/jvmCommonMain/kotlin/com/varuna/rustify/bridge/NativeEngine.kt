@@ -76,6 +76,21 @@ actual object NativeEngine {
     /** The lyrics embedded in a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
     actual fun readEmbeddedLyrics(path: String): String = readEmbeddedLyricsNative(path)
 
+    // A local file's tags (audio::tags), for the desktop's local scan and its downloads. They read
+    // and write the file, so all three are suspend.
+    private external fun readTagsNative(path: String): String
+    private external fun readCoverNative(path: String): String
+    private external fun writeTagsNative(path: String, tagsJson: String): String
+
+    /** The tags and duration of the file at [path], as a [LocalTags] JSON (or a failure). */
+    suspend fun readTags(path: String): String = io { readTagsNative(path) }
+
+    /** The file's embedded cover as `{"mimeType":…,"data":<base64>}`, or `null`. */
+    suspend fun readCover(path: String): String = io { readCoverNative(path) }
+
+    /** Writes [tagsJson] (a [TagsToWrite]) into the file at [path]; `{"success":true}` or a failure. */
+    suspend fun writeTags(path: String, tagsJson: String): String = io { writeTagsNative(path, tagsJson) }
+
     // ListenBrainz (scrobble::). Network, so suspend over private blocking bridges.
     private external fun listenBrainzSubmitNative(token: String, listenJson: String): String
     private external fun listenBrainzPlayingNowNative(token: String, listenJson: String): String

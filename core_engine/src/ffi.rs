@@ -173,6 +173,9 @@ pub const METHODS: &[&str] = &[
     "lastFmNowPlaying",
     "readReplayGain",
     "readEmbeddedLyrics",
+    "readTags",
+    "readCover",
+    "writeTags",
     "tempoOf",
     "autoEqSearch",
     "autoEqProfile",
@@ -586,6 +589,15 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         "readReplayGain" => serialize_result(audio::replaygain::read(&text(args, "path"))),
         // readEmbeddedLyricsNative — the lyrics as a JSON string, or `null`.
         "readEmbeddedLyrics" => serialize_result(audio::embedded_lyrics::read(&text(args, "path"))),
+        // readTagsNative — a `LocalTags`.
+        "readTags" => serialize_result(audio::tags::read(&text(args, "path"))),
+        // readCoverNative — `{"mimeType":…,"data":<base64>}`, or `null`.
+        "readCover" => serialize_result(audio::tags::read_cover(&text(args, "path"))),
+        // writeTagsNative — `tags` is a `TagsToWrite` object.
+        "writeTags" => match serde_json::from_value::<audio::tags::TagsToWrite>(args["tags"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(tags) => serialize_result(audio::tags::write(&text(args, "path"), &tags).map(|_| crate::ok_result())),
+        },
         // tempoOfNative — `samples` is mono PCM (-1..1) as a JSON array; a `tempo::Estimate`, or
         // `null` with under 6 s of audio. CPU only.
         "tempoOf" => {

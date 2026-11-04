@@ -39,6 +39,7 @@ extern "C" {
  *   lastFmLogin {apiKey, secret, user, password}
  *   lastFmSubmit {credentials, listen}  lastFmNowPlaying {credentials, listen}
  *   readReplayGain {path}  readEmbeddedLyrics {path}  tempoOf {samples, sampleRate}
+ *   readTags {path}  readCover {path}  writeTags {path, tags}
  *   autoEqSearch {query}   autoEqProfile {path}  autoEqBands {peqText, n}
  *   subsonicPing {config}  subsonicFind {config, title, artists, durationMs}
  *   loginSpotify {spDc}                restoreSpotifySession {spDc, accessToken, expiration}
