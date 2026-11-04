@@ -250,15 +250,22 @@ class DesktopDownloads(
         }
     }.getOrNull()
 
-    /** Adds [dir] to the local music folders unless one already holds it, and rescans. */
+    /**
+     * Adds [dir] to the local music folders the first time it is downloaded into, and rescans. Once:
+     * a folder the user then removes in Settings stays removed.
+     */
     private fun intoLocalMusic(dir: File) {
         val prefs = platform.prefs()
         val dirs = prefs.getStringSet(LOCAL_DIRS, emptySet())
         val path = dir.absolutePath
         val slashed = path.replace('\\', '/')
-        if (dirs.none { LocalFolders.isUnder(slashed, it.replace('\\', '/')) }) {
-            prefs.putStringSet(LOCAL_DIRS, dirs + path)
-            Log.i(TAG, "added the download folder to the local music folders: $path")
+        val offered = prefs.getStringSet(OFFERED_DIRS, emptySet())
+        if (path !in offered) {
+            prefs.putStringSet(OFFERED_DIRS, offered + path)
+            if (dirs.none { LocalFolders.isUnder(slashed, it.replace('\\', '/')) }) {
+                prefs.putStringSet(LOCAL_DIRS, dirs + path)
+                Log.i(TAG, "added the download folder to the local music folders: $path")
+            }
         }
         SpotifyRepository.instance?.scanLocalMusic()
     }
@@ -266,6 +273,7 @@ class DesktopDownloads(
     private companion object {
         const val TAG = "Downloads"
         const val LOCAL_DIRS = "local_music_directories"
+        const val OFFERED_DIRS = "download_dirs_added_to_local_music"
         const val PARALLEL = 2
         const val CHUNK = 1L shl 20
         const val RANGE_TRIES = 3
