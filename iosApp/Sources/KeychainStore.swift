@@ -5,7 +5,7 @@
 // Kotlin because every Security call takes and answers a CFDictionary, which Swift bridges for free.
 
 import Foundation
-import RustifyShared
+import RustifyKit
 import Security
 
 /// Generic passwords under one service, one account per key — the scheme the desktop's credential

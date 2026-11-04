@@ -6,7 +6,7 @@
 #   xcodegen generate                   # writes Rustify.xcodeproj next to this file
 #   open Rustify.xcodeproj
 #
-# The Kotlin side (RustifyShared.framework, from :shared) is built by Xcode itself through the
+# The Kotlin side (RustifyKit.framework, from :sharedUi, with :shared in it) is built by Xcode itself through the
 # pre-build script below — Kotlin's standard embedAndSignAppleFrameworkForXcode task.
 name: Rustify
 options:
@@ -26,17 +26,26 @@ targets:
         CFBundleShortVersionString: "5.0.0"
         CFBundleVersion: "1"
         UILaunchScreen: {}
+        # Compose draws on its own: without this iOS holds it to 60 Hz on a ProMotion screen.
+        CADisableMinimumFrameDurationOnPhone: true
+        # The links the app opens (rustify://track/…), as on the phone and the desktop.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.varuna.rustify
+            CFBundleURLSchemes: [rustify]
         # Keeps playing with the screen off or the app in the background.
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.varuna.rustify
-        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         # The framework is static and carries the Rust core inside it (cinterop's staticLibraries);
         # these are what that core links against.
-        OTHER_LDFLAGS: "$(inherited) -framework RustifyShared -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -lc++"
+        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -lc++"
         ENABLE_BITCODE: NO
+        # Compose publishes no iosX64 (sharedUi/build.gradle.kts): only arm64, also in the simulator.
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
         # Swift 5 mode: Swift 6's strict concurrency would reject the Kotlin callbacks this app takes
         # on the main queue without annotations Kotlin/Native does not emit.
         SWIFT_VERSION: "5.0"
@@ -46,8 +55,8 @@ targets:
         # Sideloaded (AltStore/SideStore) with a free or paid Apple ID; set your team in Xcode.
         CODE_SIGN_STYLE: Automatic
     preBuildScripts:
-      - name: Build RustifyShared (Kotlin)
+      - name: Build RustifyKit (Kotlin)
         basedOnDependencyAnalysis: false
         script: |
           cd "$SRCROOT/.."
-          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+          ./gradlew :sharedUi:embedAndSignAppleFrameworkForXcode

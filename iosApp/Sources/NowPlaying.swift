@@ -5,7 +5,7 @@
 // PlayerUi that IosController.observe hands the app; the buttons go to the same IosController.
 
 import MediaPlayer
-import RustifyShared
+import RustifyKit
 import UIKit
 
 /// Used from the main queue only, like IosController.

@@ -7,7 +7,7 @@
 // nothing of either; this tells the player.
 
 import AVFoundation
-import RustifyShared
+import RustifyKit
 
 /// Used from the main queue only: every observer is registered on it, and IosController's player
 /// must be called from it.
