@@ -6,7 +6,8 @@ import kotlin.concurrent.Volatile
 
 /**
  * `NSLog`, which `log stream` and Console show; standard output reaches neither, only Xcode's console.
- * Its text goes as an argument: a '%' in a song title is not a format.
+ * The text is the format, escaped, since a '%' in a song title is not one: passed as an argument to
+ * `"%@"` it crashes Kotlin/Native (signal 11, in the first test here that logged).
  */
 actual object Log {
     /** Also handed every line (level, tag, message): the in-app log viewer's buffer, as on the desktop. */
@@ -14,7 +15,7 @@ actual object Log {
     var sink: ((level: Char, tag: String, message: String) -> Unit)? = null
 
     private fun line(level: Char, tag: String, message: String, error: Throwable?) {
-        NSLog("%@", "$level/$tag: $message" + (error?.let { " — ${it.message}" } ?: ""))
+        NSLog(("$level/$tag: $message" + (error?.let { " — ${it.message}" } ?: "")).replace("%", "%%"))
         sink?.invoke(level, tag, if (error != null) "$message\n${error.stackTraceToString()}" else message)
     }
 
