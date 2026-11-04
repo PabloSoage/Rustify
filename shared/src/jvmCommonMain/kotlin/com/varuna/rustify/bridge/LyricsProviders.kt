@@ -3,17 +3,31 @@ package com.varuna.rustify.bridge
 
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.formUrlEncode
+import com.varuna.rustify.platform.httpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.util.concurrent.ConcurrentHashMap
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.update
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.io.encoding.Base64
 
 /**
  * Lyrics providers (inspired by EeveeSpotify's set). The [LyricsChain] tries the ENABLED
@@ -21,8 +35,9 @@ import java.util.concurrent.ConcurrentHashMap
  * upper provider that resolves stops the chain. LRCLIB is enabled by default (current behaviour);
  * the rest are opt-in.
  *
- * Shared by the phone and the desktop since 5.x: both are a JVM, so the same HTTP and the same
- * parsing. What each shows as a provider's name is the platform's ([LyricsProvider.id] is the key).
+ * Common code since 5.x: the same requests and the same parsing on every platform, the HTTP over
+ * the platform's Ktor client (`platform/Http.kt`). What each shows as a provider's name is the
+ * platform's ([LyricsProvider.id] is the key).
  *
  * ⚠️ The non-LRCLIB providers are **best-effort** (private/undocumented endpoints, scraping, or
  * rotating tokens) and are NOT tested here; on any failure they return null and the chain falls
@@ -40,27 +55,46 @@ interface LyricsProvider {
         fetch(artist, title, durationSec)
 }
 
+/**
+ * The providers' two requests, as they were made with `HttpURLConnection`: the same User-Agent, ten
+ * seconds to connect and ten to read, the body read as UTF-8, and null for anything but a 2xx or
+ * any failure. A cancelled caller is not a failure: that goes on up.
+ */
 internal object LyricsHttp {
-    fun get(urlStr: String, headers: Map<String, String> = emptyMap()): String? = try {
-        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Android) Rustify")
-            headers.forEach { (k, v) -> setRequestProperty(k, v) }
-            connectTimeout = 10_000; readTimeout = 10_000
-        }
-        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().readText() else null
-    } catch (e: Exception) { null }
+    private const val USER_AGENT = "Mozilla/5.0 (Android) Rustify"
 
-    fun postForm(urlStr: String, form: Map<String, String>): String? = try {
-        val body = form.entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
-        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; doOutput = true
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Android) Rustify")
-            connectTimeout = 10_000; readTimeout = 10_000
+    private val client by lazy {
+        httpClient {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 10_000
+                socketTimeoutMillis = 10_000
+            }
         }
-        conn.outputStream.use { it.write(body.toByteArray()) }
-        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().readText() else null
-    } catch (e: Exception) { null }
+    }
+
+    suspend fun get(urlStr: String, extraHeaders: Map<String, String> = emptyMap()): String? = answer {
+        client.get(urlStr) {
+            header(HttpHeaders.UserAgent, USER_AGENT)
+            extraHeaders.forEach { (k, v) -> header(k, v) }
+        }
+    }
+
+    suspend fun postForm(urlStr: String, form: Map<String, String>): String? = answer {
+        val body = form.entries.joinToString("&") { "${it.key}=${formUrlEncode(it.value)}" }
+        client.post(urlStr) {
+            header(HttpHeaders.UserAgent, USER_AGENT)
+            setBody(TextContent(body, ContentType.Application.FormUrlEncoded))
+        }
+    }
+
+    private suspend fun answer(request: suspend () -> HttpResponse): String? = try {
+        val response = request()
+        if (response.status.value in 200..299) response.body<ByteArray>().decodeToString() else null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 }
 
 // The few reads the providers make into answers they do not own: absent or the wrong shape is null.
@@ -127,12 +161,12 @@ data class SpotifyLyricLine(val startMs: Long = 0, val words: String = "")
 object LrcLibProvider : LyricsProvider {
     override val id = "lrclib"
     override suspend fun fetch(artist: String, title: String, durationSec: Int): LyricsResult? = withContext(Dispatchers.IO) {
-        val a = URLEncoder.encode(artist, "UTF-8"); val t = URLEncoder.encode(title, "UTF-8")
-        fun byGet(url: String) = LyricsHttp.get(url)?.let { parse(it) }?.let { answer(it) }
+        val a = formUrlEncode(artist); val t = formUrlEncode(title)
+        suspend fun byGet(url: String) = LyricsHttp.get(url)?.let { parse(it) }?.let { answer(it) }
         (if (durationSec > 0) byGet("https://lrclib.net/api/get?artist_name=$a&track_name=$t&duration=$durationSec") else null)
             ?: byGet("https://lrclib.net/api/get?artist_name=$a&track_name=$t")
             ?: run {
-                val body = LyricsHttp.get("https://lrclib.net/api/search?q=" + URLEncoder.encode("$artist $title", "UTF-8")) ?: return@run null
+                val body = LyricsHttp.get("https://lrclib.net/api/search?q=" + formUrlEncode("$artist $title")) ?: return@run null
                 (parse(body) as? JsonArray)?.firstOrNull()?.let { answer(it) }
             }
     }
@@ -153,7 +187,7 @@ object MusixmatchProvider : LyricsProvider {
             val tokenJson = LyricsHttp.get("$base/token.get?$common", cookie) ?: return@runCatching null
             val userToken = parse(tokenJson).obj("message").obj("body").str("user_token")
                 ?.takeIf { it.isNotBlank() && !it.startsWith("UpgradeOnly") } ?: return@runCatching null
-            val q = "q_artist=${URLEncoder.encode(artist, "UTF-8")}&q_track=${URLEncoder.encode(title, "UTF-8")}"
+            val q = "q_artist=${formUrlEncode(artist)}&q_track=${formUrlEncode(title)}"
             val body = LyricsHttp.get("$base/macro.subtitles.get?$common&$q&usertoken=$userToken&subtitle_format=lrc", cookie) ?: return@runCatching null
             val macro = parse(body).obj("message").obj("body").obj("macro_calls")
             val subtitle = macro.obj("track.subtitles.get").obj("message").obj("body")
@@ -170,14 +204,15 @@ object GeniusProvider : LyricsProvider {
     override val id = "genius"
     override suspend fun fetch(artist: String, title: String, durationSec: Int): LyricsResult? = withContext(Dispatchers.IO) {
         runCatching {
-            val q = URLEncoder.encode("$title $artist", "UTF-8")
+            val q = formUrlEncode("$title $artist")
             val search = LyricsHttp.get("https://genius.com/api/search/song?q=$q") ?: return@runCatching null
             val secs = parse(search).obj("response").arr("sections") ?: return@runCatching null
             val url = secs.firstNotNullOfOrNull { section ->
                 section.arr("hits")?.firstOrNull().obj("result").str("url")?.takeIf { it.isNotBlank() }
             } ?: return@runCatching null
             val html = LyricsHttp.get(url) ?: return@runCatching null
-            val blocks = Regex("<div[^>]*data-lyrics-container=\"true\"[^>]*>(.*?)</div>", RegexOption.DOT_MATCHES_ALL)
+            // [\s\S] is any character, line breaks included: DOT_MATCHES_ALL, which only the JVM has.
+            val blocks = Regex("<div[^>]*data-lyrics-container=\"true\"[^>]*>([\\s\\S]*?)</div>")
                 .findAll(html).joinToString("\n") { it.groupValues[1] }
             stripHtml(blocks).takeIf { it.isNotBlank() }?.let { LyricsResult(emptyList(), it) }
         }.getOrNull()
@@ -191,10 +226,11 @@ object PetitLyricsProvider : LyricsProvider {
             val xml = LyricsHttp.postForm("https://petitlyrics.com/api/GetPetitLyricsData/", mapOf(
                 "key_title" to title, "key_artist" to artist, "lyricsType" to "1", "clientAppId" to "p1110417", "terminalType" to "10"
             )) ?: return@runCatching null
-            val b64 = Regex("<lyricsData>(.*?)</lyricsData>", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1)?.trim()
-            // The MIME decoder, like Android's Base64.DEFAULT, skips the line breaks the answer wraps it in.
+            val b64 = Regex("<lyricsData>([\\s\\S]*?)</lyricsData>").find(xml)?.groupValues?.get(1)?.trim()
+            // The MIME decoder, like Android's Base64.DEFAULT, skips the line breaks the answer wraps it in;
+            // padding optional, as java.util.Base64's decoders take it. UTF-8, the JVMs' default charset.
             val decoded = b64?.takeIf { it.isNotBlank() }?.let {
-                runCatching { String(java.util.Base64.getMimeDecoder().decode(it)) }.getOrNull()
+                runCatching { mime.decode(it).decodeToString() }.getOrNull()
             } ?: return@runCatching null
             if (decoded.isBlank()) return@runCatching null
             val synced = parseLrcText(decoded)
@@ -202,6 +238,8 @@ object PetitLyricsProvider : LyricsProvider {
         }.getOrNull()
     }
 }
+
+private val mime = Base64.Mime.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL)
 
 object LyricsProviders {
     val ALL: List<LyricsProvider> = listOf(SpotifyLyricsProvider, LrcLibProvider, MusixmatchProvider, GeniusProvider, PetitLyricsProvider)
@@ -246,6 +284,7 @@ object LyricsSettings {
  * refetch. [readLocal] reads a `local:` track's own lyrics (a `.lrc` beside the file, or its tag),
  * which only the platform can open.
  */
+@OptIn(ExperimentalAtomicApi::class)
 class LyricsChain(
     private val store: KeyValueStore,
     private val readLocal: (trackId: String) -> LyricsResult? = { null },
@@ -260,11 +299,12 @@ class LyricsChain(
     }
 
     // Both maps are written from the preload on IO and from the interface's thread (invalidating,
-    // choosing), so they are concurrent ones.
+    // choosing), so each is an immutable map swapped atomically, as a ConcurrentHashMap's single
+    // operations were atomic.
     // trackId -> result. null means "tried and failed" is NOT cached, so it retries next time.
-    private val cache: MutableMap<String, LyricsResult> = ConcurrentHashMap()
+    private val cache = AtomicReference<Map<String, LyricsResult>>(emptyMap())
     // "trackId|providerId" -> one provider's answer, for swiping between them without refetching.
-    private val byProvider: MutableMap<String, LyricsResult> = ConcurrentHashMap()
+    private val byProvider = AtomicReference<Map<String, LyricsResult>>(emptyMap())
 
     private fun hasLines(r: LyricsResult?) = r != null && (r.synced.isNotEmpty() || !r.plain.isNullOrBlank())
 
@@ -297,12 +337,12 @@ class LyricsChain(
         map[trackId] = providerId
         while (map.size > MAX_CHOICES) map.remove(map.keys.first())
         store.putString(KEY_CHOICE, JsonObject(map.mapValues { JsonPrimitive(it.value) }).toString())
-        byProvider["$trackId|$providerId"]?.let { cache[trackId] = it }
+        byProvider.load()["$trackId|$providerId"]?.let { r -> cache.update { it + (trackId to r) } }
     }
 
     /** What [providerId] alone answers for the track; null when it has nothing. Cached per provider. */
     suspend fun fetchFrom(trackId: String, providerId: String, artist: String, title: String, durationSec: Int): LyricsResult? {
-        byProvider["$trackId|$providerId"]?.let { return it }
+        byProvider.load()["$trackId|$providerId"]?.let { return it }
         val res = if (providerId == LOCAL) {
             withContext(Dispatchers.IO) { runCatching { readLocal(trackId) }.getOrNull() }
         } else {
@@ -312,25 +352,25 @@ class LyricsChain(
             val provider = LyricsProviders.byId(providerId) ?: return null
             runCatching { provider.fetchFor(trackId, cleanArtist, cleanTitle, durationSec) }.getOrNull()
         }?.takeIf { hasLines(it) }?.copy(providerId = providerId) ?: return null
-        byProvider["$trackId|$providerId"] = res
+        byProvider.update { it + ("$trackId|$providerId" to res) }
         return res
     }
 
     suspend fun getLyrics(trackId: String, artist: String, title: String, durationSec: Int): LyricsResult? {
-        cache[trackId]?.let { return it }
+        cache.load()[trackId]?.let { return it }
         val order = providersFor(trackId)
         // The one the user picked for this song first, then the usual order (the file's own first).
         val chosen = chosen(trackId)?.takeIf { it in order }
         for (id in listOfNotNull(chosen) + order.filter { it != chosen }) {
             val res = fetchFrom(trackId, id, artist, title, durationSec) ?: continue
-            cache[trackId] = res
+            cache.update { it + (trackId to res) }
             return res
         }
         return null
     }
 
     fun invalidateLyrics(trackId: String) {
-        cache.remove(trackId)
-        byProvider.keys.removeAll { it.startsWith("$trackId|") }
+        cache.update { it - trackId }
+        byProvider.update { m -> m.filterKeys { !it.startsWith("$trackId|") } }
     }
 }
