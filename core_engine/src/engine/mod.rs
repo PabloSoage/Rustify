@@ -7,8 +7,12 @@
 // desktop has instead is nothing at all — Spotube asks for VLC to be installed or ships ~100 MB of
 // it — so this is the part of the core the desktop app plays through:
 //
-//   source (file / HTTP via `Env`) → decode (Symphonia) → resample + remix → track gain
-//        → ring → [pause · volume · fade, in the device callback] → output (cpal / null)
+//   source (file / HTTP via `Env`) → decode (Symphonia) → [silence · level · fades] → resample
+//        (+ pitch) + remix → [crossfade] → [EQ · AutoEq · stereo · speed] → ring
+//        → [pause · volume · fade · anti-click, in the device callback] → output (cpal / null)
+//
+// The bracketed stages are `effects.rs`: what Android does with Media3's processors and `audiofx`,
+// driven by one `setEffects` command that carries all of it.
 //
 // Behind the `engine` feature, so the APK's `.so` does not carry a decoder it never calls; the cpal
 // device is behind `desktop-audio` on top of it, so the tests (and CI, which has no sound card) run
@@ -37,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use crate::env::Env;
 use crate::errors::{Classify, ErrorKind};
 
+use effects::{EffectsConfig, TrackGains};
 use output::AudioOutput;
 use player::{Msg, Player};
 
@@ -50,7 +55,12 @@ pub type Token = u64;
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Command {
     /// Replace what plays with `uri`, from `start_ms`. `gain_db` is the track's normalisation
-    /// (loudness or ReplayGain, decided by the caller); `play` false loads it paused.
+    /// (YouTube's loudness, decided by the caller); `play` false loads it paused.
+    ///
+    /// `replay_gain` is the file's own ReplayGain when the caller has read it; for a local path the
+    /// engine reads it itself when it is left out. Where there is one and `setEffects` has ReplayGain
+    /// on, it replaces `gain_db`. `album_run` says the queue is running through this track's album,
+    /// which is what ReplayGain's `auto` mode goes by.
     Load {
         token: Token,
         uri: String,
@@ -60,13 +70,22 @@ pub enum Command {
         gain_db: f32,
         #[serde(default)]
         play: bool,
+        #[serde(default)]
+        replay_gain: Option<TrackGains>,
+        #[serde(default)]
+        album_run: bool,
     },
-    /// Open `uri` now and start it the sample after the current track ends.
+    /// Open `uri` now and start it the sample after the current track ends (or, with a crossfade
+    /// set, mix it in as the current one ends).
     Preload {
         token: Token,
         uri: String,
         #[serde(default)]
         gain_db: f32,
+        #[serde(default)]
+        replay_gain: Option<TrackGains>,
+        #[serde(default)]
+        album_run: bool,
     },
     /// Forget the preloaded track (the queue changed under it).
     ClearNext,
@@ -78,6 +97,10 @@ pub enum Command {
     SetVolume { volume: f32 },
     /// The fade on pause, resume and volume changes; 0 turns it off.
     SetFadeMs { ms: u32 },
+    /// Every effect at once (`effects::EffectsConfig`): equaliser, AutoEq, level, stereo tools,
+    /// fades and crossfade, speed and pitch, skipping silence. Missing fields take their defaults,
+    /// which leave the audio as it is.
+    SetEffects { effects: Box<EffectsConfig> },
     /// Ends the player thread. Not something a bridge sends: dropping the [`Engine`] does it.
     #[serde(skip)]
     Shutdown,
