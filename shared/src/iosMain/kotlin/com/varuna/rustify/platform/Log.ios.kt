@@ -1,11 +1,12 @@
 // shared/src/iosMain/kotlin/com/varuna/rustify/platform/Log.ios.kt
 package com.varuna.rustify.platform
 
+import platform.Foundation.NSLog
 import kotlin.concurrent.Volatile
 
 /**
- * Standard output, which Xcode's console and `log stream` both show. Not `NSLog`: it is variadic
- * with a format string, and a '%' in a song title is not a format.
+ * `NSLog`, which `log stream` and Console show; standard output reaches neither, only Xcode's console.
+ * Its text goes as an argument: a '%' in a song title is not a format.
  */
 actual object Log {
     /** Also handed every line (level, tag, message): the in-app log viewer's buffer, as on the desktop. */
@@ -13,7 +14,7 @@ actual object Log {
     var sink: ((level: Char, tag: String, message: String) -> Unit)? = null
 
     private fun line(level: Char, tag: String, message: String, error: Throwable?) {
-        println("$level/$tag: $message" + (error?.let { " — ${it.message}" } ?: ""))
+        NSLog("%@", "$level/$tag: $message" + (error?.let { " — ${it.message}" } ?: ""))
         sink?.invoke(level, tag, if (error != null) "$message\n${error.stackTraceToString()}" else message)
     }
 

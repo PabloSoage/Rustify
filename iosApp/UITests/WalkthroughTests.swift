@@ -45,6 +45,9 @@ final class WalkthroughTests: XCTestCase {
         if open.waitForExistence(timeout: 10) { open.tap() }
         sleep(15)
         record("link")
+        // iOS has no back button of its own: a screen with no arrow of its own, an error's too, is a trap.
+        _ = tap("Back")
+        record("link-back")
     }
 
     /// The file simulator-check.sh left in the app's Documents, which local music holds by default.

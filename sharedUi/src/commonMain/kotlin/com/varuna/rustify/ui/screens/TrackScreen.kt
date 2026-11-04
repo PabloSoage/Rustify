@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -523,6 +524,13 @@ fun TrackScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
+            // The player's own arrow only exists once there is a track. iOS and the desktop have no
+            // system back, so without this one a track that does not load is the end of the road.
+            if (isLoading || errorMessage != null) {
+                IconButton(onClick = onBackClick, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding()) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
+                }
+            }
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = spotifyGreen)

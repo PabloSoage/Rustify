@@ -26,7 +26,7 @@ xcrun simctl bootstatus "$device" -b
 trap 'xcrun simctl shutdown "$device" || true' EXIT
 
 xcrun simctl install "$device" "$app"
-xcrun simctl spawn "$device" log stream --level debug --predicate 'processImagePath CONTAINS "Rustify"' >"$out/app.log" 2>&1 &
+xcrun simctl spawn "$device" log stream --level info --predicate 'processImagePath CONTAINS "Rustify"' >"$out/app.log" 2>&1 &
 logger=$!
 trap 'kill "$logger" 2>/dev/null || true; xcrun simctl shutdown "$device" || true' EXIT
 
