@@ -152,7 +152,7 @@ fun AndroidSettingsSections(slot: SettingsSlot, host: ShellHost) {
         // After the lyrics providers, which the shared screen draws between the two.
         SettingsSlot.AUDIO_SOURCES -> {
             // Order: local music, then the audio backends.
-            LocalMusicSection(context)
+            LocalMusicSection()
             AudioBackendsSection(context)
             // Right after the chain: it is the same decision ("what plays my music"), even
             // though it cannot live inside the chain itself.

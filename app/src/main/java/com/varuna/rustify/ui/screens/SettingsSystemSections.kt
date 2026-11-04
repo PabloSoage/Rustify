@@ -5,8 +5,6 @@ package com.varuna.rustify.ui.screens
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -21,10 +19,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -81,7 +77,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,7 +105,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.edit
 import com.varuna.rustify.R
-import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.sync.DriveSyncManager
 import com.varuna.rustify.sync.DriveSyncPrefs
@@ -367,172 +361,14 @@ internal fun UpdatesSection(context: Context) {
     }
 }
 
-// Local music (moved to "Audio and backends"): enable, match local first, high-res cover art,
-// YouTube Music, use scraper, and added folders. Self-contained (its own state and picker).
+// Local music and the standard downloads folder moved to :sharedUi (SettingsLocalMusicSections.kt).
+// What stays is Android's own line under the downloads folder: MP3 conversion, which only its downloads do.
 @Composable
-internal fun LocalMusicSection(context: Context) {
-    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    val green = Color(0xFF1DB954)
-    var enableLocalMusic by remember { mutableStateOf(prefs.getBoolean("enable_local_music", true)) }
-    var matchLocalFirst by remember { mutableStateOf(prefs.getBoolean("settings_match_local_first", false)) }
-    var coversFullRes by remember { mutableStateOf(prefs.getBoolean("settings_local_covers_full_res", true)) }
-    var enableYtmMusic by remember { mutableStateOf(prefs.getBoolean("enable_ytm_music", true)) }
-    var ytmScraper by remember { mutableStateOf(prefs.getString("ytm_search_mode", "api") == "scraper") }
-    var localMusicDirs by remember { mutableStateOf(prefs.getStringSet("local_music_directories", emptySet()) ?: emptySet()) }
-    var excludedFolders by remember { mutableStateOf(prefs.getStringSet(SpotifyRepository.LOCAL_EXCLUDED_FOLDERS, emptySet()).orEmpty()) }
-    var minDurationS by remember { mutableIntStateOf(prefs.getInt(SpotifyRepository.LOCAL_MIN_DURATION_S, 0)) }
-    var separators by remember {
-        mutableStateOf(prefs.getString(com.varuna.rustify.bridge.ArtistSeparators.PREF, com.varuna.rustify.bridge.ArtistSeparators.DEFAULT).orEmpty())
-    }
-    val addDirLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            val newSet = localMusicDirs.toMutableSet().apply { add(uri.toString()) }
-            localMusicDirs = newSet
-            prefs.edit { putStringSet("local_music_directories", newSet) }
-        }
-    }
-
-    Spacer(Modifier.height(24.dp))
-    Text(stringResource(R.string.settings_local_music), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            SettingSwitchRow(stringResource(R.string.settings_enable_local_music), stringResource(R.string.settings_enable_local_music_desc), enableLocalMusic) {
-                enableLocalMusic = it; prefs.edit { putBoolean("enable_local_music", it) }
-            }
-            if (enableLocalMusic) {
-                Spacer(Modifier.height(16.dp))
-                SettingSwitchRow(stringResource(R.string.settings_match_local_first), stringResource(R.string.settings_match_local_first_desc), matchLocalFirst) {
-                    matchLocalFirst = it; prefs.edit { putBoolean("settings_match_local_first", it) }
-                }
-                Spacer(Modifier.height(16.dp))
-                SettingSwitchRow(stringResource(R.string.settings_local_covers_fullres), stringResource(R.string.settings_local_covers_fullres_desc), coversFullRes) {
-                    coversFullRes = it; prefs.edit { putBoolean("settings_local_covers_full_res", it) }
-                }
-                Spacer(Modifier.height(16.dp))
-                SettingSwitchRow(stringResource(R.string.enable_ytm_music), stringResource(R.string.enable_ytm_music_desc), enableYtmMusic) {
-                    enableYtmMusic = it; prefs.edit { putBoolean("enable_ytm_music", it) }
-                }
-                Spacer(Modifier.height(16.dp))
-                SettingSwitchRow(
-                    stringResource(R.string.settings_ytm_scraper),
-                    if (ytmScraper) stringResource(R.string.settings_ytm_scraper_on) else stringResource(R.string.settings_ytm_scraper_off),
-                    ytmScraper
-                ) {
-                    ytmScraper = it; prefs.edit { putString("ytm_search_mode", if (it) "scraper" else "api") }
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.settings_added_folders), color = Color.Gray, fontSize = 12.sp)
-                Spacer(Modifier.height(4.dp))
-                if (localMusicDirs.isEmpty()) {
-                    Text(stringResource(R.string.settings_no_folder_configured), color = Color.Gray, fontSize = 14.sp)
-                } else {
-                    localMusicDirs.forEach { uriStr ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            val name = Uri.parse(uriStr).lastPathSegment ?: uriStr
-                            Text(name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            Text(stringResource(R.string.settings_remove), color = Color.Red, fontSize = 12.sp, modifier = Modifier.clickable {
-                                val newSet = localMusicDirs.toMutableSet().apply { remove(uriStr) }
-                                localMusicDirs = newSet
-                                prefs.edit { putStringSet("local_music_directories", newSet) }
-                            }.padding(8.dp))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { addDirLauncher.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
-                    Text(stringResource(R.string.settings_add_folder), color = Color.White)
-                }
-                if (excludedFolders.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(stringResource(R.string.settings_excluded_folders), color = Color.Gray, fontSize = 12.sp)
-                    excludedFolders.sorted().forEach { path ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(path.removePrefix("/storage/emulated/0"), color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            Text(stringResource(R.string.settings_restore_folder), color = green, fontSize = 12.sp, modifier = Modifier.clickable {
-                                val newSet = excludedFolders - path
-                                excludedFolders = newSet
-                                prefs.edit { putStringSet(SpotifyRepository.LOCAL_EXCLUDED_FOLDERS, newSet) }
-                                SpotifyRepository.instance?.scanLocalMusic()
-                            }.padding(8.dp))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.settings_min_duration), color = Color.White, fontSize = 16.sp)
-                Text(stringResource(R.string.settings_min_duration_desc), color = Color.Gray, fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    listOf(0, 10, 30, 60).forEach { s ->
-                        androidx.compose.material3.FilterChip(
-                            selected = minDurationS == s,
-                            onClick = {
-                                minDurationS = s
-                                prefs.edit { putInt(SpotifyRepository.LOCAL_MIN_DURATION_S, s) }
-                                SpotifyRepository.instance?.scanLocalMusic()
-                            },
-                            label = { Text(if (s == 0) stringResource(R.string.settings_min_duration_off) else "$s s") },
-                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = green, selectedLabelColor = Color.White
-                            )
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.settings_artist_separators), color = Color.White, fontSize = 16.sp)
-                Text(stringResource(R.string.settings_artist_separators_desc), color = Color.Gray, fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    com.varuna.rustify.bridge.ArtistSeparators.CHOICES.forEach { c ->
-                        androidx.compose.material3.FilterChip(
-                            selected = c in separators,
-                            onClick = {
-                                separators = if (c in separators) separators.replace(c.toString(), "") else separators + c
-                                prefs.edit { putString(com.varuna.rustify.bridge.ArtistSeparators.PREF, separators) }
-                                SpotifyRepository.instance?.scanLocalMusic()
-                            },
-                            label = { Text(c.toString()) },
-                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = green, selectedLabelColor = Color.White
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Standard downloads folder (moved to the Downloads category, alongside the custom one).
-@Composable
-internal fun DownloadFolderSection(context: Context) {
-    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    val green = Color(0xFF1DB954)
-    var downloadUriString by remember { mutableStateOf(prefs.getString("download_directory", null)) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            downloadUriString = uri.toString()
-            prefs.edit { putString("download_directory", uri.toString()) }
-        }
-    }
-    Spacer(Modifier.height(16.dp))
-    Text(stringResource(R.string.settings_download_dir), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                if (downloadUriString != null) Uri.parse(downloadUriString).lastPathSegment ?: downloadUriString!!
-                else stringResource(R.string.settings_no_dir_configured),
-                color = Color.Gray, fontSize = 14.sp
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { picker.launch(null) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))) {
-                Text(stringResource(R.string.settings_select_folder), color = Color.White)
-            }
-            Spacer(Modifier.height(12.dp))
-            var mp3 by remember { mutableStateOf(com.varuna.rustify.audio.DownloadFormat.convertToMp3(context)) }
-            SettingSwitchRow(stringResource(R.string.settings_download_mp3), stringResource(R.string.settings_download_mp3_desc), mp3) {
-                mp3 = it; com.varuna.rustify.audio.DownloadFormat.setConvertToMp3(context, it)
-            }
-        }
+internal fun DownloadMp3Switch(context: Context) {
+    Spacer(Modifier.height(12.dp))
+    var mp3 by remember { mutableStateOf(com.varuna.rustify.audio.DownloadFormat.convertToMp3(context)) }
+    SettingSwitchRow(stringResource(R.string.settings_download_mp3), stringResource(R.string.settings_download_mp3_desc), mp3) {
+        mp3 = it; com.varuna.rustify.audio.DownloadFormat.setConvertToMp3(context, it)
     }
 }
 

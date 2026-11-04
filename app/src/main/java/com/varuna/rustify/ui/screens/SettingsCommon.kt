@@ -143,7 +143,7 @@ import java.io.File
 internal fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
     val green = Color(0xFF1DB954)
     // Standard downloads folder (in addition to the custom one).
-    DownloadFolderSection(context)
+    DownloadFolderSection { DownloadMp3Switch(context) }
     var folder by remember { mutableStateOf(com.varuna.rustify.audio.CustomDownload.folder(context)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
