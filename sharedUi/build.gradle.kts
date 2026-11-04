@@ -32,12 +32,16 @@ kotlin {
 
     jvm("desktop")
 
-    // The same three as :shared. The framework is the whole Kotlin side of the iOS app: this module,
-    // and :shared exported with it so Swift sees the player's state and the Keychain's interface.
-    // Static, as :shared's was: the Rust core is a static library inside it (the `rustify` cinterop),
-    // and iosApp/project.yml links what that core needs. Built by Xcode through
-    // embedAndSignAppleFrameworkForXcode, which also copies the composeResources into the app.
-    listOf(iosArm64(), iosSimulatorArm64(), iosX64()).forEach { target ->
+    // Devices and the Apple Silicon simulator. Not iosX64, which :shared has: Compose Multiplatform
+    // stopped publishing it (runtime-iosx64 ends at 1.11.0-alpha01), so this interface cannot run on
+    // an Intel Mac's simulator; an Intel Mac still compiles the other two.
+    //
+    // The framework is the whole Kotlin side of the iOS app: this module, and :shared exported with
+    // it so Swift sees the player's state and the Keychain's interface. Static, as :shared's was: the
+    // Rust core is a static library inside it (the `rustify` cinterop), and iosApp/project.yml links
+    // what that core needs. Built by Xcode through embedAndSignAppleFrameworkForXcode, which also
+    // copies the composeResources into the app.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "RustifyKit"
             isStatic = true
@@ -88,7 +92,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
         }
 
-        // Wired by hand, as in :shared: one iosMain for the three iOS targets, and iosTest for their
+        // Wired by hand, as in :shared: one iosMain for the iOS targets, and iosTest for their
         // tests (run on the simulator, :sharedUi:iosSimulatorArm64Test). maybeCreate, so a Kotlin
         // version that applies the default hierarchy template anyway does not fail on a duplicate.
         val iosMain = maybeCreate("iosMain").apply { dependsOn(commonMain.get()) }
@@ -99,11 +103,9 @@ kotlin {
         }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
-        getByName("iosX64Main").dependsOn(iosMain)
         val iosTest = maybeCreate("iosTest").apply { dependsOn(commonTest.get()) }
         getByName("iosArm64Test").dependsOn(iosTest)
         getByName("iosSimulatorArm64Test").dependsOn(iosTest)
-        getByName("iosX64Test").dependsOn(iosTest)
     }
 }
 
