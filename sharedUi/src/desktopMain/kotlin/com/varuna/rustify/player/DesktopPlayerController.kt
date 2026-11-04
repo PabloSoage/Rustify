@@ -272,11 +272,27 @@ class DesktopPlayerController(
             if (_sleepTracks.value > 0) setSleepTracks(_sleepTracks.value - 1)
             if (_sleepTimer.value == SLEEP_AT_TRACK_END && _sleepTracks.value == 0) _sleepTimer.value = null
         }
+        // "Match local first", by the phone's rule (AudioPlayerService.localStreamFor): a recording
+        // the user chose beats the local copy, and the copy is the core's match, never a name
+        // compared here.
+        player.localCopy = { track -> localCopyOf(platform, track) }
         // ListenBrainz and Last.fm, by the phone's rule; the history itself the player keeps.
         player.listenObserver = object : QueuePlayer.ListenObserver {
             override fun started(track: FullTrack, startedAt: Long) = scrobbler.started(track, startedAt)
             override fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean) =
                 scrobbler.finished(track, startedAt, listenedMs, errored)
+        }
+    }
+
+    private suspend fun localCopyOf(platform: com.varuna.rustify.ui.AppPlatform, track: FullTrack): String? {
+        val trackId = track.id ?: return null
+        val prefs = platform.prefs()
+        if (!prefs.getBoolean("settings_match_local_first", false)) return null
+        if (prefs.getStringSet("local_music_directories", emptySet()).isEmpty()) return null
+        return withContext(Dispatchers.IO) {
+            if (com.varuna.rustify.bridge.UserAlternatives.isUserSet(AppDirs.data, trackId)) return@withContext null
+            val match = com.varuna.rustify.bridge.SpotifyRepository.findLocalMatch(platform.filesDir, track)
+            com.varuna.rustify.bridge.TrackRef.localUriOf(match?.id)?.takeIf { it.startsWith("file:") }
         }
     }
 

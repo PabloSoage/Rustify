@@ -240,9 +240,9 @@ class QueuePlayer(
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * Plays [list] from [start]. Spotify and YouTube Music tracks mix freely: a `ytm:` id is played
-     * as that video, anything else goes through the core's resolver, as on the phone. Tracks with no
-     * id (a local file on Android) cannot play here and are dropped.
+     * Plays [list] from [start]. Spotify, YouTube Music and local tracks mix freely: a `ytm:` id is
+     * played as that video, a `local:` file from its path, anything else goes through the core's
+     * resolver, as on the phone. Tracks with no id cannot play here and are dropped.
      */
     fun playAll(list: List<FullTrack>, start: Int, startMs: Long = 0) {
         val playable = list.filter { it.id != null }
@@ -529,12 +529,27 @@ class QueuePlayer(
         if (failuresInARow < 3) reduce(buildJsonObject { put("type", "next") }) else backend.send(EngineCommand.Stop)
     }
 
+    /**
+     * Where a track that is not a file of its own has a copy on this computer, when the user asked
+     * for the local copy first: its `file://` URI, or null to stream it. Set by the platform, which
+     * has the local library (the phone's "match local first").
+     */
+    var localCopy: (suspend (FullTrack) -> String?)? = null
+
     private suspend fun resolve(track: FullTrack): ResolvedAudio? {
         val id = track.id ?: return null
-        val videoId = TrackRef.youtubeVideoIdOf(id) ?: run {
+        val videoId = when (val ref = TrackRef.parse(id) ?: return null) {
+            // A file on this computer is played from where it is: no resolver, and not through the
+            // core's local server either, which would add a hop to something that has no problem.
+            // Only a file:// URI names one; a phone's content:// track has nothing here to open.
+            is TrackRef.Local -> return if (ref.uri.startsWith("file:")) ResolvedAudio(url = ref.uri) else null
+            is TrackRef.Ytm -> ref.videoId
             // A Spotify track: the same resolver the phone uses, which needs the metadata first.
-            backend.registerTrackMetadata(track)
-            VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
+            is TrackRef.Spotify, is TrackRef.SpotifyLocal -> {
+                localCopy?.invoke(track)?.let { return ResolvedAudio(url = it) }
+                backend.registerTrackMetadata(track)
+                VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
+            }
         } ?: return null
         // AAC (itag 140): the engine's decoder has no Opus (core_engine/src/engine/decode.rs).
         val raw = backend.resolveAudio(videoId, """{"prefer":"aac","maxKbps":0}""")

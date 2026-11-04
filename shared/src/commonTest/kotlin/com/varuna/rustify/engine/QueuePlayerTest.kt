@@ -96,6 +96,38 @@ class QueuePlayerTest {
         assertEquals(0, player.ui.value.index)
     }
 
+    @Test
+    fun `a local file plays from its own path`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val uri = "file:///home/me/Music/a%20b.flac"
+
+        player.playAll(listOf(FullTrack(id = "local:$uri", name = "A")), start = 0)
+
+        assertEquals(uri, backend.sent.filterIsInstance<EngineCommand.Load>().single().uri)
+    }
+
+    @Test
+    fun `a phone content uri has nothing to open here`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+
+        player.playAll(listOf(FullTrack(id = "local:content://media/document/1", name = "A")), start = 0)
+
+        assertTrue(backend.sent.none { it is EngineCommand.Load })
+    }
+
+    @Test
+    fun `a spotify track with a local copy plays the copy`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.localCopy = { "file:///home/me/Music/copy.mp3" }
+
+        player.playAll(listOf(FullTrack(id = "4uLU6hMCjMI75M1A2tKUQC", name = "A")), start = 0)
+
+        assertEquals("file:///home/me/Music/copy.mp3", backend.sent.filterIsInstance<EngineCommand.Load>().single().uri)
+    }
+
     /** A player whose first song of A, B is loaded and playing, with the engine's events wired. */
     private fun playingFirstOfTwo(backend: FakeBackend): Pair<QueuePlayer, Long> {
         val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
