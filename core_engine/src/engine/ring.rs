@@ -116,6 +116,7 @@ pub fn ring(capacity: usize) -> (Producer, Consumer) {
             shared,
             gain: 0.0,
             declick_in: 0,
+            quick: false,
         },
     )
 }
@@ -183,6 +184,10 @@ pub struct Consumer {
     gain: f32,
     /// Samples left of the fade-in after a flush.
     declick_in: usize,
+    /// Since a flush, until audio plays again at full level: level changes take the declick's
+    /// length, not the pause fade's. A skip pauses, flushes and plays the next song; that is not a
+    /// pause the listener asked for, and the new song must not take the pause fade to come in.
+    quick: bool,
 }
 
 impl Consumer {
@@ -218,6 +223,7 @@ impl Consumer {
                         faded_out = n;
                     }
                     self.declick_in = declick;
+                    self.quick = true;
                 }
                 s.tail.store(flush_to, Ordering::Release);
             }
@@ -232,7 +238,11 @@ impl Consumer {
 
         let paused = s.transport.paused.load(Ordering::Acquire);
         let volume = f32::from_bits(s.transport.volume.load(Ordering::Acquire));
-        let fade = (s.transport.fade_samples.load(Ordering::Acquire) as usize).max(declick);
+        let fade = if self.quick {
+            declick
+        } else {
+            (s.transport.fade_samples.load(Ordering::Acquire) as usize).max(declick)
+        };
         let target = if paused { 0.0 } else { volume };
         let step = if fade == 0 {
             f32::INFINITY
@@ -274,6 +284,9 @@ impl Consumer {
             } else {
                 *slot = 0.0;
             }
+        }
+        if self.quick && taken > 0 && !paused && self.gain >= target {
+            self.quick = false;
         }
         s.tail.store(tail.wrapping_add(taken), Ordering::Release);
     }
@@ -375,6 +388,31 @@ mod tests {
         assert_eq!(out[4..8], [0.0, 0.125, 0.25, 0.375]);
         assert_eq!(out[8..], [0.5; 4]);
         assert_eq!(prod.played(), 8 + 8 + 8, "the dropped audio counts as gone, not as queued");
+    }
+
+    #[test]
+    fn after_a_flush_the_next_song_comes_in_at_the_declicks_pace_not_the_pause_fades() {
+        let (mut prod, mut cons) = ring(64);
+        cons.transport().set_fade_samples(8);
+        cons.transport().set_declick_samples(2);
+        playing(&cons);
+        prod.push(&[1.0; 16]);
+        let mut out = [0.0f32; 16];
+        cons.fill(&mut out);
+        assert_eq!(out[7], 1.0, "a resume takes the eight samples of the fade");
+        // A skip: flush and pause, then the next song arrives and plays.
+        prod.flush();
+        cons.transport().set_paused(true);
+        let mut out = [0.0f32; 4];
+        cons.fill(&mut out);
+        prod.push(&[1.0; 8]);
+        playing(&cons);
+        cons.fill(&mut out);
+        assert_eq!(out, [0.0, 0.5, 1.0, 1.0]);
+        // A pause the listener asks for still fades over the full length.
+        cons.transport().set_paused(true);
+        cons.fill(&mut out);
+        assert_eq!(out, [0.875, 0.75, 0.625, 0.5]);
     }
 
     #[test]
