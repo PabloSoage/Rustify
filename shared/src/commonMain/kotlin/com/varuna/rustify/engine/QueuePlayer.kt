@@ -305,14 +305,18 @@ class QueuePlayer(
     /** Called when a song ends by itself (not a skip or a failure), before the queue moves on. */
     var onTrackEnded: (() -> Unit)? = null
 
+    private var stopAtEnd = false
+
     /**
      * When set, the song playing is the last: when it ends by itself playback stops there, paused at
-     * the next song, instead of playing on. The sleep timer's "at the end of this song".
+     * the next song, instead of playing on. The sleep timer's "at the end of this song". That end
+     * uses it up: it reads false from [onTrackEnded] on.
      */
-    var stopAtTrackEnd: Boolean = false
+    var stopAtTrackEnd: Boolean
+        get() = stopAtEnd
         set(value) {
-            if (field == value) return
-            field = value
+            if (stopAtEnd == value) return
+            stopAtEnd = value
             // Nothing preloaded behind a last song: the engine would move straight on into it.
             dropPreload()
             if (!value && currentToken != 0L) preloadNext()
@@ -488,7 +492,10 @@ class QueuePlayer(
             }
             is EngineEvent.Ended -> if (event.token == currentToken) {
                 finishListening(completed = true, errored = false)
-                val last = stopAtTrackEnd
+                val last = stopAtEnd
+                // Used up here, past the setter: turning it off there preloads what comes next,
+                // which would reach the engine after the Stop below.
+                stopAtEnd = false
                 onTrackEnded?.invoke()
                 if (last) stopAfterTrack() else reduce(buildJsonObject { put("type", "track_ended") })
             }
