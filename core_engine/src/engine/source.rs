@@ -24,7 +24,7 @@ use crate::env::{Env, HttpRequest};
 
 use super::EngineError;
 
-/// Opens `uri`: `http(s)://` through `E`, anything else as a path (`file://` prefix optional).
+/// Opens `uri`: `http(s)://` through `E`, anything else as a file — a `file://` URI or a plain path.
 ///
 /// Answers the source and a format hint (extension or MIME type) for the decoder.
 pub fn open<E: Env + 'static>(
@@ -35,9 +35,22 @@ pub fn open<E: Env + 'static>(
         let hint = source.mime.clone().or_else(|| extension_of(uri));
         return Ok((Box::new(source), hint));
     }
-    let path = uri.strip_prefix("file://").unwrap_or(uri);
-    let file = std::fs::File::open(path).map_err(|e| EngineError::Open(format!("{path}: {e}")))?;
-    Ok((Box::new(file), extension_of(path)))
+    let path = path_of(uri);
+    let file = std::fs::File::open(&path)
+        .map_err(|e| EngineError::Open(format!("{}: {e}", path.display())))?;
+    Ok((Box::new(file), path.to_str().and_then(extension_of)))
+}
+
+/// The file a `file://` URI names, percent-decoded (`file:///home/a/My%20Song.mp3`,
+/// `file:///C:/Music/a.mp3` on Windows): what the desktop's local tracks are. Anything that is not
+/// a well-formed file URI is taken as a path as it stands, less a `file://` prefix.
+fn path_of(uri: &str) -> std::path::PathBuf {
+    if uri.starts_with("file:") {
+        if let Some(path) = url::Url::parse(uri).ok().and_then(|u| u.to_file_path().ok()) {
+            return path;
+        }
+    }
+    std::path::PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri))
 }
 
 /// The extension of the last path segment, ignoring a query string.
@@ -525,6 +538,27 @@ mod tests {
             .err()
             .expect("refused");
         assert_eq!(err, EngineError::Http(403));
+    }
+
+    #[test]
+    fn a_file_uri_is_opened_at_the_path_it_names() {
+        let dir = std::env::temp_dir().join(format!("rustify source {}", crate::server::random_hex(6)));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let path = dir.join("Jóga 01.MP3");
+        std::fs::write(&path, b"abc").expect("a file");
+        // As the desktop writes a local track's id: percent-encoded, three slashes.
+        let uri = url::Url::from_file_path(&path).expect("absolute").to_string();
+        assert!(uri.starts_with("file:///") && uri.contains("%20"), "{uri}");
+
+        let (mut source, hint) = open::<MockEnv>(&uri).expect("opens");
+        assert_eq!(hint.as_deref(), Some("mp3"));
+        let mut all = Vec::new();
+        source.read_to_end(&mut all).expect("reads");
+        assert_eq!(all, b"abc");
+
+        assert_eq!(path_of(path.to_str().expect("utf-8")), path, "a plain path stays as it is");
+        assert!(open::<MockEnv>(&format!("{uri}.missing")).is_err());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
