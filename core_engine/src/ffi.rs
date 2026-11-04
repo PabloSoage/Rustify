@@ -9,10 +9,22 @@
 // method names are the JNI ones without the `Native` suffix, and the arguments are the JNI parameters
 // by name, in camelCase.
 //
-// This is a **subset** of the JNI bridges — the ones an iOS build needs to browse, search, resolve
-// and play. Each arm calls the same core function its JNI twin calls; the twin is named in the
-// arm's comment so a change to one is a search away from the other. The rest are listed in docs
-// `25` with the order they are worth adding in.
+// It answers every `NativeEngine` bridge an iOS build has a use for, so the shared screens can reach
+// the same core there, plus the desktop's audio engine (`engine*`) and credential store
+// (`secret*`). Each arm calls the same core function its JNI twin calls; the twin is named in the
+// arm's comment so a change to one is a search away from the other. Where the twin answers
+// something that is not JSON, this answers it as JSON: a bare string as a JSON string, a `long` as
+// a number, a `boolean` as `true`/`false`, nothing as `{"success":true}`. Left out on purpose:
+//
+// - `adblock*` (LoadRules, Matches, IsReady, Clear): they filter the requests of the in-app Spotify
+//   Web Player, which is an Android WebView.
+// - `dsp*` (Analyze, Info, Bench, Tonal, MatBench): the audio lab, which measures the kernels picked
+//   by the CPU's ARM extensions. Those exist only in Android builds (`rustify_arm_kernels`), and the
+//   lab's frames come from the phone's audio session.
+// - `SystemMediaControls*`: the desktop's media controls (feature `media-controls`, not in the iOS
+//   build). On iOS, Now Playing and the remote commands are MPNowPlayingInfoCenter and
+//   MPRemoteCommandCenter, which the app drives itself.
+// - `WindowStyle.darkFrame`: a desktop window's title bar.
 //
 // Memory: every string returned is allocated here and must be handed back to `rustify_free`. A null
 // argument is read as `{}`. Nothing here panics across the boundary: a panic inside a method answers
@@ -247,6 +259,9 @@ pub const METHODS: &[&str] = &[
     "engineSend",
     "enginePoll",
     "engineStop",
+    "secretGet",
+    "secretSet",
+    "secretRemove",
 ];
 
 pub(crate) fn dispatch(method: &str, args: &Value) -> String {
@@ -1100,6 +1115,8 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
 
         // The audio engine (RustAudioEngine*Native on the desktop JVM). Needs `desktop-audio`.
         "engineStart" | "engineSend" | "enginePoll" | "engineStop" => engine_call(method, args),
+        // The system's credential store (SecretStore *Native on the desktop JVM). Needs `secure-store`.
+        "secretGet" | "secretSet" | "secretRemove" => secret_call(method, args),
 
         _ => unknown(method),
     }
@@ -1153,6 +1170,27 @@ fn engine_call(method: &str, args: &Value) -> String {
 fn engine_call(_method: &str, _args: &Value) -> String {
     serialize_result::<(), _>(Err(
         "this build has no audio engine (feature desktop-audio)".to_string(),
+    ))
+}
+
+#[cfg(feature = "secure-store")]
+fn secret_call(method: &str, args: &Value) -> String {
+    use crate::secrets;
+    let key = text(args, "key");
+    match method {
+        // SecretStore getNative — the value as a JSON string, or `null`.
+        "secretGet" => serialize_result(secrets::get(&key)),
+        // SecretStore setNative
+        "secretSet" => serialize_result(secrets::set(&key, &text(args, "value")).map(|_| crate::ok_result())),
+        // SecretStore removeNative
+        _ => serialize_result(secrets::remove(&key).map(|_| crate::ok_result())),
+    }
+}
+
+#[cfg(not(feature = "secure-store"))]
+fn secret_call(_method: &str, _args: &Value) -> String {
+    serialize_result::<(), _>(Err(
+        "this build has no credential store (feature secure-store)".to_string(),
     ))
 }
 

@@ -2,8 +2,8 @@
  * rustify.h — the C ABI of core_engine (src/ffi.rs), for callers that are not a JVM: iOS through
  * Kotlin/Native cinterop (shared/src/nativeInterop/cinterop/rustify.def) or Swift.
  *
- * Built with the `c-api` feature (plus `desktop-audio` for the engine* methods), as a static
- * library: see tools/ios/build-core.sh.
+ * Built with the `c-api` feature (plus `desktop-audio` for the engine* methods and `secure-store`
+ * for the secret* ones), as a static library: see tools/ios/build-core.sh.
  *
  * Every function that returns a string allocates it; hand it back to rustify_free. Answers are the
  * JSON the JNI bridge of the same name answers (getSpotifyAlbum ↔ getSpotifyAlbumNative), so the
@@ -78,6 +78,14 @@ extern "C" {
  *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}
+ *   secretGet {key}  secretSet {key, value}  secretRemove {key}
+ *
+ * Where the JNI twin answers something that is not JSON, the answer here is its JSON form: a bare
+ * string (wrapLink, unwrapLink, resolveYouTubeId, getAlternativeTrack) is a JSON string, a long
+ * (trackPlace, streamCacheSize, clearStreamCache) a number, a boolean (isSpotifyAuthenticated)
+ * true or false, and nothing at all {"success":true}. Arguments the JNI twin takes as a string of
+ * JSON (an id list, a session, a config) are passed as JSON values. engine* need the
+ * `desktop-audio` feature and secret* the `secure-store` one; without it they answer a failure.
  *
  * The list is kept in step with ffi::METHODS by the tests in src/ffi.rs.
  */
