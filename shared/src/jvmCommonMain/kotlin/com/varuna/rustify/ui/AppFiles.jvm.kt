@@ -24,6 +24,11 @@ actual fun AppFile.writeAllText(text: String) = writeText(text)
 
 actual fun AppFile.writeAllBytes(bytes: ByteArray) = writeBytes(bytes)
 
+actual fun AppFile.appendAllBytes(bytes: ByteArray) = appendBytes(bytes)
+
+actual fun AppFile.readHeadBytes(count: Int): ByteArray =
+    runCatching { inputStream().use { it.readNBytes(count) } }.getOrDefault(ByteArray(0))
+
 actual fun AppFile.renameToFile(target: AppFile): Boolean = renameTo(target)
 
 actual fun AppFile.deleteFile(): Boolean = delete()

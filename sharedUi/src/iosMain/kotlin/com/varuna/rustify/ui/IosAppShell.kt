@@ -179,7 +179,8 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
                 com.varuna.rustify.ui.screens.DeezerBackendSection()
                 com.varuna.rustify.ui.screens.SubsonicBackendSection()
             }
-            SettingsSlot.DOWNLOADS, SettingsSlot.INTEGRATIONS ->
+            SettingsSlot.DOWNLOADS -> com.varuna.rustify.ui.screens.DownloadFolderSection()
+            SettingsSlot.INTEGRATIONS ->
                 Text(stringResource(Res.string.feature_not_on_platform), color = Color.Gray)
             SettingsSlot.ADVANCED -> Unit
         }

@@ -3,6 +3,7 @@
 
 package com.varuna.rustify.ui
 
+import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.util.Lock
 import com.varuna.rustify.util.locked
@@ -17,8 +18,11 @@ import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import com.varuna.rustify.bridge.FileTreeMusicScanner
 import platform.Foundation.NSData
+import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
+import platform.Foundation.NSUserDomainMask
 
 /**
  * The folders the user picked outside the app. iOS answers a picked folder with a URL whose access ends
@@ -68,9 +72,35 @@ object IosFolders {
     }
 
     /** The folder a setting names, where it is now; null when it is no folder here. */
-    fun folderOf(stored: String): AppFile? =
-        appFileAt(lock.locked { open[stored] } ?: stored).takeIf { it.isFolder() }
+    fun folderOf(stored: String): AppFile? {
+        if (stored == DOCUMENTS) return documents()
+        return appFileAt(lock.locked { open[stored] } ?: stored).takeIf { it.isFolder() }
+    }
 
+    private fun documents(): AppFile {
+        val path = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).first() as String
+        return AppFile(path).also { it.makeDirs() }
+    }
+
+    /**
+     * With no folder chosen yet, the app's Documents take the downloads and join local music, so the
+     * menus offer a download from the start. By name and not by path: iOS moves the app's container
+     * between updates.
+     */
+    fun seedDefaults(prefs: KeyValueStore) {
+        if (prefs.getString(DOWNLOADS_KEY) == null) prefs.putString(DOWNLOADS_KEY, DOCUMENTS)
+        val offered = prefs.getStringSet(OFFERED_KEY, emptySet())
+        if (DOCUMENTS !in offered) {
+            prefs.putStringSet(OFFERED_KEY, offered + DOCUMENTS)
+            prefs.putStringSet(LOCAL_DIRS_KEY, prefs.getStringSet(LOCAL_DIRS_KEY, emptySet()) + DOCUMENTS)
+        }
+    }
+
+    /** What the settings hold for the app's own Documents, which [folderLabel] shows as it is. */
+    private const val DOCUMENTS = "Documents"
+    private const val DOWNLOADS_KEY = "download_directory"
+    private const val LOCAL_DIRS_KEY = "local_music_directories"
+    private const val OFFERED_KEY = "download_dirs_added_to_local_music"
     private const val TAG = "IosFolders"
 }
 

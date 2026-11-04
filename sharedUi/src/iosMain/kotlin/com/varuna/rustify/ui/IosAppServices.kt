@@ -5,7 +5,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.unit.dp
+import com.varuna.rustify.audio.IosAudioSources
 import com.varuna.rustify.bridge.DownloadTask
+import com.varuna.rustify.bridge.EngineDownloads
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalFileLyrics
 import com.varuna.rustify.bridge.LyricsChain
@@ -16,6 +18,8 @@ import com.varuna.rustify.dj.DjProvider
 import com.varuna.rustify.dj.DjVoiceOutput
 import com.varuna.rustify.dj.HeuristicDjProvider
 import com.varuna.rustify.dj.IosDjVoice
+import com.varuna.rustify.engine.IosPlayerBackend
+import com.varuna.rustify.engine.StreamResolver
 import com.varuna.rustify.platform.UserDefaultsStore
 import com.varuna.rustify.player.AudioSettings
 import com.varuna.rustify.ui.resources.Res
@@ -52,7 +56,8 @@ private class IosAudioSettings(platform: AppPlatform) : AudioSettings(platform.p
 /**
  * [AppServices] on iOS. Lyrics, the DJ and the audio settings are the shared ones; the DJ speaks with
  * the system's voice, and with no model on the phone its "local" mode is the heuristic. What is not
- * here yet ([can] says so, and the screens with it): tempo, downloads, video and translation.
+ * here yet ([can] says so, and the screens with it): tempo, video and translation. Downloads stop if
+ * the system suspends the app, which only keeps playing audio in the background.
  */
 class IosAppServices(
     private val platform: AppPlatform,
@@ -60,7 +65,7 @@ class IosAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS -> true
         else -> false
     }
 
@@ -68,10 +73,21 @@ class IosAppServices(
     override fun bpmScale(trackId: String, factor: Float): Float? = null
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = null
 
-    override val downloads: StateFlow<List<DownloadTask>> = MutableStateFlow(emptyList())
-    override val activeDownloadCount: StateFlow<Int> = MutableStateFlow(0)
-    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) = Unit
-    override fun clearCompleted() = Unit
+    // The player's sources, so the file is the recording that plays. Made here, on the main queue.
+    private val downloader = EngineDownloads(
+        platform,
+        StreamResolver(IosPlayerBackend, IosAudioSources.install(platform.prefs())),
+        IosFolders::folderOf,
+    )
+
+    override val downloads: StateFlow<List<DownloadTask>> get() = downloader.downloads
+    override val activeDownloadCount: StateFlow<Int> get() = downloader.activeDownloadCount
+
+    // downloadUriStr is the folder from Settings (download_directory): a kept folder, or the Documents.
+    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) =
+        downloader.enqueue(trackId, trackName, trackArtist, downloadUriStr, track)
+
+    override fun clearCompleted() = downloader.clearCompleted()
 
     // Defaults of its own: the per-song choice is a map that grows with the library.
     override val lyrics: LyricsChain by lazy {

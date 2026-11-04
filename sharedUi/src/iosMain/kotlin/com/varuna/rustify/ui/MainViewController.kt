@@ -46,7 +46,7 @@ fun MainViewController(controller: IosController): UIViewController = ComposeUIV
     val platform = remember {
         IosLogBook.install()
         IosFolders.restore()
-        IosAppPlatform(controller.secrets)
+        IosAppPlatform(controller.secrets).also { IosFolders.seedDefaults(it.prefs()) }
     }
     val player = remember {
         EnginePlayerController(

@@ -32,6 +32,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.varuna.rustify
             CFBundleURLSchemes: [rustify]
+        # The app's Documents, where downloads go, show in Files and in the Finder; music dropped there
+        # joins local music.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         # Keeps playing with the screen off or the app in the background.
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

@@ -33,6 +33,12 @@ expect fun AppFile.writeAllText(text: String)
 /** Replaces the file with [bytes]: `writeBytes(bytes)`. */
 expect fun AppFile.writeAllBytes(bytes: ByteArray)
 
+/** Adds [bytes] to the end of the file, creating it if needed: `appendBytes(bytes)`. */
+expect fun AppFile.appendAllBytes(bytes: ByteArray)
+
+/** The file's first [count] bytes, or all of them when it is shorter; empty when it cannot be read. */
+expect fun AppFile.readHeadBytes(count: Int): ByteArray
+
 /** `renameTo(target)`: false when it did not happen. */
 expect fun AppFile.renameToFile(target: AppFile): Boolean
 

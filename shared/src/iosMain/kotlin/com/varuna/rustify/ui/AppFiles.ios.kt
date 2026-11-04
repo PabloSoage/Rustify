@@ -13,6 +13,7 @@ import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
+import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileModificationDate
 import platform.Foundation.NSFileSize
@@ -26,7 +27,14 @@ import platform.Foundation.stringByDeletingLastPathComponent
 import platform.Foundation.stringByResolvingSymlinksInPath
 import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
+import platform.Foundation.closeFile
+import platform.Foundation.fileHandleForReadingAtPath
+import platform.Foundation.fileHandleForWritingAtPath
+import platform.Foundation.readDataOfLength
+import platform.Foundation.seekToEndOfFile
+import platform.Foundation.writeData
 import platform.Foundation.writeToFile
+import platform.posix.memcpy
 
 /** A path under the app's own folders, over Foundation's file manager. */
 actual open class AppFile(val path: String)
@@ -56,6 +64,30 @@ actual fun AppFile.writeAllBytes(bytes: ByteArray) {
         bytes.usePinned { NSData.dataWithBytes(it.addressOf(0), bytes.size.convert()) }
     }
     if (!data.writeToFile(path, atomically = false)) throw kotlinx.io.IOException("cannot write $path")
+}
+
+actual fun AppFile.appendAllBytes(bytes: ByteArray) {
+    if (!files.fileExistsAtPath(path)) writeAllBytes(ByteArray(0))
+    if (bytes.isEmpty()) return
+    val handle = NSFileHandle.fileHandleForWritingAtPath(path) ?: throw kotlinx.io.IOException("cannot write $path")
+    try {
+        handle.seekToEndOfFile()
+        bytes.usePinned { handle.writeData(NSData.dataWithBytes(it.addressOf(0), bytes.size.convert())) }
+    } finally {
+        handle.closeFile()
+    }
+}
+
+actual fun AppFile.readHeadBytes(count: Int): ByteArray {
+    val handle = NSFileHandle.fileHandleForReadingAtPath(path) ?: return ByteArray(0)
+    try {
+        val data = handle.readDataOfLength(count.convert())
+        val size = data.length.toInt()
+        if (size == 0) return ByteArray(0)
+        return ByteArray(size).also { out -> out.usePinned { memcpy(it.addressOf(0), data.bytes, data.length) } }
+    } finally {
+        handle.closeFile()
+    }
 }
 
 actual fun AppFile.renameToFile(target: AppFile): Boolean {
