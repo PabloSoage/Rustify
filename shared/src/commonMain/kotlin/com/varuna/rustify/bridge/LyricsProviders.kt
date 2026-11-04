@@ -1,4 +1,4 @@
-// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/bridge/LyricsProviders.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/bridge/LyricsProviders.kt
 package com.varuna.rustify.bridge
 
 import com.varuna.rustify.platform.KeyValueStore
