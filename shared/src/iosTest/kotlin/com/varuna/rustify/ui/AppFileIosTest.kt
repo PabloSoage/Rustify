@@ -128,12 +128,19 @@ class AppFileIosTest {
     }
 
     @Test
-    fun aFileUriComesBackAsTheSamePath() {
-        val file = dir.child("Música con ñ y espacios").child("a b.flac")
+    fun aFileUriComesBackAsTheSameFile() {
+        val folder = dir.child("Música con ñ y espacios")
+        folder.makeDirs()
+        val file = folder.child("a b.flac")
+        file.writeAllText("audio")
         val uri = file.fileUri()
         assertTrue(uri.startsWith("file://"), uri)
         assertFalse(' ' in uri, uri)
-        assertEquals(file.fullPath, appFileOfUri(uri)?.fullPath)
+        // NSURL hands the accents back decomposed, so not the same string: the same file, though, and
+        // the same URI from then on, which is what a local track's id is made of.
+        val back = appFileOfUri(uri)
+        assertEquals("audio", back?.readAllText())
+        assertEquals(uri, back?.fileUri())
         assertNull(appFileOfUri("https://example.com/a.flac"))
     }
 }
