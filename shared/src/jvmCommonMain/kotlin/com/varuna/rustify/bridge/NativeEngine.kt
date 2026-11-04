@@ -83,13 +83,13 @@ actual object NativeEngine {
     private external fun writeTagsNative(path: String, tagsJson: String): String
 
     /** The tags and duration of the file at [path], as a [LocalTags] JSON (or a failure). */
-    suspend fun readTags(path: String): String = io { readTagsNative(path) }
+    actual suspend fun readTags(path: String): String = io { readTagsNative(path) }
 
     /** The file's embedded cover as `{"mimeType":…,"data":<base64>}`, or `null`. */
-    suspend fun readCover(path: String): String = io { readCoverNative(path) }
+    actual suspend fun readCover(path: String): String = io { readCoverNative(path) }
 
     /** Writes [tagsJson] (a [TagsToWrite]) into the file at [path]; `{"success":true}` or a failure. */
-    suspend fun writeTags(path: String, tagsJson: String): String = io { writeTagsNative(path, tagsJson) }
+    actual suspend fun writeTags(path: String, tagsJson: String): String = io { writeTagsNative(path, tagsJson) }
 
     // ListenBrainz (scrobble::). Network, so suspend over private blocking bridges.
     private external fun listenBrainzSubmitNative(token: String, listenJson: String): String

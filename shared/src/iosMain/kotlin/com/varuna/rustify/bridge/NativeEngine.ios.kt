@@ -51,6 +51,15 @@ actual object NativeEngine {
 
     actual fun readEmbeddedLyrics(path: String): String = now("readEmbeddedLyrics") { put("path", path) }
 
+    actual suspend fun readTags(path: String): String = io("readTags") { put("path", path) }
+
+    actual suspend fun readCover(path: String): String = io("readCover") { put("path", path) }
+
+    actual suspend fun writeTags(path: String, tagsJson: String): String = io("writeTags") {
+        put("path", path)
+        put("tags", json(tagsJson))
+    }
+
     // ── ListenBrainz ────────────────────────────────────────────────────────────────────────────
 
     actual suspend fun listenBrainzSubmit(token: String, listenJson: String): String = io("listenBrainzSubmit") {

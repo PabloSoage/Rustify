@@ -50,6 +50,17 @@ expect object NativeEngine {
     /** The lyrics embedded in a local file opened at [path], as JSON. Blocking. */
     fun readEmbeddedLyrics(path: String): String
 
+    // ── A local file's tags (`audio::tags`). The file, so `suspend`. ───────────────────────────
+
+    /** The tags and duration of the file at [path], as a [LocalTags] JSON (or a failure). */
+    suspend fun readTags(path: String): String
+
+    /** The file's embedded cover as a [LocalCover] JSON, or `null`. */
+    suspend fun readCover(path: String): String
+
+    /** Writes [tagsJson] (a [TagsToWrite]) into the file at [path]; `{"success":true}` or a failure. */
+    suspend fun writeTags(path: String, tagsJson: String): String
+
     // ── ListenBrainz. Network. ──────────────────────────────────────────────────────────────────
 
     /** Queues a listen and sends the queue; answers a report (sent, pending, rejected). */
