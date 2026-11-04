@@ -196,7 +196,7 @@ fn apply(tag: &mut Tag, tags: &TagsToWrite) -> Result<(), String> {
     if let Some(title) = tags.title.as_deref().and_then(clean) {
         tag.set_title(title);
     }
-    let artists: Vec<String> = tags.artists.iter().filter_map(|a| clean(a)).collect();
+    let artists: Vec<String> = tags.artists.iter().map(String::as_str).filter_map(clean).collect();
     if !artists.is_empty() {
         tag.set_artist(artists.join(ARTIST_SEPARATOR));
     }
