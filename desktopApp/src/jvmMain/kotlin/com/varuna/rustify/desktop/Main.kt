@@ -21,7 +21,7 @@ import com.varuna.rustify.jam.JamSession
 import com.varuna.rustify.jam.JvmJamCore
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
-import com.varuna.rustify.platform.PreferencesStore
+import com.varuna.rustify.platform.DesktopStores
 import com.varuna.rustify.platform.defaultLanguage
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -72,7 +72,7 @@ fun main() {
         // this runs on the UI thread.
         val jam = remember {
             val host = System.getenv("COMPUTERNAME") ?: System.getenv("HOSTNAME")
-            JamSession(scope, JvmJamCore, player, PreferencesStore(), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
+            JamSession(scope, JvmJamCore, player, DesktopStores.named(null), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
         }
         val appServices = remember {
             com.varuna.rustify.ui.DesktopAppServices(inJam = { jam.ui.collectAsState().value.role != JamSession.Role.NONE }, jamDialog = { onDismiss ->

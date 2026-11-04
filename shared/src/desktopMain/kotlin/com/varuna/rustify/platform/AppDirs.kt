@@ -12,12 +12,31 @@ import java.io.File
  *
  * The core's storage (`initCacheDir`) goes under [data]: it holds the listening history, which is
  * not a cache and must not live where a cleaner may delete it.
+ *
+ * **Portable** (the release's `.zip`/`.tar.gz`): a file named `portable` beside the launcher — or
+ * `RUSTIFY_PORTABLE_DIR` — puts both folders under the app's own (`data/`, `cache/`), and the
+ * settings with them ([DesktopStores]), so the folder can be carried to another machine. The
+ * Spotify cookie and token still go to that machine's credential store.
  */
 object AppDirs {
     private val os = System.getProperty("os.name").orEmpty().lowercase()
     private val home = File(System.getProperty("user.home").orEmpty())
 
+    /** The portable root, when this is a portable copy; `null` for an installed one. */
+    val portableRoot: File? by lazy {
+        System.getenv("RUSTIFY_PORTABLE_DIR")?.takeIf { it.isNotBlank() }?.let { return@lazy File(it) }
+        // jpackage's launcher: Rustify/Rustify.exe on Windows, Rustify/bin/Rustify on Linux,
+        // Rustify.app/Contents/MacOS/Rustify on macOS. The marker sits at the folder's top.
+        val launcher = System.getProperty("jpackage.app-path")?.let(::File) ?: return@lazy null
+        generateSequence(launcher.parentFile) { it.parentFile }
+            .take(3)
+            .firstOrNull { File(it, "portable").isFile }
+    }
+
+    val portable: Boolean get() = portableRoot != null
+
     val data: File by lazy {
+        portableRoot?.let { return@lazy File(it, "data").also { dir -> dir.mkdirs() } }
         when {
             os.contains("win") -> File(System.getenv("APPDATA") ?: "$home/AppData/Roaming", "Rustify")
             os.contains("mac") -> File(home, "Library/Application Support/Rustify")
@@ -26,6 +45,7 @@ object AppDirs {
     }
 
     val cache: File by lazy {
+        portableRoot?.let { return@lazy File(it, "cache").also { dir -> dir.mkdirs() } }
         when {
             os.contains("win") -> File(System.getenv("LOCALAPPDATA") ?: "$home/AppData/Local", "Rustify/cache")
             os.contains("mac") -> File(home, "Library/Caches/Rustify")
