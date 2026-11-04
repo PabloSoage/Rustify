@@ -2,7 +2,6 @@
 package com.varuna.rustify.engine
 
 import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.bridge.TrackRef
 import com.varuna.rustify.metrics.PlayEvent
 import com.varuna.rustify.metrics.creditedListenMs
 import com.varuna.rustify.metrics.playEventOf
@@ -123,15 +122,8 @@ class QueuePlayer(
     @Serializable
     private data class ReduceAnswer(val state: QueueState = QueueState(), val effects: List<JsonObject> = emptyList())
 
-    /** What `resolveInnertubeAudio` answers (`youtube::innertube::InnertubeAudio`), the fields used here. */
-    @Serializable
-    private data class ResolvedAudio(
-        val url: String = "",
-        val mimeType: String = "",
-        val loudnessDb: Double? = null,
-        val success: Boolean? = null,
-        val error: String? = null,
-    )
+    /** Where each track's audio comes from; shared with the desktop's downloads. */
+    private val resolver = StreamResolver(backend)
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
 
@@ -536,29 +528,10 @@ class QueuePlayer(
      */
     var localCopy: (suspend (FullTrack) -> String?)? = null
 
-    private suspend fun resolve(track: FullTrack): ResolvedAudio? {
-        val id = track.id ?: return null
-        val videoId = when (val ref = TrackRef.parse(id) ?: return null) {
-            // A file on this computer is played from where it is: no resolver, and not through the
-            // core's local server either, which would add a hop to something that has no problem.
-            // Only a file:// URI names one; a phone's content:// track has nothing here to open.
-            is TrackRef.Local -> return if (ref.uri.startsWith("file:")) ResolvedAudio(url = ref.uri) else null
-            is TrackRef.Ytm -> ref.videoId
-            // A Spotify track: the same resolver the phone uses, which needs the metadata first.
-            is TrackRef.Spotify, is TrackRef.SpotifyLocal -> {
-                localCopy?.invoke(track)?.let { return ResolvedAudio(url = it) }
-                backend.registerTrackMetadata(track)
-                VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
-            }
-        } ?: return null
-        // AAC (itag 140): the engine's decoder has no Opus (core_engine/src/engine/decode.rs).
-        val raw = backend.resolveAudio(videoId, """{"prefer":"aac","maxKbps":0}""")
-        val audio = runCatching { json.decodeFromString(ResolvedAudio.serializer(), raw) }.getOrNull()
-        return audio?.takeIf { it.success != false && it.url.isNotBlank() }
-    }
+    private suspend fun resolve(track: FullTrack): StreamResolver.Stream? = resolver.resolve(track, localCopy)
 
     /** YouTube's own player turns a loud recording down by its `loudnessDb`, and never up. */
-    private fun gainOf(audio: ResolvedAudio): Float {
+    private fun gainOf(audio: StreamResolver.Stream): Float {
         val louder = (audio.loudnessDb ?: 0.0).coerceAtLeast(0.0)
         return (-louder).toFloat()
     }
@@ -567,7 +540,5 @@ class QueuePlayer(
         const val TAG = "QueuePlayer"
         // v2: the queue became FullTrack (v1 held YtmTrack and was never released).
         const val STORE_KEY = "queue_v2"
-        /** A YouTube video id inside whatever the resolver answered. */
-        val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
     }
 }
