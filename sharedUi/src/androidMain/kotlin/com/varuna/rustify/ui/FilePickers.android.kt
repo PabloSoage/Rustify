@@ -8,14 +8,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.documentfile.provider.DocumentFile
+import java.io.InputStream
+import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// The Storage Access Framework, as LibraryScreen and PlaylistScreen used it before they moved.
+// The Storage Access Framework, as the screens used it before they moved.
 
 @Composable
-actual fun rememberOpenTextFile(mimeTypes: List<String>, onResult: (Result<PickedText>?) -> Unit): () -> Unit {
+actual fun <T> rememberOpenFile(
+    mimeTypes: List<String>,
+    read: suspend (name: String?, input: InputStream) -> T,
+    onResult: (Result<T>?) -> Unit,
+): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -24,40 +30,47 @@ actual fun rememberOpenTextFile(mimeTypes: List<String>, onResult: (Result<Picke
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            val read = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val text = context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                        ?: error("cannot open $uri")
                     val name = DocumentFile.fromSingleUri(context, uri)?.name
-                        ?.substringBeforeLast('.')?.ifBlank { null } ?: "M3U"
-                    PickedText(name, text)
+                    context.contentResolver.openInputStream(uri)?.use { read(name, it) } ?: error("cannot open $uri")
                 }
             }
-            onResult(read)
+            onResult(result)
         }
     }
     return remember(launcher) { { launcher.launch(mimeTypes.toTypedArray()) } }
 }
 
 @Composable
-actual fun rememberSaveTextFile(mimeType: String, onResult: (Boolean?) -> Unit): (suggestedName: String, text: () -> String) -> Unit {
+actual fun rememberSaveFile(
+    mimeType: String,
+    onResult: (Result<Unit>?) -> Unit,
+): (suggestedName: String, write: suspend (OutputStream) -> Unit) -> Unit {
     val context = LocalContext.current
-    // Held across recompositions: the launcher's callback is replaced by every one, the text must not be.
-    val pending = remember { arrayOfNulls<() -> String>(1) }
+    val scope = rememberCoroutineScope()
+    // Held across recompositions: the launcher's callback is replaced by every one, the writer must not be.
+    val pending = remember { arrayOfNulls<suspend (OutputStream) -> Unit>(1) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mimeType)) { uri ->
-        val text = pending[0]
+        val write = pending[0]
         pending[0] = null
-        if (uri == null || text == null) {
+        if (uri == null || write == null) {
             onResult(null)
             return@rememberLauncherForActivityResult
         }
-        val ok = runCatching {
-            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text().toByteArray(Charsets.UTF_8)) } != null
-        }.getOrDefault(false)
-        onResult(ok)
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    // "wt": a shorter file written over a longer one must not keep the old tail.
+                    val out = context.contentResolver.openOutputStream(uri, "wt") ?: error("cannot open $uri")
+                    out.use { write(it) }
+                }
+            }
+            onResult(result)
+        }
     }
-    return { name, text ->
-        pending[0] = text
+    return { name, write ->
+        pending[0] = write
         launcher.launch(name)
     }
 }

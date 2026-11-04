@@ -3,4 +3,7 @@
 <resources>
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
+    <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
+    <string name="share_copied">Copied to the clipboard</string>
+    <string name="share_image_copied">Image copied to the clipboard</string>
 </resources>

@@ -1,10 +1,5 @@
 package com.varuna.rustify.ui.screens
 
-import android.content.Context
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -29,14 +24,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.metrics.ListeningTracker
 import com.varuna.rustify.metrics.PlayEvent
 import com.varuna.rustify.metrics.PlayImportReport
@@ -61,7 +55,7 @@ private val BG = Color(0xFF121212)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MetricsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val scope = rememberCoroutineScope()
     var selectedRange by remember { mutableStateOf(MetricsRange.WEEK) }
     var selectedTopTab by remember { mutableIntStateOf(0) }
@@ -71,7 +65,7 @@ fun MetricsScreen(onBack: () -> Unit) {
     fun load() {
         scope.launch {
             isLoading = true
-            val s = withContext(Dispatchers.IO) { computeStats(context, selectedRange) }
+            val s = withContext(Dispatchers.IO) { computeStats(platform, selectedRange) }
             stats = s
             isLoading = false
         }
@@ -79,76 +73,39 @@ fun MetricsScreen(onBack: () -> Unit) {
     LaunchedEffect(selectedRange) { load() }
 
     val ranges = listOf(
-        MetricsRange.TODAY to stringResource(R.string.metrics_range_today),
-        MetricsRange.WEEK to stringResource(R.string.metrics_range_week),
-        MetricsRange.MONTH to stringResource(R.string.metrics_range_month),
-        MetricsRange.YEAR to stringResource(R.string.metrics_range_year),
-        MetricsRange.ALL to stringResource(R.string.metrics_range_all)
+        MetricsRange.TODAY to stringResource(Res.string.metrics_range_today),
+        MetricsRange.WEEK to stringResource(Res.string.metrics_range_week),
+        MetricsRange.MONTH to stringResource(Res.string.metrics_range_month),
+        MetricsRange.YEAR to stringResource(Res.string.metrics_range_year),
+        MetricsRange.ALL to stringResource(Res.string.metrics_range_all)
     )
 
-    val exportMsg = stringResource(R.string.metrics_export_done)
-    val exportEmptyMsg = stringResource(R.string.metrics_export_empty)
-    val importDoneTemplate = stringResource(R.string.metrics_import_done)
-    val importErrorTemplate = stringResource(R.string.metrics_import_error)
+    val exportMsg = stringResource(Res.string.metrics_export_done)
+    val exportEmptyMsg = stringResource(Res.string.metrics_export_empty)
+    val importDoneTemplate = stringResource(Res.string.metrics_import_done)
+    val importErrorTemplate = stringResource(Res.string.metrics_import_error)
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val events = ListeningTracker.loadEvents(com.varuna.rustify.ui.AndroidAppPlatform(context))
-                    if (events.isEmpty()) {
-                        withContext(Dispatchers.Main) { Toast.makeText(context, exportEmptyMsg, Toast.LENGTH_SHORT).show() }
-                        return@withContext
-                    }
-                    val bytes = ListeningTracker.exportSpotifyHistoryBytes(com.varuna.rustify.ui.AndroidAppPlatform(context))
-                    context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
-                    withContext(Dispatchers.Main) { Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show() }
-                }.onFailure { e ->
-                    withContext(Dispatchers.Main) { Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show() }
-                }
-            }
-        }
-    }
-
+    val failed: (Throwable) -> Unit = { e -> platform.toast(importErrorTemplate.format(e.message ?: ""), long = true) }
+    val saved: (Result<Unit>?) -> Unit = { r -> r?.onSuccess { platform.toast(exportMsg) }?.onFailure(failed) }
+    val saveJson = com.varuna.rustify.ui.rememberSaveFile("application/json", saved)
+    val saveCsv = com.varuna.rustify.ui.rememberSaveFile("text/csv", saved)
     val csvKinds = listOf("tracks", "artists", "albums")
-    val csvLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val (from, to) = rangeToFrom(selectedRange)
-        val kind = csvKinds[selectedTopTab]
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val csv = ListeningTracker.topCsv(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to, kind)
-                    context.contentResolver.openOutputStream(uri, "w")?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
-                    withContext(Dispatchers.Main) { Toast.makeText(context, exportMsg, Toast.LENGTH_SHORT).show() }
-                }.onFailure { e ->
-                    withContext(Dispatchers.Main) { Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show() }
-                }
-            }
-        }
+    val openHistory = com.varuna.rustify.ui.rememberOpenFile(
+        listOf("application/json", "*/*"),
+        read = { _, input -> ListeningTracker.importHistory(platform, input) },
+    ) { r ->
+        r?.onSuccess { n ->
+            platform.toast(importDoneTemplate.format(n.added))
+            load()
+        }?.onFailure(failed)
     }
 
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // An empty history is said before asking where to save it, not after: there is nothing to write.
+    fun exportHistory() {
         scope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val n = context.contentResolver.openInputStream(uri)?.use {
-                        ListeningTracker.importHistory(com.varuna.rustify.ui.AndroidAppPlatform(context), it)
-                    } ?: PlayImportReport()
-                    withContext(Dispatchers.Main) { Toast.makeText(context, importDoneTemplate.format(n.added), Toast.LENGTH_SHORT).show() }
-                    load()
-                }.onFailure { e ->
-                    withContext(Dispatchers.Main) { Toast.makeText(context, importErrorTemplate.format(e.message ?: ""), Toast.LENGTH_LONG).show() }
-                }
-            }
+            val empty = withContext(Dispatchers.IO) { runCatching { ListeningTracker.loadEvents(platform).isEmpty() }.getOrDefault(false) }
+            if (empty) platform.toast(exportEmptyMsg)
+            else saveJson("rustify_metrics_export.json") { it.write(ListeningTracker.exportSpotifyHistoryBytes(platform)) }
         }
     }
 
@@ -160,19 +117,23 @@ fun MetricsScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(Res.string.metrics_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) } },
                 actions = {
-                    IconButton(onClick = { exportLauncher.launch("rustify_metrics_export.json") }) {
-                        Icon(Icons.Default.GetApp, contentDescription = stringResource(R.string.metrics_export), tint = Color.White)
+                    IconButton(onClick = ::exportHistory) {
+                        Icon(Icons.Default.GetApp, contentDescription = stringResource(Res.string.metrics_export), tint = Color.White)
                     }
                     IconButton(onClick = {
-                        csvLauncher.launch("rustify_top_${csvKinds[selectedTopTab]}_${selectedRange.name.lowercase()}.csv")
+                        val (from, to) = rangeToFrom(selectedRange)
+                        val kind = csvKinds[selectedTopTab]
+                        saveCsv("rustify_top_${kind}_${selectedRange.name.lowercase()}.csv") {
+                            it.write(ListeningTracker.topCsv(platform, from, to, kind).toByteArray(Charsets.UTF_8))
+                        }
                     }) {
-                        Icon(Icons.Default.TableChart, contentDescription = stringResource(R.string.metrics_export_csv), tint = Color.White)
+                        Icon(Icons.Default.TableChart, contentDescription = stringResource(Res.string.metrics_export_csv), tint = Color.White)
                     }
-                    IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
-                        Icon(Icons.Default.FileUpload, contentDescription = stringResource(R.string.metrics_import), tint = Color.White)
+                    IconButton(onClick = openHistory) {
+                        Icon(Icons.Default.FileUpload, contentDescription = stringResource(Res.string.metrics_import), tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BG)
@@ -206,7 +167,7 @@ fun MetricsScreen(onBack: () -> Unit) {
                     onClick = { showRecap = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.recap_open, java.time.LocalDate.now().year), color = Color.White)
+                    Text(stringResource(Res.string.recap_open, java.time.LocalDate.now().year), color = Color.White)
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -217,7 +178,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             }
 
             if (stats.totalPlays == 0 && stats.totalMs == 0L) {
-                item { Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) { Text(stringResource(R.string.metrics_empty), color = Color.Gray) } }
+                item { Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) { Text(stringResource(Res.string.metrics_empty), color = Color.Gray) } }
                 return@LazyColumn
             }
 
@@ -227,14 +188,14 @@ fun MetricsScreen(onBack: () -> Unit) {
                 val listened = formatListened(stats.totalMs)
                 StatGrid(
                     listOf(
-                        Triple(stats.totalPlays.toString(), stringResource(R.string.metrics_total_plays), GREEN),
-                        Triple(listened, stringResource(R.string.metrics_stat_hours), Color(0xFF4FC3F7)),
-                        Triple(stats.distinctTracks.toString(), stringResource(R.string.metrics_stat_tracks), Color(0xFFBA68C8)),
-                        Triple(stats.distinctArtists.toString(), stringResource(R.string.metrics_stat_artists), Color(0xFFFFB74D)),
-                        Triple(stats.distinctAlbums.toString(), stringResource(R.string.metrics_stat_albums), Color(0xFF4DB6AC)),
-                        Triple(stats.daysListened.toString(), stringResource(R.string.metrics_stat_days), Color(0xFFE57373)),
-                        Triple(formatListened(stats.avgPerDayMin * 60_000L), stringResource(R.string.metrics_stat_avg_day), Color(0xFF90A4AE)),
-                        Triple("${stats.completionRate}%", stringResource(R.string.metrics_stat_completion), Color(0xFFAED581))
+                        Triple(stats.totalPlays.toString(), stringResource(Res.string.metrics_total_plays), GREEN),
+                        Triple(listened, stringResource(Res.string.metrics_stat_hours), Color(0xFF4FC3F7)),
+                        Triple(stats.distinctTracks.toString(), stringResource(Res.string.metrics_stat_tracks), Color(0xFFBA68C8)),
+                        Triple(stats.distinctArtists.toString(), stringResource(Res.string.metrics_stat_artists), Color(0xFFFFB74D)),
+                        Triple(stats.distinctAlbums.toString(), stringResource(Res.string.metrics_stat_albums), Color(0xFF4DB6AC)),
+                        Triple(stats.daysListened.toString(), stringResource(Res.string.metrics_stat_days), Color(0xFFE57373)),
+                        Triple(formatListened(stats.avgPerDayMin * 60_000L), stringResource(Res.string.metrics_stat_avg_day), Color(0xFF90A4AE)),
+                        Triple("${stats.completionRate}%", stringResource(Res.string.metrics_stat_completion), Color(0xFFAED581))
                     )
                 )
                 Spacer(Modifier.height(20.dp))
@@ -246,7 +207,7 @@ fun MetricsScreen(onBack: () -> Unit) {
                     val delta = (stats.totalPlays - stats.previousPlays) * 100 / stats.previousPlays
                     val sign = if (delta >= 0) "+" else ""
                     Text(
-                        stringResource(R.string.metrics_vs_previous, "$sign$delta%", stats.previousPlays),
+                        stringResource(Res.string.metrics_vs_previous, "$sign$delta%", stats.previousPlays),
                         color = if (delta >= 0) GREEN else Color(0xFFE57373),
                         fontSize = 13.sp
                     )
@@ -258,8 +219,8 @@ fun MetricsScreen(onBack: () -> Unit) {
             item {
                 StatGrid(
                     listOf(
-                        Triple(stats.currentStreakDays.toString(), stringResource(R.string.metrics_streak_current), Color(0xFFFF8A65)),
-                        Triple(stats.longestStreakDays.toString(), stringResource(R.string.metrics_streak_longest), Color(0xFFFFD54F))
+                        Triple(stats.currentStreakDays.toString(), stringResource(Res.string.metrics_streak_current), Color(0xFFFF8A65)),
+                        Triple(stats.longestStreakDays.toString(), stringResource(Res.string.metrics_streak_longest), Color(0xFFFFD54F))
                     )
                 )
                 Spacer(Modifier.height(20.dp))
@@ -268,13 +229,13 @@ fun MetricsScreen(onBack: () -> Unit) {
             // Records: all-time milestones per artist (4.4)
             if (stats.milestones.isNotEmpty()) {
                 item {
-                    SectionTitle(stringResource(R.string.metrics_records))
+                    SectionTitle(stringResource(Res.string.metrics_records))
                     stats.milestones.take(10).forEach { m ->
                         val (color, label) = when (m.tier) {
-                            "platinum" -> Color(0xFFE5E4E2) to stringResource(R.string.metrics_tier_platinum)
-                            "gold" -> Color(0xFFFFD700) to stringResource(R.string.metrics_tier_gold)
-                            "silver" -> Color(0xFFC0C0C0) to stringResource(R.string.metrics_tier_silver)
-                            else -> Color(0xFFCD7F32) to stringResource(R.string.metrics_tier_bronze)
+                            "platinum" -> Color(0xFFE5E4E2) to stringResource(Res.string.metrics_tier_platinum)
+                            "gold" -> Color(0xFFFFD700) to stringResource(Res.string.metrics_tier_gold)
+                            "silver" -> Color(0xFFC0C0C0) to stringResource(Res.string.metrics_tier_silver)
+                            else -> Color(0xFFCD7F32) to stringResource(Res.string.metrics_tier_bronze)
                         }
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(12.dp).clip(CircleShape).background(color))
@@ -289,17 +250,17 @@ fun MetricsScreen(onBack: () -> Unit) {
 
             // Listening clocks (radial 24h)
             item {
-                SectionTitle(stringResource(R.string.metrics_clocks))
+                SectionTitle(stringResource(Res.string.metrics_clocks))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     RadialHourClock(
                         values = stats.playsByHour.map { it.toFloat() },
-                        label = stringResource(R.string.metrics_clock_plays),
+                        label = stringResource(Res.string.metrics_clock_plays),
                         color = GREEN,
                         modifier = Modifier.weight(1f)
                     )
                     RadialHourClock(
                         values = stats.msByHour.map { (it / 60000f) },
-                        label = stringResource(R.string.metrics_clock_minutes),
+                        label = stringResource(Res.string.metrics_clock_minutes),
                         color = Color(0xFF4FC3F7),
                         modifier = Modifier.weight(1f)
                     )
@@ -309,11 +270,11 @@ fun MetricsScreen(onBack: () -> Unit) {
 
             // Weekday
             item {
-                SectionTitle(stringResource(R.string.metrics_by_weekday))
+                SectionTitle(stringResource(Res.string.metrics_by_weekday))
                 val labels = listOf(
-                    stringResource(R.string.dow_mon), stringResource(R.string.dow_tue), stringResource(R.string.dow_wed),
-                    stringResource(R.string.dow_thu), stringResource(R.string.dow_fri), stringResource(R.string.dow_sat),
-                    stringResource(R.string.dow_sun)
+                    stringResource(Res.string.dow_mon), stringResource(Res.string.dow_tue), stringResource(Res.string.dow_wed),
+                    stringResource(Res.string.dow_thu), stringResource(Res.string.dow_fri), stringResource(Res.string.dow_sat),
+                    stringResource(Res.string.dow_sun)
                 )
                 MiniBarChart(labels.mapIndexed { i, l -> l to stats.playsByWeekday[i].toFloat() }, GREEN)
                 Spacer(Modifier.height(20.dp))
@@ -321,7 +282,7 @@ fun MetricsScreen(onBack: () -> Unit) {
 
             // Month
             item {
-                SectionTitle(stringResource(R.string.metrics_by_month))
+                SectionTitle(stringResource(Res.string.metrics_by_month))
                 val m = listOf("1","2","3","4","5","6","7","8","9","10","11","12")
                 MiniBarChart(m.mapIndexed { i, l -> l to stats.playsByMonth[i].toFloat() }, Color(0xFFFFB74D))
                 Spacer(Modifier.height(20.dp))
@@ -330,7 +291,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             // Year
             if (stats.playsByYear.size > 1) {
                 item {
-                    SectionTitle(stringResource(R.string.metrics_by_year))
+                    SectionTitle(stringResource(Res.string.metrics_by_year))
                     MiniBarChart(stats.playsByYear.map { it.year.toString() to it.plays.toFloat() }, Color(0xFFBA68C8))
                     Spacer(Modifier.height(20.dp))
                 }
@@ -339,12 +300,12 @@ fun MetricsScreen(onBack: () -> Unit) {
             // All-time lines
             if (stats.cumulativeMin.size > 1) {
                 item {
-                    SectionTitle(stringResource(R.string.metrics_all_time))
-                    LineChartView(stats.cumulativeMin.map { it.toFloat() }, GREEN, stringResource(R.string.metrics_cumulative_minutes))
+                    SectionTitle(stringResource(Res.string.metrics_all_time))
+                    LineChartView(stats.cumulativeMin.map { it.toFloat() }, GREEN, stringResource(Res.string.metrics_cumulative_minutes))
                     Spacer(Modifier.height(12.dp))
-                    LineChartView(stats.cumulativePlays.map { it.toFloat() }, Color(0xFF4FC3F7), stringResource(R.string.metrics_cumulative_plays))
+                    LineChartView(stats.cumulativePlays.map { it.toFloat() }, Color(0xFF4FC3F7), stringResource(Res.string.metrics_cumulative_plays))
                     Spacer(Modifier.height(12.dp))
-                    LineChartView(stats.minutesPerDay.map { it.toFloat() }, Color(0xFFFFB74D), stringResource(R.string.metrics_minutes_per_day))
+                    LineChartView(stats.minutesPerDay.map { it.toFloat() }, Color(0xFFFFB74D), stringResource(Res.string.metrics_minutes_per_day))
                     Spacer(Modifier.height(20.dp))
                 }
             }
@@ -352,9 +313,9 @@ fun MetricsScreen(onBack: () -> Unit) {
             // Top tabs
             item {
                 val tabs = listOf(
-                    stringResource(R.string.metrics_top_tracks),
-                    stringResource(R.string.metrics_top_artists),
-                    stringResource(R.string.metrics_top_albums)
+                    stringResource(Res.string.metrics_top_tracks),
+                    stringResource(Res.string.metrics_top_artists),
+                    stringResource(Res.string.metrics_top_albums)
                 )
                 PrimaryTabRow(selectedTabIndex = selectedTopTab, containerColor = BG, contentColor = GREEN) {
                     tabs.forEachIndexed { i, t -> Tab(selected = selectedTopTab == i, onClick = { selectedTopTab = i }, text = { Text(t, fontSize = 13.sp) }) }
@@ -363,7 +324,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             }
             val topData = when (selectedTopTab) { 0 -> stats.topTracks; 1 -> stats.topArtists; else -> stats.topAlbums }
             if (topData.isEmpty()) {
-                item { Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { Text(stringResource(R.string.metrics_empty), color = Color.Gray) } }
+                item { Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { Text(stringResource(Res.string.metrics_empty), color = Color.Gray) } }
             } else {
                 val maxPlays = topData.maxOf { it.plays }.coerceAtLeast(1)
                 itemsIndexedTop(topData) { index, row -> TopRowItem(index, row, maxPlays) }
@@ -373,7 +334,7 @@ fun MetricsScreen(onBack: () -> Unit) {
             if (stats.recent.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(20.dp))
-                    SectionTitle(stringResource(R.string.metrics_history))
+                    SectionTitle(stringResource(Res.string.metrics_history))
                 }
                 itemsRecent(stats.recent) { e -> RecentRow(e) }
             }
@@ -566,7 +527,7 @@ private fun RecentRow(e: PlayEvent) {
     val artist = e.artistNames.firstOrNull().orEmpty()
     val img = e.imageUrl
     val ts = e.startedAt
-    val rel = if (ts > 0) android.text.format.DateUtils.getRelativeTimeSpanString(ts).toString() else ""
+    val rel = if (ts > 0) com.varuna.rustify.ui.relativeTimeSpan(ts) else ""
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         Cover(img, name, circle = false)
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
@@ -602,10 +563,10 @@ private fun rangeToFrom(range: MetricsRange): Pair<Long, Long> {
  * The core computes everything (`core_engine/src/metrics/stats.rs`): with no ceiling on the history
  * any more, aggregating a few hundred thousand events here would put them all on the UI's heap.
  */
-private suspend fun computeStats(context: Context, range: MetricsRange): Stats {
+private suspend fun computeStats(platform: com.varuna.rustify.ui.AppPlatform, range: MetricsRange): Stats {
     val (from, to) = rangeToFrom(range)
-    return runCatching { ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to) }
-        .onFailure { android.util.Log.w("MetricsScreen", "stats failed: ${it.message}") }
+    return runCatching { ListeningTracker.stats(platform, from, to) }
+        .onFailure { com.varuna.rustify.platform.Log.w("MetricsScreen", "stats failed: ${it.message}") }
         .getOrDefault(Stats())
 }
 

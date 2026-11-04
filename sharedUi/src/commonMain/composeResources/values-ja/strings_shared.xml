@@ -2,4 +2,7 @@
 <resources>
     <string name="cancel">キャンセル</string>
     <string name="ok">OK</string>
+    <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
+    <string name="share_copied">クリップボードにコピーしました</string>
+    <string name="share_image_copied">画像をクリップボードにコピーしました</string>
 </resources>

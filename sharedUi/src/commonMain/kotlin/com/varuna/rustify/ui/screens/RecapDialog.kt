@@ -1,6 +1,5 @@
 package com.varuna.rustify.ui.screens
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,12 +35,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,9 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.metrics.ListenerType
 import com.varuna.rustify.metrics.ListeningTracker
 import com.varuna.rustify.metrics.Recap
@@ -60,6 +56,7 @@ import com.varuna.rustify.metrics.TopRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.varuna.rustify.ui.toPngBytes
 import java.io.File
 import java.text.DateFormatSymbols
 import java.text.NumberFormat
@@ -72,14 +69,14 @@ import java.time.ZoneId
  */
 @Composable
 fun RecapDialog(year: Int, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var recap by remember(year) { mutableStateOf<Recap?>(null) }
     var loaded by remember(year) { mutableStateOf(false) }
     LaunchedEffect(year) {
         val zone = ZoneId.systemDefault()
         val from = LocalDate.of(year, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
         val to = LocalDate.of(year + 1, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
-        recap = runCatching { RecapBuilder.build(year, ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), from, to)) }.getOrNull()
+        recap = runCatching { RecapBuilder.build(year, ListeningTracker.stats(platform, from, to)) }.getOrNull()
         loaded = true
     }
 
@@ -89,13 +86,13 @@ fun RecapDialog(year: Int, onDismiss: () -> Unit) {
             when {
                 !loaded -> CircularProgressIndicator(color = Color(0xFF1DB954), modifier = Modifier.align(Alignment.Center))
                 r == null -> Text(
-                    stringResource(R.string.recap_empty, year), color = Color.Gray,
+                    stringResource(Res.string.recap_empty, year), color = Color.Gray,
                     modifier = Modifier.align(Alignment.Center).padding(32.dp), textAlign = TextAlign.Center
                 )
                 else -> RecapPager(r)
             }
             IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(top = 40.dp, end = 8.dp)) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.settings_close), tint = Color.White)
+                Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.settings_close), tint = Color.White)
             }
         }
     }
@@ -111,29 +108,29 @@ private val gradients = listOf(
 
 @Composable
 private fun RecapPager(r: Recap) {
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val scope = rememberCoroutineScope()
     val numbers = NumberFormat.getIntegerInstance()
     val months = DateFormatSymbols.getInstance().months
     val weekdays = DateFormatSymbols.getInstance().weekdays // Sunday = 1
     val pages = buildList<@Composable () -> Unit> {
-        add { BigNumberCard(stringResource(R.string.recap_minutes_title, r.year), numbers.format(r.minutes), pluralStringResource(R.plurals.recap_minutes_sub, r.plays, numbers.format(r.plays), r.distinctArtists)) }
-        r.topArtist?.let { a -> add { TopCard(stringResource(R.string.recap_top_artist), a, pluralStringResource(R.plurals.recap_plays, a.plays, a.plays), r.topArtists) } }
-        r.topTrack?.let { t -> add { TopCard(stringResource(R.string.recap_top_track), t, pluralStringResource(R.plurals.recap_plays, t.plays, t.plays), r.topTracks) } }
+        add { BigNumberCard(stringResource(Res.string.recap_minutes_title, r.year), numbers.format(r.minutes), pluralStringResource(Res.plurals.recap_minutes_sub, r.plays, numbers.format(r.plays), r.distinctArtists)) }
+        r.topArtist?.let { a -> add { TopCard(stringResource(Res.string.recap_top_artist), a, pluralStringResource(Res.plurals.recap_plays, a.plays, a.plays), r.topArtists) } }
+        r.topTrack?.let { t -> add { TopCard(stringResource(Res.string.recap_top_track), t, pluralStringResource(Res.plurals.recap_plays, t.plays, t.plays), r.topTracks) } }
         add {
             val type = when (r.listener) {
-                ListenerType.NIGHT_OWL -> R.string.recap_type_night
-                ListenerType.EARLY_BIRD -> R.string.recap_type_early
-                ListenerType.DAYTIME -> R.string.recap_type_day
-                ListenerType.EVENING -> R.string.recap_type_evening
-                ListenerType.NONE -> R.string.recap_type_day
+                ListenerType.NIGHT_OWL -> Res.string.recap_type_night
+                ListenerType.EARLY_BIRD -> Res.string.recap_type_early
+                ListenerType.DAYTIME -> Res.string.recap_type_day
+                ListenerType.EVENING -> Res.string.recap_type_evening
+                ListenerType.NONE -> Res.string.recap_type_day
             }
             val month = r.peakMonth?.let { months[it].replaceFirstChar { c -> c.uppercase() } } ?: "—"
             // DateFormatSymbols counts Sunday as 1; the core counts Monday as 0.
             val day = r.peakWeekday?.let { weekdays[(it + 1) % 7 + 1].replaceFirstChar { c -> c.uppercase() } } ?: "—"
             BigNumberCard(
-                stringResource(R.string.recap_when_title), stringResource(type),
-                pluralStringResource(R.plurals.recap_when_sub, r.longestStreakDays, month, day, r.longestStreakDays)
+                stringResource(Res.string.recap_when_title), stringResource(type),
+                pluralStringResource(Res.plurals.recap_when_sub, r.longestStreakDays, month, day, r.longestStreakDays)
             )
         }
     }
@@ -163,22 +160,16 @@ private fun RecapPager(r: Recap) {
             }
             IconButton(onClick = {
                 scope.launch {
-                    val bitmap = layer.toImageBitmap().asAndroidBitmap()
-                    val uri = withContext(Dispatchers.IO) {
-                        val dir = File(context.cacheDir, "share").apply { mkdirs() }
-                        val file = File(dir, "rustify_recap_${r.year}.png")
-                        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    val bitmap = layer.toImageBitmap()
+                    // cacheDir/share is what Android's FileProvider exposes (file_paths.xml).
+                    val file = withContext(Dispatchers.IO) {
+                        val dir = File(platform.cacheDir, "share").apply { mkdirs() }
+                        File(dir, "rustify_recap_${r.year}.png").apply { writeBytes(bitmap.toPngBytes()) }
                     }
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "image/png"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(send, null))
+                    platform.shareImage(file, "")
                 }
             }) {
-                Icon(Icons.Default.Share, contentDescription = stringResource(R.string.recap_share), tint = Color.White)
+                Icon(Icons.Default.Share, contentDescription = stringResource(Res.string.recap_share), tint = Color.White)
             }
         }
     }

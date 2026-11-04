@@ -2,6 +2,9 @@
 package com.varuna.rustify.ui
 
 import com.varuna.rustify.platform.AppDirs
+import com.varuna.rustify.ui.resources.Res
+import com.varuna.rustify.ui.resources.share_copied
+import com.varuna.rustify.ui.resources.share_image_copied
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
@@ -66,11 +69,29 @@ class DesktopAppPlatform : AppPlatform {
 
     override fun share(text: String, subject: String?): Boolean {
         copyToClipboard(subject ?: "Rustify", text)
+        toast(Res.string.share_copied)
         return true
     }
 
-    /** No share sheet to hand an image to: the caption (title and link) is what is copied. */
-    override fun shareImage(file: File, text: String): Boolean = share(text)
+    /**
+     * No share sheet to hand an image to: the image goes to the clipboard, ready to paste into a chat
+     * or a post; the caption only if the image cannot be read.
+     */
+    override fun shareImage(file: File, text: String): Boolean {
+        val image = runCatching { javax.imageio.ImageIO.read(file) }.getOrNull() ?: return share(text)
+        val transferable = object : java.awt.datatransfer.Transferable {
+            override fun getTransferDataFlavors() = arrayOf(java.awt.datatransfer.DataFlavor.imageFlavor)
+            override fun isDataFlavorSupported(flavor: java.awt.datatransfer.DataFlavor) =
+                flavor == java.awt.datatransfer.DataFlavor.imageFlavor
+            override fun getTransferData(flavor: java.awt.datatransfer.DataFlavor): Any {
+                if (!isDataFlavorSupported(flavor)) throw java.awt.datatransfer.UnsupportedFlavorException(flavor)
+                return image
+            }
+        }
+        val copied = runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(transferable, null) }.isSuccess
+        if (copied) toast(Res.string.share_image_copied)
+        return copied
+    }
 
     override fun copyToClipboard(label: String, text: String) {
         runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
