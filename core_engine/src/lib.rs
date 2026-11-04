@@ -2219,22 +2219,28 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
     _class: JClass<'local>,
 ) {
     let _ = jni_bridge!(env_unowned, |env| {
-        get_runtime().spawn(async {
-            <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup started...");
-            // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
-            // type parameter, so nothing has to be cloned out of the lock to make the call.
-            match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
-                Ok(new_hashes) => {
-                    let client = spotify::client::get_spotify_client();
-                    client.update_gql_hashes(new_hashes);
-                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup completed successfully.");
-                }
-                Err(e) => {
-                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));
-                }
-            }
-        });
+        warmup_spotify_hashes();
         "".to_string()
+    });
+}
+
+/// Starts the GQL hash scrape on the runtime and returns at once. `warmupSpotifyHashesNative` and
+/// the C ABI's `warmupSpotifyHashes`.
+fn warmup_spotify_hashes() {
+    get_runtime().spawn(async {
+        <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup started...");
+        // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
+        // type parameter, so nothing has to be cloned out of the lock to make the call.
+        match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
+            Ok(new_hashes) => {
+                let client = spotify::client::get_spotify_client();
+                client.update_gql_hashes(new_hashes);
+                <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup completed successfully.");
+            }
+            Err(e) => {
+                <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));
+            }
+        }
     });
 }
 

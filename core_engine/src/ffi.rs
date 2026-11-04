@@ -94,6 +94,10 @@ fn int(args: &Value, key: &str, default: i64) -> i64 {
     args[key].as_i64().unwrap_or(default)
 }
 
+fn flag(args: &Value, key: &str) -> bool {
+    args[key].as_bool().unwrap_or(false)
+}
+
 /// A JSON array of strings, where the JNI twin takes the same array as a string of JSON.
 fn strings(args: &Value, key: &str) -> Vec<String> {
     serde_json::from_value(args[key].clone()).unwrap_or_default()
@@ -101,6 +105,16 @@ fn strings(args: &Value, key: &str) -> Vec<String> {
 
 fn ok() -> String {
     r#"{"success":true}"#.to_string()
+}
+
+/// What the Spotify writes' JNI twins answer, built the way they build it: `{"success":true}` or
+/// `{"success":false,"error":"…"}`, with no `kind`.
+fn operation<T, E: std::fmt::Display>(result: Result<T, E>) -> String {
+    let answer = spotify::models::OperationResult {
+        success: result.is_ok(),
+        error: result.err().map(|e| e.to_string()),
+    };
+    serde_json::to_string(&answer).unwrap_or_else(|_| r#"{"success": false}"#.to_string())
 }
 
 fn unknown(method: &str) -> String {
@@ -155,22 +169,46 @@ pub const METHODS: &[&str] = &[
     "subsonicFind",
     "loginSpotify",
     "restoreSpotifySession",
+    "refreshSpotifyToken",
     "isSpotifyAuthenticated",
     "logoutSpotify",
+    "warmupSpotifyHashes",
+    "getSpotifyHashes",
     "getSpotifyMe",
     "getSpotifySavedTracks",
+    "getSpotifySavedAlbums",
     "getSpotifySavedPlaylists",
+    "getSpotifyFollowedArtists",
     "searchSpotify",
     "getSpotifyBrowse",
     "getSpotifyAlbum",
     "getSpotifyAlbumTracks",
+    "getSpotifyNewReleases",
+    "saveSpotifyAlbums",
+    "unsaveSpotifyAlbums",
     "getSpotifyArtist",
     "getSpotifyArtistTopTracks",
+    "getSpotifyArtistAlbums",
+    "getSpotifyRelatedArtists",
+    "followSpotifyArtists",
+    "unfollowSpotifyArtists",
+    "getArtistAbout",
     "getSpotifyPlaylist",
     "getSpotifyPlaylistTracks",
+    "createSpotifyPlaylist",
+    "updateSpotifyPlaylist",
+    "addTracksToPlaylist",
+    "removeTracksFromPlaylist",
+    "followPlaylist",
+    "unfollowPlaylist",
+    "extendPlaylist",
     "getSpotifyTrack",
+    "saveSpotifyTracks",
+    "unsaveSpotifyTracks",
     "getSpotifyTrackRadio",
     "getSpotifyLyrics",
+    "getTrackCredits",
+    "getSpotifyCanvas",
     "searchYtMusic",
     "getYtmAlbum",
     "getYtmArtist",
@@ -569,12 +607,23 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 if expiration <= 0 { None } else { Some(expiration as u64) },
             )))
         }
+        // refreshSpotifyTokenNative — `{"success":…,"error":…}`, no `kind`.
+        "refreshSpotifyToken" => operation(get_runtime().block_on(client().refresh_token())),
         // isSpotifyAuthenticatedNative — `true` or `false`.
         "isSpotifyAuthenticated" => client().is_authenticated().to_string(),
         // logoutSpotifyNative
         "logoutSpotify" => {
             client().logout();
             ok()
+        }
+        // warmupSpotifyHashesNative — returns at once; the scrape runs on the core's runtime.
+        "warmupSpotifyHashes" => {
+            crate::warmup_spotify_hashes();
+            ok()
+        }
+        // getSpotifyHashesNative — `{"operationName":"sha256", …}`, or `{}`.
+        "getSpotifyHashes" => {
+            serde_json::to_string(&client().get_gql_hashes_snapshot()).unwrap_or_else(|_| "{}".to_string())
         }
 
         // getSpotifyMeNative
@@ -583,9 +632,17 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         "getSpotifySavedTracks" => serialize_result(get_runtime().block_on(
             client().get_saved_tracks(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
         )),
+        // getSpotifySavedAlbumsNative
+        "getSpotifySavedAlbums" => serialize_result(get_runtime().block_on(
+            client().get_saved_albums(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
+        )),
         // getSpotifySavedPlaylistsNative
         "getSpotifySavedPlaylists" => serialize_result(get_runtime().block_on(
             client().get_saved_playlists(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
+        )),
+        // getSpotifyFollowedArtistsNative
+        "getSpotifyFollowedArtists" => serialize_result(get_runtime().block_on(
+            client().get_followed_artists(int(args, "limit", 50) as u32, int(args, "offset", 0) as u32),
         )),
 
         // searchSpotifyNative
@@ -621,6 +678,16 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 int(args, "offset", 0) as u32,
             ),
         )),
+        // getSpotifyNewReleasesNative
+        "getSpotifyNewReleases" => serialize_result(get_runtime().block_on(
+            client().get_new_releases(int(args, "limit", 20) as u32, int(args, "offset", 0) as u32),
+        )),
+        // saveSpotifyAlbumsNative — `ids` is a JSON array; `{"success":…,"error":…}`, no `kind`.
+        "saveSpotifyAlbums" => operation(get_runtime().block_on(client().save_albums(&strings(args, "ids")))),
+        // unsaveSpotifyAlbumsNative
+        "unsaveSpotifyAlbums" => {
+            operation(get_runtime().block_on(client().unsave_albums(&strings(args, "ids"))))
+        }
         // getSpotifyArtistNative
         "getSpotifyArtist" => {
             serialize_result(get_runtime().block_on(client().get_artist(&text(args, "id"))))
@@ -633,6 +700,34 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 int(args, "offset", 0) as u32,
             ),
         )),
+        // getSpotifyArtistAlbumsNative
+        "getSpotifyArtistAlbums" => serialize_result(get_runtime().block_on(
+            client().get_artist_albums(
+                &text(args, "id"),
+                int(args, "limit", 20) as u32,
+                int(args, "offset", 0) as u32,
+            ),
+        )),
+        // getSpotifyRelatedArtistsNative
+        "getSpotifyRelatedArtists" => serialize_result(get_runtime().block_on(
+            client().get_related_artists(
+                &text(args, "id"),
+                int(args, "limit", 20) as u32,
+                int(args, "offset", 0) as u32,
+            ),
+        )),
+        // followSpotifyArtistsNative — `ids` is a JSON array; `{"success":…,"error":…}`, no `kind`.
+        "followSpotifyArtists" => {
+            operation(get_runtime().block_on(client().follow_artists(&strings(args, "ids"))))
+        }
+        // unfollowSpotifyArtistsNative
+        "unfollowSpotifyArtists" => {
+            operation(get_runtime().block_on(client().unfollow_artists(&strings(args, "ids"))))
+        }
+        // getArtistAboutNative — no session needed.
+        "getArtistAbout" => {
+            serialize_result(get_runtime().block_on(client().get_artist_about(&text(args, "id"))))
+        }
         // getSpotifyPlaylistNative
         "getSpotifyPlaylist" => {
             serialize_result(get_runtime().block_on(client().get_playlist(&text(args, "id"))))
@@ -645,9 +740,57 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 int(args, "offset", 0) as u32,
             ),
         )),
+        // createSpotifyPlaylistNative — answers the new `FullPlaylist`.
+        "createSpotifyPlaylist" => serialize_result(get_runtime().block_on(client().create_playlist(
+            &text(args, "userId"),
+            &text(args, "name"),
+            &text(args, "description"),
+            flag(args, "public"),
+        ))),
+        // updateSpotifyPlaylistNative — an empty `name` or `description` leaves that one alone.
+        "updateSpotifyPlaylist" => {
+            let (name, description) = (text(args, "name"), text(args, "description"));
+            operation(get_runtime().block_on(client().update_playlist(
+                &text(args, "id"),
+                if name.is_empty() { None } else { Some(name.as_str()) },
+                if description.is_empty() { None } else { Some(description.as_str()) },
+                None,
+            )))
+        }
+        // addTracksToPlaylistNative — `trackIds` is a JSON array; a negative `position` appends.
+        "addTracksToPlaylist" => {
+            let position = int(args, "position", -1);
+            operation(get_runtime().block_on(client().add_tracks_to_playlist(
+                &text(args, "id"),
+                &strings(args, "trackIds"),
+                if position < 0 { None } else { Some(position as u32) },
+            )))
+        }
+        // removeTracksFromPlaylistNative
+        "removeTracksFromPlaylist" => operation(get_runtime().block_on(
+            client().remove_tracks_from_playlist(&text(args, "id"), &strings(args, "trackIds")),
+        )),
+        // followPlaylistNative
+        "followPlaylist" => operation(get_runtime().block_on(client().follow_playlist(&text(args, "id")))),
+        // unfollowPlaylistNative
+        "unfollowPlaylist" => {
+            operation(get_runtime().block_on(client().unfollow_playlist(&text(args, "id"))))
+        }
+        // extendPlaylistNative — `skip` is a JSON array of track ids; `count` is held to 1..=50.
+        "extendPlaylist" => serialize_result(get_runtime().block_on(client().extend_playlist(
+            &text(args, "id"),
+            &strings(args, "skip"),
+            int(args, "count", 20).clamp(1, 50) as u32,
+        ))),
         // getSpotifyTrackNative
         "getSpotifyTrack" => {
             serialize_result(get_runtime().block_on(client().get_track(&text(args, "id"))))
+        }
+        // saveSpotifyTracksNative — `ids` is a JSON array; `{"success":…,"error":…}`, no `kind`.
+        "saveSpotifyTracks" => operation(get_runtime().block_on(client().save_tracks(&strings(args, "ids")))),
+        // unsaveSpotifyTracksNative
+        "unsaveSpotifyTracks" => {
+            operation(get_runtime().block_on(client().unsave_tracks(&strings(args, "ids"))))
         }
         // getSpotifyTrackRadioNative
         "getSpotifyTrackRadio" => {
@@ -656,6 +799,27 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         // getSpotifyLyricsNative
         "getSpotifyLyrics" => {
             serialize_result(get_runtime().block_on(client().get_lyrics(&text(args, "id"))))
+        }
+        // getTrackCreditsNative — no session needed.
+        "getTrackCredits" => {
+            serialize_result(get_runtime().block_on(client().get_track_credits(&text(args, "id"))))
+        }
+        // getSpotifyCanvasNative — `uri` is a track id or `spotify:track:<id>`. `{"url":…}`, null
+        // when the track has none, or `{"success":false,"error":…}`.
+        "getSpotifyCanvas" => {
+            let uri = text(args, "uri");
+            match get_runtime().block_on(client().get_track_canvas(&uri)) {
+                Ok(url) => serde_json::json!({ "url": url }).to_string(),
+                Err(e) => {
+                    <env::android::AndroidEnv as env::Env>::log(
+                        env::LogLevel::Warn,
+                        "Canvas",
+                        &format!("{}: {}", uri, e),
+                    );
+                    serde_json::to_string(&spotify::models::OperationResult::err(e.to_string()))
+                        .unwrap_or_else(|_| r#"{"success":false,"error":"canvas error"}"#.to_string())
+                }
+            }
         }
 
         // searchYtMusicNative
@@ -894,6 +1058,7 @@ mod tests {
             "searchQuery",
             "searchForget",
             "isSpotifyAuthenticated",
+            "getSpotifyHashes",
             "findLocalMatch",
             "arrangeReleases",
             "tempoOf",

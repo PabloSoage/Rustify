@@ -42,13 +42,29 @@ extern "C" {
  *   autoEqSearch {query}   autoEqProfile {path}  autoEqBands {peqText, n}
  *   subsonicPing {config}  subsonicFind {config, title, artists, durationMs}
  *   loginSpotify {spDc}                restoreSpotifySession {spDc, accessToken, expiration}
- *   isSpotifyAuthenticated {}          logoutSpotify {}                   getSpotifyMe {}
- *   getSpotifySavedTracks {limit, offset}     getSpotifySavedPlaylists {limit, offset}
+ *   refreshSpotifyToken {}             isSpotifyAuthenticated {}          logoutSpotify {}
+ *   warmupSpotifyHashes {}             getSpotifyHashes {}                getSpotifyMe {}
+ *   getSpotifySavedTracks {limit, offset}     getSpotifySavedAlbums {limit, offset}
+ *   getSpotifySavedPlaylists {limit, offset}  getSpotifyFollowedArtists {limit, offset}
  *   searchSpotify {query, type, limit, offset}                getSpotifyBrowse {limit}
  *   getSpotifyAlbum {id}               getSpotifyAlbumTracks {id, limit, offset}
+ *   getSpotifyNewReleases {limit, offset}     saveSpotifyAlbums {ids}  unsaveSpotifyAlbums {ids}
  *   getSpotifyArtist {id}              getSpotifyArtistTopTracks {id, limit, offset}
+ *   getSpotifyArtistAlbums {id, limit, offset}  getSpotifyRelatedArtists {id, limit, offset}
+ *   followSpotifyArtists {ids}         unfollowSpotifyArtists {ids}       getArtistAbout {id}
  *   getSpotifyPlaylist {id}            getSpotifyPlaylistTracks {id, limit, offset}
- *   getSpotifyTrack {id}               getSpotifyTrackRadio {id}          getSpotifyLyrics {id}
+ *   createSpotifyPlaylist {userId, name, description, public}
+ *   updateSpotifyPlaylist {id, name, description}
+ *   addTracksToPlaylist {id, trackIds, position}   removeTracksFromPlaylist {id, trackIds}
+ *   followPlaylist {id}                unfollowPlaylist {id}              extendPlaylist {id, skip, count}
+ *   getSpotifyTrack {id}               saveSpotifyTracks {ids}            unsaveSpotifyTracks {ids}
+ *   getSpotifyTrackRadio {id}          getSpotifyLyrics {id}              getTrackCredits {id}
+ *   getSpotifyCanvas {uri}
+ *
+ * The Spotify writes (save*, unsave*, follow*, unfollow*, updateSpotifyPlaylist, addTracksToPlaylist,
+ * removeTracksFromPlaylist) and refreshSpotifyToken answer {"success":…,"error":…} without a kind,
+ * exactly as their JNI twins do.
+ *
  *   searchYtMusic {query}              getYtmAlbum {id}  getYtmArtist {id}  getYtmPlaylist {id}
  *   resolveInnertubeAudio {videoId, prefs}
  *   registerTrackMetadata {id, name, artists, durationMs, isrc}   resolveYouTubeId {spotifyId, youtubeId}
