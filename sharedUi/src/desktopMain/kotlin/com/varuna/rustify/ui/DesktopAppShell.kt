@@ -168,8 +168,9 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
     // Nothing to clear: every Spotify window starts with an empty cookie jar of its own.
     override fun onLoginFailed() = Unit
 
+    // The phone's check for an update on launch; the release page instead of an install.
     @Composable
-    override fun StartupEffects(host: ShellHost) = Unit
+    override fun StartupEffects(host: ShellHost) = DesktopStartupUpdateCheck(host)
 
     @Composable
     override fun SystemBars(landscape: Boolean) = Unit
@@ -184,7 +185,8 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
     }
 
     // What the phone has in General beside the shared sections (yt-dlp, Drive, storage) comes with
-    // those features; the DJ's is shared. The other categories say they are not here yet.
+    // those features; the DJ's is shared. Advanced has the phone's update check and log viewer. The
+    // other categories say they are not here yet.
     @Composable
     override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
         if (slot == SettingsSlot.GENERAL_DJ) {
@@ -192,6 +194,10 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             return
         }
         if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.AUDIO) return
+        if (slot == SettingsSlot.ADVANCED) {
+            DesktopUpdatesSection()
+            DesktopDiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
+        }
         // The shared sections the phone has further down Audio: local music first, as there, then
         // the ones that come after the audio sources, which are not on the desktop yet.
         if (slot == SettingsSlot.AUDIO_SOURCES) {
@@ -219,8 +225,9 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
         }
     }
 
+    // The phone's refresh button in Settings' top bar: check for an update now.
     @Composable
-    override fun SettingsActions(host: ShellHost) = Unit
+    override fun SettingsActions(host: ShellHost) = DesktopUpdateAction()
 
     override fun applyLanguage(code: String) = onLanguage(code)
 
