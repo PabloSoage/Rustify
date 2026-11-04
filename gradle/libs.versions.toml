@@ -53,7 +53,7 @@ composeMultiplatform = "1.12.2"
 # The few requests common code makes itself (lyrics, the DJ's API, a cover to share), over the
 # platform's engine: OkHttp on Android and the desktop, Darwin (NSURLSession) on iOS. :shared's
 # platform/Http.kt names it.
-ktor = "3.2.0"
+ktor = "3.6.1"
 [libraries]
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }

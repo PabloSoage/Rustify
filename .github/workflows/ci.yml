@@ -45,3 +45,7 @@ jobs:
       # No NDK and no cargo-ndk needed: the Rust build hooks into merge*JniLibFolders, which this
       # task never reaches. What it is here to catch is a Kotlin or resource break.
       - run: ./gradlew :app:testDebugUnitTest --no-daemon
+      # R8 over the release variant: debug builds are not minified, and a dependency R8 refuses breaks
+      # only here. It did in 4.9 (WorkManager) and again with Ktor 3.2 (a field with spaces in its name,
+      # refused below DEX 040, which minSdk 29 is). Also without the NDK: the classes are all it reads.
+      - run: ./gradlew :app:minifyBenchmarkWithR8 --no-daemon
