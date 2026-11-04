@@ -8,6 +8,7 @@ import com.varuna.rustify.metrics.playEventOf
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.currentTimeMillis
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -120,7 +121,9 @@ class QueuePlayer(
     private data class Saved(val state: QueueState = QueueState(), val tracks: List<FullTrack> = emptyList())
 
     @Serializable
-    private data class ReduceAnswer(val state: QueueState = QueueState(), val effects: List<JsonObject> = emptyList())
+    private data class ReduceAnswer(val state: QueueState = QueueState(), val effects: List<JsonObject> = emptyList()) {
+        val plays: Boolean get() = effects.any { it["type"]?.jsonPrimitive?.content == "play" }
+    }
 
     /** Where each track's audio comes from; shared with the desktop's downloads. */
     private val resolver = StreamResolver(backend)
@@ -259,6 +262,9 @@ class QueuePlayer(
         val first = if (list.getOrNull(start)?.id != null) list.take(start).count { it.id != null } else 0
         tracks = playable
         failuresInARow = 0
+        // A radio on its way was for the queue this one replaces.
+        radioJob?.cancel()
+        radioSeed = null
         _ui.update { it.copy(queue = playable, error = null) }
         reduce(buildJsonObject {
             put("type", "set_queue")
@@ -273,14 +279,79 @@ class QueuePlayer(
      */
     var intercept: ((String) -> Boolean)? = null
 
+    /** Whether "previous" always goes back a song, instead of restarting one well under way. */
+    var previousAlways: () -> Boolean = { false }
+
+    /**
+     * What the queue steps over when it moves on by itself or with next/previous (the blocklist). A
+     * song chosen by hand still plays: the user asked for that one.
+     */
+    var blocked: (FullTrack) -> Boolean = { false }
+
+    /**
+     * What plays after [FullTrack] when the queue runs out (the phone's autoplay radio); empty when
+     * nothing does. Asked while the last song still plays, so the end of a queue is an ordinary
+     * track change, and again if the queue ran out anyway.
+     */
+    var radio: (suspend (FullTrack) -> List<FullTrack>)? = null
+
+    /** Told what the radio added at the end of the queue. */
+    var onRadioAdded: ((List<FullTrack>) -> Unit)? = null
+
+    private var radioJob: Job? = null
+    private var radioSeed: String? = null
+
     fun next() {
         if (intercept?.invoke("next") == true) return
-        reduce(buildJsonObject { put("type", "next") })
+        reduce(buildJsonObject { put("type", "next") }, moving = true)
     }
 
     fun previous() {
         if (intercept?.invoke("previous") == true) return
-        reduce(buildJsonObject { put("type", "previous") })
+        reduce(buildJsonObject {
+            put("type", "previous")
+            if (previousAlways()) put("always", true)
+        }, moving = true)
+    }
+
+    /**
+     * Adds the radio after [seed]. [thenPlay]: the queue already ran out, so it moves on into what
+     * was added. Fetching is a round trip, so what is already queued is read after it, not before.
+     */
+    private fun extendWithRadio(seed: FullTrack, thenPlay: Boolean) {
+        val source = radio ?: return
+        // A guest's queue is the host's.
+        if (intercept != null) return
+        val id = seed.id ?: return
+        if (!thenPlay && radioSeed == id) return
+        radioSeed = id
+        radioJob?.cancel()
+        radioJob = scope.launch {
+            val fetched = runCatching { source(seed) }
+                .onFailure { if (it is CancellationException) throw it; Log.w(TAG, "the radio failed", it) }
+                .getOrDefault(emptyList())
+            val have = tracks.mapNotNull { it.id }.toSet()
+            val fresh = fetched.filter { it.id != null && it.id !in have && !blocked(it) }
+            if (fresh.isEmpty()) {
+                // No network, or nothing new: the next pass can try again.
+                radioSeed = null
+                return@launch
+            }
+            editQueue(tracks + fresh, state.index)
+            onRadioAdded?.invoke(fresh)
+            if (thenPlay) reduce(buildJsonObject { put("type", "next") }, moving = true)
+        }
+    }
+
+    /** The first song from [to] on, going the way the queue was going, that is not [blocked]; null if none. */
+    private fun allowedFrom(from: Int, to: Int): Int? {
+        val step = if (to >= from) 1 else -1
+        var i = to
+        while (i in tracks.indices) {
+            if (!blocked(tracks[i])) return i
+            i += step
+        }
+        return null
     }
 
     /**
@@ -464,10 +535,13 @@ class QueuePlayer(
     /**
      * Runs [action] through `player::reduce` and applies its effects. [skipPlay] drops a `Play`;
      * [startMs] is where a `Play` the action causes starts, when the caller knows better than 0.
+     * [moving]: the queue is moving on by itself or with next/previous, so it steps over [blocked],
+     * and when everything that way is blocked nothing more plays and it stays where it was.
      */
-    private fun reduce(action: JsonObject, skipPlay: Boolean = false, startMs: Long = 0) {
+    private fun reduce(action: JsonObject, skipPlay: Boolean = false, startMs: Long = 0, moving: Boolean = false) {
         val answer = runReducer(state, action) ?: return
-        state = answer.state
+        val allowed = if (moving && answer.plays) allowedFrom(state.index, answer.state.index) ?: return else answer.state.index
+        state = answer.state.copy(index = allowed)
         _ui.update { it.copy(index = state.index) }
         for (effect in answer.effects) {
             when (effect["type"]?.jsonPrimitive?.content) {
@@ -484,8 +558,8 @@ class QueuePlayer(
                     backend.send(EngineCommand.Stop)
                     _ui.update { it.copy(playing = false) }
                 }
-                // No radio on the desktop yet (Android extends the queue here): the queue just ends.
-                "queue_exhausted" -> Unit
+                // The core says there is nothing after this, which is where the radio starts.
+                "queue_exhausted" -> tracks.getOrNull(state.index)?.let { extendWithRadio(it, thenPlay = true) }
                 "persist" -> save()
             }
         }
@@ -523,16 +597,21 @@ class QueuePlayer(
         }
     }
 
-    /** The index the reducer would move to when the current track ends, if any. */
+    /** The index the queue would move to when the current track ends, if any. */
     private fun upcomingIndex(): Int? {
         val answer = runReducer(state, buildJsonObject { put("type", "track_ended") }) ?: return null
-        return if (answer.effects.any { it["type"]?.jsonPrimitive?.content == "play" }) answer.state.index else null
+        return if (answer.plays) allowedFrom(state.index, answer.state.index) else null
     }
 
     private fun preloadNext() {
         // Nothing behind an audition: the engine would move on into it when the audition ends.
         if (stopAtTrackEnd || auditioning) return
-        val index = upcomingIndex() ?: return
+        val index = upcomingIndex()
+        if (index == null) {
+            // The last song is playing: what follows it, ready before it ends.
+            tracks.getOrNull(state.index)?.let { extendWithRadio(it, thenPlay = false) }
+            return
+        }
         val track = tracks.getOrNull(index) ?: return
         val token = nextToken++
         indexOfToken[token] = index
@@ -570,7 +649,9 @@ class QueuePlayer(
                 startListening(event.to)
                 // The engine is already playing it: tell the reducer, but do not load it again.
                 reduce(buildJsonObject { put("type", "track_ended") }, skipPlay = true)
-                _ui.update { it.copy(positionMs = 0, durationMs = null) }
+                // It is the row that was preloaded, past any blocked song the reducer knows nothing of.
+                indexOfToken[event.to]?.let { to -> state = state.copy(index = to) }
+                _ui.update { it.copy(index = state.index, positionMs = 0, durationMs = null) }
                 preloadNext()
             }
             is EngineEvent.Ended -> if (event.token == currentToken) {
@@ -580,7 +661,7 @@ class QueuePlayer(
                 // which would reach the engine after the Stop below.
                 stopAtEnd = false
                 onTrackEnded?.invoke()
-                if (last) stopAfterTrack() else reduce(buildJsonObject { put("type", "track_ended") })
+                if (last) stopAfterTrack() else reduce(buildJsonObject { put("type", "track_ended") }, moving = true)
             }
             is EngineEvent.Error -> if (event.token == currentToken) {
                 finishListening(completed = false, errored = true)
@@ -633,7 +714,7 @@ class QueuePlayer(
         _ui.update { it.copy(loading = false, error = message) }
         // Straight to the reducer, not next(): a failure is not someone pressing a button, and a Jam
         // guest must not send the host on because its own copy failed to load.
-        if (failuresInARow < 3) reduce(buildJsonObject { put("type", "next") }) else backend.send(EngineCommand.Stop)
+        if (failuresInARow < 3) reduce(buildJsonObject { put("type", "next") }, moving = true) else backend.send(EngineCommand.Stop)
     }
 
     /**

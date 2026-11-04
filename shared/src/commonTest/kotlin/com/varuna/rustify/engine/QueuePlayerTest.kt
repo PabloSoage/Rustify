@@ -28,12 +28,15 @@ class QueuePlayerTest {
         override suspend fun startEngine() = """{"success":true}"""
         override fun send(command: EngineCommand) { sent += command }
         override fun events(): Flow<EngineEvent> = incoming
+        val actions = mutableListOf<JsonObject>()
         override fun reduce(stateJson: String, actionJson: String): String {
             val action = Json.parseToJsonElement(actionJson).jsonObject
-            if (action["type"]?.jsonPrimitive?.content == "track_ended") {
+            actions += action
+            val type = action["type"]?.jsonPrimitive?.content
+            if (type == "track_ended" || type == "next") {
                 val state = Json.parseToJsonElement(stateJson).jsonObject
                 val next = (state["index"]?.jsonPrimitive?.int ?: 0) + 1
-                if (next >= (state["queue"]?.jsonArray?.size ?: 0)) return """{"state":$stateJson,"effects":[]}"""
+                if (next >= (state["queue"]?.jsonArray?.size ?: 0)) return """{"state":$stateJson,"effects":[{"type":"queue_exhausted"}]}"""
                 val moved = JsonObject(state + ("index" to JsonPrimitive(next)))
                 return """{"state":$moved,"effects":[{"type":"play"}]}"""
             }
@@ -126,6 +129,87 @@ class QueuePlayerTest {
         player.playAll(listOf(FullTrack(id = "4uLU6hMCjMI75M1A2tKUQC", name = "A")), start = 0)
 
         assertEquals("file:///home/me/Music/copy.mp3", backend.sent.filterIsInstance<EngineCommand.Load>().single().uri)
+    }
+
+    @Test
+    fun `moving on steps over what is blocked and a song chosen by hand still plays`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val a = ytm("aaaaaaaaaaa", "A")
+        val b = ytm("bbbbbbbbbbb", "B")
+        val c = ytm("ccccccccccc", "C")
+        player.blocked = { it.name == "B" }
+        player.playAll(listOf(a, b, c), start = 0)
+
+        player.next()
+        assertEquals(2, player.ui.value.index, "B is stepped over")
+
+        player.jumpTo(1)
+        assertEquals(1, player.ui.value.index, "chosen by hand")
+    }
+
+    @Test
+    fun `with everything ahead blocked the queue stays where it was`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.blocked = { it.name != "A" }
+        player.playAll(listOf(ytm("aaaaaaaaaaa", "A"), ytm("bbbbbbbbbbb", "B")), start = 0)
+        val loads = backend.sent.count { it is EngineCommand.Load }
+
+        player.next()
+
+        assertEquals(0, player.ui.value.index)
+        assertEquals(loads, backend.sent.count { it is EngineCommand.Load })
+    }
+
+    @Test
+    fun `previous says always when that is the setting`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.playAll(listOf(ytm("aaaaaaaaaaa", "A")), start = 0)
+
+        player.previous()
+        assertEquals(null, backend.actions.last()["always"])
+
+        player.previousAlways = { true }
+        player.previous()
+        assertEquals(JsonPrimitive(true), backend.actions.last()["always"])
+    }
+
+    @Test
+    fun `at the end of the queue the radio is added and played without what is there or blocked`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val a = ytm("aaaaaaaaaaa", "A")
+        val b = ytm("bbbbbbbbbbb", "B")
+        val c = ytm("ccccccccccc", "C")
+        var added = emptyList<FullTrack>()
+        player.blocked = { it.name == "B" }
+        player.radio = { listOf(a, b, c) }
+        player.onRadioAdded = { added = it }
+        player.playAll(listOf(a), start = 0)
+
+        player.next()
+
+        assertEquals(listOf("C"), added.map { it.name })
+        assertEquals(listOf("A", "C"), player.ui.value.queue.map { it.name })
+        assertEquals(1, player.ui.value.index, "it moved on into what was added")
+    }
+
+    @Test
+    fun `a radio with nothing new leaves the queue alone and can be asked again`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val a = ytm("aaaaaaaaaaa", "A")
+        var asked = 0
+        player.radio = { asked++; listOf(a) }
+        player.playAll(listOf(a), start = 0)
+
+        player.next()
+        player.next()
+
+        assertEquals(2, asked)
+        assertEquals(listOf("A"), player.ui.value.queue.map { it.name })
     }
 
     /** A player whose first song of A, B is loaded and playing, with the engine's events wired. */
