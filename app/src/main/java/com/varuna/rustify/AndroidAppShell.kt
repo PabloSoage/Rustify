@@ -149,9 +149,13 @@ class AndroidAppShell(context: Context) : AppShell {
             }
         }
 
-        // Updater overlay: shown over any screen (app or standby).
+        // Updater overlay: shown over any screen (app or standby), but not over the sign-in, which
+        // stands in place of the app; it waits there until the sign-in closes. Read live: the root
+        // decides while this keeps running.
         pendingUpdate?.let { info ->
-            com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
+            if (!host.isSigningIn) {
+                com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { pendingUpdate = null })
+            }
         }
     }
 

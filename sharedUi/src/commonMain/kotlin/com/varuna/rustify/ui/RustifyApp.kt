@@ -191,6 +191,7 @@ fun RustifyApp(
         back = { if (navigationStack.size > 1) navigationStack.removeAt(navigationStack.lastIndex) },
         isSignedInNow = { isLoggedIn },
         signIn = { showWebView = true },
+        isSigningInNow = { showWebView },
         signedOut = {
             isLoggedIn = false
             browseSections = null

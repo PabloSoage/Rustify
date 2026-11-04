@@ -22,7 +22,8 @@ interface AppShell {
 
     /**
      * The platform's own start-up, run once inside the root: Android checks for an update (and
-     * shows its dialog over everything), syncs with Drive and restores the web player mode.
+     * shows its dialog over everything but the sign-in), syncs with Drive and restores the web
+     * player mode.
      */
     @Composable
     fun StartupEffects(host: ShellHost)
@@ -99,6 +100,7 @@ class ShellHost(
     val back: () -> Unit,
     private val isSignedInNow: () -> Boolean,
     val signIn: () -> Unit,
+    private val isSigningInNow: () -> Boolean,
     /** The account was signed out from Settings: Home forgets its sections. */
     val signedOut: () -> Unit,
     private val settingsCategoryNow: () -> String?,
@@ -107,6 +109,9 @@ class ShellHost(
     val onLanguageChanged: (String) -> Unit,
 ) {
     val isSignedIn: Boolean get() = isSignedInNow()
+
+    /** The sign-in screen is up, in place of the app: nothing of the platform's goes over it. */
+    val isSigningIn: Boolean get() = isSigningInNow()
 
     /** Settings' open category, kept by the root so a sub-screen and back returns to it. */
     val settingsCategory: String? get() = settingsCategoryNow()
