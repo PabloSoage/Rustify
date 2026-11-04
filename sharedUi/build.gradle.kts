@@ -45,6 +45,8 @@ kotlin {
             implementation(libs.okhttp)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+            // The queue's drag to reorder (TrackScreen); multiplatform, the same library the APK had.
+            implementation(libs.reorderable)
             // Android has it in the platform; the desktop gets it below (see the catalog).
             compileOnly(libs.org.json)
         }

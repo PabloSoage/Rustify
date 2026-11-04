@@ -1,11 +1,23 @@
 package com.varuna.rustify
 
 import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import com.varuna.rustify.audio.BpmAnalyzer
+import com.varuna.rustify.audio.YouTubeVideoResolver
 import com.varuna.rustify.bridge.DownloadManager
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LyricsChain
+import com.varuna.rustify.bridge.LyricsRepository
+import com.varuna.rustify.bridge.LyricsTranslator
+import com.varuna.rustify.dj.DjAutoController
+import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.player.Jam
 import com.varuna.rustify.ui.AppServices
+import com.varuna.rustify.ui.LyricsTranslation
+import com.varuna.rustify.ui.screens.CanvasVideoPlayer
+import com.varuna.rustify.ui.screens.YouTubeVideoPlayer
 import kotlinx.coroutines.flow.StateFlow
 
 /** [AppServices] over the objects the phone always had; everything is available here. */
@@ -34,6 +46,32 @@ class AndroidAppServices(context: Context) : AppServices {
 
     override fun clearCompleted() = DownloadManager.clearCompleted()
 
-    @androidx.compose.runtime.Composable
+    override val lyrics: LyricsChain get() = LyricsRepository.chain(app)
+
+    override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
+        LyricsTranslator.translate(key, lines, onProgress = onProgress)
+
+    override fun translationTarget(): String = LyricsTranslator.targetLanguage()
+
+    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? =
+        YouTubeVideoResolver.resolve(youtubeId, maxQuality)
+
+    @Composable
+    override fun CanvasVideo(url: String, fitWidth: Boolean) = CanvasVideoPlayer(url, fitWidth)
+
+    @Composable
+    override fun PlayerVideo(video: Pair<String, String?>) {
+        YouTubeVideoPlayer(video, AudioPlayerService.getInstance(app))
+    }
+
+    @Composable
     override fun JamDialog(onDismiss: () -> Unit) = com.varuna.rustify.ui.components.JamDialog(onDismiss = onDismiss)
+
+    @Composable
+    override fun inJam(): Boolean = Jam.ui.collectAsState().value.role != Jam.Role.NONE
+
+    @Composable
+    override fun djActive(): Boolean = DjAutoController.state.collectAsState().value != null
+
+    override fun djNext() = DjAutoController.next(app)
 }

@@ -6,4 +6,6 @@
     <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
     <string name="share_copied">Copied to the clipboard</string>
     <string name="share_image_copied">Image copied to the clipboard</string>
+    <!-- A feature this platform does not have yet (docs serie-4.x/27), said rather than hidden. -->
+    <string name="feature_not_on_platform">Not available in this version yet</string>
 </resources>

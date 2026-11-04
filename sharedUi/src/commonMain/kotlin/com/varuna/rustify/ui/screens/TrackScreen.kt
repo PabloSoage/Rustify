@@ -104,10 +104,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -115,19 +114,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
-import com.varuna.rustify.bridge.LyricsRepository
 import com.varuna.rustify.bridge.LyricsResult
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyImage
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.player.SavedQueues
-import com.varuna.rustify.player.AudioPlayerService
+import com.varuna.rustify.player.PlayerController
+import com.varuna.rustify.ui.LocalAppServices
+import com.varuna.rustify.ui.LyricsTranslation
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.toast
 import com.varuna.rustify.player.AudioPlayerState
 import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
@@ -171,7 +172,7 @@ data class YouTubeTrack(
 @Composable
 fun YouTubeMappingDialog(
     track: FullTrack,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: PlayerController,
     onDismiss: () -> Unit,
     onMappingSelected: (String) -> Unit
 ) {
@@ -201,7 +202,7 @@ fun YouTubeMappingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.track_assign_youtube)) },
+        title = { Text(stringResource(Res.string.track_assign_youtube)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
                 Text(
@@ -216,7 +217,7 @@ fun YouTubeMappingDialog(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.track_search_youtube)) },
+                    label = { Text(stringResource(Res.string.track_search_youtube)) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF1DB954),
                         focusedLabelColor = Color(0xFF1DB954)
@@ -234,7 +235,7 @@ fun YouTubeMappingDialog(
                     modifier = Modifier.padding(top = 8.dp).align(Alignment.End),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
                 ) {
-                    Text(stringResource(R.string.common_search))
+                    Text(stringResource(Res.string.common_search))
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -305,11 +306,11 @@ fun YouTubeMappingDialog(
                 onClick = { selectedTrackId?.let { onMappingSelected(it) } },
                 enabled = selectedTrackId != null
             ) {
-                Text(stringResource(R.string.common_confirm), color = Color(0xFF1DB954))
+                Text(stringResource(Res.string.common_confirm), color = Color(0xFF1DB954))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel)) }
         }
     )
 }
@@ -320,7 +321,7 @@ fun YouTubeMappingDialog(
 fun TrackScreen(
     trackId: String,
     spotifyRepo: SpotifyRepository,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: PlayerController,
     onBackClick: () -> Unit,
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
@@ -340,7 +341,8 @@ fun TrackScreen(
 
     val playerState by audioPlayerService.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val services = LocalAppServices.current
 
     val isCurrentTrack = playerState.currentTrack?.id == trackId
     val trackToShow = if (isCurrentTrack) playerState.currentTrack else trackDetails
@@ -365,7 +367,7 @@ fun TrackScreen(
     // An auth failure that survived the retry means the saved session is gone for good, and the raw
     // engine text for it is a wall of JSON ("API error 401: {...expired access token}") that reads
     // like the *link* expired. Resolved here because a string cannot be looked up inside the effect.
-    val sessionExpiredMsg = stringResource(R.string.error_session_expired)
+    val sessionExpiredMsg = stringResource(Res.string.error_session_expired)
 
     LaunchedEffect(trackId) {
         if (!isCurrentTrack) {
@@ -386,7 +388,7 @@ fun TrackScreen(
         }
     }
 
-    // Observe preloaded lyrics from AudioPlayerService.
+    // Observe the lyrics the player preloaded.
     val preloadedLyrics by audioPlayerService.preloadedLyrics.collectAsState()
     var lyricsResult by remember(trackToShow?.id) { mutableStateOf<LyricsResult?>(null) }
     var lyricsLoading by remember(trackToShow?.id) { mutableStateOf(false) }
@@ -408,8 +410,7 @@ fun TrackScreen(
         val artist = track.artists.firstOrNull()?.name ?: ""
         val durationSec = track.durationMs / 1000
         try {
-            lyricsResult = LyricsRepository.getLyrics(
-                context = context,
+            lyricsResult = services.lyrics.getLyrics(
                 trackId = trackId,
                 artist = artist,
                 title = track.name,
@@ -438,7 +439,7 @@ fun TrackScreen(
     var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
     var mediaTab by rememberSaveable { mutableIntStateOf(0) } // 0=image, 1=canvas, 2=video
     var videoUrl by remember(trackId) { mutableStateOf<Pair<String, String?>?>(null) }
-    val prefs = context.getSharedPreferences("RustifyPrefs", android.content.Context.MODE_PRIVATE)
+    val prefs = platform.prefs("RustifyPrefs")
     val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
     // 0 = nothing attempted, 1 = resolving, 2 = finished with no video. Without this the tab silently
     // fell back to the cover art, so "this song has no video" and "something went wrong" looked
@@ -459,7 +460,7 @@ fun TrackScreen(
                 }.getOrNull()
             if (!ytId.isNullOrBlank()) {
                 videoUrl = runCatching {
-                    com.varuna.rustify.audio.YouTubeVideoResolver.resolve(ytId, maxQuality)
+                    services.resolveVideo(ytId, maxQuality)
                 }.getOrNull()
             }
             videoLookup = if (videoUrl == null) 2 else 0
@@ -475,18 +476,19 @@ fun TrackScreen(
         canvasUrl = try {
             spotifyRepo.getTrackCanvas(trackId)
         } catch (e: Exception) {
-            android.util.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
+            com.varuna.rustify.platform.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
             null
         }
     }
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    val isLandscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val screenWidthDp = com.varuna.rustify.ui.windowWidthDp()
+    val screenHeightDp = com.varuna.rustify.ui.windowHeightDp()
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
     // Cover sized to the screen (4.7.1). Fixed 180/280 dp suited a phone and left a tablet's player
     // a stamp-sized cover over an empty half screen. Phones in portrait keep 280.
     val coverSize = when {
-        isLandscape -> minOf(config.screenHeightDp - 140, (config.screenWidthDp * 0.42f).toInt()).coerceAtLeast(180).dp
+        isLandscape -> minOf(screenHeightDp - 140, (screenWidthDp * 0.42f).toInt()).coerceAtLeast(180).dp
         // 0.38 of the height leaves the lyrics panel in view under the controls on a tablet.
-        config.screenWidthDp >= 600 -> minOf(config.screenWidthDp - 96, (config.screenHeightDp * 0.38f).toInt()).dp
+        screenWidthDp >= 600 -> minOf(screenWidthDp - 96, (screenHeightDp * 0.38f).toInt()).dp
         else -> 280.dp
     }
 
@@ -517,7 +519,7 @@ fun TrackScreen(
                                     isLoading = false
                                 }
                             }
-                        }) { Text(stringResource(R.string.general_retry)) }
+                        }) { Text(stringResource(Res.string.general_retry)) }
                     }
                 }
             } else {
@@ -530,13 +532,13 @@ fun TrackScreen(
                     Box(modifier = Modifier.fillMaxSize()) {
                         // ── Background layer ──
                         if (showVideo) {
-                            YouTubeVideoPlayer(videoUrlPair = videoUrl!!, audioPlayerService = audioPlayerService)
+                            services.PlayerVideo(videoUrl!!)
                         } else if (showCanvas) {
                             val canvasFitWidth = remember {
-                                context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE)
+                                platform.prefs("rustify_settings")
                                     .getBoolean("canvas_fit_width", true)
                             }
-                            CanvasVideoPlayer(url = canvasUrl!!, fitWidth = canvasFitWidth)
+                            services.CanvasVideo(url = canvasUrl!!, fitWidth = canvasFitWidth)
                         } else if (!imgUrl.isNullOrEmpty()) {
                             AsyncImage(
                                 model = imgUrl,
@@ -560,7 +562,7 @@ fun TrackScreen(
                                     )
                                 } else {
                                     Text(
-                                        text = stringResource(R.string.track_video_unavailable),
+                                        text = stringResource(Res.string.track_video_unavailable),
                                         color = Color(0xFFB0B0B0),
                                         fontSize = 13.sp
                                     )
@@ -755,7 +757,7 @@ fun TrackScreen(
                                                 audioPlayerService.retryCurrentTrack(fallbackTrackId = trackToShow.id)
                                             }
                                         }) {
-                                            Text(stringResource(R.string.general_retry), color = Color.White, fontSize = 12.sp)
+                                            Text(stringResource(Res.string.general_retry), color = Color.White, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -763,9 +765,11 @@ fun TrackScreen(
                                 // ── Top bar (back + canvas tabs + menu) ──
                                 // Image | Canvas | Video tab selector
                                 val mediaTabs = buildList {
-                                    add(0 to stringResource(R.string.track_tab_image))
-                                    if (!canvasUrl.isNullOrEmpty()) add(1 to stringResource(R.string.track_tab_canvas))
-                                    if (!TrackRef.isLocal(trackId)) add(2 to stringResource(R.string.track_tab_video))
+                                    add(0 to stringResource(Res.string.track_tab_image))
+                                    // Where the platform plays no video (the desktop, docs serie-4.x/27), only the image.
+                                    val video = services.can(com.varuna.rustify.ui.AppServices.Feature.VIDEO)
+                                    if (video && !canvasUrl.isNullOrEmpty()) add(1 to stringResource(Res.string.track_tab_canvas))
+                                    if (video && !TrackRef.isLocal(trackId)) add(2 to stringResource(Res.string.track_tab_video))
                                 }
                                 val tabSelector: @Composable () -> Unit = {
                                     if (mediaTabs.size > 1) {
@@ -807,7 +811,7 @@ fun TrackScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         IconButton(onClick = onBackClick) {
-                                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                                         }
                                         if (isLandscape) tabSelector() else Spacer(Modifier.weight(1f))
                                         AbRepeatButton(audioPlayerService)
@@ -831,7 +835,7 @@ fun TrackScreen(
 
     if (showMappingDialog) {
         trackToShow?.let { track ->
-            val alternativeChangedMsg = stringResource(R.string.track_alternative_changed)
+            val alternativeChangedMsg = stringResource(Res.string.track_alternative_changed)
             YouTubeMappingDialog(
                 track = track,
                 audioPlayerService = audioPlayerService,
@@ -839,23 +843,8 @@ fun TrackScreen(
                 onMappingSelected = { ytId ->
                     showMappingDialog = false
                     track.id?.let { tid ->
-                        NativeEngine.setAlternativeTrackNative(tid, ytId)
-                        // Mark it as an explicit user choice (takes precedence over the local match; see UserAlternatives).
-                        com.varuna.rustify.bridge.UserAlternatives.add(context, tid)
-                        LyricsRepository.invalidateLyrics(tid)
-                        // Clear cached stream URL so the new mapping takes effect immediately
-                        audioPlayerService.removeCachedStreamUrl(tid)
-                        com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(tid)
-                        // And the stored audio, for the same reason: the user has just said this
-                        // recording was the wrong one, and the stream cache would otherwise keep
-                        // serving it — which would look exactly like the choice doing nothing.
-                        com.varuna.rustify.audio.StreamRouting.forget(context, tid)
-                        
-                        android.widget.Toast.makeText(
-                            context.applicationContext,
-                            alternativeChangedMsg,
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        audioPlayerService.chooseRecording(tid, ytId)
+                        platform.toast(alternativeChangedMsg)
                         
                         val inQueue = playerState.queue.any { it.id == tid }
                         if (isCurrentTrack) {
@@ -914,7 +903,7 @@ fun TrackScreen(
 @Composable
 fun QueueBottomSheet(
     playerState: AudioPlayerState,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: PlayerController,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -939,35 +928,34 @@ fun QueueBottomSheet(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.queue_title),
+                        text = stringResource(Res.string.queue_title),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                     )
                     activeQueue?.let { Text(it, color = Color(0xFF1DB954), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 IconButton(onClick = { showSaveQueue = true }, enabled = playerState.queue.isNotEmpty()) {
-                    Icon(Icons.Default.Save, contentDescription = stringResource(R.string.queue_save_as), tint = Color.White)
+                    Icon(Icons.Default.Save, contentDescription = stringResource(Res.string.queue_save_as), tint = Color.White)
                 }
                 IconButton(onClick = { showSavedQueues = true }) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_saved), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(Res.string.queue_saved), tint = Color.White)
                 }
                 // Jam (`23` §4): green while in one.
-                val jam by com.varuna.rustify.player.Jam.ui.collectAsState()
                 var showJam by remember { mutableStateOf(false) }
                 IconButton(onClick = { showJam = true }) {
                     Icon(
                         Icons.Default.Groups,
-                        contentDescription = stringResource(R.string.jam_title),
-                        tint = if (jam.role != com.varuna.rustify.player.Jam.Role.NONE) Color(0xFF1DB954) else Color.White
+                        contentDescription = stringResource(Res.string.jam_title),
+                        tint = if (LocalAppServices.current.inJam()) Color(0xFF1DB954) else Color.White
                     )
                 }
-                if (showJam) com.varuna.rustify.ui.components.JamDialog(onDismiss = { showJam = false })
+                if (showJam) LocalAppServices.current.JamDialog(onDismiss = { showJam = false })
             }
             if (showSaveQueue) {
-                val defaultPrefix = stringResource(R.string.queue_default_name)
+                val defaultPrefix = stringResource(Res.string.queue_default_name)
                 var name by remember { mutableStateOf(activeQueue.orEmpty()) }
                 AlertDialog(
                     onDismissRequest = { showSaveQueue = false },
-                    title = { Text(stringResource(R.string.queue_save_as)) },
+                    title = { Text(stringResource(Res.string.queue_save_as)) },
                     text = {
                         OutlinedTextField(
                             value = name,
@@ -980,20 +968,20 @@ fun QueueBottomSheet(
                         TextButton(onClick = {
                             audioPlayerService.saveQueueAs(name, defaultPrefix)
                             showSaveQueue = false
-                        }) { Text(stringResource(R.string.queue_save)) }
+                        }) { Text(stringResource(Res.string.queue_save)) }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showSaveQueue = false }) { Text(stringResource(android.R.string.cancel)) }
+                        TextButton(onClick = { showSaveQueue = false }) { Text(stringResource(Res.string.cancel)) }
                     }
                 )
             }
             if (showSavedQueues) {
                 AlertDialog(
                     onDismissRequest = { showSavedQueues = false },
-                    title = { Text(stringResource(R.string.queue_saved)) },
+                    title = { Text(stringResource(Res.string.queue_saved)) },
                     text = {
                         if (savedQueues.isEmpty()) {
-                            Text(stringResource(R.string.queue_saved_empty), color = Color.Gray)
+                            Text(stringResource(Res.string.queue_saved_empty), color = Color.Gray)
                         } else {
                             LazyColumn(Modifier.heightIn(max = 360.dp)) {
                                 items(savedQueues.size, key = { savedQueues[it].name }) { i ->
@@ -1015,12 +1003,12 @@ fun QueueBottomSheet(
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                pluralStringResource(R.plurals.track_count, q.tracks.size, q.tracks.size),
+                                                pluralStringResource(Res.plurals.track_count, q.tracks.size, q.tracks.size),
                                                 color = Color.Gray, fontSize = 12.sp
                                             )
                                         }
                                         IconButton(onClick = { audioPlayerService.deleteSavedQueue(q.name) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.queue_saved_delete), tint = Color.Gray)
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.queue_saved_delete), tint = Color.Gray)
                                         }
                                     }
                                 }
@@ -1028,14 +1016,14 @@ fun QueueBottomSheet(
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showSavedQueues = false }) { Text(stringResource(android.R.string.ok)) }
+                        TextButton(onClick = { showSavedQueues = false }) { Text(stringResource(Res.string.ok)) }
                     }
                 )
             }
 
             // Current Track Section
             Text(
-                text = stringResource(R.string.queue_now_playing),
+                text = stringResource(Res.string.queue_now_playing),
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.Gray,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -1072,7 +1060,7 @@ fun QueueBottomSheet(
 
             // Next Up Section
             Text(
-                text = stringResource(R.string.queue_next_up),
+                text = stringResource(Res.string.queue_next_up),
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.Gray,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -1090,7 +1078,7 @@ fun QueueBottomSheet(
                     modifier = Modifier.fillMaxWidth().height(100.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(stringResource(R.string.queue_empty), color = Color.Gray)
+                    Text(stringResource(Res.string.queue_empty), color = Color.Gray)
                 }
             } else {
                 // Drag-to-reorder (4.7), on sh.calvin.reorderable. The hand-written version lived in
@@ -1252,7 +1240,7 @@ fun TrackScreenControls(
     currentPosition: Long,
     totalDuration: Long,
     playerState: AudioPlayerState,
-    audioPlayerService: AudioPlayerService,
+    audioPlayerService: PlayerController,
     spotifyRepo: SpotifyRepository,
     onShowMappingDialog: () -> Unit,
     onShowQueue: () -> Unit,
@@ -1266,10 +1254,10 @@ fun TrackScreenControls(
     val lyricsListState = rememberLazyListState()
 
     // Per-track manual sync adjustment (the menu dialog persists it and bumps `version`).
-    val lyricsCtx = LocalContext.current
+    val lyricsDir = com.varuna.rustify.ui.LocalAppPlatform.current.filesDir
     val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
     val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
-        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsCtx.filesDir, track.id ?: "")
+        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsDir, track.id ?: "")
     }
 
     // Auto-scroll to the current lyric line, applying the offset (a positive value advances the lyrics).
@@ -1330,9 +1318,9 @@ fun TrackScreenControls(
             // Like / YTM Favorite Button
             if (isYtm) {
                 val vid = TrackRef.youtubeVideoIdOf(track.id) ?: ""
-                val ctx = LocalContext.current
-                val effectiveYtmRepo = ytmRepo ?: remember(ctx) {
-                    com.varuna.rustify.bridge.YtMusicRepository(ctx.filesDir)
+                val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+                val effectiveYtmRepo = ytmRepo ?: remember(platform) {
+                    com.varuna.rustify.bridge.YtMusicRepository(platform.filesDir)
                 }
                 var ytmFav by remember(vid) { mutableStateOf(effectiveYtmRepo.isFavorite(vid)) }
                 SpotifyLikeButton(
@@ -1422,7 +1410,7 @@ fun TrackScreenControls(
         // Playback Controls Row
         // Compact on a narrow phone (4.7): seven 48 dp buttons and the 72 dp play button do not fit
         // in 360 dp, and the last ones in each group were squeezed to a fraction of their size.
-        val compactControls = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400
+        val compactControls = com.varuna.rustify.ui.windowWidthDp() < 400
         val ctlMod = if (compactControls) Modifier.size(42.dp) else Modifier
         val playSize = if (compactControls) 64.dp else 72.dp
         Row(
@@ -1441,7 +1429,7 @@ fun TrackScreenControls(
                 IconButton(onClick = onShowMappingDialog, modifier = ctlMod) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.CallSplit,
-                        contentDescription = stringResource(R.string.track_menu_view_youtube),
+                        contentDescription = stringResource(Res.string.track_menu_view_youtube),
                         // Green when the current track is playing from a local file (local match).
                         tint = if (isCurrentTrack && playerState.isLocalSource) Color(0xFF1DB954) else Color.White,
                         modifier = Modifier.size(28.dp)
@@ -1452,10 +1440,9 @@ fun TrackScreenControls(
             }
 
             // DJ: only shown during an autonomous DJ session; tap to change the mood from playback.
-            val djActive = com.varuna.rustify.dj.DjAutoController.state.collectAsState().value != null
-            val djCtx = LocalContext.current
-            if (djActive) {
-                IconButton(onClick = { com.varuna.rustify.dj.DjAutoController.next(djCtx) }, modifier = ctlMod) {
+            val djServices = LocalAppServices.current
+            if (djServices.djActive()) {
+                IconButton(onClick = { djServices.djNext() }, modifier = ctlMod) {
                     Icon(
                         imageVector = Icons.Default.Radio,
                         contentDescription = "DJ",
@@ -1623,7 +1610,7 @@ fun TrackScreenControls(
  *
  * One dot per enabled provider (the file's own first, for a local track), white for the one shown,
  * grey for the rest, with its name beside them. A swipe or a tap on a dot asks that provider alone;
- * when it has the song, it is remembered for this track ([LyricsRepository.choose]) and opens with
+ * when it has the song, it is remembered for this track ([com.varuna.rustify.bridge.LyricsChain.choose]) and opens with
  * it next time. When it has nothing, it says so and the lines shown stay.
  */
 @Composable
@@ -1633,9 +1620,9 @@ private fun LyricsProviderSwitcher(
     onChange: (LyricsResult?) -> Unit,
     content: @Composable () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val lyrics = LocalAppServices.current.lyrics
     val trackId = track.id
-    val providers = remember(trackId) { trackId?.let { LyricsRepository.providersFor(context, it) }.orEmpty() }
+    val providers = remember(trackId) { trackId?.let { lyrics.providersFor(it) }.orEmpty() }
     if (trackId == null || providers.size < 2) {
         content()
         return
@@ -1645,19 +1632,20 @@ private fun LyricsProviderSwitcher(
     var nothingFrom by remember(trackId) { mutableStateOf<String?>(null) }
     val shown = current?.providerId
     val index = providers.indexOf(shown).coerceAtLeast(0)
-    fun nameOf(id: String): String = LyricsRepository.nameRes(id)?.let { context.getString(it) } ?: id
+    val names = com.varuna.rustify.bridge.lyricsProviderNames()
+    fun nameOf(id: String): String = names[id] ?: id
     fun open(target: Int) {
         val id = providers.getOrNull(Math.floorMod(target, providers.size)) ?: return
         if (id == shown || asking != null) return
         asking = id
         nothingFrom = null
         scope.launch {
-            val r = LyricsRepository.fetchFrom(
-                context, trackId, id, track.artists.firstOrNull()?.name ?: "", track.name, track.durationMs / 1000
+            val r = lyrics.fetchFrom(
+                trackId, id, track.artists.firstOrNull()?.name ?: "", track.name, track.durationMs / 1000
             )
             asking = null
             if (r != null) {
-                LyricsRepository.choose(context, trackId, id)
+                lyrics.choose(trackId, id)
                 onChange(r)
             } else {
                 nothingFrom = id
@@ -1694,8 +1682,8 @@ private fun LyricsProviderSwitcher(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = when {
-                    asking != null -> stringResource(R.string.lyrics_provider_asking, nameOf(asking!!))
-                    nothingFrom != null -> stringResource(R.string.lyrics_provider_nothing, nameOf(nothingFrom!!))
+                    asking != null -> stringResource(Res.string.lyrics_provider_asking, nameOf(asking!!))
+                    nothingFrom != null -> stringResource(Res.string.lyrics_provider_nothing, nameOf(nothingFrom!!))
                     else -> nameOf(providers[index])
                 },
                 color = Color.Gray,
@@ -1717,10 +1705,12 @@ fun LyricsView(
     trackKey: String? = null
 ) {
     val spotifyGreen = Color(0xFF1DB954)
-    // Translation (4.7): off until asked for, then one line under each line. See LyricsTranslator.
+    // Translation (4.7): off until asked for, then one line under each line. See AppServices.translateLyrics.
+    val services = LocalAppServices.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     var translateOn by remember(trackKey) { mutableStateOf(false) }
-    var translation by remember(trackKey) { mutableStateOf<com.varuna.rustify.bridge.LyricsTranslator.Outcome?>(null) }
-    var partialTranslation by remember(trackKey) { mutableStateOf<com.varuna.rustify.bridge.LyricsTranslator.Outcome?>(null) }
+    var translation by remember(trackKey) { mutableStateOf<LyricsTranslation?>(null) }
+    var partialTranslation by remember(trackKey) { mutableStateOf<LyricsTranslation?>(null) }
     val sourceLines = remember(lyricsResult) {
         lyricsResult?.synced?.takeIf { it.isNotEmpty() }?.map { it.text }
             ?: lyricsResult?.plain?.lines()
@@ -1728,33 +1718,33 @@ fun LyricsView(
     }
     LaunchedEffect(translateOn, sourceLines) {
         if (translateOn && translation == null && sourceLines.isNotEmpty()) {
-            translation = com.varuna.rustify.bridge.LyricsTranslator.translate(
+            translation = services.translateLyrics(
                 trackKey ?: sourceLines.hashCode().toString(), sourceLines,
                 onProgress = { partial -> partialTranslation = partial }
             )
         }
     }
-    val translated = ((translation ?: partialTranslation) as? com.varuna.rustify.bridge.LyricsTranslator.Outcome.Translated)?.lines?.takeIf { translateOn }
+    val translated = ((translation ?: partialTranslation) as? LyricsTranslation.Translated)?.lines?.takeIf { translateOn }
     // Say why nothing appeared (4.7.1): the icon only turning grey read as "the button does nothing".
-    val translateContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(translation, partialTranslation, translateOn) {
         if (!translateOn) return@LaunchedEffect
         fun name(code: String) = java.util.Locale.forLanguageTag(code.substringBefore('-')).displayLanguage
         val msg = when (val o = translation ?: partialTranslation) {
-            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Downloading ->
-                translateContext.getString(R.string.lyrics_translate_downloading, name(o.language))
-            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.NotNeeded -> when {
-                o.language == "und" -> translateContext.getString(R.string.lyrics_translate_unknown)
-                o.language.endsWith("-Latn") -> translateContext.getString(R.string.lyrics_translate_romanised, name(o.language))
-                o.language == com.varuna.rustify.bridge.LyricsTranslator.targetLanguage() ->
-                    translateContext.getString(R.string.lyrics_translate_same)
-                else -> translateContext.getString(R.string.lyrics_translate_unsupported, name(o.language))
+            is LyricsTranslation.Downloading ->
+                appString(Res.string.lyrics_translate_downloading, name(o.language))
+            is LyricsTranslation.NotNeeded -> when {
+                o.language == "und" -> appString(Res.string.lyrics_translate_unknown)
+                o.language.endsWith("-Latn") -> appString(Res.string.lyrics_translate_romanised, name(o.language))
+                o.language == services.translationTarget() ->
+                    appString(Res.string.lyrics_translate_same)
+                else -> appString(Res.string.lyrics_translate_unsupported, name(o.language))
             }
-            is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Failed ->
-                translateContext.getString(R.string.lyrics_translate_failed, o.reason)
+            is LyricsTranslation.Failed ->
+                if (o.reason == LyricsTranslation.UNAVAILABLE) appString(Res.string.feature_not_on_platform)
+                else appString(Res.string.lyrics_translate_failed)
             else -> null
         }
-        msg?.let { android.widget.Toast.makeText(translateContext, it, android.widget.Toast.LENGTH_LONG).show() }
+        msg?.let { platform.toast(it, long = true) }
     }
     Box(
         modifier = Modifier
@@ -1773,7 +1763,7 @@ fun LyricsView(
             lyricsResult == null -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = stringResource(R.string.lyrics_not_found),
+                        text = stringResource(Res.string.lyrics_not_found),
                         color = Color.Gray,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
@@ -1838,7 +1828,7 @@ fun LyricsView(
             else -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = stringResource(R.string.lyrics_not_found),
+                        text = stringResource(Res.string.lyrics_not_found),
                         color = Color.Gray,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
@@ -1847,8 +1837,8 @@ fun LyricsView(
             }
         }
         if (sourceLines.isNotEmpty() && !isLoading) {
-            val notNeeded = translation is com.varuna.rustify.bridge.LyricsTranslator.Outcome.NotNeeded
-            val failed = translation is com.varuna.rustify.bridge.LyricsTranslator.Outcome.Failed
+            val notNeeded = translation is LyricsTranslation.NotNeeded
+            val failed = translation is LyricsTranslation.Failed
             IconButton(
                 onClick = { translateOn = !translateOn; if (failed) translation = null },
                 modifier = Modifier.align(Alignment.TopEnd).size(32.dp)
@@ -1856,7 +1846,7 @@ fun LyricsView(
                 if (translateOn && translation == null) CircularProgressIndicator(color = spotifyGreen, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                 else Icon(
                     Icons.Default.Translate,
-                    contentDescription = stringResource(R.string.lyrics_translate),
+                    contentDescription = stringResource(Res.string.lyrics_translate),
                     tint = when {
                         translateOn && translated != null -> spotifyGreen
                         translateOn && (notNeeded || failed) -> Color.Gray
@@ -1868,19 +1858,6 @@ fun LyricsView(
     }
 }
 
-/**
- * Cover art with a tab selector ("Image" | "Canvas") on top.
- *
- * The Spotify Canvas is a short looping mp4 shown behind the cover art. We fetch its
- * URL lazily from the native engine (protobuf canvaz endpoint) and, when the user
- * selects the "Canvas" tab, play it MUTED and LOOPING in a SECOND, independent
- * ExoPlayer instance (NOT the global playback player). The player is created and
- * released via DisposableEffect and rendered into a SurfaceView through AndroidView,
- * so no media3-ui / PlayerView dependency is required.
- *
- * The YouTube "Video" tab is intentionally left for a later iteration.
- */
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 /**
  * Cover art with an optional canvas badge in the top-right corner.
  * When the track has a canvas, a small pill styled like the Spotify
@@ -1910,100 +1887,11 @@ fun TrackCoverSimple(
 }
 
 /**
- * Renders a looping, muted mp4 canvas in an independent ExoPlayer + SurfaceView.
- * The player is fully owned by this composable and released on dispose.
- *
- * [fitWidth] = true (default): scale to the screen width preserving aspect ratio (may leave bars
- * top/bottom, but never stretches). false: fill the whole screen (can stretch).
- */
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@Composable
-fun CanvasVideoPlayer(url: String, fitWidth: Boolean = true) {
-    val context = LocalContext.current
-    var ratio by remember(url) { mutableStateOf<Float?>(null) }
-
-    val exoPlayer = remember(url) {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
-            volume = 0f
-            playWhenReady = true
-            addListener(object : androidx.media3.common.Player.Listener {
-                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                    if (videoSize.width > 0 && videoSize.height > 0) {
-                        ratio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                    }
-                }
-            })
-            prepare()
-        }
-    }
-
-    DisposableEffect(url) {
-        onDispose {
-            exoPlayer.release()
-        }
-    }
-
-    val surface: @Composable (Modifier) -> Unit = { mod ->
-        AndroidView(
-            modifier = mod,
-            factory = { ctx ->
-                android.view.SurfaceView(ctx).also {
-                    exoPlayer.setVideoSurfaceView(it)
-                }
-            }
-        )
-    }
-
-    if (fitWidth) {
-        // Fit to width, keep aspect ratio; centre vertically. Default 9:16 until the real size lands.
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            surface(Modifier.fillMaxWidth().aspectRatio(ratio ?: (9f / 16f)))
-        }
-    } else {
-        surface(Modifier.fillMaxSize())
-    }
-}
-
-/**
- * Plays the matched YouTube video (with its own audio) on the track screen's "Video"
- * tab. Reuses the Canvas pattern (2nd ExoPlayer on a SurfaceView, no media3-ui dependency). Pauses
- * the main audio while shown to avoid double audio; tap toggles play/pause.
- */
-@Composable
-fun YouTubeVideoPlayer(videoUrlPair: Pair<String, String?>, audioPlayerService: AudioPlayerService) {
-    val videoRatio = audioPlayerService.state.collectAsState().value.videoSizeRatio
-
-    DisposableEffect(videoUrlPair) {
-        audioPlayerService.switchToVideoStream(videoUrlPair.first, videoUrlPair.second)
-        onDispose { 
-            audioPlayerService.switchToAudioStream()
-            // clear the surface view when leaving so the player doesn't hold onto a stale surface
-            AudioPlayerService.exoPlayerInstance?.clearVideoSurface()
-        }
-    }
-    
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        AndroidView(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (videoRatio != null) Modifier.aspectRatio(videoRatio) else Modifier),
-            factory = { ctx -> 
-                android.view.SurfaceView(ctx).also { 
-                    AudioPlayerService.exoPlayerInstance?.setVideoSurfaceView(it)
-                } 
-            }
-        )
-    }
-}
-
-/**
  * The sleep timer (4.4): a moon in the track screen's header, a menu of durations, and the minutes
- * left beside it while one runs. The fading and pausing live in [AudioPlayerService.setSleepTimer].
+ * left beside it while one runs. The fading and pausing live in [PlayerController.setSleepTimer].
  */
 @Composable
-private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
+private fun SleepTimerButton(audioPlayerService: PlayerController) {
     val endsAt by audioPlayerService.sleepTimer.collectAsState()
     val songsLeft by audioPlayerService.sleepTracks.collectAsState()
     var open by remember { mutableStateOf(false) }
@@ -2024,7 +1912,7 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
             IconButton(onClick = { open = true }) {
                 Icon(
                     androidx.compose.material.icons.Icons.Default.Bedtime,
-                    contentDescription = stringResource(R.string.sleep_timer),
+                    contentDescription = stringResource(Res.string.sleep_timer),
                     tint = if (active) Color(0xFF1DB954) else Color.White
                 )
             }
@@ -2034,8 +1922,8 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
             onDismissRequest = { open = false },
             containerColor = Color(0xFF1E1E1E)
         ) {
-            val options = listOf(15, 30, 45, 60).map { m -> stringResource(R.string.sleep_timer_minutes, m) to m } +
-                listOf(stringResource(R.string.sleep_timer_track_end) to AudioPlayerService.SLEEP_MINUTES_TRACK_END)
+            val options = listOf(15, 30, 45, 60).map { m -> stringResource(Res.string.sleep_timer_minutes, m) to m } +
+                listOf(stringResource(Res.string.sleep_timer_track_end) to PlayerController.SLEEP_MINUTES_TRACK_END)
             val songOptions = listOf(2, 3, 5)
             options.forEach { (label, minutes) ->
                 androidx.compose.material3.DropdownMenuItem(
@@ -2045,13 +1933,13 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
             }
             songOptions.forEach { songs ->
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(stringResource(R.string.sleep_timer_songs, songs), color = Color.White) },
+                    text = { Text(stringResource(Res.string.sleep_timer_songs, songs), color = Color.White) },
                     onClick = { audioPlayerService.setSleepAfterTracks(songs); open = false }
                 )
             }
             if (endsAt != null) {
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(stringResource(R.string.sleep_timer_off), color = Color(0xFFE57373)) },
+                    text = { Text(stringResource(Res.string.sleep_timer_off), color = Color(0xFFE57373)) },
                     onClick = { audioPlayerService.setSleepTimer(0); open = false }
                 )
             }
@@ -2064,8 +1952,8 @@ private fun SleepTimerButton(audioPlayerService: AudioPlayerService) {
  * cycling lives in [com.varuna.rustify.player.AbRepeat]; the loop in the service.
  */
 @Composable
-private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+private fun AbRepeatButton(audioPlayerService: PlayerController) {
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val ab by audioPlayerService.abRepeat.collectAsState()
     // A repeat icon with the loop's state beside it: "A-B" alone read as left/right channels (5.0.1).
     val badge = when {
@@ -2075,14 +1963,14 @@ private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
     }
     val description = stringResource(
         when {
-            ab.isLooping -> R.string.ab_repeat_clear
-            ab.a != null -> R.string.ab_repeat_set_b
-            else -> R.string.ab_repeat_set_a
+            ab.isLooping -> Res.string.ab_repeat_clear
+            ab.a != null -> Res.string.ab_repeat_set_b
+            else -> Res.string.ab_repeat_set_a
         }
     )
-    val markedA = stringResource(R.string.ab_repeat_marked_a)
-    val looping = stringResource(R.string.ab_repeat_looping)
-    val cleared = stringResource(R.string.ab_repeat_cleared)
+    val markedA = stringResource(Res.string.ab_repeat_marked_a)
+    val looping = stringResource(Res.string.ab_repeat_looping)
+    val cleared = stringResource(Res.string.ab_repeat_cleared)
     fun mmss(ms: Long) = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
     IconButton(
         onClick = {
@@ -2095,7 +1983,7 @@ private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
                 now.a != null -> markedA.format(mmss(now.a ?: 0))
                 else -> cleared
             }
-            android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_SHORT).show()
+            platform.toast(text)
         },
         modifier = Modifier.semantics { contentDescription = description }
     ) {
@@ -2118,14 +2006,14 @@ private fun AbRepeatButton(audioPlayerService: AudioPlayerService) {
  * values live in [com.varuna.rustify.player.PlaybackSpeed]; applying them is the service's.
  */
 @Composable
-private fun SpeedButton(audioPlayerService: AudioPlayerService) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+private fun SpeedButton(audioPlayerService: PlayerController) {
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val ps = com.varuna.rustify.player.PlaybackSpeed
     var open by remember { mutableStateOf(false) }
-    var speed by remember { mutableStateOf(ps.speed(context)) }
-    var semitones by remember { mutableStateOf(ps.semitones(context)) }
+    var speed by remember { mutableStateOf(ps.speed(platform.prefs())) }
+    var semitones by remember { mutableStateOf(ps.semitones(platform.prefs())) }
     fun apply() {
-        ps.set(context, speed, semitones)
+        ps.set(platform.prefs(), speed, semitones)
         audioPlayerService.applyPlaybackSpeed()
     }
     val changed = !ps.isDefault(speed, semitones)
@@ -2134,7 +2022,7 @@ private fun SpeedButton(audioPlayerService: AudioPlayerService) {
         IconButton(onClick = { open = true }) {
             Icon(
                 Icons.Default.Speed,
-                contentDescription = stringResource(R.string.playback_speed),
+                contentDescription = stringResource(Res.string.playback_speed),
                 tint = if (changed) Color(0xFF1DB954) else Color.White
             )
         }
@@ -2143,10 +2031,10 @@ private fun SpeedButton(audioPlayerService: AudioPlayerService) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { open = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text(stringResource(R.string.playback_speed), color = Color.White) },
+            title = { Text(stringResource(Res.string.playback_speed), color = Color.White) },
             text = {
                 Column {
-                    Text(stringResource(R.string.playback_speed_value, formatSpeed(ps.snap(speed))), color = Color.White)
+                    Text(stringResource(Res.string.playback_speed_value, formatSpeed(ps.snap(speed))), color = Color.White)
                     androidx.compose.material3.Slider(
                         value = speed,
                         onValueChange = { speed = ps.snap(it) },
@@ -2155,7 +2043,7 @@ private fun SpeedButton(audioPlayerService: AudioPlayerService) {
                         steps = ((ps.MAX_SPEED - ps.MIN_SPEED) / ps.SPEED_STEP).toInt() - 1
                     )
                     Text(
-                        stringResource(R.string.playback_pitch_value, if (semitones > 0) "+$semitones" else "$semitones"),
+                        stringResource(Res.string.playback_pitch_value, if (semitones > 0) "+$semitones" else "$semitones"),
                         color = Color.White
                     )
                     androidx.compose.material3.Slider(
@@ -2165,19 +2053,19 @@ private fun SpeedButton(audioPlayerService: AudioPlayerService) {
                         valueRange = -ps.MAX_SEMITONES.toFloat()..ps.MAX_SEMITONES.toFloat(),
                         steps = ps.MAX_SEMITONES * 2 - 1
                     )
-                    Text(stringResource(R.string.playback_speed_desc), color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(Res.string.playback_speed_desc), color = Color.Gray, fontSize = 12.sp)
                 }
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { open = false }) {
-                    Text(stringResource(R.string.settings_close), color = Color(0xFF1DB954))
+                    Text(stringResource(Res.string.settings_close), color = Color(0xFF1DB954))
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(
                     enabled = changed,
                     onClick = { speed = 1f; semitones = 0; apply() }
-                ) { Text(stringResource(R.string.playback_speed_reset)) }
+                ) { Text(stringResource(Res.string.playback_speed_reset)) }
             }
         )
     }

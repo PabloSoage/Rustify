@@ -17,3 +17,9 @@ fun windowWidthDp(): Int = with(LocalDensity.current) {
 /** Wider than tall: the tablet layout on the phone, and nearly always on the desktop. */
 @Composable
 fun isLandscape(): Boolean = LocalWindowInfo.current.containerSize.let { it.width > it.height }
+
+/** The window's height, as [windowWidthDp] its width. */
+@Composable
+fun windowHeightDp(): Int = with(LocalDensity.current) {
+    LocalWindowInfo.current.containerSize.height.toDp().value.toInt()
+}

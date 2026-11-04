@@ -55,5 +55,5 @@ object AudioOffload {
     }
 
     fun blocker(context: Context): Blocker? =
-        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context), StereoTools.settings.active, distrusted)
+        blocker(isEnabled(context), EqualizerController.isEnabled(context), TransitionFade.seconds(context), labOpen, videoMode, !PlaybackSpeed.isDefault(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()), SkipSilence.enabled(context), AutoEqController.isActive(), BitPerfect.active(context), StereoTools.settings.active, distrusted)
 }

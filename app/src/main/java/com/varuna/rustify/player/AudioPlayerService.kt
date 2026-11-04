@@ -2410,8 +2410,8 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     /** Speed and pitch from [PlaybackSpeed], and offload re-decided, since it cannot do either. */
     override fun applyPlaybackSpeed() {
         val params = androidx.media3.common.PlaybackParameters(
-            PlaybackSpeed.speed(context),
-            PlaybackSpeed.pitchFactor(PlaybackSpeed.semitones(context))
+            PlaybackSpeed.speed(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()),
+            PlaybackSpeed.pitchFactor(PlaybackSpeed.semitones(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()))
         )
         requestedParameters = params
         runCatching { exoPlayer.playbackParameters = params }
@@ -3478,6 +3478,16 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     // Invalidate the persisted stream URL for a track so a forced re-resolution can't reuse the
     // stale URL. Covers both the in-memory map (backed by stream_url_cache.json) and the legacy
     // SharedPreferences "cached_url_$id" entry.
+    override fun chooseRecording(trackId: String, youtubeId: String) {
+        NativeEngine.setAlternativeTrackNative(trackId, youtubeId)
+        com.varuna.rustify.bridge.UserAlternatives.add(context, trackId)
+        com.varuna.rustify.bridge.LyricsRepository.invalidateLyrics(trackId)
+        removeCachedStreamUrl(trackId)
+        com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
+        // The stored audio too: the stream cache would otherwise keep serving the wrong recording.
+        com.varuna.rustify.audio.StreamRouting.forget(context, trackId)
+    }
+
     override fun removeCachedStreamUrl(trackId: String) {
         persistedUrlCache.remove(trackId)
         urlExpiryCache.remove(trackId)   // drop the tracked expiry alongside the URL

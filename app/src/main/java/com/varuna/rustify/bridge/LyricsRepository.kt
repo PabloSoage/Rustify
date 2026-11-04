@@ -15,7 +15,8 @@ object LyricsRepository {
 
     @Volatile private var chain: LyricsChain? = null
 
-    private fun chain(context: Context): LyricsChain = chain ?: synchronized(this) {
+    /** The process's chain; also what the shared screens read, through AppServices.lyrics. */
+    fun chain(context: Context): LyricsChain = chain ?: synchronized(this) {
         chain ?: context.applicationContext.let { app ->
             LyricsChain(
                 SharedPreferencesStore(app.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)),

@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LyricsChain
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -29,13 +30,71 @@ interface AppServices {
     fun clearCompleted()
 
     /**
+     * The lyrics providers, their order and the per-song choice: the shared [LyricsChain] over this
+     * platform's settings, one for the process so its caches outlive a screen.
+     */
+    val lyrics: LyricsChain
+
+    /**
+     * Translates lyrics [lines] into the system's language (Android: ML Kit, on the device).
+     * [onProgress] gets partial outcomes (a model downloading, the lines done so far). Without
+     * [Feature.TRANSLATION] it answers [LyricsTranslation.Failed] with [LyricsTranslation.UNAVAILABLE].
+     */
+    suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation
+
+    /** The language [translateLyrics] translates into, as a language code. */
+    fun translationTarget(): String
+
+    /** A YouTube recording's video and, when separate, its audio stream; null when there is none. */
+    suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>?
+
+    /** A Spotify Canvas: the short looping clip behind the cover art, muted. */
+    @Composable
+    fun CanvasVideo(url: String, fitWidth: Boolean)
+
+    /** The playing song's video ([resolveVideo]), with its own audio in place of the player's. */
+    @Composable
+    fun PlayerVideo(video: Pair<String, String?>)
+
+    /**
      * The Jam dialog. Android's is over its own Jam and the desktop's over the shared JamSession
      * until the two are one (docs serie-4.x/27 §2.7), so each platform hands its own in.
      */
     @Composable
     fun JamDialog(onDismiss: () -> Unit)
 
-    enum class Feature { BPM, DOWNLOADS }
+    /** Whether this device is in a Jam right now (the player's Jam button goes green). */
+    @Composable
+    fun inJam(): Boolean
+
+    /** Whether an autonomous DJ session is running (its button shows on the player). */
+    @Composable
+    fun djActive(): Boolean
+
+    /** Asks the running DJ for the next mood. */
+    fun djNext()
+
+    enum class Feature { BPM, DOWNLOADS, TRANSLATION, VIDEO, DJ }
+}
+
+/** What translating lyrics came to; see [AppServices.translateLyrics]. */
+sealed class LyricsTranslation {
+    data class Translated(val from: String, val lines: List<String>) : LyricsTranslation()
+
+    /**
+     * Nothing to translate: already in the target language, a language the translator cannot
+     * translate, romanised text (`ja-Latn`: romaji is not what the Japanese model reads) or `und`.
+     */
+    data class NotNeeded(val language: String) : LyricsTranslation()
+    data class Failed(val reason: String) : LyricsTranslation()
+
+    /** Progress only: the language's model is being downloaded first (~30 MB, once). */
+    data class Downloading(val language: String) : LyricsTranslation()
+
+    companion object {
+        /** [Failed.reason] when this platform has no translator. */
+        const val UNAVAILABLE = "unavailable"
+    }
 }
 
 val LocalAppServices = staticCompositionLocalOf<AppServices> { error("no AppServices provided") }

@@ -740,7 +740,7 @@ internal fun AudioOffloadSection(context: Context) {
         enabled,
         com.varuna.rustify.player.EqualizerController.isEnabled(context),
         com.varuna.rustify.player.TransitionFade.seconds(context),
-        speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(context),
+        speedChanged = !com.varuna.rustify.player.PlaybackSpeed.isDefault(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()),
         skipSilence = com.varuna.rustify.player.SkipSilence.enabled(context),
         autoEq = com.varuna.rustify.player.AutoEqController.isActive(),
         bitPerfect = com.varuna.rustify.player.BitPerfect.active(context),

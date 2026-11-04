@@ -62,6 +62,14 @@ interface PlayerController {
     fun removeFromQueue(index: Int)
     fun removeCachedStreamUrl(trackId: String)
 
+    /**
+     * The user said [youtubeId] is the right recording of [trackId]: remembered as their choice (it
+     * beats the local match), and everything keyed by the track forgets the old one — the stream
+     * URL, the last good source, the stored audio and the lyrics — or the choice would look like it
+     * did nothing. Playing it is the caller's.
+     */
+    fun chooseRecording(trackId: String, youtubeId: String)
+
     fun startOver()
     fun dismissResumed()
     fun pressAbRepeat()

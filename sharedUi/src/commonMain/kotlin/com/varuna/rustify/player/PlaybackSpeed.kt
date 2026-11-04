@@ -1,6 +1,6 @@
 package com.varuna.rustify.player
 
-import android.content.Context
+import com.varuna.rustify.platform.KeyValueStore
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -10,7 +10,8 @@ import kotlin.math.roundToInt
  * but 1× and 0 semitones takes offload off ([AudioOffload.Blocker.SPEED]): the audio DSP plays the
  * file as it is.
  *
- * Global and remembered, like the equaliser. The reset is one tap in the same sheet.
+ * Global and remembered, like the equaliser, in the settings store ([com.varuna.rustify.ui.AppPlatform.prefs]'s
+ * `rustify_settings`). The reset is one tap in the same sheet.
  */
 object PlaybackSpeed {
     const val MIN_SPEED = 0.5f
@@ -21,19 +22,15 @@ object PlaybackSpeed {
     private const val KEY_SPEED = "playback_speed"
     private const val KEY_SEMITONES = "playback_pitch_semitones"
 
-    private fun prefs(context: Context) = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    fun speed(settings: KeyValueStore): Float = snap(settings.getFloat(KEY_SPEED, 1f))
+    fun semitones(settings: KeyValueStore): Int = settings.getInt(KEY_SEMITONES, 0).coerceIn(-MAX_SEMITONES, MAX_SEMITONES)
 
-    fun speed(context: Context): Float = snap(prefs(context).getFloat(KEY_SPEED, 1f))
-    fun semitones(context: Context): Int = prefs(context).getInt(KEY_SEMITONES, 0).coerceIn(-MAX_SEMITONES, MAX_SEMITONES)
-
-    fun set(context: Context, speed: Float, semitones: Int) {
-        prefs(context).edit()
-            .putFloat(KEY_SPEED, snap(speed))
-            .putInt(KEY_SEMITONES, semitones.coerceIn(-MAX_SEMITONES, MAX_SEMITONES))
-            .apply()
+    fun set(settings: KeyValueStore, speed: Float, semitones: Int) {
+        settings.putFloat(KEY_SPEED, snap(speed))
+        settings.putInt(KEY_SEMITONES, semitones.coerceIn(-MAX_SEMITONES, MAX_SEMITONES))
     }
 
-    fun isDefault(context: Context): Boolean = isDefault(speed(context), semitones(context))
+    fun isDefault(settings: KeyValueStore): Boolean = isDefault(speed(settings), semitones(settings))
     fun isDefault(speed: Float, semitones: Int): Boolean = snap(speed) == 1f && semitones == 0
 
     /** A semitone is a twelfth of an octave, and an octave doubles the frequency. */

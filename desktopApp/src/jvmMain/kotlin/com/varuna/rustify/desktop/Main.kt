@@ -2,6 +2,7 @@
 package com.varuna.rustify.desktop
 
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -63,7 +64,7 @@ fun main() {
             JamSession(scope, JvmJamCore, player, PreferencesStore(), host?.takeIf { it.isNotBlank() } ?: "Rustify desktop")
         }
         val appServices = remember {
-            com.varuna.rustify.ui.DesktopAppServices(jamDialog = { onDismiss ->
+            com.varuna.rustify.ui.DesktopAppServices(inJam = { jam.ui.collectAsState().value.role != JamSession.Role.NONE }, jamDialog = { onDismiss ->
                 androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
                     androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
                         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(560.dp, 640.dp)) {
