@@ -27,6 +27,13 @@ import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
+// The computer's locale, before Settings' language replaces the JVM's default.
+private val systemLocale: java.util.Locale = java.util.Locale.getDefault()
+
+private fun applyLocale(code: String) {
+    java.util.Locale.setDefault(if (code == "system") systemLocale else java.util.Locale.forLanguageTag(code))
+}
+
 fun main() {
     // Before anything names NativeEngine: on the desktop the library is not on java.library.path.
     CoreLoader.install()
@@ -45,6 +52,20 @@ fun main() {
         // over Android; here they are over the desktop's folders, preferences and the core's engine.
         val appPlatform = remember { com.varuna.rustify.ui.DesktopAppPlatform() }
         val controller = remember { com.varuna.rustify.player.DesktopPlayerController(player, scope) }
+
+        // The language picked in Settings ("system" = the computer's), the phone's `app_language`.
+        // Applied as the JVM's default locale, which is what Compose's resources read; the window's
+        // content is recomposed under it, as Android recreates the activity.
+        var language by remember {
+            mutableStateOf(appPlatform.prefs().getString("app_language") ?: "system").also { applyLocale(it.value) }
+        }
+        val shell = remember {
+            com.varuna.rustify.ui.DesktopAppShell(onLanguage = { code ->
+                applyLocale(code)
+                NativeEngine.setLanguageNative(defaultLanguage())
+                language = code
+            })
+        }
 
         // The computer's name is what the others in a Jam see, unless one is set in the Jam tab. From
         // the environment, not InetAddress.getLocalHost(): that can wait on a reverse DNS lookup, and
@@ -112,17 +133,18 @@ fun main() {
                 com.varuna.rustify.ui.LocalAppServices provides appServices,
                 com.varuna.rustify.player.LocalPlayer provides controller,
             ) {
-                com.varuna.rustify.ui.RememberStringEnvironment()
-                RustifyTheme {
-                    // The repository the phone's screens read, created once the core knows its folders.
-                    val repo = remember(ready) {
-                        if (ready) com.varuna.rustify.bridge.SpotifyRepository(appPlatform, com.varuna.rustify.ui.DesktopLocalMusicScanner()) else null
-                    }
-                    val shell = remember { com.varuna.rustify.ui.DesktopAppShell() }
-                    androidx.compose.foundation.layout.Box {
-                        // The phone's app, as the tablet lays it out (docs serie-4.x/26).
-                        if (repo != null) com.varuna.rustify.ui.RustifyApp(spotifyRepo = repo, shell = shell)
-                        Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                // The repository the phone's screens read, created once the core knows its folders.
+                val repo = remember(ready) {
+                    if (ready) com.varuna.rustify.bridge.SpotifyRepository(appPlatform, com.varuna.rustify.ui.DesktopLocalMusicScanner()) else null
+                }
+                androidx.compose.runtime.key(language) {
+                    com.varuna.rustify.ui.RememberStringEnvironment()
+                    RustifyTheme {
+                        androidx.compose.foundation.layout.Box {
+                            // The phone's app, as the tablet lays it out (docs serie-4.x/26).
+                            if (repo != null) com.varuna.rustify.ui.RustifyApp(spotifyRepo = repo, shell = shell)
+                            Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                        }
                     }
                 }
             }

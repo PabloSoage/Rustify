@@ -111,6 +111,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.edit
 import com.varuna.rustify.R
+import com.varuna.rustify.ui.ShellHost
+import com.varuna.rustify.ui.SettingsSlot
+import com.varuna.rustify.Screen
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.sync.DriveSyncManager
@@ -126,34 +129,54 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
-@SuppressLint("SetJavaScriptEnabled")  // standle.net easter egg: trusted URL, JavaScript required for the game
+/**
+ * The Settings sections only Android has, at the shared screen's slots (docs serie-4.x/27, phase E):
+ * what SettingsScreen drew inline before its frame, the menu and the portable sections (language,
+ * Rustify link, session, version) moved to :sharedUi.
+ */
 @Composable
-fun SettingsScreen(
-    spotifyRepository: SpotifyRepository,
-    onBack: () -> Unit,
-    category: String? = null,
-    onCategoryChange: (String?) -> Unit = {},
-    onNavigateLogViewer: () -> Unit = {},
-    onNavigateNanoChat: () -> Unit = {},
-    onNavigateAudioLab: () -> Unit = {},
-    onLocaleChanged: ((String) -> Unit)? = null,
-    onNavigateMetrics: () -> Unit = {},
-    onNavigateMatchEditor: () -> Unit = {},
-    onNavigateCustomDownload: () -> Unit = {},
-    ytmRepository: YtMusicRepository? = null,
-    /** Whether a Spotify account is connected. The app works without one since 4.0. */
-    isSignedIn: Boolean = true,
-    onSignIn: () -> Unit = {},
-    onSignedOut: () -> Unit = {},
-) {
+fun AndroidSettingsSections(slot: SettingsSlot, host: ShellHost) {
+    val context = LocalContext.current
+    when (slot) {
+        SettingsSlot.GENERAL -> GeneralCategory(
+            spotifyRepository = host.spotifyRepo,
+            ytmRepository = host.ytmRepo,
+            onNavigateMatchEditor = { host.navigate(Screen.MatchEditor) },
+        )
+        SettingsSlot.GENERAL_DJ -> DjSettingsSection()
+        SettingsSlot.AUDIO -> {
+            // First: without the Doze exemption nothing below matters, because playback stops
+            // between songs with the screen off no matter which backend resolves the stream.
+            BatteryOptimizationSection(context)
+            // Order: lyrics first, then local music, then the audio backends.
+            LyricsProvidersSection(context)
+            LocalMusicSection(context)
+            AudioBackendsSection(context)
+            // Right after the chain: it is the same decision ("what plays my music"), even
+            // though it cannot live inside the chain itself.
+            WebPlayerSection(context)
+            InvidiousBackendSection(context)
+            DeezerBackendSection(context)
+            SubsonicBackendSection(context)
+        }
+        SettingsSlot.DOWNLOADS -> DownloadsCategory(context) { host.navigate(Screen.CustomDownload) }
+        SettingsSlot.INTEGRATIONS -> {
+            AndroidAutoPreviewSection(context)
+            TravelMapSection(context)
+        }
+        SettingsSlot.ADVANCED -> {
+            UpdatesSection(context)
+            LoggingSection(context) { host.navigate(Screen.LogViewer) }
+            SpotifyHashInspectorSection()
+        }
+    }
+}
+
+/** The update check in Settings' top bar (only in the root menu), with the dialog it opens. */
+@Composable
+fun AndroidSettingsActions() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    // Category-based settings (sub-screens): null = category menu; otherwise the open category.
-    // The state is hoisted in MainActivity so it survives opening and returning from sub-screens.
-    val settingsCategory = category
-    androidx.activity.compose.BackHandler(enabled = settingsCategory != null) { onCategoryChange(null) }
-
     // State for the update checker (refresh icon in the top bar).
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var manualUpdate by remember { mutableStateOf<com.varuna.rustify.update.AppUpdate.UpdateInfo?>(null) }
@@ -163,130 +186,44 @@ fun SettingsScreen(
     manualUpdate?.let { info ->
         com.varuna.rustify.update.UpdateAvailableDialog(info = info, onDismiss = { manualUpdate = null })
     }
-
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.settings_title), color = Color.White, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { if (settingsCategory != null) onCategoryChange(null) else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
-                    }
-                },
-                actions = {
-                    // Check for updates (only in the root settings menu).
-                    if (settingsCategory == null) {
-                        if (isCheckingUpdate) {
-                            CircularProgressIndicator(
-                                color = Color(0xFF1DB954), strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp).padding(end = 4.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        } else {
-                            IconButton(onClick = {
-                                isCheckingUpdate = true
-                                coroutineScope.launch {
-                                    val res = runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
-                                    isCheckingUpdate = false
-                                    res.onSuccess { info ->
-                                        if (info != null) manualUpdate = info
-                                        else Toast.makeText(context, updateUpToDateMsg, Toast.LENGTH_SHORT).show()
-                                    }.onFailure {
-                                        Toast.makeText(context, updateCheckFailedMsg, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }) {
-                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.update_check), tint = Color.White)
-                            }
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
-            )
-        },
-        containerColor = Color(0xFF121212)
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-          when (settingsCategory) {
-            null -> SettingsCategoryMenu { onCategoryChange(it) }
-            "audio" -> {
-                Spacer(modifier = Modifier.height(8.dp))
-                // First: without the Doze exemption nothing below matters, because playback stops
-                // between songs with the screen off no matter which backend resolves the stream.
-                BatteryOptimizationSection(context)
-                // Order: lyrics first, then local music, then the audio backends.
-                LyricsProvidersSection(context)
-                LocalMusicSection(context)
-                AudioBackendsSection(context)
-                // Right after the chain: it is the same decision ("what plays my music"), even
-                // though it cannot live inside the chain itself.
-                WebPlayerSection(context)
-                InvidiousBackendSection(context)
-                DeezerBackendSection(context)
-                SubsonicBackendSection(context)
+    if (isCheckingUpdate) {
+        CircularProgressIndicator(
+            color = Color(0xFF1DB954), strokeWidth = 2.dp,
+            modifier = Modifier.size(20.dp).padding(end = 4.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+    } else {
+        IconButton(onClick = {
+            isCheckingUpdate = true
+            coroutineScope.launch {
+                val res = runCatching { com.varuna.rustify.update.AppUpdate.check(context) }
+                isCheckingUpdate = false
+                res.onSuccess { info ->
+                    if (info != null) manualUpdate = info
+                    else Toast.makeText(context, updateUpToDateMsg, Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    Toast.makeText(context, updateCheckFailedMsg, Toast.LENGTH_SHORT).show()
+                }
             }
-            "downloads" -> DownloadsCategory(context, onNavigateCustomDownload)
-            "integrations" -> {
-                Spacer(modifier = Modifier.height(8.dp))
-                AndroidAutoPreviewSection(context)
-                TravelMapSection(context)
-            }
-            "advanced" -> {
-                Spacer(modifier = Modifier.height(8.dp))
-                UpdatesSection(context)
-                LoggingSection(context, onNavigateLogViewer)
-                SpotifyHashInspectorSection()
-                AdvancedLinks(onNavigateMetrics, onNavigateMatchEditor, onNavigateLogViewer, onNavigateNanoChat, onNavigateAudioLab)
-            }
-            else -> {
-                GeneralCategory(
-                    spotifyRepository = spotifyRepository,
-                    onBack = onBack,
-                    onNavigateLogViewer = onNavigateLogViewer,
-                    onLocaleChanged = onLocaleChanged,
-                    onNavigateMetrics = onNavigateMetrics,
-                    onNavigateMatchEditor = onNavigateMatchEditor,
-                    onNavigateCustomDownload = onNavigateCustomDownload,
-                    ytmRepository = ytmRepository,
-                    isSignedIn = isSignedIn,
-                    onSignIn = onSignIn,
-                    onSignedOut = onSignedOut,
-                )
-            }
-          }
+        }) {
+            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.update_check), tint = Color.White)
         }
     }
 }
 
 /**
- * The "General" category: the yt-dlp engine, storage and caches, data import/export, Drive,
- * language, Rustify links, the DJ and the session. It was the `else` branch of [SettingsScreen],
- * inline — 1,400 lines plus 280 of state declared at the top of a function that used none of it
- * anywhere else (4.7). Moved as it was; only the state it alone uses came with it.
+ * The "General" category's sections only Android has: the yt-dlp engine, storage and caches, data
+ * import/export and Drive. It was the `else` branch of SettingsScreen, inline — 1,400 lines plus 280
+ * of state declared at the top of a function that used none of it anywhere else (4.7). The language,
+ * the Rustify link, the session and the version moved to :sharedUi (docs serie-4.x/27), and the DJ to
+ * [DjSettingsSection], which the shared screen draws between them.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@SuppressLint("SetJavaScriptEnabled")  // standle.net easter egg: trusted URL, JavaScript required for the game
 @Composable
 private fun GeneralCategory(
     spotifyRepository: SpotifyRepository,
-    onBack: () -> Unit,
-    onNavigateLogViewer: () -> Unit,
-    onLocaleChanged: ((String) -> Unit)?,
-    onNavigateMetrics: () -> Unit,
-    onNavigateMatchEditor: () -> Unit,
-    onNavigateCustomDownload: () -> Unit,
     ytmRepository: YtMusicRepository?,
-    isSignedIn: Boolean,
-    onSignIn: () -> Unit,
-    onSignedOut: () -> Unit,
+    onNavigateMatchEditor: () -> Unit,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -298,29 +235,7 @@ private fun GeneralCategory(
     // The downloads folder, local music, and log capture moved to their own categories
     // (Downloads / Audio and backends / Advanced), each with its own state in the extracted section.
 
-    // Link wrapper host.
-    // null pref (never set) → preselect default. Explicit "" (user cleared it) → blank/fallback.
-    var wrapperHost by remember {
-        mutableStateOf(prefs.getString("rustify_wrapper_host", null) ?: AppLinksHosts.DEFAULT_HOST)
-    }
-    // "Custom…" mode: user typing a free host not in verifiedHosts.
-    var wrapperHostCustom by remember {
-        mutableStateOf(wrapperHost.isNotBlank() && wrapperHost !in AppLinksHosts.verifiedHosts)
-    }
-    var wrapperMenuExpanded by remember { mutableStateOf(false) }
-    // First run (pref never set): persist the preselected default so behavior matches the UI.
-    LaunchedEffect(Unit) {
-        if (!prefs.contains("rustify_wrapper_host")) {
-            prefs.edit { putString("rustify_wrapper_host", AppLinksHosts.DEFAULT_HOST) }
-        }
-    }
-    var shareAsRustify by remember { mutableStateOf(prefs.getBoolean("share_as_rustify_link", false)) }
 
-    // DJ AI: mode (heuristic / API / local) plus configuration for the OpenAI-compatible endpoint.
-    var djMode by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_MODE, "heuristic") ?: "heuristic") }
-    var djApiBaseUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_BASE_URL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) }
-    var djApiModel by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) }
-    var djApiKey by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_KEY, "") ?: "") }
 
 
     val exportSuccessMsg = stringResource(R.string.settings_export_success)
@@ -1154,201 +1069,22 @@ private fun GeneralCategory(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+    }
+}
 
-                Text(
-                    text = stringResource(R.string.settings_language),
-                    color = Color(0xFF1DB954),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        val currentLang = prefs.getString("app_language", "system") ?: "system"
-                        var selectedLang by remember { mutableStateOf(currentLang) }
-
-                    
-                        val languages = listOf(
-                            "system" to stringResource(R.string.settings_lang_system), 
-                            "en" to stringResource(R.string.settings_lang_en), 
-                            "es" to stringResource(R.string.settings_lang_es),
-                            "ja" to stringResource(R.string.settings_lang_ja)
-                        )
-                    
-                        languages.forEach { (code, name) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedLang = code
-                                        @SuppressLint("AppBundleLocaleChanges")
-                                        fun applyLanguage(code: String) {
-                                            prefs.edit { putString("app_language", code) }
-                                        
-                                            val langCode = if (code == "system") java.util.Locale.getDefault().language else code
-                                            com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
-                                        
-                                            if (code == "system") {
-                                                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.getEmptyLocaleList())
-                                            } else {
-                                                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.forLanguageTags(code))
-                                            }
-                                        }
-                                        applyLanguage(code)
-                                        onLocaleChanged?.invoke(code)
-                                    }
-                                    .padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = selectedLang == code,
-                                    onClick = null,
-                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1DB954))
-                                )
-                                Spacer(modifier = Modifier.padding(start = 12.dp))
-                                Text(name, color = Color.White, fontSize = 16.sp)
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Diagnostics / logs moved to the "Advanced" category (LoggingSection).
-
-                // Rustify link (wrapper).
-                Text(
-                    text = stringResource(R.string.settings_rustify_link),
-                    color = Color(0xFF1DB954),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        // Persist helper: blank → remove pref (fallback rustify://); else store trimmed host.
-                        val persistWrapperHost: (String) -> Unit = { value ->
-                            wrapperHost = value
-                            prefs.edit {
-                                if (value.isBlank()) putString("rustify_wrapper_host", "")
-                                else putString("rustify_wrapper_host", value.trim())
-                            }
-                        }
-                        val customOption = stringResource(R.string.settings_wrapper_custom)
-                        val blankOption = stringResource(R.string.settings_wrapper_blank)
-                        val fieldColors = TextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedContainerColor = Color(0xFF121212),
-                            unfocusedContainerColor = Color(0xFF121212)
-                        )
-                        val selectionLabel = when {
-                            wrapperHostCustom -> customOption
-                            wrapperHost.isBlank() -> blankOption
-                            else -> wrapperHost
-                        }
-
-                        ExposedDropdownMenuBox(
-                            expanded = wrapperMenuExpanded,
-                            onExpandedChange = { wrapperMenuExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = selectionLabel,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text(stringResource(R.string.settings_wrapper_host)) },
-                                singleLine = true,
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = wrapperMenuExpanded)
-                                },
-                                modifier = Modifier
-                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                    .fillMaxWidth(),
-                                colors = fieldColors
-                            )
-                            DropdownMenu(
-                                expanded = wrapperMenuExpanded,
-                                onDismissRequest = { wrapperMenuExpanded = false }
-                            ) {
-                                AppLinksHosts.verifiedHosts.forEach { host ->
-                                    DropdownMenuItem(
-                                        text = { Text(host) },
-                                        onClick = {
-                                            wrapperHostCustom = false
-                                            wrapperMenuExpanded = false
-                                            persistWrapperHost(host)
-                                        }
-                                    )
-                                }
-                                DropdownMenuItem(
-                                    text = { Text(blankOption) },
-                                    onClick = {
-                                        wrapperHostCustom = false
-                                        wrapperMenuExpanded = false
-                                        persistWrapperHost("")
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(customOption) },
-                                    onClick = {
-                                        wrapperHostCustom = true
-                                        wrapperMenuExpanded = false
-                                        // Keep current value; user edits it in the free-text field below.
-                                    }
-                                )
-                            }
-                        }
-
-                        if (wrapperHostCustom) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = wrapperHost,
-                                onValueChange = { persistWrapperHost(it) },
-                                label = { Text(customOption) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = fieldColors
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(stringResource(R.string.settings_wrapper_host_desc), color = Color.Gray, fontSize = 12.sp)
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                Text(stringResource(R.string.settings_share_as_rustify), color = Color.White, fontSize = 14.sp)
-                                Text(stringResource(R.string.settings_share_as_rustify_desc), color = Color.Gray, fontSize = 12.sp)
-                            }
-                            Switch(
-                                checked = shareAsRustify,
-                                onCheckedChange = { checked ->
-                                    shareAsRustify = checked
-                                    prefs.edit { putBoolean("share_as_rustify_link", checked) }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFF1DB954)
-                                )
-                            )
-                        }
-                    }
-                }
-
+/** General's DJ section: the mode and the OpenAI-compatible endpoint, the voice and the models. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun DjSettingsSection() {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
+    // DJ AI: mode (heuristic / API / local) plus configuration for the OpenAI-compatible endpoint.
+    var djMode by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_MODE, "heuristic") ?: "heuristic") }
+    var djApiBaseUrl by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_BASE_URL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_BASE_URL) }
+    var djApiModel by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_MODEL, com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) ?: com.varuna.rustify.dj.DjSettings.DEFAULT_API_MODEL) }
+    var djApiKey by remember { mutableStateOf(prefs.getString(com.varuna.rustify.dj.DjSettings.KEY_API_KEY, "") ?: "") }
+    Column {
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // DJ AI section.
@@ -1880,124 +1616,6 @@ private fun GeneralCategory(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = stringResource(R.string.settings_session),
-                    color = Color(0xFF1DB954),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                if (isSignedIn) {
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                spotifyRepository.logout()
-                                // The rest of the app keeps working; only what needs the account goes.
-                                onSignedOut()
-                                onBack()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(stringResource(R.string.settings_logout), color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Button(
-                        onClick = onSignIn,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(stringResource(R.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Easter egg (level 1): tap the version 7 times to reveal an animated crab. Tap it 9 more
-                // times to trigger the nested egg (level 2), which opens standle.net in the app's language.
-                // Self-contained, localized, and requires no new permissions.
-                var eggTaps by remember { mutableIntStateOf(0) }
-                var showEgg by remember { mutableStateOf(false) }
-                var showJojo by remember { mutableStateOf(false) }
-                var showWeb by remember { mutableStateOf(false) }
-                var oraCount by remember { mutableIntStateOf(0) }
-                val appVersion = remember {
-                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
-                }
-                // Easter egg language: always resolved from the language chosen in the app (the app_language
-                // pref), building a localized Context by hand. This keeps the texts and standle.net in the
-                // app's language even when the dialog (a sub-composition) does not inherit the locale and even
-                // when the system is set to a different language.
-                val eggLang = remember {
-                    val appLang = prefs.getString("app_language", "system") ?: "system"
-                    if (appLang == "system") java.util.Locale.getDefault().language else appLang
-                }
-                val webLang = remember(eggLang) {
-                    when { eggLang.startsWith("es") -> "es"; eggLang.startsWith("ja") -> "ja"; else -> "en" }
-                }
-                val eggCtx = remember(eggLang) {
-                    val cfg = android.content.res.Configuration(context.resources.configuration)
-                    cfg.setLocale(java.util.Locale.forLanguageTag(eggLang))
-                    context.createConfigurationContext(cfg)
-                }
-                val eggTitle = remember(eggCtx) { eggCtx.getString(R.string.egg_found_title) }
-                val eggMsg = remember(eggCtx) { eggCtx.getString(R.string.egg_found_msg) }
-                val eggJojoMsg = remember(eggCtx) { eggCtx.getString(R.string.egg_jojo_msg) }
-
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    "Rustify $appVersion 🦀",
-                    color = Color(0xFF555555), fontSize = 12.sp,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        // No ripple: the default highlight looked poor over the text.
-                        .noRippleClickable { eggTaps++; if (eggTaps >= 7) { eggTaps = 0; oraCount = 0; showEgg = true } }
-                        .padding(vertical = 10.dp)
-                )
-
-                if (showEgg) {
-                    JojoOraOra(
-                        title = eggTitle,
-                        msg = eggMsg,
-                        oraCount = oraCount,
-                        onOra = { oraCount++; if (oraCount >= 9) { showEgg = false; showJojo = true } },
-                        onClose = { showEgg = false }
-                    )
-                }
-
-                if (showJojo) {
-                    JojoTimeStop(
-                        message = eggJojoMsg,
-                        onContinue = { showJojo = false; showWeb = true },
-                        onDismiss = { showJojo = false }
-                    )
-                }
-
-                if (showWeb) {
-                    Dialog(onDismissRequest = { showWeb = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                        Box(Modifier.fillMaxSize().background(Color.Black)) {
-                            androidx.compose.ui.viewinterop.AndroidView(
-                                factory = { ctx ->
-                                    android.webkit.WebView(ctx).apply {
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        webViewClient = android.webkit.WebViewClient()
-                                        loadUrl("https://standle.net/$webLang")
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            TextButton(onClick = { showWeb = false }, modifier = Modifier.align(Alignment.TopEnd).padding(top = 28.dp, end = 8.dp)) {
-                                Text("✕", color = Color.White, fontSize = 20.sp)
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(32.dp))
     }
 }
 

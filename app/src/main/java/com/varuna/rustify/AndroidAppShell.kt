@@ -24,7 +24,9 @@ import com.varuna.rustify.ui.ShellHost
 import com.varuna.rustify.ui.SpotifyLoginWebView
 import com.varuna.rustify.ui.screens.DjScreen
 import com.varuna.rustify.ui.screens.LogViewerScreen
-import com.varuna.rustify.ui.screens.SettingsScreen
+import com.varuna.rustify.ui.SettingsSlot
+import com.varuna.rustify.ui.screens.AndroidSettingsActions
+import com.varuna.rustify.ui.screens.AndroidSettingsSections
 import com.varuna.rustify.ui.screens.TravelScreen
 import kotlinx.coroutines.launch
 
@@ -141,6 +143,22 @@ class AndroidAppShell(context: Context) : AppShell {
     }
 
     @Composable
+    override fun SettingsSections(slot: SettingsSlot, host: ShellHost) = AndroidSettingsSections(slot, host)
+
+    @Composable
+    override fun SettingsActions(host: ShellHost) = AndroidSettingsActions()
+
+    // The core answers Spotify's titles in this language; AppCompat recreates the activity in it.
+    override fun applyLanguage(code: String) {
+        val langCode = if (code == "system") java.util.Locale.getDefault().language else code
+        com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
+        androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
+            if (code == "system") androidx.core.os.LocaleListCompat.getEmptyLocaleList()
+            else androidx.core.os.LocaleListCompat.forLanguageTags(code)
+        )
+    }
+
+    @Composable
     override fun PlatformScreen(screen: Screen, host: ShellHost) {
         val context = LocalContext.current
         val audioPlayerService = remember { AudioPlayerService.getInstance(context) }
@@ -156,25 +174,6 @@ class AndroidAppShell(context: Context) : AppShell {
                     onEnter = {
                         if (!audioPlayerService.isWebPlayerMode) audioPlayerService.pause()
                     }
-                )
-            }
-            is Screen.Settings -> {
-                SettingsScreen(
-                    spotifyRepository = host.spotifyRepo,
-                    ytmRepository = host.ytmRepo,
-                    isSignedIn = host.isSignedIn,
-                    onSignIn = host.signIn,
-                    onSignedOut = host.signedOut,
-                    category = host.settingsCategory,
-                    onCategoryChange = host.onSettingsCategory,
-                    onBack = { host.back() },
-                    onNavigateLogViewer = { host.navigate(Screen.LogViewer) },
-                    onNavigateNanoChat = { host.navigate(Screen.NanoChat) },
-                    onNavigateAudioLab = { host.navigate(Screen.AudioLab) },
-                    onNavigateMetrics = { host.navigate(Screen.Metrics) },
-                    onNavigateMatchEditor = { host.navigate(Screen.MatchEditor) },
-                    onNavigateCustomDownload = { host.navigate(Screen.CustomDownload) },
-                    onLocaleChanged = host.onLanguageChanged
                 )
             }
             is Screen.CustomDownload -> {

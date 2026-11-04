@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,13 +32,10 @@ import com.varuna.rustify.Screen
 import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.cancel
 import com.varuna.rustify.ui.resources.desktop_screen_not_here
-import com.varuna.rustify.ui.resources.desktop_settings_account
+import com.varuna.rustify.ui.resources.desktop_settings_not_here
 import com.varuna.rustify.ui.resources.desktop_sign_in_cookie
 import com.varuna.rustify.ui.resources.desktop_sign_in_help
-import com.varuna.rustify.ui.resources.settings_logout
-import com.varuna.rustify.ui.resources.settings_title
 import com.varuna.rustify.ui.resources.spotify_sign_in
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 private val Background = Color(0xFF121212)
@@ -47,10 +43,10 @@ private val Accent = Color(0xFF1DB954)
 
 /**
  * [AppShell] on the desktop. Signing in takes the `sp_dc` cookie pasted by hand until the embedded
- * browser lands (docs serie-4.x/27, phase H); the screens not moved yet say so, with a way back, and
- * Settings keeps the account until the phone's Settings moves (phase E).
+ * browser lands (docs serie-4.x/27, phase H); the screens not moved yet say so, with a way back.
+ * [onLanguage] is the window's: it puts the interface in the language Settings picked.
  */
-class DesktopAppShell : AppShell {
+class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell {
     @Composable
     override fun SignIn(onLogin: (String) -> Unit, onCancel: () -> Unit) {
         var cookie by remember { mutableStateOf("") }
@@ -85,31 +81,28 @@ class DesktopAppShell : AppShell {
 
     @Composable
     override fun PlatformScreen(screen: Screen, host: ShellHost) {
-        if (screen is Screen.Settings) {
-            val scope = rememberCoroutineScope()
-            Page(stringResource(Res.string.settings_title), onBack = host.back) {
-                Text(stringResource(Res.string.desktop_settings_account), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                if (host.isSignedIn) {
-                    Button(onClick = {
-                        scope.launch {
-                            host.spotifyRepo.logout()
-                            host.signedOut()
-                        }
-                    }) { Text(stringResource(Res.string.settings_logout)) }
-                } else {
-                    Button(
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
-                        onClick = host.signIn,
-                    ) { Text(stringResource(Res.string.spotify_sign_in)) }
-                }
-                Text(stringResource(Res.string.desktop_screen_not_here), color = Color.Gray)
-            }
-            return
-        }
         Page("", onBack = host.back) {
             Text(stringResource(Res.string.desktop_screen_not_here), color = Color.LightGray)
         }
     }
+
+    // What the phone has in General beside the shared sections (yt-dlp, Drive, storage, the DJ)
+    // comes with those features; the other categories say they are not here yet.
+    @Composable
+    override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
+        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.GENERAL_DJ) return
+        Text(
+            stringResource(Res.string.desktop_settings_not_here),
+            color = Color.Gray,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(vertical = 12.dp),
+        )
+    }
+
+    @Composable
+    override fun SettingsActions(host: ShellHost) = Unit
+
+    override fun applyLanguage(code: String) = onLanguage(code)
 
     @Composable
     private fun Page(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {

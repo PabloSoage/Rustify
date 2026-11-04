@@ -844,9 +844,10 @@ fun RustifyApp(
                     )
                 }
                 // Not moved yet (docs serie-4.x/27): the platform draws them.
-                is Screen.WebPlayer, is Screen.Settings, is Screen.CustomDownload,
+                is Screen.WebPlayer, is Screen.CustomDownload,
                 is Screen.NanoChat, is Screen.AudioLab, is Screen.Dj, is Screen.Travel,
                 is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
+                is Screen.Settings -> com.varuna.rustify.ui.screens.SettingsScreen(shell, host)
                 is Screen.MatchEditor -> {
                     com.varuna.rustify.ui.screens.MatchEditorScreen(
                         spotifyRepo = spotifyRepo,

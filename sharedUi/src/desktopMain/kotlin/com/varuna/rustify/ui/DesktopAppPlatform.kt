@@ -28,6 +28,9 @@ import java.util.prefs.Preferences
 class DesktopAppPlatform : AppPlatform {
     override val kind = AppPlatform.Kind.DESKTOP
 
+    // jpackage's launcher sets this to the installer's packageVersion; a run from Gradle has none.
+    override val appVersion: String = System.getProperty("jpackage.app-version") ?: ""
+
     private val stores = mutableMapOf<String, KeyValueStore>()
 
     override fun prefs(name: String): KeyValueStore = synchronized(stores) {

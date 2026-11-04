@@ -37,6 +37,38 @@ interface AppShell {
     /** A screen [RustifyApp] does not draw itself yet (see the list in [Screen]'s users). */
     @Composable
     fun PlatformScreen(screen: Screen, host: ShellHost)
+
+    /**
+     * The Settings sections only this platform has, drawn at [slot] of their category, so the shared
+     * screen keeps the phone's order (docs serie-4.x/27, phase E).
+     */
+    @Composable
+    fun SettingsSections(slot: SettingsSlot, host: ShellHost)
+
+    /** The Settings menu's top-bar actions (Android: check for an update). */
+    @Composable
+    fun SettingsActions(host: ShellHost)
+
+    /**
+     * Puts the interface (and what the core answers in, Spotify's titles) in [code]'s language, or
+     * the system's for `"system"`. Settings has already stored the choice.
+     */
+    fun applyLanguage(code: String)
+}
+
+/** Where in Settings a platform's own sections go; see [AppShell.SettingsSections]. */
+enum class SettingsSlot {
+    /** General, before the language: the yt-dlp engine, caches, local data, Drive, storage. */
+    GENERAL,
+
+    /** General, between the Rustify link and the session: the DJ. */
+    GENERAL_DJ,
+    AUDIO,
+    DOWNLOADS,
+    INTEGRATIONS,
+
+    /** Advanced, before the links to the tools. */
+    ADVANCED,
 }
 
 /** What a platform screen can reach in the root: the repositories, the player and the navigation. */

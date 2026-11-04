@@ -12,5 +12,5 @@
     <string name="desktop_sign_in_help">Rustify signs in with your browser session, as on the phone: open open.spotify.com signed in, copy the value of the sp_dc cookie and paste it here. It stays on this computer.</string>
     <string name="desktop_sign_in_cookie">sp_dc cookie</string>
     <string name="desktop_screen_not_here">This screen is not on the desktop yet. It is coming in a later version, the same as on the phone.</string>
-    <string name="desktop_settings_account">Spotify account</string>
+    <string name="desktop_settings_not_here">The rest of this category is not on the desktop yet: it comes with the features it configures.</string>
 </resources>

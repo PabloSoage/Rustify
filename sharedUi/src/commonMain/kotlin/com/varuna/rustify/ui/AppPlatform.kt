@@ -23,6 +23,9 @@ import java.io.File
 interface AppPlatform {
     val kind: Kind
 
+    /** The version the user sees ("5.0.0b"); empty when it is not known (a run from the IDE). */
+    val appVersion: String
+
     /** A preferences file by its Android name (`rustify_settings`, `rustify_spotify_prefs`…). */
     fun prefs(name: String = SETTINGS): KeyValueStore
 

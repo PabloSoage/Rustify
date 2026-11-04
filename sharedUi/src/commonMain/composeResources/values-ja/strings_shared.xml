@@ -11,5 +11,5 @@
     <string name="desktop_sign_in_help">スマホと同じくブラウザのセッションでログインします。open.spotify.com にログインし、sp_dc クッキーの値を貼り付けてください。このコンピューターにだけ保存されます。</string>
     <string name="desktop_sign_in_cookie">sp_dc クッキー</string>
     <string name="desktop_screen_not_here">この画面はまだデスクトップにありません。今後のバージョンでスマホと同じものが入ります。</string>
-    <string name="desktop_settings_account">Spotify アカウント</string>
+    <string name="desktop_settings_not_here">このカテゴリのほかの設定はまだデスクトップにありません。対応する機能と一緒に追加されます。</string>
 </resources>

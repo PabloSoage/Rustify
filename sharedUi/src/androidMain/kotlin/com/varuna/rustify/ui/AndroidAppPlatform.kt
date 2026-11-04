@@ -17,6 +17,10 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
 
     override val kind = AppPlatform.Kind.ANDROID
 
+    override val appVersion: String by lazy {
+        runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: ""
+    }
+
     override fun prefs(name: String): KeyValueStore =
         SharedPreferencesStore(app.getSharedPreferences(name, Context.MODE_PRIVATE))
 
