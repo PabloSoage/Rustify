@@ -63,7 +63,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
-      - run: ./gradlew :shared:desktopTest --no-daemon
+      # :sharedUi too: its desktop tests pin how the shared strings read (StringsTest).
+      - run: ./gradlew :shared:desktopTest :sharedUi:desktopTest --no-daemon
 
   # One package per host, as jpackage requires. Uploaded so a build can be tried without building.
   desktop:
