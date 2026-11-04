@@ -5,8 +5,9 @@ import com.varuna.rustify.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SimpleAlbum
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
 
 /**
  * Grouping releases by when they came out — point K.
@@ -49,19 +50,19 @@ object ReleaseCalendar {
     fun group(albums: List<SimpleAlbum>, nowMs: Long): List<Group> {
         if (albums.isEmpty()) return emptyList()
 
-        val entries = JSONArray()
-        for (album in albums) {
-            entries.put(JSONObject().apply {
-                put("id", album.id)
-                put("release_date", album.releaseDate.orEmpty())
-                put("release_date_precision", album.releaseDatePrecision.orEmpty())
-            })
+        val entries = buildJsonArray {
+            for (album in albums) {
+                addJsonObject {
+                    put("id", album.id)
+                    put("release_date", album.releaseDate.orEmpty())
+                    put("release_date_precision", album.releaseDatePrecision.orEmpty())
+                }
+            }
         }
 
         val placed = runCatching {
             val answer = NativeEngine.arrangeReleasesNative(entries.toString(), nowMs)
-            val array = JSONArray(answer)
-            (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+            parseArray(answer).mapNotNull { it.optObject() }
         }.getOrElse {
             Log.w(TAG, "could not arrange the releases", it)
             return listOf(Group(Res.string.calendar_undated, albums))
@@ -76,8 +77,8 @@ object ReleaseCalendar {
         }
         val ordered = LinkedHashMap<String, MutableList<SimpleAlbum>>()
         for (item in placed) {
-            val bucket = item.optString("bucket").ifBlank { "unknown" }
-            val album = byId[item.optString("id")]?.removeFirstOrNull() ?: continue
+            val bucket = item["bucket"].optString().ifBlank { "unknown" }
+            val album = byId[item["id"].optString()]?.removeFirstOrNull() ?: continue
             ordered.getOrPut(bucket) { mutableListOf() }.add(album)
         }
         // The core already sorted newest first, so the buckets come out in calendar order for free —

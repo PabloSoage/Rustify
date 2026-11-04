@@ -12,6 +12,8 @@ import com.varuna.rustify.ui.appString
 import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.home_error_loading
 import com.varuna.rustify.ui.resources.home_offline
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 
 sealed class Screen {
@@ -113,7 +115,7 @@ fun navigateDeepLink(
         // Google Maps short link / place: resolve the redirect on IO (not on the main thread).
         "travelresolve" -> {
             val url = parts[1]
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                 val target = resolveMapsLink(url)
                 if (target != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     navigationStack.add(target)

@@ -2,8 +2,11 @@ package com.varuna.rustify.util
 
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.bridge.NativeEngine
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
 
 /**
  * Searching a list you already hold — point J.
@@ -49,14 +52,15 @@ object LocalSearch {
      * to map a result back to.
      */
     fun <T> index(name: String, items: List<T>, id: (T) -> String?, fields: (T) -> List<String>) {
-        val array = JSONArray()
-        for (item in items) {
-            val itemId = id(item)
-            if (itemId.isNullOrBlank()) continue
-            array.put(JSONObject().apply {
-                put("id", itemId)
-                put("fields", JSONArray().also { f -> fields(item).forEach { f.put(it) } })
-            })
+        val array = buildJsonArray {
+            for (item in items) {
+                val itemId = id(item)
+                if (itemId.isNullOrBlank()) continue
+                addJsonObject {
+                    put("id", itemId)
+                    put("fields", JsonArray(fields(item).map { JsonPrimitive(it) }))
+                }
+            }
         }
         runCatching { NativeEngine.searchIndexNative(name, array.toString()) }
             .onFailure { Log.w(TAG, "could not index $name", it) }
@@ -81,8 +85,7 @@ object LocalSearch {
             }
 
         val ordered = runCatching {
-            val array = JSONArray(answer)
-            (0 until array.length()).map { array.optString(it) }
+            parseArray(answer).map { it.optString() }
         }.getOrElse {
             Log.w(TAG, "could not read the result for $name: $answer", it)
             return items

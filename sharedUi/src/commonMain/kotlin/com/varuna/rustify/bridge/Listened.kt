@@ -7,7 +7,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import org.json.JSONArray
+import com.varuna.rustify.util.optBoolean
+import com.varuna.rustify.util.parseArray
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * "Already listened", as the screens see it — point I.
@@ -32,11 +35,11 @@ object Listened {
      */
     suspend fun stateFor(contextId: String, trackIds: List<String>): List<Boolean> {
         if (contextId.isBlank() || trackIds.isEmpty()) return List(trackIds.size) { false }
-        val queueJson = JSONArray().also { array -> trackIds.forEach { array.put(it) } }.toString()
+        val queueJson = JsonArray(trackIds.map { JsonPrimitive(it) }).toString()
         return runCatching {
             val answer = NativeEngine.listenedState(contextId, queueJson)
-            val array = JSONArray(answer)
-            List(trackIds.size) { i -> array.optBoolean(i, false) }
+            val array = parseArray(answer)
+            List(trackIds.size) { i -> array.getOrNull(i).optBoolean(false) }
         }.getOrElse {
             Log.w(TAG, "could not read the marks for $contextId", it)
             List(trackIds.size) { false }

@@ -2,8 +2,8 @@ package com.varuna.rustify.util
 
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.bridge.NativeEngine
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * A link Rustify can act on — the Kotlin face of `core_engine/src/links/`.
@@ -44,10 +44,10 @@ sealed interface LinkTarget {
                 .onFailure { Log.w(TAG, "parseLinkNative threw", it) }
                 .getOrNull() ?: return null
             return runCatching {
-                val json = JSONObject(raw)
-                val id = json.optString("id")
+                val json = parseObject(raw)
+                val id = json["id"].optString()
                 if (id.isBlank()) return null
-                when (json.optString("kind")) {
+                when (json["kind"].optString()) {
                     "track" -> SpotifyTrack(id)
                     "album" -> SpotifyAlbum(id)
                     "playlist" -> SpotifyPlaylist(id)
@@ -87,7 +87,7 @@ sealed interface LinkTarget {
          * links live in other people's messages long after the app that made them has changed.
          */
         fun unwrap(url: String, knownHosts: List<String>): String? {
-            val hosts = JSONArray().also { array -> knownHosts.forEach { array.put(it) } }
+            val hosts = JsonArray(knownHosts.map { JsonPrimitive(it) })
             return runCatching { NativeEngine.unwrapLinkNative(url, hosts.toString()) }
                 .onFailure { Log.w(TAG, "unwrapLinkNative threw", it) }
                 .getOrNull()

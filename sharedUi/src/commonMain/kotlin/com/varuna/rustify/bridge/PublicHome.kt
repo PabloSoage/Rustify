@@ -4,12 +4,16 @@ import com.varuna.rustify.ui.AppPlatform
 import com.varuna.rustify.ui.appString
 import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.metrics.ListeningTracker
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.util.countryNameInEnglish
+import com.varuna.rustify.util.defaultLanguageTag
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import java.util.Locale
+import kotlin.concurrent.Volatile
 
 /**
  * Home without a Spotify account (4.7). It used to be one card asking to connect, and nothing else.
@@ -28,7 +32,7 @@ object PublicHome {
 
     suspend fun sections(platform: AppPlatform, repo: SpotifyRepository, refresh: Boolean = false): List<BrowseSection> =
         withContext(Dispatchers.IO) {
-            val language = Locale.getDefault().toLanguageTag()
+            val language = defaultLanguageTag()
             if (!refresh) cached?.takeIf { it.first == language }?.let { return@withContext it.second }
             val built = coroutineScope {
                 val recent = async { recentAlbums(platform) }
@@ -42,7 +46,7 @@ object PublicHome {
 
     /** Albums of the songs you played lately, newest first, one per album. Spotify ones only. */
     private suspend fun recentAlbums(platform: AppPlatform): BrowseSection? = runCatching {
-        val now = System.currentTimeMillis()
+        val now = currentTimeMillis()
         val plays = ListeningTracker.stats(platform, now - 90L * 86_400_000L, now).recent
         val albums = plays
             .filter { TrackRef.parse(it.trackId)?.spotifyId != null && it.albumId.isNotBlank() }
@@ -75,7 +79,7 @@ object PublicHome {
         val country = when (code) {
             "US" -> "USA"
             "GB" -> "UK"
-            else -> runCatching { Locale.Builder().setRegion(code).build().getDisplayCountry(Locale.ENGLISH) }
+            else -> runCatching { countryNameInEnglish(code) }
                 .getOrNull()?.takeIf { it.isNotBlank() }
         }
         val queries = listOfNotNull("Top 50 Global", country?.let { "Top 50 $it" }, "Viral 50 Global", country?.let { "Viral 50 $it" })

@@ -20,7 +20,7 @@ object DjContextBuilder {
         topN: Int = 10
     ): DjContext {
         val stats = runCatching {
-            ListeningTracker.stats(platform, 0L, System.currentTimeMillis() + 1)
+            ListeningTracker.stats(platform, 0L, com.varuna.rustify.platform.currentTimeMillis() + 1)
         }.getOrNull()
 
         val topArtists = stats?.topArtists.orEmpty().map { it.name }.filter { it.isNotBlank() }.take(topN)
@@ -29,7 +29,7 @@ object DjContextBuilder {
         }
 
         val language = runCatching {
-            java.util.Locale.getDefault().language
+            com.varuna.rustify.platform.defaultLanguage()
         }.getOrDefault("en")
 
         val nowStr = nowPlaying?.let { fmt(it) }

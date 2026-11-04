@@ -1,8 +1,18 @@
 package com.varuna.rustify.bridge
 
 import com.varuna.rustify.platform.Log
-import org.json.JSONArray
-import org.json.JSONObject
+import com.varuna.rustify.util.optArray
+import com.varuna.rustify.util.optInt
+import com.varuna.rustify.util.optLong
+import com.varuna.rustify.util.optObject
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.optStringOrNull
+import com.varuna.rustify.util.parseArray
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * "Continue listening" — the Kotlin face of `core_engine/src/player/session.rs`.
@@ -105,7 +115,7 @@ data class ListeningSession(
         )
     }
 
-    internal fun toJson(): JSONObject = JSONObject().apply {
+    internal fun toJson(): JsonObject = buildJsonObject {
         put("id", id)
         put("label", label)
         put("subtitle", subtitle)
@@ -114,31 +124,31 @@ data class ListeningSession(
         put("track_artist", trackArtist)
         put("duration_ms", durationMs)
         put("updated_at_ms", updatedAtMs)
-        put("state", JSONObject().apply {
-            put("queue", JSONArray().also { array -> queue.forEach { array.put(it) } })
+        put("state", buildJsonObject {
+            put("queue", JsonArray(queue.map { JsonPrimitive(it) }))
             put("index", index)
             put("position_ms", positionMs)
         })
     }
 
     companion object {
-        internal fun fromJson(json: JSONObject): ListeningSession? {
-            val state = json.optJSONObject("state") ?: return null
-            val queueJson = state.optJSONArray("queue") ?: JSONArray()
-            val queue = (0 until queueJson.length()).mapNotNull { queueJson.optString(it, null) }
+        internal fun fromJson(json: JsonObject): ListeningSession? {
+            val state = json["state"].optObject() ?: return null
+            val queueJson = state["queue"].optArray() ?: JsonArray(emptyList())
+            val queue = queueJson.mapNotNull { it.optStringOrNull() }
             if (queue.isEmpty()) return null
             return ListeningSession(
-                id = json.optString("id"),
-                label = json.optString("label"),
-                subtitle = json.optString("subtitle"),
-                imageUrl = json.optString("image_url"),
-                trackTitle = json.optString("track_title"),
-                trackArtist = json.optString("track_artist"),
+                id = json["id"].optString(),
+                label = json["label"].optString(),
+                subtitle = json["subtitle"].optString(),
+                imageUrl = json["image_url"].optString(),
+                trackTitle = json["track_title"].optString(),
+                trackArtist = json["track_artist"].optString(),
                 queue = queue,
-                index = state.optInt("index"),
-                positionMs = state.optLong("position_ms"),
-                durationMs = json.optLong("duration_ms"),
-                updatedAtMs = json.optLong("updated_at_ms")
+                index = state["index"].optInt(),
+                positionMs = state["position_ms"].optLong(),
+                durationMs = json["duration_ms"].optLong(),
+                updatedAtMs = json["updated_at_ms"].optLong()
             )
         }
     }
@@ -165,9 +175,9 @@ object ContinueListening {
 
     /** The contexts to offer, newest first. Never throws: a home-screen row is not worth an error. */
     suspend fun list(): List<ListeningSession> = runCatching {
-        val array = JSONArray(NativeEngine.listContinueListening())
-        (0 until array.length()).mapNotNull { i ->
-            array.optJSONObject(i)?.let { ListeningSession.fromJson(it) }
+        val array = parseArray(NativeEngine.listContinueListening())
+        array.mapNotNull { element ->
+            element.optObject()?.let { ListeningSession.fromJson(it) }
         }
     }.onFailure { Log.w(TAG, "could not read the continue-listening list", it) }
         .getOrDefault(emptyList())

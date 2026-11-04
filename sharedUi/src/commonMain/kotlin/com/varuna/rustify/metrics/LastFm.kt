@@ -3,6 +3,8 @@ package com.varuna.rustify.metrics
 import com.varuna.rustify.ui.AppPlatform
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.parseObject
 import kotlinx.serialization.Serializable
 
 /**
@@ -44,7 +46,7 @@ object LastFm {
     suspend fun login(platform: AppPlatform, apiKey: String, secret: String, user: String, password: String): String? {
         val answer = NativeEngine.lastFmLogin(apiKey.trim(), secret.trim(), user.trim(), password)
         val session = runCatching { RustifyJson.decodeFromString(Session.serializer(), answer) }.getOrNull()
-            ?: return runCatching { org.json.JSONObject(answer).optString("error") }.getOrNull().orEmpty().ifBlank { answer.take(200) }
+            ?: return runCatching { parseObject(answer)["error"].optString() }.getOrNull().orEmpty().ifBlank { answer.take(200) }
         prefs(platform).apply {
             putString(PREF_KEY, apiKey.trim())
             putString(PREF_SECRET, secret.trim())

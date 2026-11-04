@@ -1,6 +1,8 @@
 // sharedUi/src/commonMain/kotlin/com/varuna/rustify/bridge/LibraryChanges.kt
 package com.varuna.rustify.bridge
 
+import kotlin.concurrent.Volatile
+
 /**
  * "The library changed" from the repositories to whoever mirrors it outside the app: on Android the
  * Android Auto tree (`MediaBrowserNotifier`), which the app sets as [listener]. The repositories are
