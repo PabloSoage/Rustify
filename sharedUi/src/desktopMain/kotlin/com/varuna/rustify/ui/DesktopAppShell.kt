@@ -202,13 +202,18 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             DesktopUpdatesSection()
             DesktopDiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
         }
-        // The shared sections the phone has further down Audio: local music first, as there, then
-        // the ones that come after the audio sources, which are not on the desktop yet.
+        // The shared sections the phone has further down Audio, in its order: local music, the
+        // audio sources' order and the add-ons, the data and scrobbling sections that follow the
+        // phone's player settings, then Invidious, Deezer and Subsonic.
         if (slot == SettingsSlot.AUDIO_SOURCES) {
             com.varuna.rustify.ui.screens.LocalMusicSection()
+            com.varuna.rustify.ui.screens.AudioSourcesOrderSection()
             com.varuna.rustify.ui.screens.DataExportSection()
             com.varuna.rustify.ui.screens.ListenBrainzSection()
             com.varuna.rustify.ui.screens.LastFmSection()
+            com.varuna.rustify.ui.screens.InvidiousBackendSection()
+            com.varuna.rustify.ui.screens.DeezerBackendSection()
+            com.varuna.rustify.ui.screens.SubsonicBackendSection()
         }
         // The standard downloads folder; the custom downloads (yt-dlp) are not on the desktop yet.
         if (slot == SettingsSlot.DOWNLOADS) com.varuna.rustify.ui.screens.DownloadFolderSection()
