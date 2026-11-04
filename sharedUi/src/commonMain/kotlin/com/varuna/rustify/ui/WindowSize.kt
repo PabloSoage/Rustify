@@ -2,24 +2,18 @@
 package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 
-/**
- * The two things the screens read from Android's `LocalConfiguration`, from the window instead, which
- * both platforms have: on the phone it is the screen, on the desktop the window the user sized.
- */
-@Composable
-fun windowWidthDp(): Int = with(LocalDensity.current) {
-    LocalWindowInfo.current.containerSize.width.toDp().value.toInt()
-}
+// The three things the screens read about the space they have. On the phone it is Android's
+// `Configuration`, as the screens always read it; on the desktop, the window the user sized.
 
-/** Wider than tall: the tablet layout on the phone, and nearly always on the desktop. */
+/** How wide the screen (the window, on the desktop) is, in dp. */
 @Composable
-fun isLandscape(): Boolean = LocalWindowInfo.current.containerSize.let { it.width > it.height }
+expect fun windowWidthDp(): Int
 
-/** The window's height, as [windowWidthDp] its width. */
+/** In landscape: the tablet layout on the phone, and nearly always on the desktop. */
 @Composable
-fun windowHeightDp(): Int = with(LocalDensity.current) {
-    LocalWindowInfo.current.containerSize.height.toDp().value.toInt()
-}
+expect fun isLandscape(): Boolean
+
+/** The height, as [windowWidthDp] the width. */
+@Composable
+expect fun windowHeightDp(): Int
