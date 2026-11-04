@@ -4,6 +4,8 @@ package com.varuna.rustify
 
 import android.app.Application
 import android.content.Context
+import com.varuna.rustify.ui.AndroidAppPlatform
+import com.varuna.rustify.ui.newRustifyImageLoader
 
 /**
  * The process's `Application`, here only so Coil asks it for the image loader. The first caller of
@@ -21,19 +23,6 @@ class RustifyApplication : Application(), coil3.SingletonImageLoader.Factory {
  * headers by default, as respectCacheHeaders(false) did in 2.
  */
 fun rustifyImageLoader(context: Context): coil3.ImageLoader {
-    val prefs = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-    val cacheMaxMb = prefs.getInt("cache_max_mb", 500).coerceIn(100, 8192).toLong()
-    return coil3.ImageLoader.Builder(context)
-        .memoryCache {
-            coil3.memory.MemoryCache.Builder()
-                .maxSizePercent(context, 0.25)
-                .build()
-        }
-        .diskCache {
-            coil3.disk.DiskCache.Builder()
-                .directory(okio.Path.Companion.run { context.cacheDir.resolve("image_cache").toOkioPath() })
-                .maxSizeBytes(cacheMaxMb * 1024 * 1024)
-                .build()
-        }
-        .build()
+    val platform = AndroidAppPlatform(context)
+    return newRustifyImageLoader(context, platform.cacheDir, platform.prefs())
 }

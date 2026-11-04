@@ -65,6 +65,9 @@ fun MainViewController(controller: IosController): UIViewController = ComposeUIV
         IosAppPlatform(controller.secrets).also { app ->
             IosFolders.seedDefaults(app.prefs())
             IosLinks.ownHost = { app.prefs().getString("rustify_wrapper_host")?.trim()?.takeIf { it.isNotEmpty() } }
+            coil3.SingletonImageLoader.setSafe {
+                newRustifyImageLoader(coil3.PlatformContext.INSTANCE, app.cacheDir, app.prefs())
+            }
         }
     }
     val player = remember {

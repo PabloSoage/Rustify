@@ -63,6 +63,14 @@ fun main(args: Array<String>) {
     // The macOS title bar in dark, as Windows' (WindowStyle): AWT reads it before the first window.
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
 
+    coil3.SingletonImageLoader.setSafe {
+        com.varuna.rustify.ui.newRustifyImageLoader(
+            coil3.PlatformContext.INSTANCE,
+            AppDirs.cache,
+            DesktopStores.named(com.varuna.rustify.ui.AppPlatform.SETTINGS),
+        )
+    }
+
     // The links this launch was for, and the ones later launches and macOS hand over, in the
     // phone's `intentFlow`: the root opens them once it is up (DesktopLinks).
     DesktopLinks.installSystemHandlers()

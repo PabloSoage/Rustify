@@ -108,6 +108,9 @@ interface AppServices {
 
         /** The DJ speaking through [djVoice]; a computer without a speech command has none. */
         DJ_VOICE,
+
+        /** Disk cache for streaming audio (ExoPlayer SimpleCache on Android; desktop and iOS engines have none). */
+        AUDIO_CACHE,
     }
 }
 

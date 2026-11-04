@@ -7,10 +7,12 @@ import com.varuna.rustify.ui.fullPath
 import com.varuna.rustify.ui.readTextOrNull
 import com.varuna.rustify.ui.writeAllText
 import com.varuna.rustify.util.optString
+import com.varuna.rustify.ui.writeTextAtomically
 import com.varuna.rustify.util.parseObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -68,7 +70,45 @@ object MatchStore {
         player.clearRecording(trackId)
     }
 
+    /** Test hook to verify reload was called without linking native libraries. */
+    internal var onReloadForTesting: (suspend (AppFile) -> Unit)? = null
+
     private suspend fun reload(filesDir: AppFile) {
-        runCatching { NativeEngine.initCacheDir(filesDir.fullPath) }
+        val hook = onReloadForTesting
+        if (hook != null) {
+            hook(filesDir)
+        } else {
+            runCatching { NativeEngine.initCacheDir(filesDir.fullPath) }
+        }
+    }
+
+    /**
+     * Validates that [rawJson] is a JSON object where every key and value is a String.
+     * Returns the parsed map if valid, or null if malformed or containing non-string values.
+     */
+    fun validateMappings(rawJson: String): Map<String, String>? = runCatching {
+        val root = Json.parseToJsonElement(rawJson)
+        val obj = root as? JsonObject ?: return@runCatching null
+        buildMap<String, String> {
+            for ((key, elem) in obj) {
+                val prim = elem as? JsonPrimitive ?: return@runCatching null
+                if (!prim.isString) return@runCatching null
+                put(key, prim.content)
+            }
+        }
+    }.getOrNull()
+
+    /**
+     * Imports mappings from [rawJson]. Validates format and model before modifying disk.
+     * If validation fails, leaves existing file untouched and returns false.
+     * If valid, writes the mappings and reloads the engine; false when it could not be written.
+     */
+    suspend fun importAll(filesDir: AppFile, rawJson: String): Boolean {
+        val map = validateMappings(rawJson) ?: return false
+        val written = withContext(Dispatchers.IO) {
+            runCatching { file(filesDir).writeTextAtomically(JsonObject(map.mapValues { JsonPrimitive(it.value) }).toString()) }
+        }.isSuccess
+        if (written) reload(filesDir)
+        return written
     }
 }

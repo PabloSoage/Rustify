@@ -70,7 +70,10 @@ final class WalkthroughTests: XCTestCase {
         guard tap("Home"), tap("Open menu"), tap("Settings") else { return }
         step("settings", shows: "Advanced")
         guard tap("General") else { return }
-        step("settings-general", shows: "Language")
+        step("settings-general", shows: "Cache and Storage")
+        // The engine has no audio cache here, so nothing offers to clear one; the images are real.
+        XCTAssertTrue(element("Clear images").exists, "the images can be cleared")
+        XCTAssertFalse(element("Clear audio").exists, "no audio cache to clear on iOS")
         guard tap("Back"), tap("Advanced") else { return }
         step("settings-advanced", shows: "Diagnostics")
         guard tap("View logs") else { return }
