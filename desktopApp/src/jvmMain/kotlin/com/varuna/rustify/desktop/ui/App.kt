@@ -220,7 +220,7 @@ fun App(player: QueuePlayer, spotify: SpotifyLibrary, jam: JamSession, repo: com
                             currentTrackId = ui.current?.id,
                         )
                         Section.LIBRARY -> LibrarySection(spotify, user, open = open)
-                        Section.METRICS -> MetricsSection()
+                        Section.METRICS -> com.varuna.rustify.ui.screens.MetricsScreen(onBack = { section = Section.HOME })
                         Section.JAM -> JamSection(jam)
                         Section.ACCOUNT -> AccountSection(spotify, user) { user = it }
                     }
