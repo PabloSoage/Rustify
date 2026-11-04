@@ -13,6 +13,7 @@ import kotlinx.serialization.json.contentOrNull
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Lyrics providers (inspired by EeveeSpotify's set). The [LyricsChain] tries the ENABLED
@@ -258,10 +259,12 @@ class LyricsChain(
         private const val MAX_CHOICES = 500
     }
 
+    // Both maps are written from the preload on IO and from the interface's thread (invalidating,
+    // choosing), so they are concurrent ones.
     // trackId -> result. null means "tried and failed" is NOT cached, so it retries next time.
-    private val cache = mutableMapOf<String, LyricsResult>()
+    private val cache: MutableMap<String, LyricsResult> = ConcurrentHashMap()
     // "trackId|providerId" -> one provider's answer, for swiping between them without refetching.
-    private val byProvider = mutableMapOf<String, LyricsResult>()
+    private val byProvider: MutableMap<String, LyricsResult> = ConcurrentHashMap()
 
     private fun hasLines(r: LyricsResult?) = r != null && (r.synced.isNotEmpty() || !r.plain.isNullOrBlank())
 
