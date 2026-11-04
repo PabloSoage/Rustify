@@ -453,8 +453,10 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val currentConfig = LocalConfiguration.current
             // "system" is the device's language, read from the system's resources: the JVM's default
-            // is overwritten below, so after picking one it no longer says what the system is.
-            val locale = remember(appLanguage) {
+            // is overwritten below, so after picking one it no longer says what the system is. Read
+            // again on every configuration change, so a language changed in the system's settings
+            // while the app runs is followed.
+            val locale = remember(appLanguage, currentConfig) {
                 if (appLanguage == "system") android.content.res.Resources.getSystem().configuration.locales[0]
                 else java.util.Locale.forLanguageTag(appLanguage)
             }
