@@ -148,8 +148,10 @@ fun AndroidSettingsSections(slot: SettingsSlot, host: ShellHost) {
             // First: without the Doze exemption nothing below matters, because playback stops
             // between songs with the screen off no matter which backend resolves the stream.
             BatteryOptimizationSection(context)
-            // Order: lyrics first, then local music, then the audio backends.
-            LyricsProvidersSection(context)
+        }
+        // After the lyrics providers, which the shared screen draws between the two.
+        SettingsSlot.AUDIO_SOURCES -> {
+            // Order: local music, then the audio backends.
             LocalMusicSection(context)
             AudioBackendsSection(context)
             // Right after the chain: it is the same decision ("what plays my music"), even

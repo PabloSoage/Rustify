@@ -63,7 +63,12 @@ enum class SettingsSlot {
 
     /** General, between the Rustify link and the session: the DJ. */
     GENERAL_DJ,
+
+    /** Audio, before the lyrics providers: Android's battery exemption. */
     AUDIO,
+
+    /** Audio, after the lyrics providers: local music and the audio sources. */
+    AUDIO_SOURCES,
     DOWNLOADS,
     INTEGRATIONS,
 

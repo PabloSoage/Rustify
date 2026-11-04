@@ -265,6 +265,12 @@ class LyricsChain(
 
     private fun hasLines(r: LyricsResult?) = r != null && (r.synced.isNotEmpty() || !r.plain.isNullOrBlank())
 
+    /** The providers in the user's order with their switches, as Settings shows them. */
+    fun settings(): List<LyricsSettings.ProviderEntry> = LyricsSettings.load(store)
+
+    /** Settings' new order and switches, in this chain's own store (each platform keeps its own). */
+    fun saveSettings(entries: List<LyricsSettings.ProviderEntry>) = LyricsSettings.save(store, entries)
+
     /** The ids to swipe between for [trackId]: the file's own first for a local track, then the enabled providers in order. */
     fun providersFor(trackId: String): List<String> = buildList {
         if (TrackRef.isLocal(trackId)) add(LOCAL)

@@ -90,7 +90,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
     // comes with those features; the other categories say they are not here yet.
     @Composable
     override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
-        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.GENERAL_DJ) return
+        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.GENERAL_DJ || slot == SettingsSlot.AUDIO) return
         Text(
             stringResource(Res.string.desktop_settings_not_here),
             color = Color.Gray,

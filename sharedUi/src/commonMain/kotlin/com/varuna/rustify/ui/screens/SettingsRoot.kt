@@ -130,6 +130,8 @@ fun SettingsScreen(shell: AppShell, host: ShellHost) {
             "audio" -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 shell.SettingsSections(SettingsSlot.AUDIO, host)
+                LyricsProvidersSection()
+                shell.SettingsSections(SettingsSlot.AUDIO_SOURCES, host)
             }
             "downloads" -> shell.SettingsSections(SettingsSlot.DOWNLOADS, host)
             "integrations" -> {
