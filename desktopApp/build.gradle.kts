@@ -28,9 +28,9 @@ kotlin {
             implementation(project(":shared"))
             implementation(project(":sharedUi"))
             implementation(compose.desktop.currentOs)
-            implementation(compose.material3)
+            implementation(libs.compose.material3)
             // The player's icons (skip, pause, repeat...): the same Material set the phone draws.
-            implementation(compose.materialIconsExtended)
+            implementation(libs.compose.material.icons.extended)
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.kotlinx.serialization.json)
         }

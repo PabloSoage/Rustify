@@ -24,7 +24,7 @@ object DesktopLogBook : LogBook {
     }
 
     private fun add(level: Char, tag: String, message: String) {
-        val raw = "${LocalDateTime.now().format(time)} ${ProcessHandle.current().pid()} ${Thread.currentThread().id} $level $tag: $message"
+        val raw = "${LocalDateTime.now().format(time)} ${ProcessHandle.current().pid()} ${Thread.currentThread().threadId()} $level $tag: $message"
         synchronized(buf) {
             if (buf.size >= CAP) buf.removeFirst()
             buf.addLast(LogEntry(raw, level, tag))

@@ -22,7 +22,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
-import java.net.URL
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.security.MessageDigest
@@ -428,7 +428,7 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
         dest.parentFile.mkdirs()
         val part = File(dest.parentFile, dest.name + ".part")
         var have = if (part.isFile) part.length() else 0L
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
             conn.readTimeout = 60_000
@@ -474,7 +474,7 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
     }
 
     private fun httpText(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000

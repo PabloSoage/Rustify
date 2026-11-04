@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 
 /**
  * A language-model server answering on this computer's loopback, OpenAI-compatible at [baseUrl]
@@ -113,7 +113,7 @@ object LocalLlmDetector {
 
     /** The body of a short GET on loopback, or null when nothing (or not 2xx) answers in time. */
     fun get(url: String, connectMs: Int = 700, readMs: Int = 2_500): String? {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
         return try {
             conn.connectTimeout = connectMs
             conn.readTimeout = readMs
