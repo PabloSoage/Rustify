@@ -71,20 +71,31 @@ enum class SettingsSlot {
     ADVANCED,
 }
 
-/** What a platform screen can reach in the root: the repositories, the player and the navigation. */
+/**
+ * What a platform screen can reach in the root: the repositories, the player and the navigation.
+ *
+ * The root keeps one for its whole life, and a screen's content captures it once (the root wraps each
+ * screen in `remember(screen) { movableContentOf { … } }`), so what changes is read through a function
+ * every time: a plain `Boolean` here stayed what it was when the screen opened, and Settings' menu
+ * never opened a category.
+ */
 class ShellHost(
     val spotifyRepo: SpotifyRepository,
     val ytmRepo: YtMusicRepository,
     val player: PlayerController,
     val navigate: (Screen) -> Unit,
     val back: () -> Unit,
-    val isSignedIn: Boolean,
+    private val isSignedInNow: () -> Boolean,
     val signIn: () -> Unit,
     /** The account was signed out from Settings: Home forgets its sections. */
     val signedOut: () -> Unit,
-    /** Settings' open category, kept by the root so a sub-screen and back returns to it. */
-    val settingsCategory: String?,
+    private val settingsCategoryNow: () -> String?,
     val onSettingsCategory: (String?) -> Unit,
     /** The app's language changed in Settings: the root re-reads what Spotify answered in the old one. */
     val onLanguageChanged: (String) -> Unit,
-)
+) {
+    val isSignedIn: Boolean get() = isSignedInNow()
+
+    /** Settings' open category, kept by the root so a sub-screen and back returns to it. */
+    val settingsCategory: String? get() = settingsCategoryNow()
+}

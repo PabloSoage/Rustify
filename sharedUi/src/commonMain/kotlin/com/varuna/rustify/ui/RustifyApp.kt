@@ -189,14 +189,14 @@ fun RustifyApp(
         player = audioPlayerService,
         navigate = { navigationStack.add(it) },
         back = { if (navigationStack.size > 1) navigationStack.removeAt(navigationStack.lastIndex) },
-        isSignedIn = isLoggedIn,
+        isSignedInNow = { isLoggedIn },
         signIn = { showWebView = true },
         signedOut = {
             isLoggedIn = false
             browseSections = null
             errorMessage = null
         },
-        settingsCategory = settingsCategory,
+        settingsCategoryNow = { settingsCategory },
         onSettingsCategory = { settingsCategory = it },
         onLanguageChanged = { newCode ->
             onLanguageChanged(newCode)

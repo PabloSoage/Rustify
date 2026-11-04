@@ -150,7 +150,7 @@ class AndroidAppShell(context: Context) : AppShell {
 
     // The core answers Spotify's titles in this language; AppCompat recreates the activity in it.
     override fun applyLanguage(code: String) {
-        val langCode = if (code == "system") java.util.Locale.getDefault().language else code
+        val langCode = if (code == "system") android.content.res.Resources.getSystem().configuration.locales[0].language else code
         com.varuna.rustify.bridge.NativeEngine.setLanguageNative(langCode)
         androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
             if (code == "system") androidx.core.os.LocaleListCompat.getEmptyLocaleList()

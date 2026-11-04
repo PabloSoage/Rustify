@@ -470,20 +470,26 @@ class MainActivity : ComponentActivity() {
             var appLanguage by remember { mutableStateOf(prefs.getString("app_language", "system") ?: "system") }
             val context = LocalContext.current
             val currentConfig = LocalConfiguration.current
-            val localizedContext = remember(context, appLanguage, currentConfig) {
+            // "system" is the device's language, read from the system's resources: the JVM's default
+            // is overwritten below, so after picking one it no longer says what the system is.
+            val locale = remember(appLanguage) {
+                if (appLanguage == "system") android.content.res.Resources.getSystem().configuration.locales[0]
+                else java.util.Locale.forLanguageTag(appLanguage)
+            }
+            val localizedContext = remember(context, locale, currentConfig) {
                 val newConfig = Configuration(currentConfig)
-                val locale = if (appLanguage == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLanguage)
                 newConfig.setLocale(locale)
                 context.createConfigurationContext(newConfig)
             }
             // The screens in :sharedUi take their strings from Compose Multiplatform, which reads the
-            // language from LocalConfiguration, not from the Context swapped above. So the configuration
-            // is overridden too — derived from the framework's current one on every change, so
-            // orientation is still tracked.
-            val localizedConfig = remember(currentConfig, appLanguage) {
-                Configuration(currentConfig).apply {
-                    setLocale(if (appLanguage == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLanguage))
-                }
+            // language from the JVM's default Locale — not from the Context swapped above, nor from
+            // the configuration alone: with only those, every shared screen stayed in the system's
+            // language whatever Settings said. So the default is set too, and the configuration is
+            // overridden so what reads it recomposes — derived from the framework's current one on
+            // every change, so orientation is still tracked.
+            val localizedConfig = remember(currentConfig, locale) {
+                java.util.Locale.setDefault(locale)
+                Configuration(currentConfig).apply { setLocale(locale) }
             }
             val appPlatform = remember { com.varuna.rustify.ui.AndroidAppPlatform(applicationContext) }
             val appServices = remember { AndroidAppServices(applicationContext) }
