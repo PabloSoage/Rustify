@@ -24,6 +24,12 @@ val EngineJson: Json = Json {
 
 @Serializable
 sealed class EngineCommand {
+    /**
+     * [replayGain] is the file's own, when the caller has read it (the engine reads a local path's
+     * itself); with ReplayGain on it replaces [gainDb]. [albumRun]: the queue is running through this
+     * track's album, which ReplayGain's `auto` mode goes by. Both are nullable so that a plain load
+     * keeps the shape it always had: a null is left out, and the engine reads it as absent.
+     */
     @Serializable
     @SerialName("load")
     data class Load(
@@ -32,11 +38,19 @@ sealed class EngineCommand {
         val startMs: Long = 0,
         val gainDb: Float = 0f,
         val play: Boolean = true,
+        val replayGain: TrackGains? = null,
+        val albumRun: Boolean? = null,
     ) : EngineCommand()
 
     @Serializable
     @SerialName("preload")
-    data class Preload(val token: Long, val uri: String, val gainDb: Float = 0f) : EngineCommand()
+    data class Preload(
+        val token: Long,
+        val uri: String,
+        val gainDb: Float = 0f,
+        val replayGain: TrackGains? = null,
+        val albumRun: Boolean? = null,
+    ) : EngineCommand()
 
     @Serializable
     @SerialName("clearNext")
@@ -65,6 +79,11 @@ sealed class EngineCommand {
     @Serializable
     @SerialName("setFadeMs")
     data class SetFadeMs(val ms: Int) : EngineCommand()
+
+    /** Every audio effect at once ([EffectsConfig]); the engine applies what changed. */
+    @Serializable
+    @SerialName("setEffects")
+    data class SetEffects(val effects: EffectsConfig) : EngineCommand()
 
     fun toJson(): String = EngineJson.encodeToString(serializer(), this)
 }

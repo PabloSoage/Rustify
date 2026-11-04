@@ -155,6 +155,21 @@ class QueuePlayerTest {
     }
 
     @Test
+    fun `effects set before the engine starts reach it once it runs`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val slower = EffectsConfig(speed = 0.75f)
+
+        player.setEffects(slower)
+        assertTrue(backend.sent.none { it is EngineCommand.SetEffects }, "no engine to send them to yet")
+        player.start()
+        assertEquals(listOf(EngineCommand.SetEffects(slower)), backend.sent.filterIsInstance<EngineCommand.SetEffects>())
+
+        player.setEffects(slower.copy(skipSilence = true))
+        assertEquals(EngineCommand.SetEffects(slower.copy(skipSilence = true)), backend.sent.last(), "and straight away after")
+    }
+
+    @Test
     fun `turning the last song off mid-song preloads what comes next again`() {
         val backend = FakeBackend()
         val (player, _) = playingFirstOfTwo(backend)

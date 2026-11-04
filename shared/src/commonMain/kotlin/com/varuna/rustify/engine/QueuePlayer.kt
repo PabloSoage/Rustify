@@ -223,8 +223,24 @@ class QueuePlayer(
                 _ui.update { it.copy(error = "Audio output: $started") }
                 return@launch
             }
+            engineRunning = true
+            // Set before the engine was there to take them.
+            effects?.let { backend.send(EngineCommand.SetEffects(it)) }
             backend.events().collect { onEvent(it) }
         }
+    }
+
+    private var engineRunning = false
+    private var effects: EffectsConfig? = null
+
+    /**
+     * The audio effects (equaliser, ReplayGain, stereo tools, fades, speed, …), all of them each time:
+     * the engine works out what changed. Kept, so effects set before [start] reach the engine once it
+     * runs.
+     */
+    fun setEffects(config: EffectsConfig) {
+        effects = config
+        if (engineRunning) backend.send(EngineCommand.SetEffects(config))
     }
 
     // ---------------------------------------------------------------------------------------------
