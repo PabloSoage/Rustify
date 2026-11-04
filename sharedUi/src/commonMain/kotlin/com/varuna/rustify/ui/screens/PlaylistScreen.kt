@@ -692,7 +692,10 @@ fun PlaylistScreen(
                     if (isLocal) {
                         IconButton(onClick = {
                             val name = spotifyRepo.localPlaylists.firstOrNull { it.id == playlistId }?.name ?: playlistName
-                            exportM3u("${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.m3u8") { spotifyRepo.exportM3u(playlistId).orEmpty() }
+                            // Made before the picker opens, since the picker creates the file: a
+                            // playlist that is gone must not leave an empty one reported as exported.
+                            val m3u = spotifyRepo.exportM3u(playlistId) ?: return@IconButton
+                            exportM3u("${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.m3u8") { m3u }
                         }) {
                             Icon(Icons.Default.IosShare, contentDescription = stringResource(Res.string.m3u_export), tint = Color.White)
                         }
