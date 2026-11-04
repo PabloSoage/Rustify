@@ -31,9 +31,12 @@ final class PlayerModel: ObservableObject {
     @Published var searchError: String?
     private var observation: Kotlinx_coroutines_coreJob?
     private var audio: AudioSession?
+    private var nowPlaying: NowPlaying?
 
     init() {
-        audio = AudioSession(controller: controller)
+        let audio = AudioSession(controller: controller)
+        self.audio = audio
+        nowPlaying = NowPlaying(controller: controller, audio: audio)
         let fm = FileManager.default
         let data = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let cache = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -45,6 +48,7 @@ final class PlayerModel: ObservableObject {
             // Whatever started it (the core moving on, a restored queue), playing needs the session.
             if ui.playing && self.ui?.playing != true { self.audio?.activate() }
             self.ui = ui
+            self.nowPlaying?.update(ui)
         }
         controller.restoreSpotify { [weak self] user in
             self?.user = user
