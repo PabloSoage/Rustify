@@ -3,6 +3,7 @@ package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import com.varuna.rustify.bridge.DesktopDownloads
 import com.varuna.rustify.bridge.DesktopLocalLyrics
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
@@ -22,15 +23,14 @@ import com.varuna.rustify.platform.FileStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.Locale
 
 /**
- * [AppServices] on the desktop. Tempo and downloads are Android's today (MediaCodec, the Storage
- * Access Framework), and so are translation and video; [can] says so and the screens show them as
+ * [AppServices] on the desktop. Downloads are [DesktopDownloads]; tempo is Android's today
+ * (MediaCodec), and so are translation and video; [can] says so and the screens show them as
  * unavailable. The DJ is the shared one: it speaks with the system's voice, and its "local" mode is a
  * model server on this computer, one already there or Rustify's own; it has no microphone.
  */
@@ -43,6 +43,9 @@ class DesktopAppServices(
     /** Whether the JamSession is in a room. */
     private val inJam: @Composable () -> Boolean = { false },
 ) : AppServices {
+    /** The downloads, into the folder Settings names, for the shared Downloads screen. */
+    private val downloader = DesktopDownloads(platform)
+
     @Composable
     override fun JamDialog(onDismiss: () -> Unit) = jamDialog(onDismiss)
 
@@ -126,6 +129,7 @@ class DesktopAppServices(
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
         AppServices.Feature.DJ -> true
         AppServices.Feature.DJ_VOICE -> voice.isAvailable
+        AppServices.Feature.DOWNLOADS -> true
         else -> false
     }
 
@@ -133,10 +137,14 @@ class DesktopAppServices(
     override fun bpmScale(trackId: String, factor: Float): Float? = null
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = null
 
-    override val downloads: StateFlow<List<DownloadTask>> = MutableStateFlow(emptyList())
-    override val activeDownloadCount: StateFlow<Int> = MutableStateFlow(0)
-    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) = Unit
-    override fun clearCompleted() = Unit
+    override val downloads: StateFlow<List<DownloadTask>> get() = downloader.downloads
+    override val activeDownloadCount: StateFlow<Int> get() = downloader.activeDownloadCount
+
+    // downloadUriStr is the folder from Settings (download_directory), a path on the desktop.
+    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) =
+        downloader.enqueue(trackId, trackName, trackArtist, downloadUriStr, track)
+
+    override fun clearCompleted() = downloader.clearCompleted()
 }
 
 /** No speech recognition on the desktop: the DJ screen says so when the microphone is pressed. */

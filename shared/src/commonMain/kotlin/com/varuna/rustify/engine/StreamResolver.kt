@@ -20,6 +20,8 @@ class StreamResolver(private val backend: PlayerBackend) {
         val url: String = "",
         val mimeType: String = "",
         val loudnessDb: Double? = null,
+        /** The stream's size when YouTube says it, for a download's progress. */
+        val contentLength: Long? = null,
         val success: Boolean? = null,
         val error: String? = null,
     )

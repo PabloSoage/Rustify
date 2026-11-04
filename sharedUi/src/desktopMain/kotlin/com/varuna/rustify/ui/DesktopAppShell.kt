@@ -200,6 +200,8 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             com.varuna.rustify.ui.screens.ListenBrainzSection()
             com.varuna.rustify.ui.screens.LastFmSection()
         }
+        // The standard downloads folder; the custom downloads (yt-dlp) are not on the desktop yet.
+        if (slot == SettingsSlot.DOWNLOADS) com.varuna.rustify.ui.screens.DownloadFolderSection()
         Text(
             stringResource(Res.string.desktop_settings_not_here),
             color = Color.Gray,
