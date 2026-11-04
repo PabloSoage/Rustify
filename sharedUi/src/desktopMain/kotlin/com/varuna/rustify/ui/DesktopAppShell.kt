@@ -94,6 +94,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
         // The shared sections the phone has further down Audio: here they go after its own, which
         // are not on the desktop yet.
         if (slot == SettingsSlot.AUDIO_SOURCES) {
+            com.varuna.rustify.ui.screens.DataExportSection()
             com.varuna.rustify.ui.screens.ListenBrainzSection()
             com.varuna.rustify.ui.screens.LastFmSection()
         }

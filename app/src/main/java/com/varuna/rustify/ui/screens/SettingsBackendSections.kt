@@ -495,7 +495,7 @@ internal fun AudioBackendsSection(context: Context) {
     PauseFadeSection(context)
     SkipSilenceSection(context)
     StreamCacheSection(context)
-    DataExportSection(context)
+    DataExportSection()
     ListenBrainzSection()
     LastFmSection()
     JamSection(context)
