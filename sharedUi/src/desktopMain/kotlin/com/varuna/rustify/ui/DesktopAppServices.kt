@@ -14,10 +14,18 @@ import com.varuna.rustify.dj.DjAutoController
 import com.varuna.rustify.dj.DjListener
 import com.varuna.rustify.dj.DjProvider
 import com.varuna.rustify.dj.DjVoiceOutput
+import com.varuna.rustify.dj.LocalLlmDetector
+import com.varuna.rustify.dj.LocalLlmServer
+import com.varuna.rustify.dj.LocalLlmSettings
+import com.varuna.rustify.dj.LocalModelManager
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.Locale
@@ -26,7 +34,7 @@ import java.util.Locale
  * [AppServices] on the desktop. Tempo and downloads are Android's today (MediaCodec, the Storage
  * Access Framework), and so are translation and video; [can] says so and the screens show them as
  * unavailable. The DJ is the shared one: it speaks with the system's voice, and its "local" mode is a
- * model server on this computer; it has no microphone.
+ * model server on this computer, one already there or Rustify's own; it has no microphone.
  */
 class DesktopAppServices(
     private val platform: AppPlatform,
@@ -73,17 +81,45 @@ class DesktopAppServices(
     private val voice = DesktopDjVoice(platform, onVoice)
     override val djVoice: DjVoiceOutput get() = voice
 
-    // A model server already running here (Ollama, LM Studio, llama-server), else the heuristic.
-    override fun localDjProvider(): DjProvider = DesktopLocalDjProvider(platform.prefs())
+    /** Rustify's own llama-server, for whoever runs no other: one for the process, stopped by [close]. */
+    val localModels = LocalModelManager()
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override suspend fun warmUpLocalDj() = Unit
+    // Rustify's own server with the model chosen for it, started if it is on disk (never downloaded here).
+    private suspend fun managedTarget(): LocalLlmSettings.Target? {
+        val model = LocalLlmSettings.managedModel(platform.prefs())
+        val url = localModels.ensureRunning(model) ?: return null
+        return LocalLlmSettings.Target(LocalLlmServer.Kind.MANAGED, url, model.id)
+    }
+
+    // A model server already running here (Ollama, LM Studio, llama-server), else Rustify's own when
+    // it is downloaded, else the heuristic.
+    override fun localDjProvider(): DjProvider = DesktopLocalDjProvider(platform.prefs(), managed = { managedTarget() })
+
+    // Rustify's own server takes a while to load its model: started while the DJ screen is open,
+    // when it is the one the DJ would ask. Not waited for, as the phone does not wait for Gemini Nano.
+    override suspend fun warmUpLocalDj() {
+        val prefs = platform.prefs()
+        val source = LocalLlmSettings.source(prefs)
+        if (source != LocalLlmSettings.AUTO && source != LocalLlmServer.Kind.MANAGED.code) return
+        background.launch {
+            if (source == LocalLlmSettings.AUTO && LocalLlmDetector.detect().any { it.models.isNotEmpty() }) return@launch
+            managedTarget()
+        }
+    }
 
     // Not yet: a microphone (docs serie-4.x/27 §2.8).
     @Composable
     override fun rememberDjListener(): DjListener = NoMicrophone
 
     @Composable
-    override fun LocalDjSettings() = DesktopLocalDjPanel(platform)
+    override fun LocalDjSettings() = DesktopLocalDjPanel(platform, localModels)
+
+    /** The window is closing: the model server and the voice stop with it. */
+    fun close() {
+        localModels.stop()
+        voice.stop()
+    }
 
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.DesktopLogBook
 

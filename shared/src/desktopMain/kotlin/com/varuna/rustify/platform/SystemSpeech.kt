@@ -68,7 +68,7 @@ class SystemSpeech(val kind: Kind, val executable: String) {
         /** The speech command this computer has, or null when it has none on its PATH. */
         fun find(
             osName: String = System.getProperty("os.name").orEmpty(),
-            lookup: (String) -> String? = { onPath(it, osName.lowercase().contains("win")) },
+            lookup: (String) -> String? = { Executables.onPath(it, osName.lowercase().contains("win")) },
         ): SystemSpeech? {
             val os = osName.lowercase()
             return when {
@@ -78,16 +78,6 @@ class SystemSpeech(val kind: Kind, val executable: String) {
                     ?: lookup("espeak-ng")?.let { SystemSpeech(Kind.ESPEAK_NG, it) }
                     ?: lookup("espeak")?.let { SystemSpeech(Kind.ESPEAK, it) }
             }
-        }
-
-        /** [name] in a directory of `PATH`, as an absolute path; with `.exe` on Windows. */
-        fun onPath(name: String, windows: Boolean, path: String? = System.getenv("PATH")): String? {
-            val names = if (windows) listOf("$name.exe", name) else listOf(name)
-            return path.orEmpty().split(File.pathSeparatorChar).asSequence()
-                .filter { it.isNotBlank() }
-                .flatMap { dir -> names.asSequence().map { File(dir.trim('"'), it) } }
-                .firstOrNull { it.isFile && it.canExecute() }
-                ?.absolutePath
         }
 
         // Windows PowerShell is part of every Windows 10 and 11, even with PATH trimmed.

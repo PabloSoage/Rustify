@@ -7,19 +7,23 @@ import com.varuna.rustify.platform.Log
 /**
  * The DJ's "local" mode on the desktop: a language model on this computer, asked as [ApiDjProvider]
  * asks a service (the same prompt, the same `{intro, seeds, queries}` answer), at a server found on
- * loopback ([LocalLlmDetector]). The phone's equivalent is Gemini Nano.
+ * loopback ([LocalLlmDetector]) or, with none of those or when chosen, at Rustify's own ([managed]:
+ * [LocalModelManager], started when what it needs is on disk). The phone's equivalent is Gemini Nano.
  *
  * With nothing running it is the heuristic, and says so in the intro, as the phone's does when its
  * model is missing.
  */
 class DesktopLocalDjProvider(
     private val prefs: KeyValueStore,
+    private val managed: suspend () -> LocalLlmSettings.Target? = { null },
     private val fallback: DjProvider = HeuristicDjProvider(),
 ) : DjProvider {
 
     override suspend fun plan(context: DjContext, request: String): DjPlan {
-        val servers = LocalLlmDetector.detect()
-        val target = LocalLlmSettings.pick(LocalLlmSettings.source(prefs), LocalLlmSettings.model(prefs), servers)
+        val source = LocalLlmSettings.source(prefs)
+        val servers = if (source == LocalLlmServer.Kind.MANAGED.code) emptyList() else LocalLlmDetector.detect()
+        val target = LocalLlmSettings.pick(source, LocalLlmSettings.model(prefs), servers)
+            ?: if (source == LocalLlmSettings.AUTO || source == LocalLlmServer.Kind.MANAGED.code) managed() else null
         if (target == null) {
             val plan = fallback.plan(context, request)
             val why = if (context.language.startsWith("es")) "no hay ningún modelo local en marcha" else "no local model is running"

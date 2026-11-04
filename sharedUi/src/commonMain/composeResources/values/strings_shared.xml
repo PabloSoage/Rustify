@@ -28,4 +28,19 @@
     <string name="settings_dj_local_model">Model</string>
     <string name="settings_dj_local_no_models">This server has no model yet: pull or load one in it first.</string>
     <string name="settings_dj_local_rescan">Look again</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">Rustify's own: llama.cpp with a model downloaded here</string>
+    <string name="settings_dj_local_managed_desc">Without Ollama or LM Studio, Rustify can download llama.cpp's server for this computer (with CUDA, Vulkan or Metal where it can, else for the CPU) and one small model, and run it only on 127.0.0.1 while the app is open.</string>
+    <string name="settings_dj_local_model_size">%1$s · about %2$s</string>
+    <string name="settings_dj_local_on_disk">downloaded</string>
+    <string name="settings_dj_local_downloading_what">Downloading %1$s… %2$s</string>
+    <string name="settings_dj_local_unpacking">Unpacking %1$s…</string>
+    <string name="settings_dj_local_starting">Starting %1$s…</string>
+    <string name="settings_dj_local_running">Running at %1$s (%2$s)</string>
+    <string name="settings_dj_local_failed">It did not work: %1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s (%2$s) is on this computer.</string>
+    <string name="settings_dj_local_get">Download and start</string>
+    <string name="settings_dj_local_start">Start</string>
+    <string name="settings_dj_local_stop">Stop</string>
+    <string name="settings_dj_local_delete">Delete the model</string>
 </resources>

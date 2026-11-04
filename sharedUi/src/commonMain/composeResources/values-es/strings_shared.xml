@@ -27,4 +27,19 @@
     <string name="settings_dj_local_model">Modelo</string>
     <string name="settings_dj_local_no_models">Este servidor aún no tiene ningún modelo: descarga o carga uno en él primero.</string>
     <string name="settings_dj_local_rescan">Buscar de nuevo</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">El de Rustify: llama.cpp con un modelo descargado aquí</string>
+    <string name="settings_dj_local_managed_desc">Sin Ollama ni LM Studio, Rustify puede descargar el servidor de llama.cpp para este ordenador (con CUDA, Vulkan o Metal si puede; si no, para la CPU) y un modelo pequeño, y ejecutarlo solo en 127.0.0.1 mientras la app está abierta.</string>
+    <string name="settings_dj_local_model_size">%1$s · unos %2$s</string>
+    <string name="settings_dj_local_on_disk">descargado</string>
+    <string name="settings_dj_local_downloading_what">Descargando %1$s… %2$s</string>
+    <string name="settings_dj_local_unpacking">Descomprimiendo %1$s…</string>
+    <string name="settings_dj_local_starting">Arrancando %1$s…</string>
+    <string name="settings_dj_local_running">En marcha en %1$s (%2$s)</string>
+    <string name="settings_dj_local_failed">No ha funcionado: %1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s (%2$s) está en este ordenador.</string>
+    <string name="settings_dj_local_get">Descargar y arrancar</string>
+    <string name="settings_dj_local_start">Arrancar</string>
+    <string name="settings_dj_local_stop">Parar</string>
+    <string name="settings_dj_local_delete">Borrar el modelo</string>
 </resources>

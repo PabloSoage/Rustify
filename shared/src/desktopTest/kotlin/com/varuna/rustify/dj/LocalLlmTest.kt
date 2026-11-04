@@ -59,4 +59,30 @@ class LocalLlmTest {
         assertNull(LocalLlmSettings.pick("lmstudio", "", listOf(emptyLmStudio, ollama)))
         assertNull(LocalLlmSettings.pick(LocalLlmSettings.AUTO, "", emptyList()))
     }
+
+    @Test
+    fun `Rustify's own server is never picked from what was found`() {
+        // It is not looked for on a port; the caller starts it when it is the choice.
+        assertNull(LocalLlmSettings.pick(LocalLlmServer.Kind.MANAGED.code, "", listOf(ollama)))
+        assertEquals(false, LocalLlmServer.Kind.MANAGED in LocalLlmDetector.PROBED)
+    }
+
+    @Test
+    fun `an unknown managed model falls back to the first in the catalog`() {
+        val prefs = com.varuna.rustify.platform.MemoryStore()
+        assertEquals(LocalModelCatalog.MODELS.first(), LocalLlmSettings.managedModel(prefs))
+        prefs.putString(LocalLlmSettings.KEY_MANAGED_MODEL, LocalModelCatalog.MODELS.last().id)
+        assertEquals(LocalModelCatalog.MODELS.last(), LocalLlmSettings.managedModel(prefs))
+        prefs.putString(LocalLlmSettings.KEY_MANAGED_MODEL, "gone")
+        assertEquals(LocalModelCatalog.MODELS.first(), LocalLlmSettings.managedModel(prefs))
+    }
+
+    @Test
+    fun `every model in the catalog is a GGUF file under its own name`() {
+        for (m in LocalModelCatalog.MODELS) {
+            assertEquals(true, m.url.startsWith("https://huggingface.co/") && m.url.endsWith("/" + m.fileName), m.id)
+            assertEquals(true, m.fileName.endsWith(".gguf"), m.id)
+        }
+        assertEquals(LocalModelCatalog.MODELS.size, LocalModelCatalog.MODELS.map { it.id }.toSet().size)
+    }
 }

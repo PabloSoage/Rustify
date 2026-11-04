@@ -27,4 +27,19 @@
     <string name="settings_dj_local_model">モデル</string>
     <string name="settings_dj_local_no_models">このサーバーにはまだモデルがありません。先にモデルをダウンロードまたは読み込んでください。</string>
     <string name="settings_dj_local_rescan">再検索</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">Rustify 内蔵：llama.cpp とここにダウンロードしたモデル</string>
+    <string name="settings_dj_local_managed_desc">Ollama や LM Studio がなくても、Rustify はこのコンピューター用の llama.cpp サーバー（可能なら CUDA、Vulkan、Metal、なければ CPU 版）と小さなモデルをダウンロードし、アプリを開いている間だけ 127.0.0.1 で実行できます。</string>
+    <string name="settings_dj_local_model_size">%1$s · 約 %2$s</string>
+    <string name="settings_dj_local_on_disk">ダウンロード済み</string>
+    <string name="settings_dj_local_downloading_what">%1$s をダウンロード中… %2$s</string>
+    <string name="settings_dj_local_unpacking">%1$s を展開中…</string>
+    <string name="settings_dj_local_starting">%1$s を起動中…</string>
+    <string name="settings_dj_local_running">%1$s で実行中（%2$s）</string>
+    <string name="settings_dj_local_failed">うまくいきませんでした：%1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s（%2$s）はこのコンピューターにあります。</string>
+    <string name="settings_dj_local_get">ダウンロードして起動</string>
+    <string name="settings_dj_local_start">起動</string>
+    <string name="settings_dj_local_stop">停止</string>
+    <string name="settings_dj_local_delete">モデルを削除</string>
 </resources>

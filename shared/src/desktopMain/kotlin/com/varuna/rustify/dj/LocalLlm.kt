@@ -23,6 +23,9 @@ data class LocalLlmServer(val kind: Kind, val baseUrl: String, val models: List<
         OLLAMA("Ollama", 11434, "ollama"),
         LM_STUDIO("LM Studio", 1234, "lmstudio"),
         LLAMA_CPP("llama.cpp (llama-server)", 8080, "llamacpp"),
+
+        /** The llama-server Rustify downloads and runs itself ([LocalModelManager]), on a free port. */
+        MANAGED("Rustify (llama.cpp)", 0, "managed"),
     }
 
     /** `127.0.0.1:11434`, for saying where it was found. */
@@ -31,7 +34,7 @@ data class LocalLlmServer(val kind: Kind, val baseUrl: String, val models: List<
 
 /** Where the desktop's "local" DJ mode looks, and what it picked; kept in `rustify_settings`. */
 object LocalLlmSettings {
-    /** "auto" (the first server found), or a [LocalLlmServer.Kind.code]. */
+    /** "auto" (the first server found, else Rustify's own), or a [LocalLlmServer.Kind.code]. */
     const val KEY_SOURCE = "dj_local_source"
 
     /** The model chosen on the server [KEY_SOURCE] names; blank: its first. */
@@ -39,15 +42,20 @@ object LocalLlmSettings {
 
     const val AUTO = "auto"
 
+    /** The [LocalModelCatalog] model Rustify's own server runs. */
+    const val KEY_MANAGED_MODEL = "dj_local_managed_model"
+
     fun source(prefs: KeyValueStore): String = prefs.getString(KEY_SOURCE)?.ifBlank { null } ?: AUTO
     fun model(prefs: KeyValueStore): String = prefs.getString(KEY_MODEL) ?: ""
+    fun managedModel(prefs: KeyValueStore): LocalModel = LocalModelCatalog.byId(prefs.getString(KEY_MANAGED_MODEL) ?: "")
 
     /** What a request goes to: the server's OpenAI base URL and the model to name. */
     data class Target(val kind: LocalLlmServer.Kind, val baseUrl: String, val model: String)
 
     /**
      * The target among [servers] for [source] and the [chosenModel], or null when none of them will
-     * do. A server with no model loaded is no target.
+     * do (then Rustify's own server, if there is one, is the caller's to try). A server with no model
+     * loaded is no target.
      */
     fun pick(source: String, chosenModel: String, servers: List<LocalLlmServer>): Target? {
         val candidates = when (source) {
@@ -68,12 +76,13 @@ object LocalLlmSettings {
 object LocalLlmDetector {
     const val HOST = "127.0.0.1"
 
-    private val probes = listOf(LocalLlmServer.Kind.OLLAMA, LocalLlmServer.Kind.LM_STUDIO, LocalLlmServer.Kind.LLAMA_CPP)
+    /** The servers looked for, in the "auto" order; Rustify's own is not looked for, it is known. */
+    val PROBED: List<LocalLlmServer.Kind> = listOf(LocalLlmServer.Kind.OLLAMA, LocalLlmServer.Kind.LM_STUDIO, LocalLlmServer.Kind.LLAMA_CPP)
 
     /** Every server answering, in the order above (the "auto" preference). */
     suspend fun detect(): List<LocalLlmServer> = withContext(Dispatchers.IO) {
         coroutineScope {
-            probes.map { kind -> async { runCatching { probe(kind) }.getOrNull() } }.awaitAll().filterNotNull()
+            PROBED.map { kind -> async { runCatching { probe(kind) }.getOrNull() } }.awaitAll().filterNotNull()
         }
     }
 

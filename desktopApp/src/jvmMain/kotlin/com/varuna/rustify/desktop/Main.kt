@@ -98,6 +98,8 @@ fun main() {
         // Closing waits, briefly, for the last listen to be stored and scrobbled and the Jam room to
         // be told: launched and then exited, all three were lost.
         fun quit() {
+            // The DJ's model server is a child process: it goes with the window.
+            appServices.close()
             runBlocking {
                 withTimeoutOrNull(3_000) {
                     jam.leaveNow()
