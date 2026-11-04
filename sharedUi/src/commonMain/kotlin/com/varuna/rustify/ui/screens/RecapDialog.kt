@@ -54,14 +54,15 @@ import com.varuna.rustify.metrics.Recap
 import com.varuna.rustify.metrics.RecapBuilder
 import com.varuna.rustify.metrics.TopRow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.varuna.rustify.ui.formatCount
+import com.varuna.rustify.ui.monthName
+import com.varuna.rustify.ui.startOfYearMillis
 import com.varuna.rustify.ui.toPngBytes
+import com.varuna.rustify.ui.weekdayName
 import java.io.File
-import java.text.DateFormatSymbols
-import java.text.NumberFormat
-import java.time.LocalDate
-import java.time.ZoneId
 
 /**
  * "Your year" (4.7): the listening history of one year as cards you swipe through — minutes, top
@@ -73,9 +74,8 @@ fun RecapDialog(year: Int, onDismiss: () -> Unit) {
     var recap by remember(year) { mutableStateOf<Recap?>(null) }
     var loaded by remember(year) { mutableStateOf(false) }
     LaunchedEffect(year) {
-        val zone = ZoneId.systemDefault()
-        val from = LocalDate.of(year, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val to = LocalDate.of(year + 1, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val from = startOfYearMillis(year)
+        val to = startOfYearMillis(year + 1)
         recap = runCatching { RecapBuilder.build(year, ListeningTracker.stats(platform, from, to)) }.getOrNull()
         loaded = true
     }
@@ -112,11 +112,8 @@ private fun RecapPager(r: Recap) {
     // Started from the dialog's activity, as before the move: the recap is a PNG with no caption.
     val shareImage = com.varuna.rustify.ui.rememberShareImage()
     val scope = rememberCoroutineScope()
-    val numbers = NumberFormat.getIntegerInstance()
-    val months = DateFormatSymbols.getInstance().months
-    val weekdays = DateFormatSymbols.getInstance().weekdays // Sunday = 1
     val pages = buildList<@Composable () -> Unit> {
-        add { BigNumberCard(stringResource(Res.string.recap_minutes_title, r.year), numbers.format(r.minutes), pluralStringResource(Res.plurals.recap_minutes_sub, r.plays, numbers.format(r.plays), r.distinctArtists)) }
+        add { BigNumberCard(stringResource(Res.string.recap_minutes_title, r.year), formatCount(r.minutes), pluralStringResource(Res.plurals.recap_minutes_sub, r.plays, formatCount(r.plays.toLong()), r.distinctArtists)) }
         r.topArtist?.let { a -> add { TopCard(stringResource(Res.string.recap_top_artist), a, pluralStringResource(Res.plurals.recap_plays, a.plays, a.plays), r.topArtists) } }
         r.topTrack?.let { t -> add { TopCard(stringResource(Res.string.recap_top_track), t, pluralStringResource(Res.plurals.recap_plays, t.plays, t.plays), r.topTracks) } }
         add {
@@ -127,9 +124,8 @@ private fun RecapPager(r: Recap) {
                 ListenerType.EVENING -> Res.string.recap_type_evening
                 ListenerType.NONE -> Res.string.recap_type_day
             }
-            val month = r.peakMonth?.let { months[it].replaceFirstChar { c -> c.uppercase() } } ?: "—"
-            // DateFormatSymbols counts Sunday as 1; the core counts Monday as 0.
-            val day = r.peakWeekday?.let { weekdays[(it + 1) % 7 + 1].replaceFirstChar { c -> c.uppercase() } } ?: "—"
+            val month = r.peakMonth?.let { monthName(it).replaceFirstChar { c -> c.uppercase() } } ?: "—"
+            val day = r.peakWeekday?.let { weekdayName(it).replaceFirstChar { c -> c.uppercase() } } ?: "—"
             BigNumberCard(
                 stringResource(Res.string.recap_when_title), stringResource(type),
                 pluralStringResource(Res.plurals.recap_when_sub, r.longestStreakDays, month, day, r.longestStreakDays)
@@ -164,6 +160,7 @@ private fun RecapPager(r: Recap) {
                 scope.launch {
                     val bitmap = layer.toImageBitmap()
                     // cacheDir/share is what Android's FileProvider exposes (file_paths.xml).
+                    // The screen's one JVM type: rememberShareImage takes a java.io.File.
                     val file = withContext(Dispatchers.IO) {
                         val dir = File(platform.cacheDir, "share").apply { mkdirs() }
                         File(dir, "rustify_recap_${r.year}.png").apply { writeBytes(bitmap.toPngBytes()) }

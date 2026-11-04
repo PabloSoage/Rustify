@@ -36,10 +36,16 @@ import com.varuna.rustify.metrics.PlayEvent
 import com.varuna.rustify.metrics.PlayImportReport
 import com.varuna.rustify.metrics.PlayStats
 import com.varuna.rustify.metrics.TopRow
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.CalendarSpan
+import com.varuna.rustify.ui.currentYear
+import com.varuna.rustify.ui.formatTemplate
+import com.varuna.rustify.ui.startOfSpan
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Calendar
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -85,7 +91,7 @@ fun MetricsScreen(onBack: () -> Unit) {
     val importDoneTemplate = stringResource(Res.string.metrics_import_done)
     val importErrorTemplate = stringResource(Res.string.metrics_import_error)
 
-    val failed: (Throwable) -> Unit = { e -> platform.toast(importErrorTemplate.format(e.message ?: ""), long = true) }
+    val failed: (Throwable) -> Unit = { e -> platform.toast(formatTemplate(importErrorTemplate, e.message ?: ""), long = true) }
     val saved: (Result<Unit>?) -> Unit = { r -> r?.onSuccess { platform.toast(exportMsg) }?.onFailure(failed) }
     val saveJson = com.varuna.rustify.ui.rememberSaveFile("application/json", saved)
     val saveCsv = com.varuna.rustify.ui.rememberSaveFile("text/csv", saved)
@@ -95,7 +101,7 @@ fun MetricsScreen(onBack: () -> Unit) {
         read = { _, input -> ListeningTracker.importHistory(platform, input) },
     ) { r ->
         r?.onSuccess { n ->
-            platform.toast(importDoneTemplate.format(n.added))
+            platform.toast(formatTemplate(importDoneTemplate, n.added))
             load()
         }?.onFailure(failed)
     }
@@ -110,7 +116,7 @@ fun MetricsScreen(onBack: () -> Unit) {
     }
 
     var showRecap by remember { mutableStateOf(false) }
-    if (showRecap) RecapDialog(year = java.time.LocalDate.now().year, onDismiss = { showRecap = false })
+    if (showRecap) RecapDialog(year = currentYear(), onDismiss = { showRecap = false })
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
@@ -127,7 +133,7 @@ fun MetricsScreen(onBack: () -> Unit) {
                         val (from, to) = rangeToFrom(selectedRange)
                         val kind = csvKinds[selectedTopTab]
                         saveCsv("rustify_top_${kind}_${selectedRange.name.lowercase()}.csv") {
-                            it.write(ListeningTracker.topCsv(platform, from, to, kind).toByteArray(Charsets.UTF_8))
+                            it.write(ListeningTracker.topCsv(platform, from, to, kind).encodeToByteArray())
                         }
                     }) {
                         Icon(Icons.Default.TableChart, contentDescription = stringResource(Res.string.metrics_export_csv), tint = Color.White)
@@ -167,7 +173,7 @@ fun MetricsScreen(onBack: () -> Unit) {
                     onClick = { showRecap = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(Res.string.recap_open, java.time.LocalDate.now().year), color = Color.White)
+                    Text(stringResource(Res.string.recap_open, currentYear()), color = Color.White)
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -402,7 +408,7 @@ private fun RadialHourClock(values: List<Float>, label: String, color: Color, mo
                     for (h in 0 until 24) {
                         val frac = (values.getOrElse(h) { 0f } / maxV).coerceIn(0f, 1f)
                         val len = inner + (outer - inner) * frac
-                        val ang = Math.toRadians((h / 24.0) * 360.0 - 90.0)
+                        val ang = ((h / 24.0) * 360.0 - 90.0) * (PI / 180.0)
                         val sx = cx + inner * cos(ang).toFloat(); val sy = cy + inner * sin(ang).toFloat()
                         val ex = cx + len * cos(ang).toFloat(); val ey = cy + len * sin(ang).toFloat()
                         drawLine(
@@ -543,17 +549,13 @@ private fun RecentRow(e: PlayEvent) {
 // ---------------------------------------------------------------------------
 
 private fun rangeToFrom(range: MetricsRange): Pair<Long, Long> {
-    val now = System.currentTimeMillis()
-    val startOfToday = Calendar.getInstance().apply {
-        timeInMillis = now
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
+    val now = currentTimeMillis()
     val to = now + 1
     val from = when (range) {
-        MetricsRange.TODAY -> startOfToday.timeInMillis
-        MetricsRange.WEEK -> (startOfToday.clone() as Calendar).apply { set(Calendar.DAY_OF_WEEK, firstDayOfWeek) }.timeInMillis
-        MetricsRange.MONTH -> (startOfToday.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
-        MetricsRange.YEAR -> (startOfToday.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+        MetricsRange.TODAY -> startOfSpan(CalendarSpan.DAY, now)
+        MetricsRange.WEEK -> startOfSpan(CalendarSpan.WEEK, now)
+        MetricsRange.MONTH -> startOfSpan(CalendarSpan.MONTH, now)
+        MetricsRange.YEAR -> startOfSpan(CalendarSpan.YEAR, now)
         MetricsRange.ALL -> 0L
     }
     return from to to
