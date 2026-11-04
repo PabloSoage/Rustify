@@ -69,8 +69,9 @@ object LocalModelCatalog {
  * process on `127.0.0.1` and a free port, never another interface. It lives as long as the app (or
  * until [stop]).
  *
- * A build that will not start here (a Vulkan build on a system whose driver cannot run it) is
- * remembered as failed and the next one down is fetched, ending at the CPU build.
+ * A build that will not start here (a Vulkan build on a system whose driver cannot run it) or that
+ * finds no card (it would run on the CPU and read as the GPU's) is remembered as failed and the next
+ * one down is fetched, ending at the CPU build.
  */
 class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
 
@@ -308,6 +309,7 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
         val port = withContext(Dispatchers.IO) {
             ServerSocket(0, 1, InetAddress.getByName(host)).use { it.localPort }
         }
+        val device = withContext(Dispatchers.IO) { chooseDevice(rt) }
         // Only on loopback; -ngl 99 puts every layer on the GPU a GPU build finds (a CPU build
         // ignores it); a 4096-token context is plenty for the DJ's prompt and keeps memory small.
         val command = listOf(
@@ -317,28 +319,9 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
             "--port", port.toString(),
             "-ngl", "99",
             "-c", "4096",
-        )
-        val p = withContext(Dispatchers.IO) {
-            root.mkdirs()
-            val builder = ProcessBuilder(command)
-                .directory(rt.server.parentFile)
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.to(logFile))
-            // Its shared libraries are beside it.
-            val libs = rt.server.parentFile.absolutePath
-            val os = System.getProperty("os.name").orEmpty().lowercase()
-            val libVar = when {
-                os.contains("mac") -> "DYLD_LIBRARY_PATH"
-                os.contains("win") -> null
-                else -> "LD_LIBRARY_PATH"
-            }
-            if (libVar != null) {
-                val env = builder.environment()
-                env[libVar] = listOfNotNull(libs, env[libVar]?.takeIf { it.isNotBlank() }).joinToString(File.pathSeparator)
-            }
-            builder.start()
-        }
-        Log.i(TAG, "llama-server (${rt.backend}) with ${model.fileName} on $host:$port")
+        ) + listOfNotNull(device?.let { "--device" }, device?.id)
+        val p = withContext(Dispatchers.IO) { serverProcess(rt, command).start() }
+        Log.i(TAG, "llama-server (${rt.backend}${device?.let { " on ${it.id}" }.orEmpty()}) with ${model.fileName} on $host:$port")
         synchronized(lock) {
             process = p
             if (!hookInstalled) {
@@ -365,6 +348,45 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
             synchronized(lock) { stopProcess() }
             throw e
         }
+    }
+
+    /**
+     * Asks a GPU build which cards it finds, and answers the one to run on, if it has to be said.
+     * Throws when the build dies asking (under WSL a driver library from the wrong version does that)
+     * or finds none, so that the next build down is tried. Output it cannot read is no verdict.
+     */
+    private fun chooseDevice(rt: InstalledBuild): LlamaCppAssets.Device? {
+        if (rt.backend == LlamaCppAssets.Backend.CPU.name) return null
+        root.mkdirs()
+        val p = serverProcess(rt, listOf(rt.server.absolutePath, "--list-devices")).start()
+        if (!p.waitFor(LIST_DEVICES_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+            p.destroyForcibly()
+            return null
+        }
+        if (p.exitValue() != 0) throw IOException("llama-server --list-devices stopped (${p.exitValue()}): ${lastLines(logFile)}")
+        val devices = LlamaCppAssets.parseDevices(logFile.readText()) ?: return null
+        if (devices.isEmpty()) throw IOException("the ${rt.backend} build finds no card here")
+        return LlamaCppAssets.deviceToUse(devices)
+    }
+
+    private fun serverProcess(rt: InstalledBuild, command: List<String>): ProcessBuilder {
+        val builder = ProcessBuilder(command)
+            .directory(rt.server.parentFile)
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.to(logFile))
+        // Its shared libraries are beside it.
+        val libs = rt.server.parentFile.absolutePath
+        val os = System.getProperty("os.name").orEmpty().lowercase()
+        val libVar = when {
+            os.contains("mac") -> "DYLD_LIBRARY_PATH"
+            os.contains("win") -> null
+            else -> "LD_LIBRARY_PATH"
+        }
+        if (libVar != null) {
+            val env = builder.environment()
+            env[libVar] = listOfNotNull(libs, env[libVar]?.takeIf { it.isNotBlank() }).joinToString(File.pathSeparator)
+        }
+        return builder
     }
 
     // A server that ends by itself (out of memory, a crash) is said, not left showing as running.
@@ -489,6 +511,9 @@ class LocalModelManager(private val root: File = File(AppDirs.data, "llm")) {
     private companion object {
         const val TAG = "LocalModel"
         const val USER_AGENT = "Rustify-desktop"
+
+        /** The driver compiles its kernels the first time, which took 17 s on a 5070 Ti. */
+        const val LIST_DEVICES_SECONDS = 60L
     }
 }
 

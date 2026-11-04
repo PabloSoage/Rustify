@@ -59,6 +59,28 @@ object LlamaCppAssets {
     fun newest(releases: List<Release>, host: Host, skip: Set<Backend> = emptySet()): Pair<Release, Choice>? =
         releases.firstNotNullOfOrNull { release -> choose(release.assets, host, skip)?.let { release to it } }
 
+    /** A card `llama-server --list-devices` names, and its memory. */
+    data class Device(val id: String, val totalMib: Long)
+
+    /**
+     * The cards in `--list-devices`' output (`  CUDA0: NVIDIA GeForce RTX 5070 Ti (16275 MiB, 15009 MiB free)`,
+     * or `  (none)`): empty when it says there are none, null when the output is not that list.
+     */
+    fun parseDevices(output: String): List<Device>? {
+        val list = output.substringAfter("Available devices:", "")
+        val devices = DEVICE_LINE.findAll(list).map { Device(it.groupValues[1], it.groupValues[2].toLong()) }.toList()
+        return devices.takeIf { it.isNotEmpty() || "(none)" in list }
+    }
+
+    /**
+     * The card to run on when there are several, the one with the most memory; null with fewer than
+     * two, where there is nothing to say. Left alone, llama.cpp splits the model across all of them,
+     * and a 5070 Ti with a 2060 Super beside it made 258 tok/s where the 5070 Ti alone makes 440.
+     */
+    fun deviceToUse(devices: List<Device>): Device? = devices.takeIf { it.size > 1 }?.maxByOrNull { it.totalMib }
+
+    private val DEVICE_LINE = Regex("""(?m)^\s*(\S+):\s.*\((\d+) MiB\b""")
+
     private fun parseRelease(root: JsonObject): Release? {
         val tag = (root["tag_name"] as? JsonPrimitive)?.content ?: return null
         val assets = (root["assets"] as? JsonArray).orEmpty().mapNotNull { a ->

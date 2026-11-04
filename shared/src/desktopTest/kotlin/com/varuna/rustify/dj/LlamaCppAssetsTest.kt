@@ -127,6 +127,37 @@ class LlamaCppAssetsTest {
     }
 
     @Test
+    fun `the cards a build finds are read from its list`() {
+        val output = """
+            0.00.148.074 I ggml_cuda_init: found 2 CUDA devices
+            Available devices:
+              CUDA0: NVIDIA GeForce RTX 2060 SUPER (8191 MiB, 7158 MiB free)
+              CUDA1: NVIDIA GeForce RTX 5070 Ti (16275 MiB, 15037 MiB free)
+        """.trimIndent()
+        val devices = LlamaCppAssets.parseDevices(output)
+        assertEquals(
+            listOf(LlamaCppAssets.Device("CUDA0", 8191), LlamaCppAssets.Device("CUDA1", 16275)),
+            devices,
+        )
+        assertEquals("CUDA1", LlamaCppAssets.deviceToUse(devices!!)?.id)
+    }
+
+    @Test
+    fun `one card or none leaves the choice to llama cpp`() {
+        assertEquals(emptyList(), LlamaCppAssets.parseDevices("Available devices:\n  (none)\n"))
+        val one = LlamaCppAssets.parseDevices("Available devices:\n  Vulkan0: AMD Radeon (8192 MiB, 8000 MiB free)\n")
+        assertEquals(1, one?.size)
+        assertNull(LlamaCppAssets.deviceToUse(one!!))
+    }
+
+    @Test
+    fun `output that is not the list says nothing about the cards`() {
+        assertNull(LlamaCppAssets.parseDevices("error: invalid argument: --list-devices"))
+        // A log line before the list is not a card, and neither is one in a list of another shape.
+        assertNull(LlamaCppAssets.parseDevices("x: y (12 MiB, 3 MiB free)\nAvailable devices:\n  in a new format\n"))
+    }
+
+    @Test
     fun `no build for the system is no choice`() {
         assertNull(pick(Host(Os.LINUX, Arch.ARM64)))
         assertNull(pick(Host(Os.WINDOWS, Arch.X64), assets("llama-b6890-xcframework.zip", "README.md")))
