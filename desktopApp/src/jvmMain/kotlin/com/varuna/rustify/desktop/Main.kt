@@ -126,7 +126,7 @@ fun main(args: Array<String>) {
                 androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
                     androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
                         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(560.dp, 640.dp)) {
-                            com.varuna.rustify.desktop.ui.JamSection(jam)
+                            com.varuna.rustify.ui.screens.JamSection(jam)
                         }
                     }
                 }
@@ -263,7 +263,7 @@ fun main(args: Array<String>) {
                                     intentFlow = DesktopLinks.intents,
                                 )
                             }
-                            Toasts(appPlatform, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                            com.varuna.rustify.ui.Toasts(appPlatform.toasts, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
                         }
                     }
                 }
