@@ -54,6 +54,24 @@ class QueuePlayerTest {
     }
 
     @Test
+    fun `editing the queue does not load the playing song again`() {
+        val backend = FakeBackend()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        val a = ytm("aaaaaaaaaaa", "A")
+        val b = ytm("bbbbbbbbbbb", "B")
+        val c = ytm("ccccccccccc", "C")
+        player.playAll(listOf(a, b), start = 1)
+        val loads = backend.sent.count { it is EngineCommand.Load }
+
+        // B, the song playing, moves to the top and C is added after it.
+        player.editQueue(listOf(b, a, c), currentIndex = 0)
+
+        assertEquals(loads, backend.sent.count { it is EngineCommand.Load }, "no second Load for the same song")
+        assertEquals(0, player.ui.value.index)
+        assertEquals(listOf("B", "A", "C"), player.ui.value.queue.map { it.name })
+    }
+
+    @Test
     fun `starting on a track that cannot play starts at the top`() {
         val backend = FakeBackend()
         val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)

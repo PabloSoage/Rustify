@@ -264,6 +264,55 @@ class QueuePlayer(
         reduce(buildJsonObject { put("type", "previous") })
     }
 
+    /**
+     * Replaces the queue around the song playing, which carries on uninterrupted: songs added after
+     * it, moved or removed. [currentIndex] is where the playing song now is in [list]. Tracks with no
+     * id are dropped, as in [playAll].
+     */
+    fun editQueue(list: List<FullTrack>, currentIndex: Int) {
+        val current = list.getOrNull(currentIndex)
+        val playable = list.filter { it.id != null }
+        if (playable.isEmpty()) return
+        val index = if (current?.id != null) list.take(currentIndex).count { it.id != null } else 0
+        val position = state.positionMs
+        tracks = playable
+        _ui.update { it.copy(queue = playable) }
+        reduce(buildJsonObject {
+            put("type", "set_queue")
+            put("tracks", JsonArray(playable.map { JsonPrimitive(it.id.orEmpty()) }))
+            put("start", index)
+        }, skipPlay = true)
+        // set_queue starts the song over; it has not, it is still playing where it was.
+        state = state.copy(positionMs = position)
+        if (currentToken != 0L) indexOfToken[currentToken] = index
+        // What comes next may be another song now.
+        dropPreload()
+        if (currentToken != 0L) preloadNext()
+        save()
+    }
+
+    /** Called when a song ends by itself (not a skip or a failure), before the queue moves on. */
+    var onTrackEnded: (() -> Unit)? = null
+
+    /**
+     * When set, the song playing is the last: when it ends by itself playback stops there, paused at
+     * the next song, instead of playing on. The sleep timer's "at the end of this song".
+     */
+    var stopAtTrackEnd: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            // Nothing preloaded behind a last song: the engine would move straight on into it.
+            dropPreload()
+            if (!value && currentToken != 0L) preloadNext()
+        }
+
+    private fun dropPreload() {
+        preloadedToken = 0
+        preloadedIndex = -1
+        backend.send(EngineCommand.ClearNext)
+    }
+
     /** Plays the queue's [index]-th song from the start (or [startMs]). */
     fun jumpTo(index: Int, startMs: Long = 0) {
         if (index !in tracks.indices) return
@@ -367,9 +416,7 @@ class QueuePlayer(
         val token = nextToken++
         indexOfToken[token] = index
         currentToken = token
-        preloadedToken = 0
-        preloadedIndex = -1
-        backend.send(EngineCommand.ClearNext)
+        dropPreload()
         _ui.update { it.copy(loading = true, positionMs = startMs, durationMs = null, error = null) }
         scope.launch {
             val audio = resolve(track)
@@ -389,6 +436,7 @@ class QueuePlayer(
     }
 
     private fun preloadNext() {
+        if (stopAtTrackEnd) return
         val index = upcomingIndex() ?: return
         val track = tracks.getOrNull(index) ?: return
         val token = nextToken++
@@ -418,6 +466,7 @@ class QueuePlayer(
             }
             is EngineEvent.Transitioned -> if (event.to == preloadedToken) {
                 finishListening(completed = true, errored = false)
+                onTrackEnded?.invoke()
                 currentToken = event.to
                 preloadedToken = 0
                 startListening(event.to)
@@ -428,7 +477,9 @@ class QueuePlayer(
             }
             is EngineEvent.Ended -> if (event.token == currentToken) {
                 finishListening(completed = true, errored = false)
-                reduce(buildJsonObject { put("type", "track_ended") })
+                val last = stopAtTrackEnd
+                onTrackEnded?.invoke()
+                if (last) stopAfterTrack() else reduce(buildJsonObject { put("type", "track_ended") })
             }
             is EngineEvent.Error -> if (event.token == currentToken) {
                 finishListening(completed = false, errored = true)
@@ -436,6 +487,19 @@ class QueuePlayer(
             }
             is EngineEvent.Loading, is EngineEvent.Preloaded -> Unit
         }
+    }
+
+    /**
+     * The song that just ended was the last ([stopAtTrackEnd]): the queue moves to the next one but
+     * nothing is loaded, so play picks up there, as after [restore].
+     */
+    private fun stopAfterTrack() {
+        reduce(buildJsonObject { put("type", "track_ended") }, skipPlay = true)
+        state = state.copy(positionMs = 0)
+        currentToken = 0
+        backend.send(EngineCommand.Stop)
+        _ui.update { it.copy(playing = false, positionMs = 0, durationMs = null) }
+        save()
     }
 
     private fun failed(message: String) {
