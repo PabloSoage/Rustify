@@ -24,7 +24,7 @@ struct RustifyApp: App {
 /// Bridges IosController's callbacks to SwiftUI's observation.
 @MainActor
 final class PlayerModel: ObservableObject {
-    let controller = IosController()
+    let controller = IosController(secrets: KeychainStore())
     @Published var ui: PlayerUi?
     @Published var results: [FullTrack] = []
     @Published var user: SpotifyUser?

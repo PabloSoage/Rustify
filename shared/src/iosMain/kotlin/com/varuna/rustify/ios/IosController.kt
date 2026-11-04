@@ -10,6 +10,8 @@ import com.varuna.rustify.bridge.decodeWire
 import com.varuna.rustify.engine.IosPlayerBackend
 import com.varuna.rustify.engine.PlayerUi
 import com.varuna.rustify.engine.QueuePlayer
+import com.varuna.rustify.platform.KeychainKeyValueStore
+import com.varuna.rustify.platform.SecretStorage
 import com.varuna.rustify.platform.UserDefaultsStore
 import com.varuna.rustify.platform.defaultLanguage
 import com.varuna.rustify.spotify.IosSpotifyCore
@@ -29,11 +31,17 @@ import kotlinx.coroutines.withContext
  * either — it needs "search this, tell me", "play these", and "tell me when the player changes". All
  * of it runs on the main queue ([MainScope]); the core calls themselves hop to an IO thread inside
  * [NativeEngine] and [CoreCall].
+ *
+ * [secrets] is the Keychain, which the app implements in Swift: the Spotify cookie and token go
+ * there, the rest of the session stays in `NSUserDefaults` (see [KeychainKeyValueStore]).
  */
-class IosController {
+class IosController(secrets: SecretStorage) {
     private val scope = MainScope()
     private val player = QueuePlayer(scope, IosPlayerBackend, UserDefaultsStore()).also { it.restore() }
-    private val spotify = SpotifyLibrary(IosSpotifyCore, UserDefaultsStore())
+    private val spotify = SpotifyLibrary(
+        IosSpotifyCore,
+        KeychainKeyValueStore(KeychainKeyValueStore.SPOTIFY_SECRETS, secrets, UserDefaultsStore()),
+    )
 
     /** Call once at launch with the app's Application Support and Caches folders. */
     fun start(dataDir: String, cacheDir: String) {
