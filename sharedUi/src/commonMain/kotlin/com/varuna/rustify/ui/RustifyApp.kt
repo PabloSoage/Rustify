@@ -846,8 +846,31 @@ fun RustifyApp(
                 }
                 // Not moved yet (docs serie-4.x/27): the platform draws them.
                 is Screen.WebPlayer, is Screen.CustomDownload,
-                is Screen.NanoChat, is Screen.AudioLab, is Screen.Travel,
+                is Screen.AudioLab, is Screen.Travel,
                 is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
+                is Screen.NanoChat -> {
+                    // The platform's model (Gemini Nano on Android); without one, the shell's screen.
+                    val chat = services.chatModel()
+                    if (chat == null) shell.PlatformScreen(currentScreen, host)
+                    else com.varuna.rustify.ui.screens.NanoChatScreen(
+                        chat = chat,
+                        onBack = { host.back() },
+                        spotifyRepo = spotifyRepo,
+                        nowPlaying = currentTrack,
+                        queue = playerState.queue,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onEnqueueTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.enqueueAll(tracks) },
+                        onControl = { action ->
+                            when (action) {
+                                com.varuna.rustify.dj.ChatAction.Pause -> audioPlayerService.pause()
+                                com.varuna.rustify.dj.ChatAction.Resume -> audioPlayerService.play()
+                                com.varuna.rustify.dj.ChatAction.Next -> audioPlayerService.skipToNext()
+                                com.varuna.rustify.dj.ChatAction.Previous -> audioPlayerService.skipToPrevious()
+                                else -> {}
+                            }
+                        }
+                    )
+                }
                 is Screen.Dj -> {
                     // currentTrack and playerState are read through their State, so the DJ sees the
                     // song and queue of the moment it is asked, not of when the screen opened.

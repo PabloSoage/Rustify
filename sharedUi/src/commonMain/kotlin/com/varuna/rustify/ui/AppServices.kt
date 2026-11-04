@@ -91,6 +91,12 @@ interface AppServices {
     @Composable
     fun LocalDjSettings()
 
+    /**
+     * The model the chat talks to (Android: Gemini Nano, on the phone), one for the process; null
+     * where there is none, and the platform's shell draws the screen instead.
+     */
+    fun chatModel(): com.varuna.rustify.dj.ChatModel?
+
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 

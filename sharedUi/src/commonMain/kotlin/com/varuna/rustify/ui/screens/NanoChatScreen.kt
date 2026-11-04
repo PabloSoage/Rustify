@@ -1,11 +1,5 @@
 package com.varuna.rustify.ui.screens
 
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,13 +34,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,27 +49,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.mlkit.genai.common.StreamingCallback
-import com.google.mlkit.genai.prompt.ImagePart
-import com.google.mlkit.genai.prompt.TextPart
-import com.google.mlkit.genai.prompt.generateContentRequest
 import androidx.compose.ui.text.withStyle
-import com.varuna.rustify.R
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.dj.ChatAction
 import com.varuna.rustify.dj.ChatActions
+import com.varuna.rustify.dj.ChatModel
+import com.varuna.rustify.dj.ChatTurn
 import com.varuna.rustify.dj.DjEngine
-import com.varuna.rustify.dj.OnDeviceModel
-import kotlinx.coroutines.Dispatchers
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.resources.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.stringResource
+import kotlin.time.TimeSource
 
 /**
  * A chat with Gemini Nano on the phone (4.7.1), under Settings because it is a tool, not part of the
@@ -90,11 +78,14 @@ import kotlinx.coroutines.withContext
  * Since 4.8.1 it can also act on the app — play, queue, search, start a DJ mix, pause, skip — through
  * [ChatActions]: the model ends its answer with an action line and this screen carries it out. The
  * conversation stays on the phone; an action that searches asks Spotify, as any search in the app.
+ *
+ * The screen is shared (:sharedUi); the model is the platform's [ChatModel] (`AppServices.chatModel`),
+ * which on Android is Gemini Nano as above.
  */
 private data class ChatMessage(
     val fromUser: Boolean,
     val text: String,
-    val image: Bitmap? = null,
+    val image: ImageBitmap? = null,
     val stats: String? = null,
     /** What the app did for this answer ("Playing …"), when it asked for an action. */
     val done: String? = null,
@@ -105,6 +96,7 @@ private data class ChatMessage(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NanoChatScreen(
+    chat: ChatModel,
     onBack: () -> Unit,
     spotifyRepo: SpotifyRepository,
     nowPlaying: FullTrack?,
@@ -113,96 +105,77 @@ fun NanoChatScreen(
     onEnqueueTracks: (List<FullTrack>) -> Unit,
     onControl: (ChatAction) -> Unit,
 ) {
-    val context = LocalContext.current
     // The DJ's engine reads its settings and its local mode through these, as the DJ screen does.
     val platform = com.varuna.rustify.ui.LocalAppPlatform.current
     val services = com.varuna.rustify.ui.LocalAppServices.current
     val scope = rememberCoroutineScope()
     val green = Color(0xFF1DB954)
-    val status by OnDeviceModel.status.collectAsState()
-    val modelName by OnDeviceModel.modelName.collectAsState()
+    val ready = chat.isReady()
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var input by remember { mutableStateOf("") }
-    var image by remember { mutableStateOf<Bitmap?>(null) }
+    var image by remember { mutableStateOf<ImageBitmap?>(null) }
     var busy by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val statsTemplate = stringResource(R.string.nano_chat_stats)
-    val failedTemplate = stringResource(R.string.nano_chat_failed)
-    val doneStrings = ChatDoneStrings(
-        playing = stringResource(R.string.nano_chat_done_playing),
-        queued = stringResource(R.string.nano_chat_done_queued),
-        results = stringResource(R.string.nano_chat_done_results),
-        mix = stringResource(R.string.nano_chat_done_mix),
-        notFound = stringResource(R.string.nano_chat_done_not_found),
-        paused = stringResource(R.string.nano_chat_done_paused),
-        resumed = stringResource(R.string.nano_chat_done_resumed),
-        next = stringResource(R.string.nano_chat_done_next),
-        previous = stringResource(R.string.nano_chat_done_previous),
-        failed = stringResource(R.string.nano_chat_done_failed),
-    )
+    val statsTemplate = stringResource(Res.string.nano_chat_stats)
 
     /** Carries out what the model asked for; answers what to show under its reply. */
     suspend fun perform(action: ChatAction): Pair<String, List<FullTrack>> = runCatching {
         suspend fun first(query: String) = spotifyRepo.searchTracks(query, limit = 5).items.firstOrNull { it.id != null }
         when (action) {
             is ChatAction.Play -> {
-                val track = first(action.query) ?: return@runCatching String.format(doneStrings.notFound, action.query) to emptyList()
+                val track = first(action.query) ?: return@runCatching appString(Res.string.nano_chat_done_not_found, action.query) to emptyList()
                 // A song, then music like it: "play Queen" should not stop after one track.
                 val radio = runCatching { spotifyRepo.getTrackRadio(track.id!!) }.getOrDefault(emptyList())
                 val set = (listOf(track) + radio).distinctBy { it.id }.take(30)
                 onPlayTracks(set)
-                String.format(doneStrings.playing, label(track)) to listOf(track)
+                appString(Res.string.nano_chat_done_playing, label(track)) to listOf(track)
             }
             is ChatAction.Queue -> {
-                val track = first(action.query) ?: return@runCatching String.format(doneStrings.notFound, action.query) to emptyList()
+                val track = first(action.query) ?: return@runCatching appString(Res.string.nano_chat_done_not_found, action.query) to emptyList()
                 onEnqueueTracks(listOf(track))
-                String.format(doneStrings.queued, label(track)) to listOf(track)
+                appString(Res.string.nano_chat_done_queued, label(track)) to listOf(track)
             }
             is ChatAction.Search -> {
                 val found = spotifyRepo.searchTracks(action.query, limit = 8).items.filter { it.id != null }
-                if (found.isEmpty()) String.format(doneStrings.notFound, action.query) to emptyList()
-                else String.format(doneStrings.results, action.query) to found
+                if (found.isEmpty()) appString(Res.string.nano_chat_done_not_found, action.query) to emptyList()
+                else appString(Res.string.nano_chat_done_results, action.query) to found
             }
             is ChatAction.Dj -> {
                 val result = DjEngine(platform, spotifyRepo) { services.localDjProvider() }.run(request = action.request, nowPlaying = nowPlaying, queue = queue)
-                if (result.tracks.isEmpty()) String.format(doneStrings.notFound, action.request) to emptyList()
+                if (result.tracks.isEmpty()) appString(Res.string.nano_chat_done_not_found, action.request) to emptyList()
                 else {
                     onPlayTracks(result.tracks)
-                    String.format(doneStrings.mix, result.intro, result.tracks.size) to result.tracks.take(5)
+                    appString(Res.string.nano_chat_done_mix, result.intro, result.tracks.size) to result.tracks.take(5)
                 }
             }
-            ChatAction.Pause -> { onControl(action); doneStrings.paused to emptyList() }
-            ChatAction.Resume -> { onControl(action); doneStrings.resumed to emptyList() }
-            ChatAction.Next -> { onControl(action); doneStrings.next to emptyList() }
-            ChatAction.Previous -> { onControl(action); doneStrings.previous to emptyList() }
+            ChatAction.Pause -> { onControl(action); appString(Res.string.nano_chat_done_paused) to emptyList() }
+            ChatAction.Resume -> { onControl(action); appString(Res.string.nano_chat_done_resumed) to emptyList() }
+            ChatAction.Next -> { onControl(action); appString(Res.string.nano_chat_done_next) to emptyList() }
+            ChatAction.Previous -> { onControl(action); appString(Res.string.nano_chat_done_previous) to emptyList() }
         }
-    }.getOrElse { e -> String.format(doneStrings.failed, e.message ?: e.javaClass.simpleName) to emptyList() }
+    }.getOrElse { e -> appString(Res.string.nano_chat_done_failed, e.message ?: e::class.simpleName.orEmpty()) to emptyList() }
 
-    LaunchedEffect(Unit) {
-        OnDeviceModel.init(context)
-        if (OnDeviceModel.refresh() == OnDeviceModel.Status.READY) OnDeviceModel.warmup()
-    }
+    LaunchedEffect(Unit) { chat.prepare() }
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) scope.launch { image = withContext(Dispatchers.IO) { loadScaled(context, uri) } }
-    }
+    // Only where the model reads images; the picker is the platform's (Android's photo picker).
+    val pickImage = if (chat.supportsImages) chat.rememberImagePicker { picked -> image = picked } else null
 
     fun send() {
         val question = input.trim()
-        if (question.isEmpty() || busy || status != OnDeviceModel.Status.READY) return
+        if (question.isEmpty() || busy || !ready) return
         val attached = image
         input = ""
         image = null
-        val history = messages.toList()
+        val history = messages.map { ChatTurn(it.fromUser, it.text) }
         messages.add(ChatMessage(true, question, attached))
         messages.add(ChatMessage(false, ""))
         val answerIndex = messages.lastIndex
         busy = true
         scope.launch {
-            val started = System.nanoTime()
+            val started = TimeSource.Monotonic.markNow()
             var firstTokenMs = -1L
             val answer = StringBuilder()
             val result = runCatching {
@@ -210,30 +183,22 @@ fun NanoChatScreen(
                     nowPlaying?.let { label(it) },
                     queue.dropWhile { it.id != nowPlaying?.id }.drop(1).map { label(it) }
                 )
-                val prompt = system + "\n" + buildPrompt(history, question)
-                val request = if (attached != null) generateContentRequest(ImagePart(attached), TextPart(prompt)) { temperature = 0.7f }
-                    else generateContentRequest(TextPart(prompt)) { temperature = 0.7f }
-                OnDeviceModel.model.generateContent(request, object : StreamingCallback {
-                    override fun onNewText(text: String) {
-                        if (firstTokenMs < 0) firstTokenMs = (System.nanoTime() - started) / 1_000_000
-                        answer.append(text)
-                        val snapshot = ChatActions.visibleText(answer.toString())
-                        scope.launch { messages[answerIndex] = messages[answerIndex].copy(text = snapshot) }
-                    }
-                })
+                chat.stream(system, history, question, attached) { text ->
+                    if (firstTokenMs < 0) firstTokenMs = started.elapsedNow().inWholeMilliseconds
+                    answer.append(text)
+                    val snapshot = ChatActions.visibleText(answer.toString())
+                    scope.launch { messages[answerIndex] = messages[answerIndex].copy(text = snapshot) }
+                }
             }
-            val totalMs = (System.nanoTime() - started) / 1_000_000
-            result.onSuccess { response ->
-                // Some builds stream nothing and only return the whole answer at the end.
-                val text = answer.toString().ifBlank { response.candidates.firstOrNull()?.text.orEmpty() }
-                val tokens = runCatching {
-                    OnDeviceModel.model.countTokens(generateContentRequest(TextPart(text)) {}).totalTokens
-                }.getOrDefault(0)
+            val totalMs = started.elapsedNow().inWholeMilliseconds
+            result.onSuccess { whole ->
+                // Some models stream nothing and only return the whole answer at the end.
+                val text = answer.toString().ifBlank { whole }
+                val tokens = chat.countTokens(text)
                 val genMs = (totalMs - firstTokenMs.coerceAtLeast(0)).coerceAtLeast(1)
-                val stats = String.format(
-                    statsTemplate,
-                    firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, tokens * 1000.0 / genMs
-                )
+                val stats = tokens?.let {
+                    fillDecimals(statsTemplate, firstTokenMs.coerceAtLeast(0) / 1000.0, totalMs / 1000.0, it * 1000.0 / genMs)
+                }
                 val action = ChatActions.parse(text)?.takeIf { ChatActions.isRequest(question) }
                 messages[answerIndex] = ChatMessage(false, ChatActions.visibleText(text), stats = stats)
                 if (action != null) {
@@ -241,7 +206,7 @@ fun NanoChatScreen(
                     messages[answerIndex] = messages[answerIndex].copy(done = done, tracks = tracks)
                 }
             }.onFailure { e ->
-                messages[answerIndex] = ChatMessage(false, String.format(failedTemplate, e.message ?: e.javaClass.simpleName))
+                messages[answerIndex] = ChatMessage(false, appString(Res.string.nano_chat_failed, e.message ?: e::class.simpleName.orEmpty()))
             }
             busy = false
         }
@@ -255,22 +220,19 @@ fun NanoChatScreen(
                 windowInsets = WindowInsets(0),
                 title = {
                     Column {
-                        Text(stringResource(R.string.nano_chat_title), color = Color.White)
-                        Text(
-                            listOfNotNull(modelName, stringResource(R.string.nano_chat_on_device)).joinToString(" · "),
-                            color = Color.Gray, fontSize = 12.sp
-                        )
+                        Text(stringResource(chat.title), color = Color.White)
+                        Text(chat.subtitle(), color = Color.Gray, fontSize = 12.sp)
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {
                     if (messages.isNotEmpty() && !busy) {
                         IconButton(onClick = { messages.clear() }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.nano_chat_clear), tint = Color.White)
+                            Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(Res.string.nano_chat_clear), tint = Color.White)
                         }
                     }
                 },
@@ -279,9 +241,9 @@ fun NanoChatScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            if (status != OnDeviceModel.Status.READY) {
+            if (!ready) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    NanoModelPanel()
+                    chat.SetupPanel()
                 }
             }
             LazyColumn(
@@ -291,7 +253,7 @@ fun NanoChatScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
             ) {
                 if (messages.isEmpty()) {
-                    item { Text(stringResource(R.string.nano_chat_empty), color = Color.Gray, fontSize = 14.sp) }
+                    item { Text(stringResource(chat.intro), color = Color.Gray, fontSize = 14.sp) }
                 }
                 items(messages) { m ->
                     Bubble(m, green, onPlay = { t -> onPlayTracks(listOf(t)) }, onQueue = { t -> onEnqueueTracks(listOf(t)) })
@@ -299,23 +261,23 @@ fun NanoChatScreen(
             }
             image?.let { bmp ->
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Image(bmp.asImageBitmap(), null, contentScale = ContentScale.Crop,
+                    Image(bmp, null, contentScale = ContentScale.Crop,
                         modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
                     IconButton(onClick = { image = null }) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.nano_chat_remove_image), tint = Color.Gray)
+                        Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.nano_chat_remove_image), tint = Color.Gray)
                     }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = {
-                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }, enabled = !busy) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.nano_chat_attach), tint = Color.LightGray)
+                if (pickImage != null) {
+                    IconButton(onClick = { pickImage() }, enabled = !busy) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(Res.string.nano_chat_attach), tint = Color.LightGray)
+                    }
                 }
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = { Text(stringResource(R.string.nano_chat_hint), color = Color.Gray) },
+                    placeholder = { Text(stringResource(Res.string.nano_chat_hint), color = Color.Gray) },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     colors = TextFieldDefaults.colors(
@@ -324,8 +286,8 @@ fun NanoChatScreen(
                         cursorColor = green
                     )
                 )
-                IconButton(onClick = { send() }, enabled = !busy && input.isNotBlank() && status == OnDeviceModel.Status.READY) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.nano_chat_send),
+                IconButton(onClick = { send() }, enabled = !busy && input.isNotBlank() && ready) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(Res.string.nano_chat_send),
                         tint = if (!busy && input.isNotBlank()) green else Color.Gray)
                 }
             }
@@ -344,7 +306,7 @@ private fun Bubble(m: ChatMessage, green: Color, onPlay: (FullTrack) -> Unit, on
                 .padding(12.dp)
         ) {
             m.image?.let {
-                Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop,
+                Image(it, null, contentScale = ContentScale.Crop,
                     modifier = Modifier.size(160.dp).clip(RoundedCornerShape(8.dp)))
                 Spacer(Modifier.height(6.dp))
             }
@@ -363,7 +325,7 @@ private fun Bubble(m: ChatMessage, green: Color, onPlay: (FullTrack) -> Unit, on
                         Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
                     }
                     IconButton(onClick = { onQueue(t) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.nano_chat_add_to_queue), tint = Color.LightGray)
+                        Icon(Icons.Default.Add, contentDescription = stringResource(Res.string.nano_chat_add_to_queue), tint = Color.LightGray)
                     }
                 }
             }
@@ -376,33 +338,33 @@ private fun Bubble(m: ChatMessage, green: Color, onPlay: (FullTrack) -> Unit, on
 private fun label(t: FullTrack): String =
     listOfNotNull(t.name.ifBlank { null }, t.artists.firstOrNull()?.name).joinToString(" — ")
 
-/** The lines that say what an action did, resolved once from resources. */
-private data class ChatDoneStrings(
-    val playing: String, val queued: String, val results: String, val mix: String, val notFound: String,
-    val paused: String, val resumed: String, val next: String, val previous: String, val failed: String,
-)
-
-/** The recent turns and the new question, as one prompt; at most six earlier turns. */
-private fun buildPrompt(history: List<ChatMessage>, question: String): String {
-    val turns = history.filter { it.text.isNotBlank() }.takeLast(6)
-    if (turns.isEmpty()) return question
-    return buildString {
-        turns.forEach { append(if (it.fromUser) "User: " else "Assistant: ").append(it.text.trim()).append("\n") }
-        append("User: ").append(question).append("\nAssistant:")
-    }
+/**
+ * [template]'s `%1$.1f`, `%2$.1f`… with [values] in them, one decimal each, as `String.format` wrote
+ * them on the phone: Compose Multiplatform's resources fill only `%1$s` and `%1$d`.
+ */
+internal fun fillDecimals(template: String, vararg values: Double): String {
+    var out = template
+    values.forEachIndexed { i, v -> out = out.replace("%${i + 1}\$.1f", oneDecimal(v)) }
+    return out
 }
 
-/** A picked photo, decoded and scaled so its longer side is at most 1024 px. */
-private fun loadScaled(context: android.content.Context, uri: Uri): Bitmap? = runCatching {
-    ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
-        val longest = maxOf(info.size.width, info.size.height)
-        if (longest > 1024) {
-            val f = 1024f / longest
-            decoder.setTargetSize((info.size.width * f).toInt(), (info.size.height * f).toInt())
-        }
-        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-    }
-}.getOrNull()
+/**
+ * [x] rounded half up to one decimal (`%.1f`), with the decimal sign of the interface's language,
+ * a comma where the default locale wrote one. Plain Kotlin: common code has no `String.format`.
+ */
+internal fun oneDecimal(x: Double): String {
+    val tenths = kotlin.math.floor(kotlin.math.abs(x) * 10 + 0.5).toLong()
+    val sign = if (x < 0 && tenths != 0L) "-" else ""
+    val comma = androidx.compose.ui.text.intl.Locale.current.language in DECIMAL_COMMA
+    return sign + (tenths / 10) + (if (comma) "," else ".") + (tenths % 10)
+}
+
+/** The languages whose numbers take a decimal comma (CLDR, in each language's main region). */
+private val DECIMAL_COMMA = setOf(
+    "az", "be", "bg", "ca", "cs", "da", "de", "el", "es", "et", "eu", "fi", "fr", "gl", "hr", "hu", "hy",
+    "id", "is", "it", "ka", "kk", "lt", "lv", "mk", "nb", "nl", "nn", "no", "pl", "pt", "ro", "ru", "sk",
+    "sl", "sq", "sr", "sv", "tr", "uk", "vi",
+)
 
 /**
  * The little Markdown the model writes — `**bold**` and `* ` bullets — shown as such rather than as

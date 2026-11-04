@@ -118,6 +118,9 @@ class DesktopAppServices(
     @Composable
     override fun LocalDjSettings() = DesktopLocalDjPanel(platform, localModels)
 
+    // Not yet: the chat asks Gemini Nano, and the shell says the screen is not here.
+    override fun chatModel(): com.varuna.rustify.dj.ChatModel? = null
+
     /** The window is closing: the model server and the voice stop with it. */
     fun close() {
         localModels.stop()

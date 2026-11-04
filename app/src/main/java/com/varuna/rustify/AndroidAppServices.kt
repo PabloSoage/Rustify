@@ -94,5 +94,9 @@ class AndroidAppServices(context: Context) : AppServices {
     @Composable
     override fun LocalDjSettings() = com.varuna.rustify.ui.screens.NanoModelPanel()
 
+    // Gemini Nano, the same model the DJ's local mode uses.
+    private val chat by lazy { com.varuna.rustify.dj.NanoChatModel(app) }
+    override fun chatModel(): com.varuna.rustify.dj.ChatModel = chat
+
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.LogCapture
 }
