@@ -1,5 +1,5 @@
-// desktopApp/src/jvmMain/kotlin/com/varuna/rustify/desktop/ui/JamScreen.kt
-package com.varuna.rustify.desktop.ui
+// sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/screens/JamSection.kt
+package com.varuna.rustify.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

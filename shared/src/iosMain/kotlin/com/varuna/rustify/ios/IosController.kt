@@ -21,6 +21,8 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,13 +37,21 @@ import kotlinx.coroutines.withContext
  * [secrets] is the Keychain, which the app implements in Swift: the Spotify cookie and token go
  * there, the rest of the session stays in `NSUserDefaults` (see [KeychainKeyValueStore]).
  */
-class IosController(secrets: SecretStorage) {
-    private val scope = MainScope()
-    private val player = QueuePlayer(scope, IosPlayerBackend, UserDefaultsStore()).also { it.restore() }
+class IosController(val secrets: SecretStorage) {
+    /** What everything on the main queue runs in; the interface's player and Jam run in it too. */
+    val scope = MainScope()
+
+    /** The player, which the shared interface drives and Swift's lock screen and session watch. */
+    val player = QueuePlayer(scope, IosPlayerBackend, UserDefaultsStore()).also { it.restore() }
     private val spotify = SpotifyLibrary(
         IosSpotifyCore,
         KeychainKeyValueStore(KeychainKeyValueStore.SPOTIFY_SECRETS, secrets, UserDefaultsStore()),
     )
+
+    private val _ready = MutableStateFlow(false)
+
+    /** True once the core knows its folders: restoring a session before that would forget what it learned. */
+    val ready: StateFlow<Boolean> = _ready
 
     /** Call once at launch with the app's Application Support and Caches folders. */
     fun start(dataDir: String, cacheDir: String) {
@@ -52,6 +62,7 @@ class IosController(secrets: SecretStorage) {
             val language = defaultLanguage()
             withContext(Dispatchers.IO) { NativeEngine.setLanguageNative(language) }
             player.start()
+            _ready.value = true
         }
     }
 

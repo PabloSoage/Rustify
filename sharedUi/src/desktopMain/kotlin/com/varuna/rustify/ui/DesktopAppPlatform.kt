@@ -54,17 +54,15 @@ class DesktopAppPlatform(override val systemCountry: String) : AppPlatform {
     override val filesDir: File get() = AppDirs.data
     override val cacheDir: File get() = AppDirs.cache
 
-    private val _toasts = MutableStateFlow<Toast?>(null)
+    private val _toasts = MutableStateFlow<ToastMessage?>(null)
 
-    /** The message the window should show now, with a serial so the same text twice shows twice. */
-    val toasts: StateFlow<Toast?> = _toasts
-
-    data class Toast(val message: String, val long: Boolean, val serial: Long)
+    /** The message the window should show now. */
+    val toasts: StateFlow<ToastMessage?> = _toasts
 
     private var serial = 0L
 
     override fun toast(message: String, long: Boolean) {
-        _toasts.value = Toast(message, long, ++serial)
+        _toasts.value = ToastMessage(message, long, ++serial)
     }
 
     override fun openUrl(url: String) {

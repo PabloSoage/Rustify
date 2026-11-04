@@ -1,5 +1,5 @@
-// desktopApp/src/jvmMain/kotlin/com/varuna/rustify/desktop/Toasts.kt
-package com.varuna.rustify.desktop
+// sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/Toasts.kt
+package com.varuna.rustify.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -19,16 +19,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.varuna.rustify.ui.DesktopAppPlatform
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+
+/** A message for [Toasts], with a serial so the same text twice shows twice. */
+data class ToastMessage(val message: String, val long: Boolean, val serial: Long)
 
 /**
- * The phone's toasts in the window: a dark pill over the bottom, as long as Android keeps one
+ * The phone's toasts where the system has none (the desktop's window, iOS): a dark pill over the bottom, as long as Android keeps one
  * (2 s, or 3.5 s for a long one). A new message replaces the one showing.
  */
 @Composable
-fun Toasts(platform: DesktopAppPlatform, modifier: Modifier = Modifier) {
-    val toast by platform.toasts.collectAsState()
+fun Toasts(toasts: StateFlow<ToastMessage?>, modifier: Modifier = Modifier) {
+    val toast by toasts.collectAsState()
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(toast?.serial) {
         val t = toast ?: return@LaunchedEffect

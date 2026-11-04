@@ -1,14 +1,10 @@
 // shared/src/desktopMain/kotlin/com/varuna/rustify/audio/DesktopAudioSources.kt
 package com.varuna.rustify.audio
 
-import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.engine.StreamResolver
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.KeyValueStore
-import com.varuna.rustify.platform.Log
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /**
@@ -24,8 +20,6 @@ import java.io.File
  * track is registered, and add-ons are asked through the core, which judges and pins their hosts.
  */
 object DesktopAudioSources {
-
-    private const val TAG = "DesktopAudioSources"
 
     @Volatile private var installed: StreamResolver.Sources? = null
 
@@ -44,35 +38,7 @@ object DesktopAudioSources {
                 ),
                 DesktopYtDlpAudioSource(),
             )
-            Chain().also { installed = it }
-        }
-    }
-
-    private class Chain : StreamResolver.Sources {
-        private val addons = Mutex()
-        private var addonsLoaded = false
-
-        override suspend fun resolve(track: FullTrack, hint: String?): StreamResolver.Stream? {
-            // The installed add-ons join the chain before the first track, as the phone loads them at
-            // start-up (MainActivity). Not at start-up here: the core's storage, where they are kept,
-            // is opened by the window's first effect, and the first track comes after it.
-            addons.withLock {
-                if (!addonsLoaded) {
-                    addonsLoaded = true
-                    runCatching { AudioSourceRegistry.refreshAddons() }
-                        .onFailure { Log.w(TAG, "could not load the add-ons", it) }
-                }
-            }
-            return AudioSourceRegistry.streamChain().resolveStreamUrl(track, hint).fold(
-                onSuccess = { (provider, info) ->
-                    Log.d(TAG, "${track.id} via $provider${if (hint.isNullOrBlank()) "" else " (video $hint)"}")
-                    StreamResolver.Stream(url = info.uri, mimeType = info.mimeType.orEmpty(), loudnessDb = info.loudnessDb)
-                },
-                onFailure = { e ->
-                    Log.w(TAG, "no source for ${track.id}: ${e.message}")
-                    null
-                },
-            )
+            AudioSourceRegistry.asStreamSources().also { installed = it }
         }
     }
 }
