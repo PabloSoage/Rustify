@@ -144,6 +144,13 @@ jobs:
       # should hide the other.
       - run: ./gradlew :shared:iosSimulatorArm64Test :sharedUi:iosSimulatorArm64Test --no-daemon
         if: ${{ !cancelled() }}
+      # A test task that found nothing to run is as green as one that passed: these say how many did.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: rustify-ios-test-results
+          path: '*/build/test-results/iosSimulatorArm64Test/*.xml'
+          if-no-files-found: error
       # Unsigned: an .ipa from this is installed by AltStore/SideStore, which sign it with the user's
       # own Apple ID. The pre-build script in project.yml builds the Kotlin framework for Release.
       # Not when a working branch is run by hand to see the app up: it is the job's slowest step, and
