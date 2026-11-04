@@ -63,6 +63,7 @@ import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.egg_found_msg
 import com.varuna.rustify.ui.resources.egg_found_title
 import com.varuna.rustify.ui.resources.egg_jojo_msg
+import com.varuna.rustify.ui.resources.settings_back
 import com.varuna.rustify.ui.resources.settings_lang_en
 import com.varuna.rustify.ui.resources.settings_lang_es
 import com.varuna.rustify.ui.resources.settings_lang_ja
@@ -106,7 +107,7 @@ fun SettingsScreen(shell: AppShell, host: ShellHost) {
                 title = { Text(stringResource(Res.string.settings_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { if (settingsCategory != null) onCategoryChange(null) else host.back() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {

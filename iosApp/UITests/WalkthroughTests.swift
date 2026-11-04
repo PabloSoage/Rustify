@@ -19,6 +19,7 @@ final class WalkthroughTests: XCTestCase {
         search()
         link()
         localMusic()
+        settings()
     }
 
     private func home() {
@@ -57,8 +58,24 @@ final class WalkthroughTests: XCTestCase {
         guard tap("Local Music") else { return }
         step("local-music", shows: "Walkthrough Ñandú", timeout: 30)
         guard tap("Walkthrough Ñandú") else { return }
+        // The mini player's button says what pressing it would do: Pause is the engine playing.
+        step("local-playing", shows: "Pause", timeout: 20)
         sleep(8)
-        record("local-playing")
+        record("local-after-8s")
+        guard tap("Pause") else { return }
+        gone("local-paused", "Pause")
+    }
+
+    private func settings() {
+        guard tap("Home"), tap("Open menu"), tap("Settings") else { return }
+        step("settings", shows: "Advanced")
+        guard tap("General") else { return }
+        step("settings-general", shows: "Language")
+        guard tap("Back"), tap("Advanced") else { return }
+        step("settings-advanced", shows: "Diagnostics")
+        guard tap("View logs") else { return }
+        // The button is gone with the screen it was on; what the viewer holds is read on the screenshot.
+        gone("logs", "View logs")
     }
 
     private func element(_ text: String) -> XCUIElement {
@@ -80,6 +97,14 @@ final class WalkthroughTests: XCTestCase {
         let found = element(text).waitForExistence(timeout: timeout)
         record(name)
         XCTAssertTrue(found, "\(name): nothing reads \"\(text)\"")
+    }
+
+    /// For what the matching cannot tell by presence: "Play" is in "Playlists", "Logs" in "View logs".
+    private func gone(_ name: String, _ text: String, timeout: TimeInterval = 10) {
+        let left = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element(text))
+        let result = XCTWaiter.wait(for: [left], timeout: timeout)
+        record(name)
+        XCTAssertEqual(result, .completed, "\(name): \"\(text)\" is still there")
     }
 
     private var count = 0
