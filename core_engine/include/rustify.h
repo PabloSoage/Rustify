@@ -27,9 +27,20 @@ extern "C" {
  *   initCacheDir {dir}                 initSpotifyCacheDir {dir}          setLanguage {lang}
  *   parseLink {text}                   wrapLink {url, host}               unwrapLink {url, knownHosts}
  *   searchIndex {name, items}          searchQuery {name, query, limit}   searchForget {name}
- *   playerReduce {state, action}
- *   recordListening {session}  recordPlay {event}  importPlayHistory {history}  allPlays {}
+ *   indexLocalTracks {items}           findLocalMatch {track}
+ *   playerReduce {state, action}       arrangeReleases {entries, nowMs}
+ *   recordListening {session}          listContinueListening {}           forgetListening {id}
+ *   recordTrackPlace {trackId, positionMs, durationMs}  trackPlace {trackId}  forgetTrackPlace {trackId}
+ *   markListened {contextId, queue, trackId}  listenedState {contextId, queue}  forgetListened {contextId}
+ *   recordPlay {event}  importPlayHistory {history}  allPlays {}
  *   playStats {fromMs, toMs, zone}     topCsv {fromMs, toMs, kind}
+ *   exportData {producedBy}            restoreData {json}
+ *   listenBrainzSubmit {token, listen}  listenBrainzPlayingNow {token, listen}  listenBrainzValidate {token}
+ *   lastFmLogin {apiKey, secret, user, password}
+ *   lastFmSubmit {credentials, listen}  lastFmNowPlaying {credentials, listen}
+ *   readReplayGain {path}  readEmbeddedLyrics {path}  tempoOf {samples, sampleRate}
+ *   autoEqSearch {query}   autoEqProfile {path}  autoEqBands {peqText, n}
+ *   subsonicPing {config}  subsonicFind {config, title, artists, durationMs}
  *   loginSpotify {spDc}                restoreSpotifySession {spDc, accessToken, expiration}
  *   isSpotifyAuthenticated {}          logoutSpotify {}                   getSpotifyMe {}
  *   getSpotifySavedTracks {limit, offset}     getSpotifySavedPlaylists {limit, offset}

@@ -23,7 +23,8 @@ use std::ffi::{c_char, CStr, CString};
 use serde_json::Value;
 
 use crate::{
-    env, get_runtime, jam, links, metrics, player, search, serialize_result, server, spotify, youtube,
+    audio, autoeq, calendar, env, export, get_runtime, jam, links, listened, matcher, metrics, player,
+    scrobble, search, serialize_result, server, spotify, subsonic, tempo, youtube,
 };
 
 /// Calls `method` with `args_json` (a JSON object) and answers JSON. Free the answer with
@@ -93,6 +94,11 @@ fn int(args: &Value, key: &str, default: i64) -> i64 {
     args[key].as_i64().unwrap_or(default)
 }
 
+/// A JSON array of strings, where the JNI twin takes the same array as a string of JSON.
+fn strings(args: &Value, key: &str) -> Vec<String> {
+    serde_json::from_value(args[key].clone()).unwrap_or_default()
+}
+
 fn ok() -> String {
     r#"{"success":true}"#.to_string()
 }
@@ -113,13 +119,40 @@ pub const METHODS: &[&str] = &[
     "searchIndex",
     "searchQuery",
     "searchForget",
+    "indexLocalTracks",
+    "findLocalMatch",
     "playerReduce",
+    "arrangeReleases",
     "recordListening",
+    "listContinueListening",
+    "forgetListening",
+    "recordTrackPlace",
+    "trackPlace",
+    "forgetTrackPlace",
+    "markListened",
+    "listenedState",
+    "forgetListened",
     "recordPlay",
     "importPlayHistory",
     "allPlays",
     "playStats",
     "topCsv",
+    "exportData",
+    "restoreData",
+    "listenBrainzSubmit",
+    "listenBrainzPlayingNow",
+    "listenBrainzValidate",
+    "lastFmLogin",
+    "lastFmSubmit",
+    "lastFmNowPlaying",
+    "readReplayGain",
+    "readEmbeddedLyrics",
+    "tempoOf",
+    "autoEqSearch",
+    "autoEqProfile",
+    "autoEqBands",
+    "subsonicPing",
+    "subsonicFind",
     "loginSpotify",
     "restoreSpotifySession",
     "isSpotifyAuthenticated",
@@ -245,6 +278,27 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             ok()
         }
 
+        // indexLocalTracksNative — `items` is `[{id, name, artists, isrc, durationMs}]`.
+        "indexLocalTracks" => {
+            match serde_json::from_value::<Vec<matcher::local::Candidate>>(args["items"].clone()) {
+                Err(e) => serde_json::json!({ "success": false, "error": e.to_string() }).to_string(),
+                Ok(items) => {
+                    let count = matcher::local::put(&items);
+                    serde_json::json!({ "success": true, "count": count }).to_string()
+                }
+            }
+        }
+        // findLocalMatchNative — `track` is a `matcher::local::Candidate`; `{"id":…}` or `{}`.
+        "findLocalMatch" => {
+            match serde_json::from_value::<matcher::local::Candidate>(args["track"].clone()) {
+                Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+                Ok(track) => match matcher::local::find(&track) {
+                    Some(id) => serde_json::json!({ "id": id }).to_string(),
+                    None => "{}".to_string(),
+                },
+            }
+        }
+
         // playerReduceNative
         "playerReduce" => {
             let mut state: player::PlayerState =
@@ -260,6 +314,13 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             .to_string()
         }
 
+        // arrangeReleasesNative — `entries` is `[{id, release_date, release_date_precision}]`.
+        "arrangeReleases" => match serde_json::from_value::<Vec<calendar::Entry>>(args["entries"].clone()) {
+            Err(_) => "[]".to_string(),
+            Ok(entries) => serde_json::to_string(&calendar::arrange(&entries, int(args, "nowMs", 0)))
+                .unwrap_or_else(|_| "[]".to_string()),
+        },
+
         // recordListeningNative — `session` is a `player::session::Session`.
         "recordListening" => match serde_json::from_value::<player::session::Session>(args["session"].clone()) {
             Err(e) => serialize_result::<(), _>(Err(e)),
@@ -272,6 +333,74 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                     }),
             ),
         },
+        // listContinueListeningNative — newest first.
+        "listContinueListening" => {
+            let sessions = get_runtime().block_on(player::session::list::<env::android::AndroidEnv>());
+            serde_json::to_string(&sessions).unwrap_or_else(|_| "[]".to_string())
+        }
+        // forgetListeningNative — an empty `id` forgets every context.
+        "forgetListening" => {
+            let id = text(args, "id");
+            let outcome = get_runtime().block_on(async {
+                if id.is_empty() {
+                    player::session::clear::<env::android::AndroidEnv>().await
+                } else {
+                    player::session::forget::<env::android::AndroidEnv>(&id).await
+                }
+            });
+            serialize_result(outcome.map(|_| crate::ok_result()))
+        }
+        // recordTrackPlaceNative
+        "recordTrackPlace" => serialize_result(
+            get_runtime()
+                .block_on(player::bookmark::record::<env::android::AndroidEnv>(
+                    &text(args, "trackId"),
+                    int(args, "positionMs", 0).max(0) as u64,
+                    int(args, "durationMs", 0).max(0) as u64,
+                ))
+                .map(|_| crate::ok_result()),
+        ),
+        // trackPlaceNative — the place in ms as a JSON number, -1 when there is none to offer.
+        "trackPlace" => get_runtime()
+            .block_on(player::bookmark::get::<env::android::AndroidEnv>(&text(args, "trackId")))
+            .map_or(-1, |place| place as i64)
+            .to_string(),
+        // forgetTrackPlaceNative
+        "forgetTrackPlace" => serialize_result(
+            get_runtime()
+                .block_on(player::bookmark::forget::<env::android::AndroidEnv>(&text(args, "trackId")))
+                .map(|_| crate::ok_result()),
+        ),
+        // markListenedNative — `queue` is the context's track ids in order, sent every time.
+        "markListened" => serialize_result(
+            get_runtime()
+                .block_on(listened::mark::<env::android::AndroidEnv>(
+                    &text(args, "contextId"),
+                    &strings(args, "queue"),
+                    &text(args, "trackId"),
+                ))
+                .map(|_| crate::ok_result()),
+        ),
+        // listenedStateNative — one boolean per position in `queue`.
+        "listenedState" => {
+            let marks = get_runtime().block_on(listened::state::<env::android::AndroidEnv>(
+                &text(args, "contextId"),
+                &strings(args, "queue"),
+            ));
+            serde_json::to_string(&marks).unwrap_or_else(|_| "[]".to_string())
+        }
+        // forgetListenedNative — an empty `contextId` forgets every context's marks.
+        "forgetListened" => {
+            let context = text(args, "contextId");
+            let outcome = get_runtime().block_on(async {
+                if context.is_empty() {
+                    listened::clear::<env::android::AndroidEnv>().await
+                } else {
+                    listened::forget::<env::android::AndroidEnv>(&context).await
+                }
+            });
+            serialize_result(outcome.map(|_| crate::ok_result()))
+        }
         // recordPlayNative — `event` is a `metrics::Event`.
         "recordPlay" => match serde_json::from_value::<metrics::Event>(args["event"].clone()) {
             Err(e) => serialize_result::<(), _>(Err(e)),
@@ -305,6 +434,123 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 let events = get_runtime().block_on(metrics::load_all::<env::android::AndroidEnv>());
                 serialize_result(events.map(|events| metrics::stats::top_csv(&events, from, to, kind)))
             }
+        },
+        // exportDataNative — the document's text itself, or `{"error":…}`.
+        "exportData" => {
+            match get_runtime().block_on(export::to_json::<env::android::AndroidEnv>(&text(args, "producedBy"))) {
+                Ok(document) => document,
+                Err(e) => serde_json::json!({ "error": e.message() }).to_string(),
+            }
+        }
+        // restoreDataNative — `json` is the text `exportData` answered. Replaces rather than merges.
+        "restoreData" => {
+            match get_runtime().block_on(export::restore::<env::android::AndroidEnv>(&text(args, "json"))) {
+                Ok(done) => serde_json::json!({
+                    "success": true,
+                    "restored": done.keys,
+                    "skipped": done.skipped,
+                })
+                .to_string(),
+                Err(e) => serde_json::json!({ "success": false, "error": e.message() }).to_string(),
+            }
+        }
+
+        // listenBrainzSubmitNative — `listen` is a `scrobble::Listen`; answers a `scrobble::Report`.
+        "listenBrainzSubmit" => match serde_json::from_value::<scrobble::Listen>(args["listen"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(listen) => serialize_result(get_runtime().block_on(
+                scrobble::submit::<env::android::AndroidEnv>(&text(args, "token"), listen),
+            )),
+        },
+        // listenBrainzPlayingNowNative — best effort, never queued.
+        "listenBrainzPlayingNow" => match serde_json::from_value::<scrobble::Listen>(args["listen"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(listen) => serialize_result(
+                get_runtime()
+                    .block_on(scrobble::playing_now::<env::android::AndroidEnv>(&text(args, "token"), &listen))
+                    .map(|_| crate::ok_result()),
+            ),
+        },
+        // listenBrainzValidateNative — the token's user as a JSON string, `null` when it is not valid.
+        "listenBrainzValidate" => serialize_result(
+            get_runtime().block_on(scrobble::validate::<env::android::AndroidEnv>(&text(args, "token"))),
+        ),
+        // lastFmLoginNative — answers a `scrobble::lastfm::Session`.
+        "lastFmLogin" => serialize_result(get_runtime().block_on(scrobble::lastfm::login::<
+            env::android::AndroidEnv,
+        >(
+            &text(args, "apiKey"),
+            &text(args, "secret"),
+            &text(args, "user"),
+            &text(args, "password"),
+        ))),
+        // lastFmSubmitNative — `credentials` is a `scrobble::lastfm::Credentials`, `listen` a
+        // `scrobble::Listen`; answers a `scrobble::Report`.
+        "lastFmSubmit" => {
+            let parsed = serde_json::from_value::<scrobble::lastfm::Credentials>(args["credentials"].clone())
+                .and_then(|c| serde_json::from_value::<scrobble::Listen>(args["listen"].clone()).map(|l| (c, l)));
+            match parsed {
+                Err(e) => serialize_result::<(), _>(Err(e)),
+                Ok((c, listen)) => serialize_result(
+                    get_runtime().block_on(scrobble::lastfm::submit::<env::android::AndroidEnv>(&c, listen)),
+                ),
+            }
+        }
+        // lastFmNowPlayingNative — best effort, never queued.
+        "lastFmNowPlaying" => {
+            let parsed = serde_json::from_value::<scrobble::lastfm::Credentials>(args["credentials"].clone())
+                .and_then(|c| serde_json::from_value::<scrobble::Listen>(args["listen"].clone()).map(|l| (c, l)));
+            match parsed {
+                Err(e) => serialize_result::<(), _>(Err(e)),
+                Ok((c, listen)) => serialize_result(
+                    get_runtime()
+                        .block_on(scrobble::lastfm::now_playing::<env::android::AndroidEnv>(&c, &listen))
+                        .map(|_| crate::ok_result()),
+                ),
+            }
+        }
+
+        // readReplayGainNative — `path` is a file this process can open; answers a `ReplayGain`.
+        "readReplayGain" => serialize_result(audio::replaygain::read(&text(args, "path"))),
+        // readEmbeddedLyricsNative — the lyrics as a JSON string, or `null`.
+        "readEmbeddedLyrics" => serialize_result(audio::embedded_lyrics::read(&text(args, "path"))),
+        // tempoOfNative — `samples` is mono PCM (-1..1) as a JSON array; a `tempo::Estimate`, or
+        // `null` with under 6 s of audio. CPU only.
+        "tempoOf" => {
+            let samples: Vec<f32> = serde_json::from_value(args["samples"].clone()).unwrap_or_default();
+            let mut t = tempo::Tempo::new(int(args, "sampleRate", 0).max(1) as u32);
+            t.push(&samples);
+            serialize_result::<_, String>(Ok(t.estimate()))
+        }
+
+        // autoEqSearchNative — `[{name, path, source}]`.
+        "autoEqSearch" => serialize_result(
+            get_runtime().block_on(autoeq::search_online::<env::android::AndroidEnv>(&text(args, "query"), 30)),
+        ),
+        // autoEqProfileNative — the profile's parametric EQ text, as a JSON string.
+        "autoEqProfile" => serialize_result(
+            get_runtime().block_on(autoeq::fetch_profile::<env::android::AndroidEnv>(&text(args, "path"))),
+        ),
+        // autoEqBandsNative — `n` bands `[{cutoffHz, gainDb}]`. Memory only.
+        "autoEqBands" => serialize_result(
+            autoeq::parse(&text(args, "peqText"))
+                .map(|peq| autoeq::bands(&peq, int(args, "n", 10).max(2) as usize)),
+        ),
+
+        // subsonicPingNative — `config` is a `subsonic::Config`; the server's name and version.
+        "subsonicPing" => match serde_json::from_value::<subsonic::Config>(args["config"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(subsonic::ping::<env::android::AndroidEnv>(&cfg))),
+        },
+        // subsonicFindNative — `artists` is a JSON array of names; a `subsonic::Found` or `null`.
+        "subsonicFind" => match serde_json::from_value::<subsonic::Config>(args["config"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(cfg) => serialize_result(get_runtime().block_on(subsonic::find::<env::android::AndroidEnv>(
+                &cfg,
+                &text(args, "title"),
+                &strings(args, "artists"),
+                int(args, "durationMs", 0),
+            ))),
         },
 
         // loginSpotifyNative
@@ -643,7 +889,16 @@ mod tests {
     fn every_listed_method_is_dispatched() {
         // Methods that would reach the network or start threads are not called; the rest of the
         // list is checked for being known (an unknown one answers "unknown method").
-        let offline = ["parseLink", "searchQuery", "searchForget", "isSpotifyAuthenticated"];
+        let offline = [
+            "parseLink",
+            "searchQuery",
+            "searchForget",
+            "isSpotifyAuthenticated",
+            "findLocalMatch",
+            "arrangeReleases",
+            "tempoOf",
+            "autoEqBands",
+        ];
         for method in offline {
             assert!(!call(method, "{}").contains("unknown method"), "{method}");
         }
@@ -651,6 +906,19 @@ mod tests {
         for method in METHODS {
             assert!(seen.insert(*method), "{method} listed twice");
         }
+    }
+
+    #[test]
+    fn the_header_lists_every_method() {
+        let header = include_str!("../include/rustify.h");
+        for method in METHODS {
+            assert!(header.contains(&format!(" {method} {{")), "{method} is not in rustify.h");
+        }
+    }
+
+    #[test]
+    fn too_little_audio_has_no_tempo_as_over_jni() {
+        assert_eq!(call("tempoOf", r#"{"samples":[0.0,0.5,-0.5],"sampleRate":44100}"#), "null");
     }
 
     #[test]
