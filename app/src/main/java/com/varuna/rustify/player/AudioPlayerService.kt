@@ -82,7 +82,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
          * **On by default**: that is what the app has always done, so nobody's playback changes by
          * upgrading. Off is for the person who queued exactly what they wanted to hear.
          */
-        const val AUTOPLAY_RADIO_KEY = "settings_autoplay_radio"
+        const val AUTOPLAY_RADIO_KEY = AudioSettings.KEY_AUTOPLAY_RADIO
 
         // "Past ten seconds, previous restarts the track" used to live here. It is now
         // `PREVIOUS_RESTART_THRESHOLD_MS` in `core_engine/src/player/mod.rs`, with the rest of the
@@ -2252,7 +2252,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * chosen ([AlbumShuffle]) — then what is left of [current]'s album plays on before the rest.
      */
     private fun shuffleRest(rest: List<FullTrack>, current: FullTrack?): List<FullTrack> {
-        if (!AlbumShuffle.enabled(context)) return rest.shuffled()
+        if (!AlbumShuffle.enabled(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs())) return rest.shuffled()
         val albumOf: (FullTrack) -> String? = { t -> t.album?.id?.takeIf { it.isNotBlank() } ?: t.album?.name }
         return AlbumShuffle.arrange(rest, albumOf, firstAlbum = current?.let(albumOf))
     }

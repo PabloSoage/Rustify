@@ -15,10 +15,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
 
 /**
  * [PlayerController] on the desktop, over [QueuePlayer] (the core's engine; the queue is still
@@ -83,7 +86,7 @@ class DesktopPlayerController(
     override fun shufflePlay(tracks: List<FullTrack>) {
         forgetShuffle()
         if (mode.value == Mode.REPEAT) player.setRepeat("off")
-        player.playAll(tracks.shuffled(), 0)
+        player.playAll(inShuffledOrder(tracks, current = null), 0)
         beforeShuffle = tracks
         mode.value = Mode.SHUFFLE
     }
@@ -130,8 +133,8 @@ class DesktopPlayerController(
 
     private val settings = platform.prefs()
 
-    /** The phone's audio settings to the engine. No AutoEq yet: the profile is keyed by an output. */
-    private fun applyEffects() = player.setEffects(EffectsConfig.fromSettings(settings))
+    /** The phone's audio settings to the engine, with AutoEq's profile for the output playing now. */
+    private fun applyEffects() = player.setEffects(EffectsConfig.fromSettings(settings, DesktopOutput.name.value))
     override fun currentQueuePosition(st: AudioPlayerState): Int = player.ui.value.index
 
     // ── Shuffle and repeat ──────────────────────────────────────────────────────────────────────
@@ -143,12 +146,22 @@ class DesktopPlayerController(
         beforeShuffle = null
     }
 
+    /**
+     * [tracks] shuffled song by song, or album by album when that is chosen ([AlbumShuffle]): then
+     * what is left of [current]'s album plays on before the rest.
+     */
+    private fun inShuffledOrder(tracks: List<FullTrack>, current: FullTrack?): List<FullTrack> {
+        if (!AlbumShuffle.enabled(settings)) return tracks.shuffled()
+        val albumOf: (FullTrack) -> String? = { t -> t.album?.id?.takeIf { it.isNotBlank() } ?: t.album?.name }
+        return AlbumShuffle.arrange(tracks, albumOf, firstAlbum = current?.let(albumOf))
+    }
+
     /** The song playing stays where it is, first; the rest come after it in a random order. */
     private fun shuffleRest() {
         val ui = player.ui.value
         val current = ui.current ?: return
         beforeShuffle = ui.queue
-        val rest = ui.queue.filterIndexed { i, _ -> i != ui.index }.shuffled()
+        val rest = inShuffledOrder(ui.queue.filterIndexed { i, _ -> i != ui.index }, current)
         player.editQueue(listOf(current) + rest, 0)
     }
 
@@ -316,12 +329,31 @@ class DesktopPlayerController(
             override fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean) =
                 scrobbler.finished(track, startedAt, listenedMs, errored)
         }
+        // How the queue moves, by the phone's settings: read each time, so a change counts at once.
+        val audio = AudioSettings(settings)
+        player.previousAlways = { audio.previousAlways() }
+        player.blocked = { Blocklist.current(settings).blocks(it) }
+        player.radio = { seed -> if (audio.autoplayRadio()) radioAfter(seed) else emptyList() }
+        player.onRadioAdded = { added -> beforeShuffle = beforeShuffle?.plus(added) }
         // The stored settings now (the player holds them until its engine runs), and again on every
         // write of one, wherever it comes from.
         applyEffects()
         scope.launch {
             EffectsConfig.SETTINGS_KEYS.map { settings.changes(it) }.merge().collect { applyEffects() }
         }
+        // AutoEq's profile is the output's: asked again each song, and sent again when it moved.
+        scope.launch {
+            player.ui.map { it.current?.id }.distinctUntilChanged().collect { DesktopOutput.refresh() }
+        }
+        scope.launch { DesktopOutput.name.collect { applyEffects() } }
+    }
+
+    /** The autoplay radio after [seed], as on the phone: nothing after a local file. */
+    private suspend fun radioAfter(seed: FullTrack): List<FullTrack> {
+        val id = seed.id ?: return emptyList()
+        if (com.varuna.rustify.bridge.TrackRef.isLocal(id)) return emptyList()
+        val answer = com.varuna.rustify.bridge.NativeEngine.getSpotifyTrackRadio(id)
+        return com.varuna.rustify.bridge.RustifyJson.decodeFromString(ListSerializer(FullTrack.serializer()), answer)
     }
 
     private suspend fun localCopyOf(platform: com.varuna.rustify.ui.AppPlatform, track: FullTrack): String? {

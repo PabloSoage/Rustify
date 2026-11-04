@@ -6,10 +6,9 @@ import android.media.AudioManager
 import android.media.audiofx.DynamicsProcessing
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
+import com.varuna.rustify.ui.AndroidAppPlatform
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
 
 /**
  * AutoEq per output device (`21`, 5.x §5): each pair of headphones or earbuds gets its own correction
@@ -21,15 +20,7 @@ import kotlinx.serialization.builtins.serializer
  * while a profile is active ([AudioOffload.Blocker.AUTOEQ]).
  */
 object AutoEqController {
-    private const val PREFS = "rustify_settings"
-    private const val KEY_PROFILES = "autoeq_profiles"
     const val BANDS = 32
-
-    @Serializable
-    data class Profile(val name: String, val source: String, val path: String, val peq: String)
-
-    @Serializable
-    data class Entry(val name: String, val path: String, val source: String)
 
     @Serializable
     private data class Band(val cutoffHz: Float, val gainDb: Float)
@@ -55,27 +46,12 @@ object AutoEqController {
         return preferred.firstNotNullOfOrNull { t -> outputs.firstOrNull { it.type == t } }
     }
 
-    fun profiles(context: Context): Map<String, Profile> = runCatching {
-        val raw = prefs(context).getString(KEY_PROFILES, null) ?: return emptyMap()
-        RustifyJson.decodeFromString(MapSerializer(String.serializer(), Profile.serializer()), raw)
-    }.getOrDefault(emptyMap())
+    fun profiles(context: Context): Map<String, AutoEqProfile> = AutoEqProfiles.all(AndroidAppPlatform(context).prefs())
 
-    fun setProfile(context: Context, deviceKey: String, profile: Profile?) {
-        val map = profiles(context).toMutableMap()
-        if (profile == null) map.remove(deviceKey) else map[deviceKey] = profile
-        prefs(context).edit().putString(KEY_PROFILES, RustifyJson.encodeToString(MapSerializer(String.serializer(), Profile.serializer()), map)).apply()
+    fun setProfile(context: Context, deviceKey: String, profile: AutoEqProfile?) {
+        AutoEqProfiles.set(AndroidAppPlatform(context).prefs(), deviceKey, profile)
         refresh(context)
     }
-
-    suspend fun search(query: String): List<Entry> = runCatching {
-        RustifyJson.decodeFromString(ListSerializer(Entry.serializer()), NativeEngine.autoEqSearch(query))
-    }.getOrDefault(emptyList())
-
-    /** Downloads [entry]'s parametric EQ; null when it cannot be had. */
-    suspend fun download(entry: Entry): Profile? = runCatching {
-        val text = RustifyJson.decodeFromString(String.serializer(), NativeEngine.autoEqProfile(entry.path))
-        Profile(entry.name, entry.source, entry.path, text)
-    }.getOrNull()
 
     /** Binds to the player's [sessionId] and applies the profile of the current output. */
     @Synchronized
@@ -131,6 +107,4 @@ object AutoEqController {
         }
         AudioPlayerService.instance?.applyAudioOffload()
     }
-
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

@@ -48,6 +48,8 @@ class AndroidAppServices(context: Context) : AppServices {
 
     override val lyrics: LyricsChain get() = LyricsRepository.chain(app)
 
+    override val audioSettings = com.varuna.rustify.player.AndroidAudioSettings(app)
+
     override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
         LyricsTranslator.translate(key, lines, onProgress = onProgress)
 

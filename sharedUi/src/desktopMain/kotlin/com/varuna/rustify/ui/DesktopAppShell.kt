@@ -203,11 +203,22 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             DesktopDiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
         }
         // The shared sections the phone has further down Audio, in its order: local music, the
-        // audio sources' order and the add-ons, the data and scrobbling sections that follow the
-        // phone's player settings, then Invidious, Deezer and Subsonic.
+        // audio sources' order and the add-ons, how the queue moves and how it sounds, the data and
+        // scrobbling sections, then Invidious, Deezer and Subsonic.
         if (slot == SettingsSlot.AUDIO_SOURCES) {
             com.varuna.rustify.ui.screens.LocalMusicSection()
             com.varuna.rustify.ui.screens.AudioSourcesOrderSection()
+            com.varuna.rustify.ui.screens.AutoplayRadioSection()
+            com.varuna.rustify.ui.screens.BlocklistSection()
+            com.varuna.rustify.ui.screens.NormalizeVolumeSection()
+            com.varuna.rustify.ui.screens.EqualizerSection()
+            com.varuna.rustify.ui.screens.AutoEqSection()
+            com.varuna.rustify.ui.screens.StereoToolsSection()
+            com.varuna.rustify.ui.screens.FadeBetweenSongsSection()
+            com.varuna.rustify.ui.screens.PreviousButtonSection()
+            com.varuna.rustify.ui.screens.ShuffleSection()
+            com.varuna.rustify.ui.screens.PauseFadeSection()
+            com.varuna.rustify.ui.screens.SkipSilenceSection()
             com.varuna.rustify.ui.screens.DataExportSection()
             com.varuna.rustify.ui.screens.ListenBrainzSection()
             com.varuna.rustify.ui.screens.LastFmSection()

@@ -1,6 +1,6 @@
 package com.varuna.rustify.player
 
-import android.content.Context
+import com.varuna.rustify.platform.KeyValueStore
 import kotlin.random.Random
 
 /**
@@ -36,8 +36,6 @@ object AlbumShuffle {
 
     private const val KEY = "shuffle_by_album"
 
-    private fun prefs(context: Context) = context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE)
-
-    fun enabled(context: Context): Boolean = prefs(context).getBoolean(KEY, false)
-    fun setEnabled(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY, on).apply()
+    fun enabled(prefs: KeyValueStore): Boolean = prefs.getBoolean(KEY, false)
+    fun setEnabled(prefs: KeyValueStore, on: Boolean) = prefs.putBoolean(KEY, on)
 }

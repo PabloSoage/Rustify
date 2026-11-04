@@ -53,6 +53,8 @@ class DesktopAppServices(
     @Composable
     override fun inJam(): Boolean = inJam.invoke()
 
+    override val audioSettings = com.varuna.rustify.player.DesktopAudioSettings(platform.prefs())
+
     // A file rather than Preferences: the per-song choice is a JSON map that outgrows a Preferences
     // value (8 KB). A local track's own lyrics come from its .lrc or its tag, as on the phone.
     override val lyrics: LyricsChain by lazy {

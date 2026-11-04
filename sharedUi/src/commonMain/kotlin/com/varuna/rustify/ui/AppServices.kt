@@ -35,6 +35,9 @@ interface AppServices {
      */
     val lyrics: LyricsChain
 
+    /** What Settings' audio sections read and change. */
+    val audioSettings: com.varuna.rustify.player.AudioSettings
+
     /**
      * Translates lyrics [lines] into the system's language (Android: ML Kit, on the device).
      * [onProgress] gets partial outcomes (a model downloading, the lines done so far). Without
