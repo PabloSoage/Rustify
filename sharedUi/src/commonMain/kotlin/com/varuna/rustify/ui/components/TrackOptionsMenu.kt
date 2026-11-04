@@ -471,6 +471,9 @@ fun TrackOptionsMenuBottomSheet(
                         )
                     }
                     val noBeat = stringResource(Res.string.track_menu_bpm_none)
+                    // Measured by the platform (AppServices.bpmAnalyze); where it cannot, the item
+                    // says so instead of answering "no beat" for every song.
+                    val canBpm = services.can(com.varuna.rustify.ui.AppServices.Feature.BPM)
                     MenuOptionItem(
                         icon = Icons.Default.GraphicEq,
                         label = when {
@@ -478,6 +481,7 @@ fun TrackOptionsMenuBottomSheet(
                             bpm != null -> stringResource(Res.string.track_menu_bpm, bpmText())
                             else -> stringResource(Res.string.track_menu_bpm_analyse)
                         },
+                        enabled = canBpm,
                         onClick = {
                             if (bpm != null) { showBpmFix = true; return@MenuOptionItem }
                             if (analysing) return@MenuOptionItem
@@ -673,6 +677,7 @@ fun TrackOptionsMenuBottomSheet(
                     MenuOptionItem(
                         icon = Icons.Default.Download,
                         label = stringResource(Res.string.track_menu_download),
+                        enabled = services.can(com.varuna.rustify.ui.AppServices.Feature.DOWNLOADS),
                         onClick = {
                             requestNotificationPermission()
                             
@@ -731,28 +736,37 @@ private fun MenuOptionItem(
     label: String,
     iconColor: Color = Color.White,
     labelColor: Color = Color.White,
+    /** False where this platform cannot do it: shown dimmed, saying so, and not clickable. */
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = iconColor,
+            tint = if (enabled) iconColor else Color.Gray,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = label,
-            color = labelColor,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium
-        )
+        if (enabled) {
+            Text(
+                text = label,
+                color = labelColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            Column {
+                Text(text = label, color = Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(Res.string.feature_not_on_platform), color = Color.Gray, fontSize = 12.sp)
+            }
+        }
     }
 }
 

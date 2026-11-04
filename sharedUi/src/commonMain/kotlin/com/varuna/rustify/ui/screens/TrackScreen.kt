@@ -2042,13 +2042,21 @@ private fun SpeedButton(audioPlayerService: PlayerController) {
         audioPlayerService.applyPlaybackSpeed()
     }
     val changed = !ps.isDefault(speed, semitones)
+    // Where the player has no speed (the desktop's engine, until it does), the button stays and says
+    // so, as the screen does for what this platform lacks, instead of saving a speed nothing applies.
+    val supported = audioPlayerService.can(com.varuna.rustify.player.PlayerFeature.SPEED)
+    val notHere = stringResource(Res.string.feature_not_on_platform)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (ps.snap(speed) != 1f) Text("${formatSpeed(ps.snap(speed))}×", color = Color(0xFF1DB954), fontSize = 12.sp)
-        IconButton(onClick = { open = true }) {
+        if (supported && ps.snap(speed) != 1f) Text("${formatSpeed(ps.snap(speed))}×", color = Color(0xFF1DB954), fontSize = 12.sp)
+        IconButton(onClick = { if (supported) open = true else platform.toast(notHere) }) {
             Icon(
                 Icons.Default.Speed,
                 contentDescription = stringResource(Res.string.playback_speed),
-                tint = if (changed) Color(0xFF1DB954) else Color.White
+                tint = when {
+                    !supported -> Color.White.copy(alpha = 0.35f)
+                    changed -> Color(0xFF1DB954)
+                    else -> Color.White
+                }
             )
         }
     }

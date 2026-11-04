@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.varuna.rustify.ui.resources.*
 import com.varuna.rustify.bridge.FullTrack
@@ -660,8 +661,17 @@ fun YtmTrackListItem(
             val downloadUriStr = prefs.getString("download_directory")
             if (downloadUriStr != null) {
                 val downloadingStr = stringResource(Res.string.track_menu_getting_url)
+                // Where the platform cannot download, the item says so rather than doing nothing.
+                val canDownload = services.can(com.varuna.rustify.ui.AppServices.Feature.DOWNLOADS)
                 DropdownMenuItem(
-                    text = { Text(stringResource(Res.string.track_menu_download)) },
+                    text = {
+                        if (canDownload) Text(stringResource(Res.string.track_menu_download))
+                        else Column {
+                            Text(stringResource(Res.string.track_menu_download))
+                            Text(stringResource(Res.string.feature_not_on_platform), fontSize = 12.sp)
+                        }
+                    },
+                    enabled = canDownload,
                     onClick = {
                         showMenu = false
                         services.enqueueDownload(
