@@ -1,4 +1,4 @@
-// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/jam/JvmJamCore.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/jam/JvmJamCore.kt
 package com.varuna.rustify.jam
 
 import com.varuna.rustify.bridge.NativeEngine

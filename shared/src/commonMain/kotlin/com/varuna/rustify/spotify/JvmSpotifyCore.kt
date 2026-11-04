@@ -1,4 +1,4 @@
-// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/spotify/JvmSpotifyCore.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/spotify/JvmSpotifyCore.kt
 package com.varuna.rustify.spotify
 
 import com.varuna.rustify.bridge.NativeEngine

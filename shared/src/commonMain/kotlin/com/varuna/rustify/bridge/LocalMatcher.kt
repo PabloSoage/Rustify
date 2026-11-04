@@ -1,6 +1,7 @@
 package com.varuna.rustify.bridge
 
 import com.varuna.rustify.platform.Log
+import kotlin.concurrent.Volatile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
