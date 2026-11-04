@@ -2,17 +2,38 @@ package com.varuna.rustify.bridge
 
 
 import androidx.compose.runtime.mutableStateListOf
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.readTextOrNull
+import com.varuna.rustify.ui.writeTextAtomically
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.locked
+import com.varuna.rustify.util.optArray
+import com.varuna.rustify.util.optInt
+import com.varuna.rustify.util.optLong
+import com.varuna.rustify.util.optObject
+import com.varuna.rustify.util.optString
+import com.varuna.rustify.util.parseArray
+import com.varuna.rustify.util.parseObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /** A YTM home row: the category title, the query that generated it, and its tracks. */
 data class YtmHomeRow(val title: String, val query: String, val tracks: List<YtmTrack>)
@@ -22,10 +43,10 @@ data class YtmHomeRow(val title: String, val query: String, val tracks: List<Ytm
  * `filesDir/ytm_library.json`. Live data resolution (search, browsing) is performed via JNI through
  * [NativeEngine].
  */
-class YtMusicRepository(private val filesDir: File) {
+class YtMusicRepository(private val filesDir: AppFile) {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val libFile get() = File(filesDir, "ytm_library.json")
+    private val libFile get() = filesDir.child("ytm_library.json")
 
     // The library state is SHARED across all instances (the app creates several and the Android Auto
     // service creates its own). If each had its own list, a favorite added in the app would not show
@@ -39,7 +60,7 @@ class YtMusicRepository(private val filesDir: File) {
     val homeRows = State.homeRows
 
     init {
-        synchronized(State) {
+        State.lock.locked {
             if (!State.loaded) { State.loaded = true; scope.launch { loadLibrary() } }
         }
     }
@@ -51,6 +72,7 @@ class YtMusicRepository(private val filesDir: File) {
             val savedAlbums  = mutableStateListOf<YtmAlbumSlim>()
             val savedArtists = mutableStateListOf<YtmArtistRef>()
             val homeRows = mutableStateListOf<YtmHomeRow>()
+            val lock = Lock()
             @Volatile var homeFetchedAt = 0L
             @Volatile var homeLoading = false
             @Volatile var loaded = false
@@ -61,34 +83,21 @@ class YtMusicRepository(private val filesDir: File) {
 
     private suspend fun loadLibrary() = withContext(Dispatchers.IO) {
         runCatching {
-            if (!libFile.exists()) return@withContext
-            val json = JSONObject(libFile.readText())
+            val json = parseObject(libFile.readTextOrNull() ?: return@withContext)
             withContext(Dispatchers.Main) {
-                favorites.clear(); favorites.addAll(YtmTrack.listFromJsonArray(json.optJSONArray("favorites")))
-                playlists.clear(); playlists.addAll(YtmLocalPlaylist.listFromJsonArray(json.optJSONArray("playlists")))
-                savedAlbums.clear(); savedAlbums.addAll(YtmAlbumSlim.listFromJsonArray(json.optJSONArray("savedAlbums")))
-                savedArtists.clear(); savedArtists.addAll(YtmArtistRef.listFromJsonArray(json.optJSONArray("savedArtists")))
+                favorites.clear(); favorites.addAll(wireList<YtmTrack>(json["favorites"]))
+                playlists.clear(); playlists.addAll(wireList<YtmLocalPlaylist>(json["playlists"]))
+                savedAlbums.clear(); savedAlbums.addAll(wireList<YtmAlbumSlim>(json["savedAlbums"]))
+                savedArtists.clear(); savedArtists.addAll(wireList<YtmArtistRef>(json["savedArtists"]))
             }
         }
     }
 
     private suspend fun saveLibrary() = withContext(Dispatchers.IO) {
         runCatching {
-            val json = JSONObject().apply {
-                put("version", 1)
-                put("favorites",   YtmTrack.toJsonArray(favorites.toList()))
-                put("playlists",   YtmLocalPlaylist.toJsonArray(playlists.toList()))
-                put("savedAlbums", YtmAlbumSlim.toJsonArray(savedAlbums.toList()))
-                put("savedArtists",YtmArtistRef.toJsonArray(savedArtists.toList()))
-            }
-            // Atomic write (tmp + rename) so a crash mid-write can't corrupt the library.
-            val tmp = File(filesDir, "ytm_library.json.tmp")
-            tmp.writeText(json.toString())
-            if (!tmp.renameTo(libFile)) {
-                // Fallback: rename can fail across some FS states; copy then delete tmp.
-                libFile.writeText(tmp.readText())
-                tmp.delete()
-            }
+            // Atomic write (tmp + rename) so a crash mid-write can't corrupt the library; when the
+            // rename fails across some FS states, written in place instead.
+            libFile.writeTextAtomically(libraryJson())
         }
     }
 
@@ -101,8 +110,10 @@ class YtMusicRepository(private val filesDir: File) {
         LibraryChanges.notifyChanged()
     }
 
+    // Kotlin's Uuid prints as java.util.UUID did: 36 lowercase characters, version 4.
+    @OptIn(ExperimentalUuidApi::class)
     fun createPlaylist(name: String): YtmLocalPlaylist {
-        val pl = YtmLocalPlaylist(localId = "ytmpl:${java.util.UUID.randomUUID()}", name = name, items = emptyList(), createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
+        val pl = YtmLocalPlaylist(localId = "ytmpl:${Uuid.random()}", name = name, items = emptyList(), createdAt = currentTimeMillis(), updatedAt = currentTimeMillis())
         playlists.add(pl)
         scope.launch { saveLibrary() }
         LibraryChanges.notifyChanged()
@@ -111,7 +122,7 @@ class YtMusicRepository(private val filesDir: File) {
 
     fun addToPlaylist(localId: String, track: YtmTrack) {
         val i = playlists.indexOfFirst { it.localId == localId }.takeIf { it >= 0 } ?: return
-        playlists[i] = playlists[i].copy(items = playlists[i].items + track, updatedAt = System.currentTimeMillis())
+        playlists[i] = playlists[i].copy(items = playlists[i].items + track, updatedAt = currentTimeMillis())
         scope.launch { saveLibrary() }
         LibraryChanges.notifyChanged()
     }
@@ -140,7 +151,7 @@ class YtMusicRepository(private val filesDir: File) {
 
     suspend fun search(query: String): YtmSearchResults = withContext(Dispatchers.IO) {
         runCatching {
-            YtmSearchResults.fromJson(JSONObject(NativeEngine.searchYtMusic(query)))
+            decodeWire<YtmSearchResults>(NativeEngine.searchYtMusic(query))
         }.getOrDefault(emptyResults)
     }
 
@@ -149,16 +160,16 @@ class YtMusicRepository(private val filesDir: File) {
         runCatching {
             val raw = NativeEngine.searchYouTube(query)
             // The scraper returns a plain JSON array: [{id, title, author, duration_sec, thumbnail_url}]
-            val data = JSONArray(raw)
-            val tracks = (0 until data.length()).map { i ->
-                val o = data.getJSONObject(i)
+            val data = parseArray(raw)
+            val tracks = data.map { element ->
+                val o = element as JsonObject
                 YtmTrack(
-                    videoId = o.optString("id", ""),
-                    title = o.optString("title", ""),
-                    artists = listOf(YtmArtistRef("", o.optString("author", ""))),
+                    videoId = o["id"].optString(),
+                    title = o["title"].optString(),
+                    artists = listOf(YtmArtistRef("", o["author"].optString())),
                     albumId = null,
-                    durationSec = o.optInt("duration_sec", 0),
-                    thumbnailUrl = maximiseThumbnail(o.optString("thumbnail_url", ""))
+                    durationSec = o["duration_sec"].optInt(),
+                    thumbnailUrl = maximiseThumbnail(o["thumbnail_url"].optString())
                 )
             }
             YtmSearchResults(tracks, emptyList(), emptyList(), emptyList())
@@ -168,26 +179,26 @@ class YtMusicRepository(private val filesDir: File) {
     suspend fun getAlbum(browseId: String): YtmAlbum? = withContext(Dispatchers.IO) {
         runCatching {
             val json = NativeEngine.getYtmAlbum(browseId)
-            if (json == "null" || json.isBlank()) null else YtmAlbum.fromJson(JSONObject(json))
+            if (json == "null" || json.isBlank()) null else decodeWire<YtmAlbum>(json)
         }.getOrNull()
     }
 
     suspend fun getArtist(channelId: String): YtmArtist? = withContext(Dispatchers.IO) {
         runCatching {
             val json = NativeEngine.getYtmArtist(channelId)
-            if (json == "null" || json.isBlank()) null else YtmArtist.fromJson(JSONObject(json))
+            if (json == "null" || json.isBlank()) null else decodeWire<YtmArtist>(json)
         }.getOrNull()
     }
 
     suspend fun getPlaylist(playlistId: String): YtmPlaylist? = withContext(Dispatchers.IO) {
         runCatching {
             val json = NativeEngine.getYtmPlaylist(playlistId)
-            if (json == "null" || json.isBlank()) null else YtmPlaylist.fromJson(JSONObject(json))
+            if (json == "null" || json.isBlank()) null else decodeWire<YtmPlaylist>(json)
         }.getOrNull()
     }
 
     // ── Cached home feed ───────────────────────────────────────────────────────────────────────────
-    private val homeFile get() = File(filesDir, "ytm_home_cache.json")
+    private val homeFile get() = filesDir.child("ytm_home_cache.json")
     private val homeTtlMs = 8 * 60 * 60 * 1000L // 8h
 
     /** Home categories (displayed title, search query). Mixes popular moods and genres. */
@@ -206,12 +217,12 @@ class YtMusicRepository(private val filesDir: File) {
      */
     suspend fun ensureHome(force: Boolean = false) = withContext(Dispatchers.IO) {
         if (State.homeLoading) return@withContext
-        val fresh = System.currentTimeMillis() - State.homeFetchedAt < homeTtlMs
+        val fresh = currentTimeMillis() - State.homeFetchedAt < homeTtlMs
         if (!force) {
             if (State.homeRows.isNotEmpty() && fresh) return@withContext
             if (State.homeRows.isEmpty()) {
                 loadHomeCache()
-                if (State.homeRows.isNotEmpty() && System.currentTimeMillis() - State.homeFetchedAt < homeTtlMs) return@withContext
+                if (State.homeRows.isNotEmpty() && currentTimeMillis() - State.homeFetchedAt < homeTtlMs) return@withContext
             }
         }
         State.homeLoading = true
@@ -222,7 +233,7 @@ class YtMusicRepository(private val filesDir: File) {
                 }.awaitAll()
             }.filter { it.tracks.isNotEmpty() }
             if (rows.isNotEmpty()) {
-                val now = System.currentTimeMillis()
+                val now = currentTimeMillis()
                 withContext(Dispatchers.Main) { State.homeRows.clear(); State.homeRows.addAll(rows) }
                 State.homeFetchedAt = now
                 saveHomeCache(rows, now)
@@ -232,13 +243,12 @@ class YtMusicRepository(private val filesDir: File) {
 
     private suspend fun loadHomeCache() = withContext(Dispatchers.IO) {
         runCatching {
-            if (!homeFile.exists()) return@withContext
-            val json = JSONObject(homeFile.readText())
-            val fetchedAt = json.optLong("fetchedAt", 0L)
-            val arr = json.optJSONArray("rows") ?: return@withContext
-            val rows = (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                YtmHomeRow(o.optString("title"), o.optString("query"), YtmTrack.listFromJsonArray(o.optJSONArray("tracks")))
+            val json = parseObject(homeFile.readTextOrNull() ?: return@withContext)
+            val fetchedAt = json["fetchedAt"].optLong(0L)
+            val arr = json["rows"].optArray() ?: return@withContext
+            val rows = arr.mapNotNull { element ->
+                val o = element.optObject() ?: return@mapNotNull null
+                YtmHomeRow(o["title"].optString(), o["query"].optString(), wireList<YtmTrack>(o["tracks"]))
             }.filter { it.tracks.isNotEmpty() }
             withContext(Dispatchers.Main) { State.homeRows.clear(); State.homeRows.addAll(rows) }
             State.homeFetchedAt = fetchedAt
@@ -247,25 +257,34 @@ class YtMusicRepository(private val filesDir: File) {
 
     private fun saveHomeCache(rows: List<YtmHomeRow>, fetchedAt: Long) {
         runCatching {
-            val arr = JSONArray()
-            rows.forEach { r ->
-                arr.put(JSONObject().apply {
-                    put("title", r.title); put("query", r.query); put("tracks", YtmTrack.toJsonArray(r.tracks))
-                })
+            val arr = buildJsonArray {
+                rows.forEach { r ->
+                    add(buildJsonObject {
+                        put("title", r.title); put("query", r.query); put("tracks", wire(r.tracks))
+                    })
+                }
             }
-            val json = JSONObject().apply { put("fetchedAt", fetchedAt); put("rows", arr) }
-            val tmp = File(filesDir, "ytm_home_cache.json.tmp")
-            tmp.writeText(json.toString())
-            if (!tmp.renameTo(homeFile)) { homeFile.writeText(tmp.readText()); tmp.delete() }
+            val json = buildJsonObject { put("fetchedAt", fetchedAt); put("rows", arr) }
+            homeFile.writeTextAtomically(json.toString())
         }
     }
 
     /** Serialize the whole local library to JSON (for export). */
-    fun exportJson(): String = JSONObject().apply {
+    fun exportJson(): String = libraryJson()
+
+    /** `ytm_library.json`: what [saveLibrary] writes and [exportJson] hands out. */
+    private fun libraryJson(): String = buildJsonObject {
         put("version", 1)
-        put("favorites",   YtmTrack.toJsonArray(favorites.toList()))
-        put("playlists",   YtmLocalPlaylist.toJsonArray(playlists.toList()))
-        put("savedAlbums", YtmAlbumSlim.toJsonArray(savedAlbums.toList()))
-        put("savedArtists",YtmArtistRef.toJsonArray(savedArtists.toList()))
+        put("favorites",   wire(favorites.toList()))
+        put("playlists",   wire(playlists.toList()))
+        put("savedAlbums", wire(savedAlbums.toList()))
+        put("savedArtists",wire(savedArtists.toList()))
     }.toString()
+
+    // The library's lists in their wire form, as the org.json helpers built them: through the
+    // generated encoder and decoder, element for element.
+    private inline fun <reified T> wire(values: List<T>): JsonElement = RustifyJson.parseToJsonElement(encodeWireString(values))
+
+    private inline fun <reified T> wireList(element: JsonElement?): List<T> =
+        if (element is JsonArray) decodeWire(element.toString()) else emptyList()
 }
