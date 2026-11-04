@@ -41,16 +41,15 @@ kotlin {
             api(compose.components.resources)
             api(libs.coil.compose)
             implementation(libs.coil.network.okhttp)
-            // The app's OkHttp (5.x), not the older one Coil would bring: ShareUtils reads its non-null body.
-            implementation(libs.okhttp)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             // The queue's drag to reorder (TrackScreen); multiplatform, the same library the APK had.
             implementation(libs.reorderable)
-            // Android has it in the platform; the desktop gets it below (see the catalog).
-            compileOnly(libs.org.json)
         }
         androidMain.dependencies {
+            // The app's OkHttp (5.x), not the older one Coil would bring, under Coil and Ktor's engine;
+            // DataPlatform names its version in the shared cover's User-Agent.
+            implementation(libs.okhttp)
             // The local scan's folders are Storage Access Framework trees (AndroidLocalMusicScanner).
             implementation(libs.androidx.documentfile)
             // FileProvider, for sharing a cover image (AndroidAppPlatform.shareImage).
@@ -59,6 +58,9 @@ kotlin {
             implementation(libs.androidx.activity.compose)
         }
         getByName("desktopMain").dependencies {
+            // As on Android (above).
+            implementation(libs.okhttp)
+            // The desktop's own code (DesktopUpdate) reads with it; Android has it in the platform.
             implementation(libs.org.json)
         }
         commonTest.dependencies {
