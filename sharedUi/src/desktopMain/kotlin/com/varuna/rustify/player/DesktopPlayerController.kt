@@ -3,6 +3,7 @@ package com.varuna.rustify.player
 
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsResult
+import com.varuna.rustify.engine.EffectsConfig
 import com.varuna.rustify.engine.PlayerUi
 import com.varuna.rustify.engine.QueuePlayer
 import com.varuna.rustify.platform.AppDirs
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,8 +23,13 @@ import kotlinx.coroutines.withContext
 /**
  * [PlayerController] on the desktop, over [QueuePlayer] (the core's engine; the queue is still
  * `player::reduce`). Shuffle, repeat, editing the queue, A-B, the sleep timer and saved queues work
- * as on the phone; what the engine does not do yet — video, speed, audio effects — answers [can]
- * with false, so the shared screens show the control as unavailable rather than calling into nothing.
+ * as on the phone; what the engine does not do yet — video, and the Android-only audio settings —
+ * answers [can] with false, so the shared screens show the control as unavailable rather than calling
+ * into nothing.
+ *
+ * The audio effects the engine does have (equaliser, ReplayGain, stereo tools, fades, speed and pitch,
+ * skipping silence) follow the phone's settings, by the phone's keys: read at start and sent again
+ * whenever one of them is written.
  */
 class DesktopPlayerController(
     private val player: QueuePlayer,
@@ -57,7 +64,7 @@ class DesktopPlayerController(
     override val resumedAt: StateFlow<Pair<String, Long>?> = MutableStateFlow(null)
     override val isWebPlayerMode: Boolean = false
 
-    override fun can(feature: PlayerFeature): Boolean = false
+    override fun can(feature: PlayerFeature): Boolean = feature == PlayerFeature.SPEED
 
     // ── Playing ─────────────────────────────────────────────────────────────────────────────────
 
@@ -102,7 +109,15 @@ class DesktopPlayerController(
     override fun skipToPrevious() = player.previous()
     override fun startOver() = player.seek(0)
 
-    override fun applyPlaybackSpeed() = Unit
+    // Speed and pitch are two of the effects: all of them go again, from the settings.
+    override fun applyPlaybackSpeed() = applyEffects()
+
+    // ── Audio effects ───────────────────────────────────────────────────────────────────────────
+
+    private val settings = platform.prefs()
+
+    /** The phone's audio settings to the engine. No AutoEq yet: the profile is keyed by an output. */
+    private fun applyEffects() = player.setEffects(EffectsConfig.fromSettings(settings))
     override fun currentQueuePosition(st: AudioPlayerState): Int = player.ui.value.index
 
     // ── Shuffle and repeat ──────────────────────────────────────────────────────────────────────
@@ -281,6 +296,12 @@ class DesktopPlayerController(
             override fun started(track: FullTrack, startedAt: Long) = scrobbler.started(track, startedAt)
             override fun finished(track: FullTrack, startedAt: Long, listenedMs: Long, errored: Boolean) =
                 scrobbler.finished(track, startedAt, listenedMs, errored)
+        }
+        // The stored settings now (the player holds them until its engine runs), and again on every
+        // write of one, wherever it comes from.
+        applyEffects()
+        scope.launch {
+            EffectsConfig.SETTINGS_KEYS.map { settings.changes(it) }.merge().collect { applyEffects() }
         }
     }
 
