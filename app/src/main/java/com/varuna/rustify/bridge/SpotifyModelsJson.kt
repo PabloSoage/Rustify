@@ -1,6 +1,7 @@
 // app/src/main/java/com/varuna/rustify/bridge/SpotifyModelsJson.kt
 package com.varuna.rustify.bridge
 
+import com.varuna.rustify.player.PlaybackContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -80,3 +81,34 @@ fun YtmLocalPlaylist.Companion.fromJson(json: JSONObject): YtmLocalPlaylist = de
 fun YtmLocalPlaylist.Companion.listFromJsonArray(array: JSONArray?): List<YtmLocalPlaylist> = decodeWireList(array)
 fun YtmLocalPlaylist.Companion.toJsonArray(list: List<YtmLocalPlaylist>): JSONArray = encodeWireArray(list)
 fun YtmSearchResults.Companion.fromJson(json: JSONObject): YtmSearchResults = decodeWire(json)
+
+// Not a wire type: where the queue came from, as playback_state.json keeps it beside the tracks.
+fun PlaybackContext.toJson(): JSONObject = JSONObject().apply {
+    put("id", id)
+    put("label", label)
+    put("subtitle", subtitle)
+    put("imageUrl", imageUrl)
+}
+
+/**
+ * Reads a context back out of the saved playback state.
+ *
+ * It is saved at all because it was not, and the queue was: after the process was killed the
+ * queue came back and the context did not, so playback carried on into a `null` context and
+ * both the things keyed on one went quiet — no ✓ on the tracks being finished, and no update
+ * to "pick up where you left off". Nothing looked broken, which is why it took a while to
+ * notice: the music played fine.
+ *
+ * Null for a state file written before this field existed, which is the behaviour that was
+ * there anyway.
+ */
+fun PlaybackContext.Companion.fromJson(json: JSONObject?): PlaybackContext? {
+    val id = json?.optString("id").orEmpty()
+    if (id.isBlank()) return null
+    return PlaybackContext(
+        id = id,
+        label = json!!.optString("label"),
+        subtitle = json.optString("subtitle"),
+        imageUrl = json.optString("imageUrl")
+    )
+}
