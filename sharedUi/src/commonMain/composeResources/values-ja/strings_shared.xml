@@ -55,4 +55,8 @@
     <string name="chat_no_images">ここでは写真は使えません：モデルにはテキストだけで問い合わせます。モデルサーバーが画像を読めるのはビジョンモデルのときだけで、動いているモデルがそうとは限らないためです。</string>
     <string name="chat_no_token_count">各回答には時間を表示しますが、トークン/秒の速度は表示しません：書いたトークン数を返さないモデルサーバーもあるためです。</string>
     <string name="chat_stats_times">最初の語 %1$s 秒 · 合計 %2$s 秒</string>
+    <!-- デスクトップの歌詞翻訳（DJ のモデル）が失敗した理由。「翻訳できませんでした: 」の後に入ります。 -->
+    <string name="lyrics_translate_no_model">このコンピューターで動いている言語モデルがなく、DJ も外部 AI を使っていません</string>
+    <string name="lyrics_translate_not_json">モデルが求めた形式の行で答えませんでした</string>
+    <string name="lyrics_translate_wrong_count">%2$s 行に対してモデルが %1$s 行を返しました</string>
 </resources>

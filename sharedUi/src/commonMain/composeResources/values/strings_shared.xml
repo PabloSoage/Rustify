@@ -57,4 +57,8 @@
     <string name="chat_no_images">No photos here: the model is asked in text only, since a model server reads images only with a vision model, and the one running may not be.</string>
     <string name="chat_no_token_count">Each answer shows its times but not its speed in tokens per second: not every model server says how many tokens it wrote.</string>
     <string name="chat_stats_times">first word %1$s s · total %2$s s</string>
+    <!-- Why the desktop's lyrics translation (by the DJ's model) failed; after "Could not translate: ". -->
+    <string name="lyrics_translate_no_model">no language model is running on this computer, and the DJ uses no external AI</string>
+    <string name="lyrics_translate_not_json">the model did not answer with the lines asked for</string>
+    <string name="lyrics_translate_wrong_count">the model gave back %1$s lines for %2$s</string>
 </resources>

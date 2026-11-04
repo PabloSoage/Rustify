@@ -55,4 +55,8 @@
     <string name="chat_no_images">Aquí no hay fotos: al modelo se le pregunta solo con texto, porque un servidor de modelos solo lee imágenes con un modelo de visión, y el que está en marcha puede no serlo.</string>
     <string name="chat_no_token_count">Cada respuesta muestra sus tiempos pero no su velocidad en tokens por segundo: no todos los servidores de modelos dicen cuántos tokens han escrito.</string>
     <string name="chat_stats_times">primera palabra %1$s s · total %2$s s</string>
+    <!-- Por qué falló la traducción de letras del escritorio (con el modelo del DJ); tras «No se pudo traducir: ». -->
+    <string name="lyrics_translate_no_model">no hay ningún modelo de lenguaje en marcha en este ordenador, y el DJ no usa IA externa</string>
+    <string name="lyrics_translate_not_json">el modelo no ha respondido con las líneas pedidas</string>
+    <string name="lyrics_translate_wrong_count">el modelo ha devuelto %1$s líneas de %2$s</string>
 </resources>

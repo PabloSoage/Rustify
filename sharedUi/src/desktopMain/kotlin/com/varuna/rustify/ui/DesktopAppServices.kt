@@ -30,10 +30,10 @@ import java.util.Locale
 
 /**
  * [AppServices] on the desktop. Downloads are [DesktopDownloads]; tempo is Android's today
- * (MediaCodec), and so are translation and video; [can] says so and the screens show them as
- * unavailable. The DJ is the shared one: it speaks with the system's voice, and its "local" mode is a
- * model server on this computer, one already there or Rustify's own; it has no microphone. The chat
- * talks to the model the DJ asks ([DesktopChatModel]).
+ * (MediaCodec), and so is video; [can] says so and the screens show them as unavailable. The DJ is
+ * the shared one: it speaks with the system's voice, and its "local" mode is a model server on this
+ * computer, one already there or Rustify's own; it has no microphone. The chat and the lyrics
+ * translation ask the model the DJ asks ([DesktopChatModel], [DesktopLyricsTranslator]).
  */
 class DesktopAppServices(
     private val platform: AppPlatform,
@@ -59,9 +59,11 @@ class DesktopAppServices(
         LyricsChain(FileStore(File(AppDirs.data, "lyrics")), readLocal = { DesktopLocalLyrics.read(it) })
     }
 
-    // On-device translation is ML Kit's, Android only (docs serie-4.x/27 §2.9).
-    override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit) =
-        LyricsTranslation.Failed(LyricsTranslation.UNAVAILABLE)
+    // ML Kit is Android's: here the model the DJ asks translates, with the whole song as context.
+    private val translator = DesktopLyricsTranslator(client = { chat.client() })
+
+    override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
+        translator.translate(key, lines, translationTarget(), onProgress)
 
     override fun translationTarget(): String = Locale.getDefault().language
 
@@ -138,6 +140,8 @@ class DesktopAppServices(
         AppServices.Feature.DJ -> true
         AppServices.Feature.DJ_VOICE -> voice.isAvailable
         AppServices.Feature.DOWNLOADS -> true
+        // By the DJ's model; with none running it fails and says so.
+        AppServices.Feature.TRANSLATION -> true
         else -> false
     }
 
