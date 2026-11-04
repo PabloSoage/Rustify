@@ -86,6 +86,12 @@ final class PlayerModel: ObservableObject {
         })
     }
 
+    /// Forgets the session, here and in the Keychain; the next sign-in asks for the cookie again.
+    func signOut() {
+        controller.signOutSpotify()
+        user = nil
+    }
+
     func loadLiked() {
         searching = true
         controller.likedSongs(onResult: { [weak self] tracks in
@@ -131,6 +137,18 @@ struct ContentView: View {
             }
             .navigationTitle("Rustify")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let user = model.user {
+                        Menu {
+                            Text(user.name ?? user.id)
+                            Button(role: .destructive) { model.signOut() } label: {
+                                Label("Sign out of Spotify", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                        } label: {
+                            Image(systemName: "person.crop.circle")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if model.user != nil {
                         Button("Liked") { model.loadLiked() }
@@ -174,11 +192,57 @@ struct NowPlayingBar: View {
                 Button { model.controller.next() } label: { Image(systemName: "forward.fill") }
             }
             if let ui, let duration = ui.durationMs?.int64Value, duration > 0 {
-                ProgressView(value: Double(ui.positionMs), total: Double(duration))
+                SeekBar(positionMs: ui.positionMs, durationMs: duration) { model.controller.seek(positionMs: $0) }
             }
         }
         .padding()
         .background(.thinMaterial)
+    }
+}
+
+/// Where the song is, and where to take it: drag and let go to seek.
+struct SeekBar: View {
+    let positionMs: Int64
+    let durationMs: Int64
+    let onSeek: (Int64) -> Void
+    /// Where the thumb is while a finger holds it; the player's position does not move it then.
+    @State private var dragging: Double?
+    /// Where it was let go, shown until the player's position gets there, so the thumb does not jump
+    /// back for the moment the seek takes.
+    @State private var pending: (ms: Double, at: Date)?
+
+    var body: some View {
+        let total = Double(durationMs)
+        let shown = min(dragging ?? pending?.ms ?? Double(positionMs), total)
+        VStack(spacing: 2) {
+            Slider(
+                value: Binding(get: { shown }, set: { dragging = $0 }),
+                in: 0...total,
+                onEditingChanged: { editing in
+                    guard !editing, let target = dragging else { return }
+                    dragging = nil
+                    pending = (target, Date())
+                    onSeek(Int64(target))
+                }
+            )
+            HStack {
+                Text(Self.time(shown))
+                Spacer()
+                Text(Self.time(total))
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+        .onChange(of: positionMs) { position in
+            // There, or given up on: a seek that did not happen must not hold the thumb for good.
+            guard let p = pending else { return }
+            if abs(Double(position) - p.ms) < 2000 || Date().timeIntervalSince(p.at) > 3 { pending = nil }
+        }
+    }
+
+    private static func time(_ ms: Double) -> String {
+        let seconds = Int(ms / 1000)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
