@@ -109,6 +109,8 @@ private val gradients = listOf(
 @Composable
 private fun RecapPager(r: Recap) {
     val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    // Started from the dialog's activity, as before the move: the recap is a PNG with no caption.
+    val shareImage = com.varuna.rustify.ui.rememberShareImage()
     val scope = rememberCoroutineScope()
     val numbers = NumberFormat.getIntegerInstance()
     val months = DateFormatSymbols.getInstance().months
@@ -166,7 +168,7 @@ private fun RecapPager(r: Recap) {
                         val dir = File(platform.cacheDir, "share").apply { mkdirs() }
                         File(dir, "rustify_recap_${r.year}.png").apply { writeBytes(bitmap.toPngBytes()) }
                     }
-                    platform.shareImage(file, "")
+                    shareImage(file, "", "image/png")
                 }
             }) {
                 Icon(Icons.Default.Share, contentDescription = stringResource(Res.string.recap_share), tint = Color.White)

@@ -54,8 +54,11 @@ interface AppPlatform {
      */
     fun share(text: String, subject: String? = null): Boolean
 
-    /** Shares an image file with [text] as its caption; false when nothing could take it. */
-    fun shareImage(file: File, text: String): Boolean
+    /**
+     * Shares an image file of type [mimeType] with [text] as its caption (none when blank); false
+     * when nothing could take it. A screen sharing what it shows uses [rememberShareImage].
+     */
+    fun shareImage(file: File, text: String, mimeType: String = "image/*"): Boolean
 
     fun copyToClipboard(label: String, text: String)
 

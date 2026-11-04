@@ -82,7 +82,7 @@ class DesktopAppPlatform(override val systemCountry: String) : AppPlatform {
      * No share sheet to hand an image to: the image goes to the clipboard, ready to paste into a chat
      * or a post; the caption only if the image cannot be read.
      */
-    override fun shareImage(file: File, text: String): Boolean {
+    override fun shareImage(file: File, text: String, mimeType: String): Boolean {
         val image = runCatching { javax.imageio.ImageIO.read(file) }.getOrNull() ?: return share(text)
         val transferable = object : java.awt.datatransfer.Transferable {
             override fun getTransferDataFlavors() = arrayOf(java.awt.datatransfer.DataFlavor.imageFlavor)

@@ -52,22 +52,8 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
         }.isSuccess
     }
 
-    override fun shareImage(file: File, text: String): Boolean = runCatching {
-        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "image/*"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, text)
-            // Some targets read the payload from clipData rather than the extra.
-            clipData = ClipData.newUri(app.contentResolver, "cover", uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        app.startActivity(
-            Intent.createChooser(send, null)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        )
-    }.isSuccess
+    override fun shareImage(file: File, text: String, mimeType: String): Boolean =
+        shareImageFrom(app, file, text, mimeType)
 
     override fun copyToClipboard(label: String, text: String) {
         (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
@@ -85,3 +71,23 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
             ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()
     }.getOrNull()
 }
+
+/**
+ * Offers [file] to the share sheet, started from [from]. From an `Activity` the sheet opens in its
+ * task, as a screen's share always did; from anything else it needs `FLAG_ACTIVITY_NEW_TASK`. The
+ * caption goes only when there is one: an empty `EXTRA_TEXT` is still a text some targets paste.
+ */
+internal fun shareImageFrom(from: Context, file: File, text: String, mimeType: String): Boolean = runCatching {
+    val uri = androidx.core.content.FileProvider.getUriForFile(from, "${from.packageName}.fileprovider", file)
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        if (text.isNotBlank()) putExtra(Intent.EXTRA_TEXT, text)
+        // Some targets read the payload from clipData rather than the extra.
+        clipData = ClipData.newUri(from.contentResolver, "cover", uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val chooser = Intent.createChooser(send, null).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    if (from !is android.app.Activity) chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    from.startActivity(chooser)
+}.isSuccess
