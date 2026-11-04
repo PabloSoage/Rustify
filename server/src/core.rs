@@ -12,9 +12,49 @@ use std::sync::Arc;
 
 use tokio::sync::{oneshot, Semaphore};
 
-/// Methods the server calls itself at start-up and the browser may not: they point the core at
-/// directories and ports on this machine.
-pub const RESERVED: &[&str] = &["initCacheDir", "initSpotifyCacheDir", "startLocalServer"];
+/// Methods the browser may not call: the server calls the first three itself at start-up, and the
+/// rest take a path on this machine or open a port on its network. The phone passes its own files
+/// and its own address there; from a browser they would be any file and any address.
+pub const RESERVED: &[&str] = &[
+    "initCacheDir",
+    "initSpotifyCacheDir",
+    "startLocalServer",
+    "readReplayGain",
+    "readEmbeddedLyrics",
+    "openCastListener",
+    "closeCastListener",
+];
+
+/// Checks a browser's call before the core sees it. The stream cache's methods take the folder to
+/// work in, and that folder is the server's: whatever the browser named is replaced by it.
+pub fn vet(method: &str, args: String, stream_cache: &str) -> Result<String, &'static str> {
+    if RESERVED.contains(&method) {
+        return Err("the server calls this one itself, or it reaches outside the server's folders");
+    }
+    let pointer = match method {
+        "registerLocalStream" => "/request/cacheRoot",
+        "streamCacheSize" | "clearStreamCache" => "/cacheRoot",
+        _ => return Ok(args),
+    };
+    let mut value: serde_json::Value = serde_json::from_str(&args).map_err(|_| "the arguments are not JSON")?;
+    if !value.is_object() {
+        return Err("the arguments are not an object");
+    }
+    if pointer == "/request/cacheRoot" {
+        let request = &mut value["request"];
+        // Sent as JSON text by a caller that mirrors the JNI signature: read it as the object it is.
+        if let Some(text) = request.as_str().map(str::to_owned) {
+            *request = serde_json::from_str(&text).map_err(|_| "the request is not JSON")?;
+        }
+        if !request.is_object() {
+            return Err("the request is not an object");
+        }
+        request["cacheRoot"] = serde_json::Value::String(stream_cache.to_string());
+    } else {
+        value["cacheRoot"] = serde_json::Value::String(stream_cache.to_string());
+    }
+    Ok(value.to_string())
+}
 
 /// The answer when the core could not be asked at all, in the shape every bridge fails with.
 pub const FAILURE: &str = r#"{"success":false,"error":"the core could not answer","kind":"permanent"}"#;
@@ -90,8 +130,31 @@ mod tests {
 
     #[test]
     fn the_browser_cannot_point_the_core_elsewhere() {
-        for method in ["initCacheDir", "initSpotifyCacheDir", "startLocalServer"] {
-            assert!(RESERVED.contains(&method));
+        for method in ["initCacheDir", "initSpotifyCacheDir", "startLocalServer", "readEmbeddedLyrics", "openCastListener"] {
+            assert!(vet(method, "{}".into(), "/srv/cache").is_err());
         }
+        assert_eq!(vet("searchSpotify", r#"{"query":"x"}"#.into(), "/srv/cache").unwrap(), r#"{"query":"x"}"#);
+    }
+
+    #[test]
+    fn the_stream_cache_is_always_the_servers() {
+        let vetted = vet("clearStreamCache", r#"{"cacheRoot":"/"}"#.into(), "/srv/cache").unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&vetted).unwrap()["cacheRoot"], "/srv/cache");
+
+        let vetted = vet(
+            "registerLocalStream",
+            r#"{"request":{"upstreamUrl":"https://cdn/x","cacheRoot":"/etc"}}"#.into(),
+            "/srv/cache",
+        )
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&vetted).unwrap();
+        assert_eq!(value["request"]["cacheRoot"], "/srv/cache");
+        assert_eq!(value["request"]["upstreamUrl"], "https://cdn/x");
+
+        let as_text = vet("registerLocalStream", r#"{"request":"{\"cacheRoot\":\"/etc\"}"}"#.into(), "/srv/cache").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&as_text).unwrap();
+        assert_eq!(value["request"]["cacheRoot"], "/srv/cache");
+
+        assert!(vet("streamCacheSize", "[]".into(), "/srv/cache").is_err());
     }
 }

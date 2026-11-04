@@ -63,6 +63,8 @@ pub struct Inner {
     pub secure_cookies: bool,
     /// The port of the core's stream server on 127.0.0.1, when it started.
     pub stream_port: Option<u16>,
+    /// The stream cache's folder, the only one its methods may be pointed at.
+    pub stream_cache: String,
     pub http: reqwest::Client,
 }
 
@@ -95,8 +97,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data = args.data_dir.clone().unwrap_or_else(default_data_dir);
     let core_dir = data.join("core");
     let cache_dir = data.join("cache");
-    std::fs::create_dir_all(&core_dir)?;
-    std::fs::create_dir_all(&cache_dir)?;
+    let stream_cache = data.join("streams");
+    for dir in [&core_dir, &cache_dir, &stream_cache] {
+        std::fs::create_dir_all(dir)?;
+    }
 
     let (token, made) = auth::load_or_create_token(&data, args.token.clone())?;
     if made {
@@ -131,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sessions: auth::Sessions::default(),
         secure_cookies: args.secure_cookies,
         stream_port,
+        stream_cache: stream_cache.to_string_lossy().into_owned(),
         http: reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -168,9 +173,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// `POST /api/call/{method}`: the body is the arguments object, the answer is the core's.
 async fn call(State(app): State<App>, Path(method): Path<String>, body: Bytes) -> Response {
-    if core::RESERVED.contains(&method.as_str()) {
-        return (StatusCode::FORBIDDEN, "the server calls this one itself").into_response();
-    }
     let args = if body.is_empty() {
         "{}".to_string()
     } else {
@@ -178,6 +180,10 @@ async fn call(State(app): State<App>, Path(method): Path<String>, body: Bytes) -
             Ok(args) => args,
             Err(_) => return (StatusCode::BAD_REQUEST, "the body is not UTF-8").into_response(),
         }
+    };
+    let args = match core::vet(&method, args, &app.stream_cache) {
+        Ok(args) => args,
+        Err(why) => return (StatusCode::FORBIDDEN, why).into_response(),
     };
     let answer = app.core.call(&method, args).await;
     ([(header::CONTENT_TYPE, "application/json")], answer).into_response()
