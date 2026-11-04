@@ -144,11 +144,12 @@ jobs:
       # should hide the other.
       - run: ./gradlew :shared:iosSimulatorArm64Test :sharedUi:iosSimulatorArm64Test --no-daemon
         if: ${{ !cancelled() }}
-      - working-directory: iosApp
-        run: xcodegen generate
       # Unsigned: an .ipa from this is installed by AltStore/SideStore, which sign it with the user's
       # own Apple ID. The pre-build script in project.yml builds the Kotlin framework for Release.
-      - working-directory: iosApp
+      # Not when a working branch is run by hand to see the app up: it is the job's slowest step, and
+      # any Mac, Intel too, can build it.
+      - if: github.event_name != 'workflow_dispatch'
+        working-directory: iosApp
         run: |
           xcodebuild -project Rustify.xcodeproj -target Rustify -configuration Release -sdk iphoneos \
             SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
@@ -156,7 +157,8 @@ jobs:
           cp -R build/Release-iphoneos/Rustify.app Payload/
           zip -qr Rustify-unsigned.ipa Payload
           ls -l Rustify-unsigned.ipa
-      - uses: actions/upload-artifact@v7
+      - if: github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
         with:
           name: rustify-ios-unsigned
           path: iosApp/Rustify-unsigned.ipa
