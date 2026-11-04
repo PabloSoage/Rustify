@@ -1,0 +1,27 @@
+# rustify-server as a systemd service (docs serie-4.x/28 §6).
+#
+#   sudo cp rustify-server /usr/local/bin/ && sudo cp -r web /usr/local/share/rustify-server-web
+#   sudo cp rustify-server.service /etc/systemd/system/ && sudo systemctl enable --now rustify-server
+#   journalctl -u rustify-server     # the access token, the first time
+
+[Unit]
+Description=Rustify server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=rustify-server
+Environment=RUSTIFY_DATA_DIR=/var/lib/rustify-server
+Environment=RUSTIFY_WEB_ROOT=/usr/local/share/rustify-server-web
+# Loopback by default; to reach it from the LAN set an address here and serve it through HTTPS.
+Environment=RUSTIFY_BIND=127.0.0.1:8484
+ExecStart=/usr/local/bin/rustify-server
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
