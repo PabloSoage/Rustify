@@ -44,6 +44,12 @@
 -keepclassmembers class org.apache.commons.io.** { *; }
 -dontwarn org.apache.commons.io.**
 
+# Ktor's client (the shared module's lyrics, DJ and share requests). Its JVM utilities name
+# java.lang.management to tell whether a debugger is attached, inside a catch, and log through
+# SLF4J's API, whose bindings Android does not have; neither is reached on a phone.
+-dontwarn java.lang.management.**
+-dontwarn org.slf4j.**
+
 # Media3 has its own consumer rules
 # -keep class androidx.media3.** { *; }
 # ML Kit (lyrics translation, language id, Gemini Nano for the DJ and the chat) finds its components

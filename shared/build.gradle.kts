@@ -49,6 +49,8 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+            // platform/Http.kt hands out an HttpClient, so its type is part of this module's API.
+            api(libs.ktor.client.core)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -64,8 +66,15 @@ kotlin {
         val jvmCommonMain = maybeCreate("jvmCommonMain").apply { dependsOn(commonMain.get()) }
         androidMain.get().dependsOn(jvmCommonMain)
         getByName("desktopMain").dependsOn(jvmCommonMain)
+        // Ktor's engine on both JVMs: OkHttp, which the app and Coil already carry.
+        jvmCommonMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
+        }
 
         val iosMain = maybeCreate("iosMain").apply { dependsOn(commonMain.get()) }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+        }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
         getByName("iosX64Main").dependsOn(iosMain)

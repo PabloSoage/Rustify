@@ -50,6 +50,10 @@ kotlinxCoroutines = "1.10.2"
 # Compose Multiplatform for :sharedUi, the interface the APK and the desktop share (docs serie-4.x/26),
 # and the desktop app. 1.12 rather than 1.9: 1.9's resources plugin calls an AGP API that 9.4 changed.
 composeMultiplatform = "1.12.2"
+# The few requests common code makes itself (lyrics, the DJ's API, a cover to share), over the
+# platform's engine: OkHttp on Android and the desktop, Darwin (NSURLSession) on iOS. :shared's
+# platform/Http.kt names it.
+ktor = "3.2.0"
 [libraries]
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
@@ -91,6 +95,9 @@ appauth = { group = "net.openid", name = "appauth", version.ref = "appauth" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinxCoroutines" }
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
