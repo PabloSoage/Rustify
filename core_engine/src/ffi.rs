@@ -1291,6 +1291,9 @@ mod tests {
             "getAlternativeTrack",
             "castUrlFor",
             "castSession",
+            "readTags",
+            "readCover",
+            "writeTags",
         ];
         for method in offline {
             assert!(!call(method, "{}").contains("unknown method"), "{method}");
@@ -1315,6 +1318,19 @@ mod tests {
             call("registerLocalStream", "{}"),
             r#"{"status":"refused","reason":"bad request"}"#
         );
+    }
+
+    #[test]
+    fn the_tags_of_no_file_are_a_failure_as_over_jni() {
+        for (method, args) in [
+            ("readTags", r#"{"path":"/no/such/rustify/file.mp3"}"#),
+            ("readCover", r#"{"path":"/no/such/rustify/file.mp3"}"#),
+            ("writeTags", r#"{"path":"/no/such/rustify/file.mp3","tags":{"title":"x"}}"#),
+            ("writeTags", r#"{"path":"/no/such/rustify/file.mp3"}"#),
+        ] {
+            let answer: Value = serde_json::from_str(&call(method, args)).unwrap();
+            assert_eq!(answer["success"], false, "{method} {args}");
+        }
     }
 
     #[test]

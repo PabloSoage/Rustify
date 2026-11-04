@@ -239,6 +239,7 @@ fn apply(tag: &mut Tag, tags: &TagsToWrite) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
 
     /// One second of silence as 16-bit mono PCM at 44.1 kHz: the smallest file lofty both reads and
     /// writes a tag into (an ID3v2 chunk), with a duration it can compute.
