@@ -157,9 +157,10 @@ fun AndroidSettingsSections(slot: SettingsSlot, host: ShellHost) {
             // Right after the chain: it is the same decision ("what plays my music"), even
             // though it cannot live inside the chain itself.
             WebPlayerSection(context)
-            InvidiousBackendSection(context)
-            DeezerBackendSection(context)
-            SubsonicBackendSection(context)
+            // Shared with the desktop (SettingsAudioSourcesSections.kt).
+            InvidiousBackendSection()
+            DeezerBackendSection()
+            SubsonicBackendSection()
         }
         SettingsSlot.DOWNLOADS -> DownloadsCategory(context) { host.navigate(Screen.CustomDownload) }
         SettingsSlot.INTEGRATIONS -> {
