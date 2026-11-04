@@ -24,6 +24,16 @@ class M3uTest {
     }
 
     @Test
+    fun `a desktop file uri becomes its decoded path`() {
+        assertEquals("/home/me/Music/Rock/a b.mp3", M3u.pathOf("local:file:///home/me/Music/Rock/a%20b.mp3"))
+        assertEquals("/storage/emulated/0/Music/C/ダ.flac", M3u.pathOf("local:file:///storage/emulated/0/Music/C/%E3%83%80.flac"))
+        assertEquals("C:/Users/me/Music/a.mp3", M3u.pathOf("local:file:///C:/Users/me/Music/a.mp3"))
+        assertEquals("/srv/a.mp3", M3u.pathOf("local:file://localhost/srv/a.mp3"))
+        assertEquals("/srv/a.mp3", M3u.pathOf("local:file:/srv/a.mp3"))
+        assertNull(M3u.pathOf("local:file://nas/share/a.mp3"))
+    }
+
+    @Test
     fun `extinf gives the title and duration of the next line`() {
         val entries = M3u.parse("\uFEFF#EXTM3U\r\n#EXTINF:215 tvg-id=\"x\",Artist A - Intro\r\nA\\intro.mp3\r\n\r\nB/intro.mp3\r\n")
         assertEquals(listOf(M3u.Entry("A\\intro.mp3", "Artist A - Intro", 215), M3u.Entry("B/intro.mp3")), entries)

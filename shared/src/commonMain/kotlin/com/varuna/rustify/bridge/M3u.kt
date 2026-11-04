@@ -82,9 +82,14 @@ object M3u {
      * The path of a `local:` track on the device — `/storage/emulated/0/Music/a.mp3` for the
      * primary volume, `/storage/XXXX-XXXX/…` for a card — or null when the provider's ids are
      * not paths (a cloud provider's opaque ids).
+     *
+     * On the desktop a local track is a `file://` URI, and its path is the URI's, decoded:
+     * `/home/me/Music/a b.mp3`, or `C:/Users/me/Music/a.mp3` on Windows (forward slashes, which is
+     * what the folder view splits on).
      */
     fun pathOf(trackId: String): String? {
         val uri = trackId.removePrefix("local:")
+        if (uri.startsWith("file:")) return filePath(uri)
         val doc = uri.substringAfterLast("/document/", "").ifEmpty { return null }
         val id = percentDecode(doc)
         val colon = id.indexOf(':')
@@ -93,6 +98,24 @@ object M3u {
         val rel = id.substring(colon + 1).trimStart('/')
         if (rel.isEmpty()) return null
         return if (volume == "primary") "/storage/emulated/0/$rel" else "/storage/$volume/$rel"
+    }
+
+    /** `file:///a/b%20c.mp3` → `/a/b c.mp3`; `file:///C:/a.mp3` → `C:/a.mp3`; `file://localhost/a` → `/a`. */
+    private fun filePath(uri: String): String? {
+        var rest = uri.removePrefix("file:")
+        if (rest.startsWith("//")) {
+            rest = rest.removePrefix("//")
+            // An authority: only the local host names this machine.
+            val slash = rest.indexOf('/')
+            if (slash < 0) return null
+            val host = rest.substring(0, slash)
+            if (host.isNotEmpty() && !host.equals("localhost", ignoreCase = true)) return null
+            rest = rest.substring(slash)
+        }
+        val path = percentDecode(rest.substringBefore('?').substringBefore('#'))
+        // `/C:/…`: a Windows drive, which takes no slash in front.
+        val drive = path.length >= 3 && path[0] == '/' && path[1].isLetter() && path[2] == ':'
+        return (if (drive) path.substring(1) else path).takeIf { it.length > 1 }
     }
 
     private fun components(path: String): List<String> =
