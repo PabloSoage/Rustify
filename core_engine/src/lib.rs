@@ -3190,6 +3190,19 @@ pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_pollNative
     })
 }
 
+/// JNI Bridge: the name of the output the engine plays through, as a JSON string, or `null`.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_outputDeviceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serde_json::to_string(&engine::output::default_device_name())
+            .unwrap_or_else(|_| "null".to_string())
+    })
+}
+
 /// JNI Bridge: stops the engine and releases the device.
 #[cfg(feature = "desktop-audio")]
 #[no_mangle]

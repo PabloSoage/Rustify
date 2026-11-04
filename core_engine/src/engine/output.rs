@@ -163,7 +163,7 @@ impl Drop for NullOutput {
 // =============================================================================
 
 #[cfg(feature = "desktop-audio")]
-pub use cpal_output::CpalOutput;
+pub use cpal_output::{default_device_name, CpalOutput};
 
 #[cfg(feature = "desktop-audio")]
 mod cpal_output {
@@ -285,7 +285,9 @@ mod cpal_output {
             .map_err(|e| EngineError::Output(format!("could not open the device: {e}")))
     }
 
-    fn default_device_name() -> Option<String> {
+    /// The name of the system's default output, which is the one the engine plays through: it moves
+    /// there when the default does.
+    pub fn default_device_name() -> Option<String> {
         cpal::default_host()
             .default_output_device()
             .and_then(|d| d.name().ok())

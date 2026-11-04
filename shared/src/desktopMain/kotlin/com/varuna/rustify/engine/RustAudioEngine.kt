@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The core's audio engine on the desktop JVM (`core_engine/src/engine/`, JNI bridges at the end of
@@ -27,9 +29,15 @@ object RustAudioEngine {
     private external fun sendNative(commandJson: String): String
     private external fun pollNative(timeoutMs: Int): String
     private external fun stopNative(): String
+    private external fun outputDeviceNative(): String
 
     /** Opens the default output device. Idempotent. Answers the usual `{"success":…}`. */
     suspend fun start(): String = withContext(Dispatchers.IO) { startNative() }
+
+    /** The name of the output the engine plays through; null when the system has none. */
+    suspend fun outputDevice(): String? = withContext(Dispatchers.IO) {
+        (Json.parseToJsonElement(outputDeviceNative()) as? JsonPrimitive)?.takeIf { it.isString }?.content
+    }
 
     /** Queues [command]; never waits for it to happen. Memory only, so callable from the UI thread. */
     fun send(command: EngineCommand): String = sendNative(command.toJson())

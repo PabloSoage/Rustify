@@ -262,6 +262,7 @@ pub const METHODS: &[&str] = &[
     "engineSend",
     "enginePoll",
     "engineStop",
+    "engineOutputDevice",
     "secretGet",
     "secretSet",
     "secretRemove",
@@ -1126,7 +1127,9 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         },
 
         // The audio engine (RustAudioEngine*Native on the desktop JVM). Needs `desktop-audio`.
-        "engineStart" | "engineSend" | "enginePoll" | "engineStop" => engine_call(method, args),
+        "engineStart" | "engineSend" | "enginePoll" | "engineStop" | "engineOutputDevice" => {
+            engine_call(method, args)
+        }
         // The system's credential store (SecretStore *Native on the desktop JVM). Needs `secure-store`.
         "secretGet" | "secretSet" | "secretRemove" => secret_call(method, args),
 
@@ -1170,6 +1173,9 @@ fn engine_call(method: &str, args: &Value) -> String {
                 None => "null".to_string(),
             }
         }
+        // outputDeviceNative — the output's name as a JSON string, or `null`.
+        "engineOutputDevice" => serde_json::to_string(&engine::output::default_device_name())
+            .unwrap_or_else(|_| "null".to_string()),
         _ => {
             let taken = crate::AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner()).take();
             drop(taken);

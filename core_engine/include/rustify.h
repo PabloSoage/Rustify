@@ -78,7 +78,7 @@ extern "C" {
  *   startLocalServer {}  registerLocalStream {request}  forgetLocalStream {handle}
  *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
- *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}
+ *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}
  *   secretGet {key}  secretSet {key, value}  secretRemove {key}
  *
  * Where the JNI twin answers something that is not JSON, the answer here is its JSON form: a bare
