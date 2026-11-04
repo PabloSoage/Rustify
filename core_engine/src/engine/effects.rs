@@ -806,7 +806,7 @@ impl Stereo {
         if self.is_bypassed() {
             return;
         }
-        for frame in buf.chunks_exact_mut(2) {
+        for frame in buf.as_chunks_mut::<2>().0 {
             let (mut l, mut r) = (frame[0], frame[1]);
             let voice = self.voice.tick();
             if voice > 0.0 {
