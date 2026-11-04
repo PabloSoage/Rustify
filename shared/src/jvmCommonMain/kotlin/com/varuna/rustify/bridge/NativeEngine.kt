@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
  * Same philosophy as `TrackRef`: make the mistake unrepresentable rather than documented. See
  * `docs/stremio-core/PLAN-3.x.md` §7.
  */
-object NativeEngine {
+actual object NativeEngine {
     init {
         NativeLibrary.load()
     }
@@ -48,33 +48,33 @@ object NativeEngine {
     private external fun recordPlayNative(eventJson: String): String
 
     /** Appends one of the app's own plays. */
-    suspend fun recordPlay(eventJson: String): String = io { recordPlayNative(eventJson) }
+    actual suspend fun recordPlay(eventJson: String): String = io { recordPlayNative(eventJson) }
 
     private external fun importPlayHistoryNative(historyJson: String): String
 
     /** Imports a Rustify, Spotify Extended or legacy history file; answers an import report. */
-    suspend fun importPlayHistory(historyJson: String): String = io { importPlayHistoryNative(historyJson) }
+    actual suspend fun importPlayHistory(historyJson: String): String = io { importPlayHistoryNative(historyJson) }
 
     private external fun allPlaysNative(): String
 
     /** Every play, oldest first, as a JSON array. For export and backup; screens ask for stats. */
-    suspend fun allPlays(): String = io { allPlaysNative() }
+    actual suspend fun allPlays(): String = io { allPlaysNative() }
 
     private external fun playStatsNative(fromMs: Long, toMs: Long, zoneJson: String): String
 
     /** The Metrics screen's numbers for `[fromMs, toMs)`, in the zone described by [zoneJson]. */
-    suspend fun playStats(fromMs: Long, toMs: Long, zoneJson: String): String =
+    actual suspend fun playStats(fromMs: Long, toMs: Long, zoneJson: String): String =
         io { playStatsNative(fromMs, toMs, zoneJson) }
 
     private external fun readReplayGainNative(path: String): String
 
     /** The ReplayGain tags of a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
-    fun readReplayGain(path: String): String = readReplayGainNative(path)
+    actual fun readReplayGain(path: String): String = readReplayGainNative(path)
 
     private external fun readEmbeddedLyricsNative(path: String): String
 
     /** The lyrics embedded in a local file opened at [path] (`/proc/self/fd/N`), as JSON. Blocking. */
-    fun readEmbeddedLyrics(path: String): String = readEmbeddedLyricsNative(path)
+    actual fun readEmbeddedLyrics(path: String): String = readEmbeddedLyricsNative(path)
 
     // ListenBrainz (scrobble::). Network, so suspend over private blocking bridges.
     private external fun listenBrainzSubmitNative(token: String, listenJson: String): String
@@ -82,40 +82,40 @@ object NativeEngine {
     private external fun listenBrainzValidateNative(token: String): String
 
     /** Queues a listen and sends the queue; answers a report (sent, pending, rejected). */
-    suspend fun listenBrainzSubmit(token: String, listenJson: String): String = io { listenBrainzSubmitNative(token, listenJson) }
-    suspend fun listenBrainzPlayingNow(token: String, listenJson: String): String = io { listenBrainzPlayingNowNative(token, listenJson) }
+    actual suspend fun listenBrainzSubmit(token: String, listenJson: String): String = io { listenBrainzSubmitNative(token, listenJson) }
+    actual suspend fun listenBrainzPlayingNow(token: String, listenJson: String): String = io { listenBrainzPlayingNowNative(token, listenJson) }
     /** The token's user name as a JSON string, or `null` when ListenBrainz says it is invalid. */
-    suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
+    actual suspend fun listenBrainzValidate(token: String): String = io { listenBrainzValidateNative(token) }
 
     // Jam (jam::). Network, so suspend over private blocking bridges; the code is memory only.
-    external fun jamNewCode(): String
+    actual external fun jamNewCode(): String
     private external fun jamJoinNative(configJson: String): String
     private external fun jamPollNative(timeoutMs: Int): String
     private external fun jamPublishStateNative(stateJson: String): String
     private external fun jamSendNative(commandJson: String): String
     private external fun jamKickNative(id: String): String
     private external fun jamLeaveNative(): String
-    suspend fun jamJoin(configJson: String): String = io { jamJoinNative(configJson) }
+    actual suspend fun jamJoin(configJson: String): String = io { jamJoinNative(configJson) }
     /** Waits up to [timeoutMs] for the room to say something; an IO thread, never the main one. */
-    suspend fun jamPoll(timeoutMs: Int): String = io { jamPollNative(timeoutMs) }
-    suspend fun jamPublishState(stateJson: String): String = io { jamPublishStateNative(stateJson) }
-    suspend fun jamSend(commandJson: String): String = io { jamSendNative(commandJson) }
-    suspend fun jamKick(id: String): String = io { jamKickNative(id) }
-    suspend fun jamLeave(): String = io { jamLeaveNative() }
+    actual suspend fun jamPoll(timeoutMs: Int): String = io { jamPollNative(timeoutMs) }
+    actual suspend fun jamPublishState(stateJson: String): String = io { jamPublishStateNative(stateJson) }
+    actual suspend fun jamSend(commandJson: String): String = io { jamSendNative(commandJson) }
+    actual suspend fun jamKick(id: String): String = io { jamKickNative(id) }
+    actual suspend fun jamLeave(): String = io { jamLeaveNative() }
 
     // Last.fm (scrobble::lastfm). Network, so suspend over private blocking bridges.
     private external fun lastFmLoginNative(apiKey: String, secret: String, user: String, password: String): String
     private external fun lastFmSubmitNative(credentialsJson: String, listenJson: String): String
     private external fun lastFmNowPlayingNative(credentialsJson: String, listenJson: String): String
-    suspend fun lastFmLogin(apiKey: String, secret: String, user: String, password: String): String =
+    actual suspend fun lastFmLogin(apiKey: String, secret: String, user: String, password: String): String =
         io { lastFmLoginNative(apiKey, secret, user, password) }
-    suspend fun lastFmSubmit(credentialsJson: String, listenJson: String): String = io { lastFmSubmitNative(credentialsJson, listenJson) }
-    suspend fun lastFmNowPlaying(credentialsJson: String, listenJson: String): String = io { lastFmNowPlayingNative(credentialsJson, listenJson) }
+    actual suspend fun lastFmSubmit(credentialsJson: String, listenJson: String): String = io { lastFmSubmitNative(credentialsJson, listenJson) }
+    actual suspend fun lastFmNowPlaying(credentialsJson: String, listenJson: String): String = io { lastFmNowPlayingNative(credentialsJson, listenJson) }
 
     private external fun tempoOfNative(samples: FloatArray, sampleRate: Int): String
 
     /** The tempo of mono PCM, as JSON `{bpm, confidence}` or `null`. CPU-bound, so off the main thread. */
-    suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String =
+    actual suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String =
         withContext(Dispatchers.Default) { tempoOfNative(samples, sampleRate) }
 
     // Subsonic / OpenSubsonic (subsonic::). Network, so suspend over private blocking bridges.
@@ -123,9 +123,9 @@ object NativeEngine {
     private external fun subsonicFindNative(configJson: String, title: String, artistsJson: String, durationMs: Long): String
 
     /** The server's name and version as a JSON string, or the failure envelope. */
-    suspend fun subsonicPing(configJson: String): String = io { subsonicPingNative(configJson) }
+    actual suspend fun subsonicPing(configJson: String): String = io { subsonicPingNative(configJson) }
     /** The server's copy of a track (`{id, streamUrl, suffix, bitRate}`), `null`, or the failure envelope. */
-    suspend fun subsonicFind(configJson: String, title: String, artistsJson: String, durationMs: Long): String =
+    actual suspend fun subsonicFind(configJson: String, title: String, artistsJson: String, durationMs: Long): String =
         io { subsonicFindNative(configJson, title, artistsJson, durationMs) }
 
     // AutoEq (autoeq::). Search and profile touch the network; bands is pure arithmetic.
@@ -133,15 +133,15 @@ object NativeEngine {
     private external fun autoEqProfileNative(path: String): String
     private external fun autoEqBandsNative(peqText: String, n: Int): String
 
-    suspend fun autoEqSearch(query: String): String = io { autoEqSearchNative(query) }
-    suspend fun autoEqProfile(path: String): String = io { autoEqProfileNative(path) }
+    actual suspend fun autoEqSearch(query: String): String = io { autoEqSearchNative(query) }
+    actual suspend fun autoEqProfile(path: String): String = io { autoEqProfileNative(path) }
     /** Memory only: parses a parametric EQ and evaluates it at [n] bands. */
-    fun autoEqBands(peqText: String, n: Int): String = autoEqBandsNative(peqText, n)
+    actual fun autoEqBands(peqText: String, n: Int): String = autoEqBandsNative(peqText, n)
 
     private external fun topCsvNative(fromMs: Long, toMs: Long, kind: String): String
 
     /** The whole ranking of `[fromMs, toMs)` as CSV; [kind] is `tracks`, `artists` or `albums`. */
-    suspend fun topCsv(fromMs: Long, toMs: Long, kind: String): String = io { topCsvNative(fromMs, toMs, kind) }
+    actual suspend fun topCsv(fromMs: Long, toMs: Long, kind: String): String = io { topCsvNative(fromMs, toMs, kind) }
 
     // =====================================================================
     // CONTINUE LISTENING
@@ -159,18 +159,18 @@ object NativeEngine {
      * being ignored: an album you completed should stop being offered, not freeze at its last
      * twenty seconds.
      */
-    suspend fun recordListening(sessionJson: String): String =
+    actual suspend fun recordListening(sessionJson: String): String =
         io { recordListeningNative(sessionJson) }
 
     private external fun listContinueListeningNative(): String
 
     /** The contexts to offer, newest first, as a JSON array. */
-    suspend fun listContinueListening(): String = io { listContinueListeningNative() }
+    actual suspend fun listContinueListening(): String = io { listContinueListeningNative() }
 
     private external fun forgetListeningNative(id: String): String
 
     /** Drops one context, or every one when [id] is empty. */
-    suspend fun forgetListening(id: String): String = io { forgetListeningNative(id) }
+    actual suspend fun forgetListening(id: String): String = io { forgetListeningNative(id) }
 
     private external fun recordTrackPlaceNative(trackId: String, positionMs: Long, durationMs: Long): String
 
@@ -178,18 +178,18 @@ object NativeEngine {
      * Keeps the place in a long track (4.9) — or drops it, once finished or barely started. The
      * rules (how long is long, what counts as finished) are the core's: `player::bookmark`.
      */
-    suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String =
+    actual suspend fun recordTrackPlace(trackId: String, positionMs: Long, durationMs: Long): String =
         io { recordTrackPlaceNative(trackId, positionMs, durationMs) }
 
     private external fun trackPlaceNative(trackId: String): Long
 
     /** Where to pick a long track up again, or -1 when there is no place to offer. */
-    suspend fun trackPlace(trackId: String): Long = io { trackPlaceNative(trackId) }
+    actual suspend fun trackPlace(trackId: String): Long = io { trackPlaceNative(trackId) }
 
     private external fun forgetTrackPlaceNative(trackId: String): String
 
     /** Forgets the place in a track, because the person chose to start it over. */
-    suspend fun forgetTrackPlace(trackId: String): String = io { forgetTrackPlaceNative(trackId) }
+    actual suspend fun forgetTrackPlace(trackId: String): String = io { forgetTrackPlaceNative(trackId) }
     // =====================================================================
     // LOCAL SEARCH (point J)
     // =====================================================================
@@ -208,7 +208,7 @@ object NativeEngine {
      * [itemsJson] is `[{"id":"…","fields":["name","artist",…]}]` with the fields in **importance
      * order** — `fields[0]` outranks `fields[1]` in the results.
      */
-    external fun searchIndexNative(name: String, itemsJson: String): String
+    actual external fun searchIndexNative(name: String, itemsJson: String): String
 
     /**
      * Matching ids from a named index, best first, as a JSON array.
@@ -216,10 +216,10 @@ object NativeEngine {
      * [limit] of 0 means all of them. An empty [query] returns the list in its original order: an
      * empty search box is not a filter. An unknown [name] returns `[]`.
      */
-    external fun searchQueryNative(name: String, query: String, limit: Int): String
+    actual external fun searchQueryNative(name: String, query: String, limit: Int): String
 
     /** Drops a named index, for a screen that is going away. */
-    external fun searchForgetNative(name: String): String
+    actual external fun searchForgetNative(name: String): String
 
     // =====================================================================
     // MATCHING A SPOTIFY TRACK TO A LOCAL FILE
@@ -237,14 +237,14 @@ object NativeEngine {
      *
      * [itemsJson] is `[{"id":…,"name":…,"artists":[…],"isrc":…,"durationMs":…}]`.
      */
-    external fun indexLocalTracksNative(itemsJson: String): String
+    actual external fun indexLocalTracksNative(itemsJson: String): String
 
     /**
      * The id of the local file that is this track, as `{"id":…}`, or `{}`.
      *
      * `{}` means both "nothing matches" and "nothing registered" — the same answer to the caller.
      */
-    external fun findLocalMatchNative(trackJson: String): String
+    actual external fun findLocalMatchNative(trackJson: String): String
 
     // =====================================================================
     // ALREADY LISTENED (point I)
@@ -265,19 +265,19 @@ object NativeEngine {
      * purpose: the marks are stored as a bitfield indexed by position, and handing over the current
      * order is what lets it realign when a playlist has been edited underneath.
      */
-    suspend fun markListened(contextId: String, queueJson: String, trackId: String): String =
+    actual suspend fun markListened(contextId: String, queueJson: String, trackId: String): String =
         io { markListenedNative(contextId, queueJson, trackId) }
 
     private external fun listenedStateNative(contextId: String, queueJson: String): String
 
     /** One boolean per position in the queue, as a JSON array. */
-    suspend fun listenedState(contextId: String, queueJson: String): String =
+    actual suspend fun listenedState(contextId: String, queueJson: String): String =
         io { listenedStateNative(contextId, queueJson) }
 
     private external fun forgetListenedNative(contextId: String): String
 
     /** Drops one context's marks, or every one when [contextId] is empty. */
-    suspend fun forgetListened(contextId: String): String = io { forgetListenedNative(contextId) }
+    actual suspend fun forgetListened(contextId: String): String = io { forgetListenedNative(contextId) }
 
     // =====================================================================
     // DATA EXPORT (point L)
@@ -291,7 +291,7 @@ object NativeEngine {
      * Never carries a credential — no Spotify session, no ARL. That is a decision with a test
      * behind it in `export::redacted`, not a side effect of what happens to be stored.
      */
-    suspend fun exportData(producedBy: String): String = io { exportDataNative(producedBy) }
+    actual suspend fun exportData(producedBy: String): String = io { exportDataNative(producedBy) }
 
     private external fun restoreDataNative(json: String): String
 
@@ -302,7 +302,7 @@ object NativeEngine {
      *   `skipped` names keys the file carried that this build does not know — which is how someone
      *   finds out they restored an export from a newer version.
      */
-    suspend fun restoreData(json: String): String = io { restoreDataNative(json) }
+    actual suspend fun restoreData(json: String): String = io { restoreDataNative(json) }
 
     // =====================================================================
     // RELEASE CALENDAR (point K)
@@ -320,7 +320,7 @@ object NativeEngine {
      *
      * @return `[{"id":"…","bucket":"this_week","day":19889}]`
      */
-    external fun arrangeReleasesNative(entriesJson: String, nowMs: Long): String
+    actual external fun arrangeReleasesNative(entriesJson: String, nowMs: Long): String
 
     // =====================================================================
     // THE PLAYER REDUCER (point H)
@@ -345,7 +345,7 @@ object NativeEngine {
      * @return `{"state":{…},"effects":[{"type":"play","track":"…","positionMs":0}, …]}`.
      *   An unreadable action returns the state untouched and no effects.
      */
-    external fun playerReduceNative(stateJson: String, actionJson: String): String
+    actual external fun playerReduceNative(stateJson: String, actionJson: String): String
 
     // =====================================================================
     // CASTING (E16)
@@ -366,7 +366,7 @@ object NativeEngine {
      *
      * @return `{"success":true,"port":41234}` or `{"success":false,"error":"…"}`
      */
-    external fun openCastListenerNative(bindTo: String, device: String): String
+    actual external fun openCastListenerNative(bindTo: String, device: String): String
 
     /**
      * Ends the cast session.
@@ -374,20 +374,20 @@ object NativeEngine {
      * Takes effect immediately: the allow-check reads the same state, so even a connection accepted
      * a moment earlier stops being answered. Pure and in-memory.
      */
-    external fun closeCastListenerNative(): String
+    actual external fun closeCastListenerNative(): String
 
     /**
      * The URL to hand the cast device for an already-registered handle, or `{}` when no session is
      * open. Same handle and same token as the loopback URL; only the host differs.
      */
-    external fun castUrlForNative(handle: String): String
+    actual external fun castUrlForNative(handle: String): String
 
     /**
      * The session as the **core** sees it — which is the only version that counts.
      *
      * @return `{"active":true,"boundTo":"…","port":N,"device":"…"}` or `{"active":false}`
      */
-    external fun castSessionNative(): String
+    actual external fun castSessionNative(): String
 
 
     // =====================================================================
@@ -401,12 +401,12 @@ object NativeEngine {
      * @param query Example: "USUM71700966" or "Bohemian Rhapsody Queen".
      * @return JSON: a list of YouTubeTrack objects.
      */
-    suspend fun searchYouTube(query: String): String = io { searchYouTubeNative(query) }
+    actual suspend fun searchYouTube(query: String): String = io { searchYouTubeNative(query) }
 
     private external fun getSpotifyLyricsNative(trackId: String): String
 
     /** Spotify's own lyrics for a track (needs a session). Answers `SpotifyLyrics` or a failure. */
-    suspend fun getSpotifyLyrics(trackId: String): String = io { getSpotifyLyricsNative(trackId) }
+    actual suspend fun getSpotifyLyrics(trackId: String): String = io { getSpotifyLyricsNative(trackId) }
 
     private external fun resolveInnertubeAudioNative(videoId: String, prefsJson: String): String
 
@@ -414,18 +414,18 @@ object NativeEngine {
      * A YouTube video's audio stream from one `/youtubei/v1/player` request, no yt-dlp (4.1).
      * Answers an `InnertubeAudio` or the failure envelope.
      */
-    suspend fun resolveInnertubeAudio(videoId: String, prefsJson: String): String =
+    actual suspend fun resolveInnertubeAudio(videoId: String, prefsJson: String): String =
         io { resolveInnertubeAudioNative(videoId, prefsJson) }
 
     private external fun setInnertubeClientsNative(clientsJson: String): String
 
     /** Replaces the client table; `[]` restores the built-in one. */
-    suspend fun setInnertubeClients(clientsJson: String): String = io { setInnertubeClientsNative(clientsJson) }
+    actual suspend fun setInnertubeClients(clientsJson: String): String = io { setInnertubeClientsNative(clientsJson) }
 
     private external fun resolveYouTubeIdNative(spotifyId: String, youtubeId: String): String
 
     /** Resolves a Spotify track id to a YouTube video id. Network. */
-    suspend fun resolveYouTubeId(spotifyId: String, youtubeId: String): String =
+    actual suspend fun resolveYouTubeId(spotifyId: String, youtubeId: String): String =
         io { resolveYouTubeIdNative(spotifyId, youtubeId) }
 
     private external fun initCacheDirNative(cacheDir: String)
@@ -437,10 +437,10 @@ object NativeEngine {
      * @param cacheDir absolute path; must be `filesDir`, not `cacheDir` — the matches are the
      *   user's own choices and the OS may clear the cache directory at any time.
      */
-    suspend fun initCacheDir(cacheDir: String) = io { initCacheDirNative(cacheDir) }
+    actual suspend fun initCacheDir(cacheDir: String) = io { initCacheDirNative(cacheDir) }
 
     /** In memory. Makes a Spotify track matchable by the YouTube resolver. */
-    external fun registerTrackMetadataNative(
+    actual external fun registerTrackMetadataNative(
         id: String,
         name: String,
         artistsJson: String,
@@ -449,13 +449,13 @@ object NativeEngine {
     )
 
     /** In memory, with the write to disk handed to a background task in Rust. */
-    external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
+    actual external fun setAlternativeTrackNative(spotifyId: String, youtubeId: String)
 
     /** In memory: reads the live match map. Empty string when there is no match. */
-    external fun getAlternativeTrackNative(spotifyId: String): String
+    actual external fun getAlternativeTrackNative(spotifyId: String): String
 
     /** In memory. Tells the engine what is queued so it can pre-buffer. */
-    external fun updateQueueNative(trackIdsJson: String)
+    actual external fun updateQueueNative(trackIdsJson: String)
 
 
     // =====================================================================
@@ -471,16 +471,16 @@ object NativeEngine {
      * @return `{"kind":"track","id":"…","token":"track:…","url":"…","scheme":"rustify://…"}`, or
      *   `{}` when the text is not one of ours. `{}` means "not ours", never "unsafe".
      */
-    external fun parseLinkNative(text: String): String
+    actual external fun parseLinkNative(text: String): String
 
     /** Wraps a link so tapping it opens Rustify. An empty [host] falls back to `rustify://`. */
-    external fun wrapLinkNative(url: String, host: String): String
+    actual external fun wrapLinkNative(url: String, host: String): String
 
     /**
      * Recovers the link inside a wrapper URL, or `""` if it is not one.
      * [knownHostsJson] is a JSON array — checked, not trusted.
      */
-    external fun unwrapLinkNative(url: String, knownHostsJson: String): String
+    actual external fun unwrapLinkNative(url: String, knownHostsJson: String): String
 
     // ── Add-ons: installable audio backends ─────────────────────────────────────────────────
     //
@@ -497,27 +497,27 @@ object NativeEngine {
      *
      * @return the add-on as JSON, or `{"success":false,"error":"..."}`.
      */
-    suspend fun installAddon(url: String): String = io { installAddonNative(url) }
+    actual suspend fun installAddon(url: String): String = io { installAddonNative(url) }
 
     private external fun listAddonsNative(): String
 
     /** The installed add-ons as a JSON array, in the order they are tried. Reads storage. */
-    suspend fun listAddons(): String = io { listAddonsNative() }
+    actual suspend fun listAddons(): String = io { listAddonsNative() }
 
     private external fun uninstallAddonNative(id: String): String
 
-    suspend fun uninstallAddon(id: String): String = io { uninstallAddonNative(id) }
+    actual suspend fun uninstallAddon(id: String): String = io { uninstallAddonNative(id) }
 
     private external fun setAddonEnabledNative(id: String, enabled: Boolean): String
 
     /** Turns an add-on off without losing the installation. */
-    suspend fun setAddonEnabled(id: String, enabled: Boolean): String =
+    actual suspend fun setAddonEnabled(id: String, enabled: Boolean): String =
         io { setAddonEnabledNative(id, enabled) }
 
     private external fun reorderAddonsNative(idsJson: String): String
 
     /** Reorders the fallback chain. [idsJson] is a JSON array of add-on ids. */
-    suspend fun reorderAddons(idsJson: String): String = io { reorderAddonsNative(idsJson) }
+    actual suspend fun reorderAddons(idsJson: String): String = io { reorderAddonsNative(idsJson) }
 
     private external fun resolveViaAddonNative(addonId: String, queryJson: String): String
 
@@ -527,7 +527,7 @@ object NativeEngine {
      * @return the answer as JSON, `{}` when the add-on does not have this track — a normal outcome
      *   meaning "move on to the next provider" — or `{"success":false,...}` on failure.
      */
-    suspend fun resolveViaAddon(addonId: String, queryJson: String): String =
+    actual suspend fun resolveViaAddon(addonId: String, queryJson: String): String =
         io { resolveViaAddonNative(addonId, queryJson) }
 
     // ── Local streaming server and the stream cache ─────────────────────────────────────────
@@ -543,7 +543,7 @@ object NativeEngine {
      * Starts the loopback streaming server, or returns the one already running.
      * @return `{"port":N,"token":"..."}`, or `{"success":false,"error":"..."}` on failure.
      */
-    suspend fun startLocalServer(): String = io { startLocalServerNative() }
+    actual suspend fun startLocalServer(): String = io { startLocalServerNative() }
 
     private external fun registerLocalStreamNative(requestJson: String): String
 
@@ -560,24 +560,24 @@ object NativeEngine {
      *   is what the app did before this server existed, while a background fill runs — or
      *   `{"status":"refused","reason":"…"}`.
      */
-    suspend fun registerLocalStream(requestJson: String): String =
+    actual suspend fun registerLocalStream(requestJson: String): String =
         io { registerLocalStreamNative(requestJson) }
 
     /** In memory. Drops a registration once the player is done with it. */
-    external fun forgetLocalStreamNative(handle: String)
+    actual external fun forgetLocalStreamNative(handle: String)
 
     private external fun streamCacheSizeNative(cacheRoot: String): Long
 
     /** Bytes the stream cache is currently using. Walks a directory. */
-    suspend fun streamCacheSize(cacheRoot: String): Long = io { streamCacheSizeNative(cacheRoot) }
+    actual suspend fun streamCacheSize(cacheRoot: String): Long = io { streamCacheSizeNative(cacheRoot) }
 
     private external fun clearStreamCacheNative(cacheRoot: String): Long
 
     /** Empties the stream cache and returns the bytes freed. */
-    suspend fun clearStreamCache(cacheRoot: String): Long = io { clearStreamCacheNative(cacheRoot) }
+    actual suspend fun clearStreamCache(cacheRoot: String): Long = io { clearStreamCacheNative(cacheRoot) }
 
     /** In memory. Sets the Accept-Language header the Spotify client presents. */
-    external fun setLanguageNative(langCode: String)
+    actual external fun setLanguageNative(langCode: String)
 
     // =====================================================================
     // SPOTIFY — AUTHENTICATION
@@ -589,15 +589,15 @@ object NativeEngine {
      * Authenticates with the intercepted session cookie, running the full TOTP token flow.
      * @return `{"success":true,"user":{...}}` or `{"success":false,"error":"..."}`.
      */
-    suspend fun loginSpotify(spDcCookie: String): String = io { loginSpotifyNative(spDcCookie) }
+    actual suspend fun loginSpotify(spDcCookie: String): String = io { loginSpotifyNative(spDcCookie) }
 
     /** In memory. Clears the session, both the token and the cookie behind it. */
-    external fun logoutSpotifyNative()
+    actual external fun logoutSpotifyNative()
 
     private external fun refreshSpotifyTokenNative(): String
 
     /** Refreshes the access token from the stored cookie. */
-    suspend fun refreshSpotifyToken(): String = io { refreshSpotifyTokenNative() }
+    actual suspend fun refreshSpotifyToken(): String = io { refreshSpotifyTokenNative() }
 
     /**
      * In memory: one `Option` read behind a lock held for the length of a comparison.
@@ -607,7 +607,7 @@ object NativeEngine {
      * from the main thread at start-up. That is fixed on the Rust side (see `SPOTIFY_CLIENT`), not
      * by moving this call, which is why it is still allowed to be plain.
      */
-    external fun isSpotifyAuthenticatedNative(): Boolean
+    actual external fun isSpotifyAuthenticatedNative(): Boolean
 
     private external fun restoreSpotifySessionNative(
         spDcCookie: String,
@@ -621,7 +621,7 @@ object NativeEngine {
      * Free when the cached token is still live — no request at all — and a full login when it is
      * not, which is why it is `suspend` either way.
      */
-    suspend fun restoreSpotifySession(
+    actual suspend fun restoreSpotifySession(
         spDcCookie: String,
         accessToken: String,
         expirationMs: Long
@@ -633,27 +633,27 @@ object NativeEngine {
 
     private external fun getSpotifyMeNative(): String
 
-    suspend fun getSpotifyMe(): String = io { getSpotifyMeNative() }
+    actual suspend fun getSpotifyMe(): String = io { getSpotifyMeNative() }
 
     private external fun getSpotifySavedTracksNative(limit: Int, offset: Int): String
 
     /** The user's liked songs. `limit` maxes out at 50. */
-    suspend fun getSpotifySavedTracks(limit: Int, offset: Int): String =
+    actual suspend fun getSpotifySavedTracks(limit: Int, offset: Int): String =
         io { getSpotifySavedTracksNative(limit, offset) }
 
     private external fun getSpotifySavedAlbumsNative(limit: Int, offset: Int): String
 
-    suspend fun getSpotifySavedAlbums(limit: Int, offset: Int): String =
+    actual suspend fun getSpotifySavedAlbums(limit: Int, offset: Int): String =
         io { getSpotifySavedAlbumsNative(limit, offset) }
 
     private external fun getSpotifySavedPlaylistsNative(limit: Int, offset: Int): String
 
-    suspend fun getSpotifySavedPlaylists(limit: Int, offset: Int): String =
+    actual suspend fun getSpotifySavedPlaylists(limit: Int, offset: Int): String =
         io { getSpotifySavedPlaylistsNative(limit, offset) }
 
     private external fun getSpotifyFollowedArtistsNative(limit: Int, offset: Int): String
 
-    suspend fun getSpotifyFollowedArtists(limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyFollowedArtists(limit: Int, offset: Int): String =
         io { getSpotifyFollowedArtistsNative(limit, offset) }
 
     // =====================================================================
@@ -662,7 +662,7 @@ object NativeEngine {
 
     private external fun getSpotifyAlbumNative(albumId: String): String
 
-    suspend fun getSpotifyAlbum(albumId: String): String = io { getSpotifyAlbumNative(albumId) }
+    actual suspend fun getSpotifyAlbum(albumId: String): String = io { getSpotifyAlbumNative(albumId) }
 
     private external fun getSpotifyAlbumTracksNative(
         albumId: String,
@@ -670,21 +670,21 @@ object NativeEngine {
         offset: Int
     ): String
 
-    suspend fun getSpotifyAlbumTracks(albumId: String, limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyAlbumTracks(albumId: String, limit: Int, offset: Int): String =
         io { getSpotifyAlbumTracksNative(albumId, limit, offset) }
 
     private external fun getSpotifyNewReleasesNative(limit: Int, offset: Int): String
 
-    suspend fun getSpotifyNewReleases(limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyNewReleases(limit: Int, offset: Int): String =
         io { getSpotifyNewReleasesNative(limit, offset) }
 
     private external fun saveSpotifyAlbumsNative(idsJson: String): String
 
-    suspend fun saveSpotifyAlbums(idsJson: String): String = io { saveSpotifyAlbumsNative(idsJson) }
+    actual suspend fun saveSpotifyAlbums(idsJson: String): String = io { saveSpotifyAlbumsNative(idsJson) }
 
     private external fun unsaveSpotifyAlbumsNative(idsJson: String): String
 
-    suspend fun unsaveSpotifyAlbums(idsJson: String): String =
+    actual suspend fun unsaveSpotifyAlbums(idsJson: String): String =
         io { unsaveSpotifyAlbumsNative(idsJson) }
 
     // =====================================================================
@@ -693,7 +693,7 @@ object NativeEngine {
 
     private external fun getSpotifyArtistNative(artistId: String): String
 
-    suspend fun getSpotifyArtist(artistId: String): String = io { getSpotifyArtistNative(artistId) }
+    actual suspend fun getSpotifyArtist(artistId: String): String = io { getSpotifyArtistNative(artistId) }
 
     private external fun getSpotifyArtistTopTracksNative(
         artistId: String,
@@ -701,7 +701,7 @@ object NativeEngine {
         offset: Int
     ): String
 
-    suspend fun getSpotifyArtistTopTracks(artistId: String, limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyArtistTopTracks(artistId: String, limit: Int, offset: Int): String =
         io { getSpotifyArtistTopTracksNative(artistId, limit, offset) }
 
     private external fun getSpotifyArtistAlbumsNative(
@@ -710,7 +710,7 @@ object NativeEngine {
         offset: Int
     ): String
 
-    suspend fun getSpotifyArtistAlbums(artistId: String, limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyArtistAlbums(artistId: String, limit: Int, offset: Int): String =
         io { getSpotifyArtistAlbumsNative(artistId, limit, offset) }
 
     private external fun getSpotifyRelatedArtistsNative(
@@ -719,17 +719,17 @@ object NativeEngine {
         offset: Int
     ): String
 
-    suspend fun getSpotifyRelatedArtists(artistId: String, limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyRelatedArtists(artistId: String, limit: Int, offset: Int): String =
         io { getSpotifyRelatedArtistsNative(artistId, limit, offset) }
 
     private external fun followSpotifyArtistsNative(idsJson: String): String
 
-    suspend fun followSpotifyArtists(idsJson: String): String =
+    actual suspend fun followSpotifyArtists(idsJson: String): String =
         io { followSpotifyArtistsNative(idsJson) }
 
     private external fun unfollowSpotifyArtistsNative(idsJson: String): String
 
-    suspend fun unfollowSpotifyArtists(idsJson: String): String =
+    actual suspend fun unfollowSpotifyArtists(idsJson: String): String =
         io { unfollowSpotifyArtistsNative(idsJson) }
 
     // =====================================================================
@@ -738,7 +738,7 @@ object NativeEngine {
 
     private external fun getSpotifyPlaylistNative(playlistId: String): String
 
-    suspend fun getSpotifyPlaylist(playlistId: String): String =
+    actual suspend fun getSpotifyPlaylist(playlistId: String): String =
         io { getSpotifyPlaylistNative(playlistId) }
 
     private external fun getSpotifyPlaylistTracksNative(
@@ -747,7 +747,7 @@ object NativeEngine {
         offset: Int
     ): String
 
-    suspend fun getSpotifyPlaylistTracks(playlistId: String, limit: Int, offset: Int): String =
+    actual suspend fun getSpotifyPlaylistTracks(playlistId: String, limit: Int, offset: Int): String =
         io { getSpotifyPlaylistTracksNative(playlistId, limit, offset) }
 
     private external fun createSpotifyPlaylistNative(
@@ -757,7 +757,7 @@ object NativeEngine {
         isPublic: Boolean
     ): String
 
-    suspend fun createSpotifyPlaylist(
+    actual suspend fun createSpotifyPlaylist(
         userId: String,
         name: String,
         description: String,
@@ -771,7 +771,7 @@ object NativeEngine {
     ): String
 
     /** Empty [name] or [description] means "leave that one alone". */
-    suspend fun updateSpotifyPlaylist(
+    actual suspend fun updateSpotifyPlaylist(
         playlistId: String,
         name: String,
         description: String
@@ -784,7 +784,7 @@ object NativeEngine {
     ): String
 
     /** [position] of -1 appends. */
-    suspend fun addTracksToPlaylist(
+    actual suspend fun addTracksToPlaylist(
         playlistId: String,
         trackIdsJson: String,
         position: Int
@@ -795,16 +795,16 @@ object NativeEngine {
         trackIdsJson: String
     ): String
 
-    suspend fun removeTracksFromPlaylist(playlistId: String, trackIdsJson: String): String =
+    actual suspend fun removeTracksFromPlaylist(playlistId: String, trackIdsJson: String): String =
         io { removeTracksFromPlaylistNative(playlistId, trackIdsJson) }
 
     private external fun followPlaylistNative(playlistId: String): String
 
-    suspend fun followPlaylist(playlistId: String): String = io { followPlaylistNative(playlistId) }
+    actual suspend fun followPlaylist(playlistId: String): String = io { followPlaylistNative(playlistId) }
 
     private external fun unfollowPlaylistNative(playlistId: String): String
 
-    suspend fun unfollowPlaylist(playlistId: String): String =
+    actual suspend fun unfollowPlaylist(playlistId: String): String =
         io { unfollowPlaylistNative(playlistId) }
 
     // =====================================================================
@@ -813,37 +813,37 @@ object NativeEngine {
 
     private external fun getSpotifyTrackNative(trackId: String): String
 
-    suspend fun getSpotifyTrack(trackId: String): String = io { getSpotifyTrackNative(trackId) }
+    actual suspend fun getSpotifyTrack(trackId: String): String = io { getSpotifyTrackNative(trackId) }
 
     private external fun saveSpotifyTracksNative(idsJson: String): String
 
-    suspend fun saveSpotifyTracks(idsJson: String): String = io { saveSpotifyTracksNative(idsJson) }
+    actual suspend fun saveSpotifyTracks(idsJson: String): String = io { saveSpotifyTracksNative(idsJson) }
 
     private external fun unsaveSpotifyTracksNative(idsJson: String): String
 
-    suspend fun unsaveSpotifyTracks(idsJson: String): String =
+    actual suspend fun unsaveSpotifyTracks(idsJson: String): String =
         io { unsaveSpotifyTracksNative(idsJson) }
 
     private external fun getSpotifyTrackRadioNative(trackId: String): String
 
     /** Builds a "radio" for a track by finding a matching radio playlist. */
-    suspend fun getSpotifyTrackRadio(trackId: String): String =
+    actual suspend fun getSpotifyTrackRadio(trackId: String): String =
         io { getSpotifyTrackRadioNative(trackId) }
 
     private external fun getArtistAboutNative(artistId: String): String
 
     /** Biography, listeners, top cities and concerts of an artist (4.7). Answers `ArtistAbout`. */
-    suspend fun getArtistAbout(artistId: String): String = io { getArtistAboutNative(artistId) }
+    actual suspend fun getArtistAbout(artistId: String): String = io { getArtistAboutNative(artistId) }
 
     private external fun getTrackCreditsNative(trackId: String): String
 
     /** Who made a track, grouped by role (4.6). No session needed. Answers `TrackCredits`. */
-    suspend fun getTrackCredits(trackId: String): String = io { getTrackCreditsNative(trackId) }
+    actual suspend fun getTrackCredits(trackId: String): String = io { getTrackCreditsNative(trackId) }
 
     private external fun extendPlaylistNative(playlistId: String, skipJson: String, count: Int): String
 
     /** Tracks that fit a playlist and are not in it (4.6). No session needed. Answers `List<FullTrack>`. */
-    suspend fun extendPlaylist(playlistId: String, skipJson: String, count: Int): String =
+    actual suspend fun extendPlaylist(playlistId: String, skipJson: String, count: Int): String =
         io { extendPlaylistNative(playlistId, skipJson, count) }
 
     private external fun getSpotifyCanvasNative(trackUri: String): String
@@ -855,7 +855,7 @@ object NativeEngine {
      * @return `{"url":"<mp4>"}`, `{"url":null}` when the track has no canvas, or
      *   `{"success":false,"error":"..."}`.
      */
-    suspend fun getSpotifyCanvas(trackUri: String): String = io { getSpotifyCanvasNative(trackUri) }
+    actual suspend fun getSpotifyCanvas(trackUri: String): String = io { getSpotifyCanvasNative(trackUri) }
 
     // =====================================================================
     // SPOTIFY — SEARCH
@@ -872,7 +872,7 @@ object NativeEngine {
      * @param searchType one of "all", "tracks", "albums", "artists", "playlists".
      * @return NormalizedSearchResults for "all", a PaginatedResponse otherwise.
      */
-    suspend fun searchSpotify(query: String, searchType: String, limit: Int, offset: Int): String =
+    actual suspend fun searchSpotify(query: String, searchType: String, limit: Int, offset: Int): String =
         io { searchSpotifyNative(query, searchType, limit, offset) }
 
     // =====================================================================
@@ -881,21 +881,21 @@ object NativeEngine {
 
     private external fun getSpotifyBrowseNative(limit: Int): String
 
-    suspend fun getSpotifyBrowse(limit: Int): String = io { getSpotifyBrowseNative(limit) }
+    actual suspend fun getSpotifyBrowse(limit: Int): String = io { getSpotifyBrowseNative(limit) }
 
     private external fun initSpotifyCacheDirNative(cacheDir: String)
 
     /** Points the Spotify client at its cache directory and reads the cached GQL hashes off disk. */
-    suspend fun initSpotifyCacheDir(cacheDir: String) = io { initSpotifyCacheDirNative(cacheDir) }
+    actual suspend fun initSpotifyCacheDir(cacheDir: String) = io { initSpotifyCacheDirNative(cacheDir) }
 
     /** Returns immediately: the scrape itself runs on the Rust runtime. */
-    external fun warmupSpotifyHashesNative()
+    actual external fun warmupSpotifyHashesNative()
 
     /**
      * In memory: a snapshot of the GQL operation-name to sha256 map.
      * Example: `{"libraryV3":"2de10199b244...","fetchLibraryTracks":"087278b20b74..."}`, or `{}`.
      */
-    external fun getSpotifyHashesNative(): String
+    actual external fun getSpotifyHashesNative(): String
 
     // =====================================================================
     // YOUTUBE MUSIC
@@ -903,19 +903,19 @@ object NativeEngine {
 
     private external fun searchYtMusicNative(query: String): String
 
-    suspend fun searchYtMusic(query: String): String = io { searchYtMusicNative(query) }
+    actual suspend fun searchYtMusic(query: String): String = io { searchYtMusicNative(query) }
 
     private external fun getYtmAlbumNative(browseId: String): String
 
-    suspend fun getYtmAlbum(browseId: String): String = io { getYtmAlbumNative(browseId) }
+    actual suspend fun getYtmAlbum(browseId: String): String = io { getYtmAlbumNative(browseId) }
 
     private external fun getYtmArtistNative(channelId: String): String
 
-    suspend fun getYtmArtist(channelId: String): String = io { getYtmArtistNative(channelId) }
+    actual suspend fun getYtmArtist(channelId: String): String = io { getYtmArtistNative(channelId) }
 
     private external fun getYtmPlaylistNative(playlistId: String): String
 
-    suspend fun getYtmPlaylist(playlistId: String): String = io { getYtmPlaylistNative(playlistId) }
+    actual suspend fun getYtmPlaylist(playlistId: String): String = io { getYtmPlaylistNative(playlistId) }
 
     // =====================================================================
     // ADBLOCK — network filtering for the in-app Spotify Web Player

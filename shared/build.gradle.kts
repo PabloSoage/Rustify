@@ -1,10 +1,11 @@
 // The code Android, the desktop app and iOS share (docs 24 §3, 25).
 //
-//   commonMain     models, pure logic, platform interfaces (KeyValueStore, Log), engine models
-//   jvmCommonMain  what Android and the desktop share because both are a JVM: NativeEngine (JNI)
+//   commonMain     models, pure logic, platform interfaces (KeyValueStore, Log), engine models,
+//                  and the NativeEngine contract (expect object)
+//   jvmCommonMain  what Android and the desktop share because both are a JVM: NativeEngine over JNI
 //   androidMain    Android's Log and SharedPreferencesStore
 //   desktopMain    the desktop's Log, PreferencesStore, AppDirs, RustAudioEngine
-//   iosMain        CoreCall (the C ABI through cinterop), Log, UserDefaultsStore
+//   iosMain        CoreCall (the C ABI through cinterop), NativeEngine over it, Log, UserDefaultsStore
 //
 // The app depends on this module, so it is part of every APK build; the desktop app and the iOS
 // framework are not (see settings.gradle.kts and tools/ios/build-core.sh).
@@ -54,7 +55,7 @@ kotlin {
         }
 
         // Android and the desktop are both a JVM: JNI, java.io, java.text. One source set for what
-        // they share, so NativeEngine is written once.
+        // they share, so NativeEngine over JNI is written once.
         //
         // Wired by hand, and therefore iosMain too: an explicit dependsOn switches Kotlin's default
         // hierarchy template off (Gradle says so with a warning), and without the template nothing
