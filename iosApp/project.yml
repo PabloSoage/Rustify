@@ -64,3 +64,26 @@ targets:
         script: |
           cd "$SRCROOT/.."
           ./gradlew :sharedUi:embedAndSignAppleFrameworkForXcode
+  # Runs where the app runs, an Apple Silicon simulator: tools/ios/simulator-check.sh.
+  RustifyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: Rustify
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.varuna.rustify.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
+        SWIFT_VERSION: "5.0"
+schemes:
+  Rustify:
+    build:
+      targets:
+        Rustify: all
+    test:
+      targets:
+        - RustifyUITests

@@ -45,3 +45,26 @@ shot 2-home 25
 xcrun simctl openurl "$device" "rustify://track/4uLU6hMCjMI75M1A2tKUQC"
 shot 3-link 15
 echo "the app stayed up; screenshots in $out"
+xcrun simctl terminate "$device" "$bundle"
+
+# A second of tone in the app's Documents, for the walkthrough to find in local music. The name has an
+# accent and a ñ on purpose; so does the folder's path on people's phones.
+data="$(xcrun simctl get_app_container "$device" "$bundle" data)"
+tone="$(mktemp -d)"
+python3 - "$tone/tone.wav" <<'PY'
+import math, struct, sys, wave
+with wave.open(sys.argv[1], "wb") as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(44100)
+    w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i * 0.0626))) for i in range(44100 * 30)))
+PY
+mkdir -p "$data/Documents"
+afconvert -d aac -f m4af "$tone/tone.wav" "$data/Documents/Walkthrough Ñandú.m4a"
+
+# The app used, not only looked at (iosApp/UITests). Last: its result is what the step ends with.
+(
+  cd iosApp
+  TEST_RUNNER_CHECK_DIR="$out" xcodebuild test -project Rustify.xcodeproj -scheme Rustify \
+    -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/test \
+    -resultBundlePath "$out/walkthrough.xcresult" ARCHS=arm64 CODE_SIGNING_ALLOWED=NO | tail -40
+)
+echo "walked through it; screenshots in $out"
