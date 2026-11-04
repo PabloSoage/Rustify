@@ -19,10 +19,16 @@
     <string name="desktop_sign_in_window_failed">The Spotify window did not open: %1$s</string>
     <string name="desktop_screen_not_here">This screen is not on the desktop yet. It is coming in a later version, the same as on the phone.</string>
     <string name="desktop_settings_not_here">The rest of this category is not on the desktop yet: it comes with the features it configures.</string>
-    <!-- The desktop's links and update check (DesktopLinks, DesktopSettingsSections). -->
+    <!-- The desktop's window, tray, links and update check (DesktopSettingsSections, DesktopTray, DesktopLinks). -->
+    <string name="desktop_window_section">Window</string>
+    <string name="desktop_close_to_tray">Keep playing when the window is closed</string>
+    <string name="desktop_close_to_tray_desc">Rustify stays in the system tray; Quit in its menu closes it.</string>
+    <string name="desktop_close_to_tray_unavailable">This desktop has no system tray, so closing the window quits Rustify.</string>
     <string name="desktop_logs_desc">What Rustify has written since it started, kept in memory until it closes.</string>
     <string name="desktop_update_package">For this computer: %1$s</string>
     <string name="desktop_link_not_understood">Rustify cannot open that link</string>
+    <string name="tray_show">Show Rustify</string>
+    <string name="tray_quit">Quit</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
     <string name="settings_dj_voice_none">No speech engine was found on this computer, so the DJ stays silent. On Linux, install speech-dispatcher (spd-say) or espeak-ng.</string>
     <!-- The DJ's local mode on the desktop: a model server on this computer. -->

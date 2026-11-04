@@ -4,6 +4,7 @@ package com.varuna.rustify.desktop
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import com.varuna.rustify.platform.DesktopStores
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.defaultLanguage
 import com.varuna.rustify.ui.DesktopLinks
+import com.varuna.rustify.ui.DesktopSettings
+import com.varuna.rustify.ui.DesktopTray
 import com.varuna.rustify.ui.SingleInstance
 import com.varuna.rustify.ui.UrlScheme
 import java.io.File
@@ -128,6 +131,9 @@ fun main(args: Array<String>) {
         }
 
         val windowState = rememberWindowState(width = 1100.dp, height = 760.dp)
+        // Hidden, not closed, when closing keeps the music playing: the tray brings it back.
+        var windowVisible by remember { mutableStateOf(true) }
+        val traySupported = remember { DesktopSettings.traySupported }
 
         // Closing waits, briefly, for the last listen to be stored and scrobbled and the Jam room to
         // be told: launched and then exited, all three were lost.
@@ -158,16 +164,38 @@ fun main(args: Array<String>) {
             ready = true
         }
 
+        // Closing quits, as it always did, unless Settings says to keep playing (and there is a tray
+        // to come back from).
+        fun closeRequested() {
+            if (traySupported && appPlatform.prefs().getBoolean(DesktopSettings.CLOSE_TO_TRAY, false)) {
+                windowVisible = false
+            } else {
+                quit()
+            }
+        }
+
+        // The phone's launcher icon, in the title bar, the taskbar and the tray.
+        val icon = androidx.compose.ui.res.painterResource("rustify.png")
+
+        // The phone's widget, as a tray icon (docs serie-4.x/27 §2.11), in the interface's language.
+        if (traySupported) {
+            key(language) {
+                DesktopTray(icon = icon, player = controller, onShow = DesktopLinks::raise, onQuit = ::quit)
+            }
+        }
+
         Window(
-            onCloseRequest = ::quit,
+            onCloseRequest = ::closeRequested,
             title = "Rustify",
-            // The phone's launcher icon, also in the title bar and the taskbar.
-            icon = androidx.compose.ui.res.painterResource("rustify.png"),
+            icon = icon,
             state = windowState,
+            visible = windowVisible,
         ) {
-            // Up and in front: a second launch, a link, the Dock, the media overlay.
+            // Up and in front: a second launch, a link, the tray, the Dock, the media overlay.
             LaunchedEffect(Unit) {
                 DesktopLinks.raiseRequests.collect {
+                    windowVisible = true
+                    window.isVisible = true
                     windowState.isMinimized = false
                     window.toFront()
                     // Windows keeps a window from taking the foreground on its own; a moment on top

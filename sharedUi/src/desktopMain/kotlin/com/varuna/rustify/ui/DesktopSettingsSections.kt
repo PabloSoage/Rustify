@@ -38,8 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.ui.resources.Res
+import com.varuna.rustify.ui.resources.desktop_close_to_tray
+import com.varuna.rustify.ui.resources.desktop_close_to_tray_desc
+import com.varuna.rustify.ui.resources.desktop_close_to_tray_unavailable
 import com.varuna.rustify.ui.resources.desktop_logs_desc
 import com.varuna.rustify.ui.resources.desktop_update_package
+import com.varuna.rustify.ui.resources.desktop_window_section
 import com.varuna.rustify.ui.resources.settings_diagnostics
 import com.varuna.rustify.ui.resources.settings_view_logs
 import com.varuna.rustify.ui.resources.update_available_title
@@ -59,10 +63,17 @@ import org.jetbrains.compose.resources.stringResource
 private val Green = Color(0xFF1DB954)
 private val CardColor = Color(0xFF1E1E1E)
 
-/** The desktop's own settings. */
+/** The desktop's own settings, where the window (desktopApp's Main.kt) reads them. */
 object DesktopSettings {
+    /** Closing the window leaves Rustify playing in the tray (default: closing quits). */
+    const val CLOSE_TO_TRAY = "desktop_close_to_tray"
+
     /** The phone's key, so the switch means the same on both. */
     const val CHECK_UPDATES_ON_START = "check_updates_on_start"
+
+    /** Whether this desktop shows tray icons at all (GNOME without an extension does not). */
+    val traySupported: Boolean
+        get() = runCatching { java.awt.SystemTray.isSupported() }.getOrDefault(false)
 }
 
 @Composable
@@ -74,6 +85,31 @@ private fun SectionTitle(text: String) {
 private fun SectionCard(content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = CardColor), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) { content() }
+    }
+}
+
+/** General: what closing the window does. */
+@Composable
+internal fun DesktopWindowSection() {
+    val prefs = LocalAppPlatform.current.prefs()
+    val supported = remember { DesktopSettings.traySupported }
+    var closeToTray by remember { mutableStateOf(prefs.getBoolean(DesktopSettings.CLOSE_TO_TRAY, false)) }
+    Spacer(Modifier.height(16.dp))
+    SectionTitle(stringResource(Res.string.desktop_window_section))
+    SectionCard {
+        if (supported) {
+            SettingSwitchRow(
+                title = stringResource(Res.string.desktop_close_to_tray),
+                desc = stringResource(Res.string.desktop_close_to_tray_desc),
+                checked = closeToTray,
+                onChange = {
+                    closeToTray = it
+                    prefs.putBoolean(DesktopSettings.CLOSE_TO_TRAY, it)
+                },
+            )
+        } else {
+            Text(stringResource(Res.string.desktop_close_to_tray_unavailable), color = Color.Gray, fontSize = 13.sp)
+        }
     }
 }
 

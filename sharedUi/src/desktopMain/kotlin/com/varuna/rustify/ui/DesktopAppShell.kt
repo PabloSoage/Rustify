@@ -185,15 +185,19 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
     }
 
     // What the phone has in General beside the shared sections (yt-dlp, Drive, storage) comes with
-    // those features; the DJ's is shared. Advanced has the phone's update check and log viewer. The
-    // other categories say they are not here yet.
+    // those features; the DJ's is shared, and the window's is the desktop's own. Advanced has the
+    // phone's update check and log viewer. The other categories say they are not here yet.
     @Composable
     override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
         if (slot == SettingsSlot.GENERAL_DJ) {
             com.varuna.rustify.ui.screens.DjSettingsSection()
             return
         }
-        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.AUDIO) return
+        if (slot == SettingsSlot.GENERAL) {
+            DesktopWindowSection()
+            return
+        }
+        if (slot == SettingsSlot.AUDIO) return
         if (slot == SettingsSlot.ADVANCED) {
             DesktopUpdatesSection()
             DesktopDiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })
