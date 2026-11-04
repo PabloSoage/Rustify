@@ -906,7 +906,7 @@
     <string name="queue_now_playing">再生中</string>
     <string name="common_cancel">キャンセル</string>
     <string name="common_no_tracks">曲が見つかりません</string>
-    <string name="logs_levels">V = 詳細  ·  D = デバッグ  ·  I = 情報  ·  W = 警告  ·  E = エラー</string>
+    <string name="logs_levels">V = 詳細 · D = デバッグ · I = 情報 · W = 警告 · E = エラー</string>
     <string name="logs_levels_hint">Verbose は最も詳細、Error は重大なもののみ。</string>
     <string name="match_editor_title">マッチ編集</string>
     <string name="match_editor_add">手動でマッチを追加</string>
@@ -948,8 +948,8 @@
     <string name="artist_top_tracks">人気曲</string>
     <string name="library_no_liked">お気に入りの曲はまだありません。</string>
     <plurals name="track_count">
-        <item quantity="one">%d 曲</item>
-        <item quantity="other">%d 曲</item>
+        <item quantity="one">%1$d 曲</item>
+        <item quantity="other">%1$d 曲</item>
     </plurals>
     <string name="notif_mode_in_order">順番に再生</string>
     <string name="notif_mode_shuffle">シャッフル</string>

@@ -903,7 +903,7 @@
     <string name="queue_now_playing">Sonando ahora</string>
     <string name="common_cancel">Cancelar</string>
     <string name="common_no_tracks">No hay canciones</string>
-    <string name="logs_levels">V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Aviso  ·  E = Error</string>
+    <string name="logs_levels">V = Verbose · D = Debug · I = Info · W = Aviso · E = Error</string>
     <string name="logs_levels_hint">Verbose muestra más detalle; Error solo lo crítico.</string>
     <string name="match_editor_title">Editor de coincidencias</string>
     <string name="match_editor_add">Añadir una coincidencia a mano</string>
@@ -945,8 +945,8 @@
     <string name="artist_top_tracks">Canciones populares</string>
     <string name="library_no_liked">Aún no hay canciones que te gusten.</string>
     <plurals name="track_count">
-        <item quantity="one">%d canción</item>
-        <item quantity="other">%d canciones</item>
+        <item quantity="one">%1$d canción</item>
+        <item quantity="other">%1$d canciones</item>
     </plurals>
     <string name="notif_mode_in_order">En orden</string>
     <string name="notif_mode_shuffle">Aleatorio</string>

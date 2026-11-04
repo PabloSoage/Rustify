@@ -909,7 +909,7 @@
     <string name="queue_now_playing">Now playing</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_no_tracks">No tracks found</string>
-    <string name="logs_levels">V = Verbose  ·  D = Debug  ·  I = Info  ·  W = Warn  ·  E = Error</string>
+    <string name="logs_levels">V = Verbose · D = Debug · I = Info · W = Warn · E = Error</string>
     <string name="logs_levels_hint">Verbose shows the most detail; Error only what is critical.</string>
     <string name="match_editor_title">Match editor</string>
     <string name="match_editor_add">Add a match by hand</string>
@@ -951,8 +951,8 @@
     <string name="artist_top_tracks">Top tracks</string>
     <string name="library_no_liked">No liked songs yet.</string>
     <plurals name="track_count">
-        <item quantity="one">%d song</item>
-        <item quantity="other">%d songs</item>
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
     </plurals>
     <string name="notif_mode_in_order">In order</string>
     <string name="notif_mode_shuffle">Shuffle</string>

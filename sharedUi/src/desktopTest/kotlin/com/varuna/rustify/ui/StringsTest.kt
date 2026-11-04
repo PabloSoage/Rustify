@@ -4,9 +4,13 @@ import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.lyrics_provider_asking
 import com.varuna.rustify.ui.resources.inv_health_fmt
 import com.varuna.rustify.ui.resources.lyrics_provider_file
+import com.varuna.rustify.ui.resources.logs_levels
+import com.varuna.rustify.ui.resources.lyrics_translate_failed
 import com.varuna.rustify.ui.resources.playlist_find_none
+import com.varuna.rustify.ui.resources.track_count
 import com.varuna.rustify.ui.resources.ytm_library_empty
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 import java.util.Locale
 import kotlin.test.BeforeTest
@@ -41,5 +45,23 @@ class StringsTest {
     @Test
     fun positionalArgumentsAreFilledIn() = runBlocking {
         assertEquals("Asking LRCLIB…", getString(Res.string.lyrics_provider_asking, "LRCLIB"))
+        assertEquals(
+            "Could not translate: offline. Tap to try again",
+            getString(Res.string.lyrics_translate_failed, "offline"),
+        )
+    }
+
+    // Android fills a bare %d; Compose Multiplatform only the numbered %1$d, so a plural written
+    // the Android way showed "%d songs" on every album and playlist header.
+    @Test
+    fun aPluralShowsItsCount() = runBlocking {
+        assertEquals("1 song", getPluralString(Res.plurals.track_count, 1, 1))
+        assertEquals("12 songs", getPluralString(Res.plurals.track_count, 12, 12))
+    }
+
+    // Android's resource compiler collapsed runs of spaces; Compose Multiplatform keeps them.
+    @Test
+    fun noRunOfSpacesSurvivesFromTheAndroidFiles() = runBlocking {
+        assertEquals(false, getString(Res.string.logs_levels).contains("  "))
     }
 }

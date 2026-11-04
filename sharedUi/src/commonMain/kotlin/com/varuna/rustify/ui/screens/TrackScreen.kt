@@ -1741,7 +1741,7 @@ fun LyricsView(
             }
             is LyricsTranslation.Failed ->
                 if (o.reason == LyricsTranslation.UNAVAILABLE) appString(Res.string.feature_not_on_platform)
-                else appString(Res.string.lyrics_translate_failed)
+                else appString(Res.string.lyrics_translate_failed, o.reason)
             else -> null
         }
         msg?.let { platform.toast(it, long = true) }
