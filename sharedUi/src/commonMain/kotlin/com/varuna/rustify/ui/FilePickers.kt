@@ -2,11 +2,14 @@
 package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
-import java.io.InputStream
-import java.io.OutputStream
 
 /** A text file the user picked: its name without the extension, and what it holds. */
 data class PickedText(val name: String, val text: String)
+
+/** Where a file being saved goes: each [write] appends to it. */
+fun interface FileSink {
+    fun write(bytes: ByteArray)
+}
 
 /**
  * Lets the user pick a file to read: Android's document picker, or the system's open dialog on the
@@ -17,7 +20,7 @@ data class PickedText(val name: String, val text: String)
 @Composable
 expect fun <T> rememberOpenFile(
     mimeTypes: List<String>,
-    read: suspend (name: String?, input: InputStream) -> T,
+    read: suspend (name: String?, bytes: ByteArray) -> T,
     onResult: (Result<T>?) -> Unit,
 ): () -> Unit
 
@@ -30,25 +33,25 @@ expect fun <T> rememberOpenFile(
 expect fun rememberSaveFile(
     mimeType: String,
     onResult: (Result<Unit>?) -> Unit,
-): (suggestedName: String, write: suspend (OutputStream) -> Unit) -> Unit
+): (suggestedName: String, write: suspend (FileSink) -> Unit) -> Unit
 
-/** [rememberOpenFile] for a text file (an M3U to import). */
+/** [rememberOpenFile] for a text file (an M3U to import), read as UTF-8. */
 @Composable
 fun rememberOpenTextFile(mimeTypes: List<String>, onResult: (Result<PickedText>?) -> Unit): () -> Unit =
     rememberOpenFile(
         mimeTypes,
-        read = { name, input ->
-            PickedText(name?.substringBeforeLast('.')?.ifBlank { null } ?: "M3U", input.readBytes().toString(Charsets.UTF_8))
+        read = { name, bytes ->
+            PickedText(name?.substringBeforeLast('.')?.ifBlank { null } ?: "M3U", bytes.decodeToString())
         },
         onResult = onResult,
     )
 
 /**
- * [rememberSaveFile] for a text file (an exported M3U, the log): the text is produced once a place is
- * chosen, and [onResult] gets what [rememberSaveFile] answers.
+ * [rememberSaveFile] for a text file (an exported M3U, the log), written as UTF-8: the text is
+ * produced once a place is chosen, and [onResult] gets what [rememberSaveFile] answers.
  */
 @Composable
 fun rememberSaveTextFile(mimeType: String, onResult: (Result<Unit>?) -> Unit): (suggestedName: String, text: () -> String) -> Unit {
     val save = rememberSaveFile(mimeType, onResult)
-    return { name, text -> save(name) { it.write(text().toByteArray(Charsets.UTF_8)) } }
+    return { name, text -> save(name) { it.write(text().encodeToByteArray()) } }
 }

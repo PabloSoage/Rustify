@@ -8,8 +8,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.documentfile.provider.DocumentFile
-import java.io.InputStream
-import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,7 +17,7 @@ import kotlinx.coroutines.withContext
 @Composable
 actual fun <T> rememberOpenFile(
     mimeTypes: List<String>,
-    read: suspend (name: String?, input: InputStream) -> T,
+    read: suspend (name: String?, bytes: ByteArray) -> T,
     onResult: (Result<T>?) -> Unit,
 ): () -> Unit {
     val context = LocalContext.current
@@ -33,7 +31,8 @@ actual fun <T> rememberOpenFile(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val name = DocumentFile.fromSingleUri(context, uri)?.name
-                    context.contentResolver.openInputStream(uri)?.use { read(name, it) } ?: error("cannot open $uri")
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("cannot open $uri")
+                    read(name, bytes)
                 }
             }
             onResult(result)
@@ -46,11 +45,11 @@ actual fun <T> rememberOpenFile(
 actual fun rememberSaveFile(
     mimeType: String,
     onResult: (Result<Unit>?) -> Unit,
-): (suggestedName: String, write: suspend (OutputStream) -> Unit) -> Unit {
+): (suggestedName: String, write: suspend (FileSink) -> Unit) -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Held across recompositions: the launcher's callback is replaced by every one, the writer must not be.
-    val pending = remember { arrayOfNulls<suspend (OutputStream) -> Unit>(1) }
+    val pending = remember { arrayOfNulls<suspend (FileSink) -> Unit>(1) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mimeType)) { uri ->
         val write = pending[0]
         pending[0] = null
@@ -73,7 +72,7 @@ actual fun rememberSaveFile(
                 runCatching {
                     // "wt": a shorter file written over a longer one must not keep the old tail.
                     val out = context.contentResolver.openOutputStream(uri, "wt") ?: error("cannot open $uri")
-                    out.use { write(it) }
+                    out.use { stream -> write(FileSink { stream.write(it) }) }
                 }
             }
             onResult(result)

@@ -66,8 +66,8 @@ fun DataExportSection() {
 
     val restore = rememberOpenFile(
         listOf("application/json", "*/*"),
-        read = { _, input ->
-            val answer = RustifyJson.parseToJsonElement(NativeEngine.restoreData(input.readBytes().decodeToString())) as JsonObject
+        read = { _, bytes ->
+            val answer = RustifyJson.parseToJsonElement(NativeEngine.restoreData(bytes.decodeToString())) as JsonObject
             // The core's own message when it refuses — an export from a newer version, or a file
             // that is not one at all. Shown rather than flattened into "failed", because those
             // two need different things from the user.

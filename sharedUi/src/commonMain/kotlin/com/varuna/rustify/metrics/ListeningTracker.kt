@@ -5,8 +5,15 @@ import com.varuna.rustify.ui.AppPlatform
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.fileExists
+import com.varuna.rustify.ui.readAllText
+import com.varuna.rustify.ui.renameToFile
+import com.varuna.rustify.util.deviceZoneOffsetsJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -14,12 +21,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.serialization.json.put
+import kotlin.time.Instant
 
 /**
  * Tracks listening sessions with a 30s / 50%-of-duration threshold, and hands each finished play to
@@ -49,7 +55,7 @@ class ListeningTracker(private val platform: AppPlatform) {
         if (track.id == null) return
         if (cur?.track?.id == track.id) return
         flush()
-        val startedAt = System.currentTimeMillis()
+        val startedAt = currentTimeMillis()
         cur = Session(track, startedAt)
         scrobbler.started(track, startedAt)
     }
@@ -63,7 +69,7 @@ class ListeningTracker(private val platform: AppPlatform) {
      */
     fun onProgress(posMs: Long) {
         val s = cur ?: return
-        val now = System.currentTimeMillis()
+        val now = currentTimeMillis()
         val posDelta = posMs - s.lastPos
         val wallDelta = if (s.lastTickAt > 0L) now - s.lastTickAt else 0L
         s.listenedMs += creditedListenMs(posDelta, wallDelta)
@@ -109,11 +115,11 @@ class ListeningTracker(private val platform: AppPlatform) {
          * failed migration can be retried by renaming it back.
          */
         suspend fun migrateLegacyFile(platform: AppPlatform) = kotlinx.coroutines.withContext(Dispatchers.IO) { migration.withLock {
-            val file = File(platform.filesDir, LEGACY_FILE)
-            if (!file.exists()) return@withLock
-            val answer = runCatching { NativeEngine.importPlayHistory(file.readText()) }.getOrNull()
+            val file = platform.filesDir.child(LEGACY_FILE)
+            if (!file.fileExists()) return@withLock
+            val answer = runCatching { NativeEngine.importPlayHistory(file.readAllText()) }.getOrNull()
             if (answer != null && !failed(answer)) {
-                file.renameTo(File(platform.filesDir, LEGACY_FILE + MIGRATED_SUFFIX))
+                file.renameToFile(platform.filesDir.child(LEGACY_FILE + MIGRATED_SUFFIX))
                 com.varuna.rustify.platform.Log.i(TAG, "migrated metrics.json into the core: $answer")
             } else {
                 com.varuna.rustify.platform.Log.w(TAG, "metrics.json migration failed, will retry: $answer")
@@ -130,17 +136,20 @@ class ListeningTracker(private val platform: AppPlatform) {
             }.getOrDefault(emptyList())
         }
 
-        /** Every play as raw JSON, for the backup container (no per-event objects on the heap). */
-        suspend fun loadEventsJson(platform: AppPlatform): JSONArray {
+        /**
+         * Every play as the core's raw JSON array, for the backup container (no per-event objects on
+         * the heap); `[]` when the core could not answer.
+         */
+        suspend fun loadEventsJson(platform: AppPlatform): String {
             migrateLegacyFile(platform)
             val json = NativeEngine.allPlays()
-            return if (failed(json)) JSONArray() else runCatching { JSONArray(json) }.getOrDefault(JSONArray())
+            return if (failed(json)) "[]" else json
         }
 
         /** The Metrics screen's numbers for `[fromMs, toMs)`, in the device's time zone. */
         suspend fun stats(platform: AppPlatform, fromMs: Long, toMs: Long): PlayStats {
             migrateLegacyFile(platform)
-            val json = NativeEngine.playStats(fromMs, toMs, zoneJson())
+            val json = NativeEngine.playStats(fromMs, toMs, deviceZoneOffsetsJson())
             if (failed(json)) throw IllegalStateException(errorOf(json))
             return RustifyJson.decodeFromString(PlayStats.serializer(), json)
         }
@@ -154,12 +163,6 @@ class ListeningTracker(private val platform: AppPlatform) {
         }
 
         /**
-         * The device zone as the offsets it has had, `[[fromMs, offsetMs], …]`, from 1970 to two
-         * years ahead — what the core needs to put each play in its local hour and day, with DST.
-         */
-        fun zoneJson(zone: ZoneId = ZoneId.systemDefault()): String = zoneOffsetsJson(zone)
-
-        /**
          * Exports the history in Spotify's Extended Streaming History format, which stats.fm and
          * Rustify itself import.
          *
@@ -168,39 +171,41 @@ class ListeningTracker(private val platform: AppPlatform) {
          * and `spotify:track:ytm:…` was what they used to get.
          */
         suspend fun exportSpotifyHistoryBytes(platform: AppPlatform): ByteArray {
-            val arr = JSONArray()
-            loadEvents(platform).forEach { e ->
-                val spotifyId = TrackRef.parse(e.trackId)?.spotifyId
-                arr.put(JSONObject().apply {
-                    put("ts", Instant.ofEpochMilli(e.startedAt + e.listenedMs).toString())
-                    put("username", "")
-                    put("platform", "rustify")
-                    put("ms_played", e.listenedMs)
-                    put("conn_country", "")
-                    if (spotifyId != null) put("spotify_track_uri", "spotify:track:$spotifyId")
-                    put("master_metadata_track_name", e.trackName)
-                    put("master_metadata_album_album_name", e.albumName)
-                    put("master_metadata_album_artist_name", e.artistNames.firstOrNull().orEmpty())
-                })
+            val arr = buildJsonArray {
+                loadEvents(platform).forEach { e ->
+                    val spotifyId = TrackRef.parse(e.trackId)?.spotifyId
+                    addJsonObject {
+                        // ISO-8601 in UTC, "2024-03-15T21:04:05.123Z": java.time.Instant's toString.
+                        put("ts", Instant.fromEpochMilliseconds(e.startedAt + e.listenedMs).toString())
+                        put("username", "")
+                        put("platform", "rustify")
+                        put("ms_played", e.listenedMs)
+                        put("conn_country", "")
+                        if (spotifyId != null) put("spotify_track_uri", "spotify:track:$spotifyId")
+                        put("master_metadata_track_name", e.trackName)
+                        put("master_metadata_album_album_name", e.albumName)
+                        put("master_metadata_album_artist_name", e.artistNames.firstOrNull().orEmpty())
+                    }
+                }
             }
-            return arr.toString().toByteArray(Charsets.UTF_8)
+            return arr.toString().encodeToByteArray()
         }
 
         /**
          * Imports a listening history: a Rustify export, Spotify's Extended Streaming History, or the
          * legacy `StreamingHistory*.json`. Duplicates are skipped and nothing is ever dropped.
          */
-        suspend fun importHistory(platform: AppPlatform, inputStream: java.io.InputStream): PlayImportReport {
+        suspend fun importHistory(platform: AppPlatform, bytes: ByteArray): PlayImportReport {
             migrateLegacyFile(platform)
-            val text = inputStream.bufferedReader().use { it.readText() }
+            val text = bytes.decodeToString()
             val json = NativeEngine.importPlayHistory(text)
             if (failed(json)) throw IllegalArgumentException(errorOf(json))
             return RustifyJson.decodeFromString(PlayImportReport.serializer(), json)
         }
 
-        /** [importHistory] for a backup container's raw events. */
-        suspend fun importEvents(platform: AppPlatform, events: JSONArray): PlayImportReport =
-            importHistory(platform, events.toString().byteInputStream())
+        /** [importHistory] for a backup container's raw events, as JSON array text. */
+        suspend fun importEvents(platform: AppPlatform, eventsJson: String): PlayImportReport =
+            importHistory(platform, eventsJson.encodeToByteArray())
     }
 }
 

@@ -98,7 +98,7 @@ fun MetricsScreen(onBack: () -> Unit) {
     val csvKinds = listOf("tracks", "artists", "albums")
     val openHistory = com.varuna.rustify.ui.rememberOpenFile(
         listOf("application/json", "*/*"),
-        read = { _, input -> ListeningTracker.importHistory(platform, input) },
+        read = { _, bytes -> ListeningTracker.importHistory(platform, bytes) },
     ) { r ->
         r?.onSuccess { n ->
             platform.toast(formatTemplate(importDoneTemplate, n.added))

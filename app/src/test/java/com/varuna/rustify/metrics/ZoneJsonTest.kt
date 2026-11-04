@@ -16,7 +16,7 @@ import java.time.ZoneId
 class ZoneJsonTest {
 
     private fun table(zone: String): List<Pair<Long, Long>> =
-        Json.parseToJsonElement(ListeningTracker.zoneJson(ZoneId.of(zone))).jsonArray.map {
+        Json.parseToJsonElement(zoneOffsetsJson(ZoneId.of(zone))).jsonArray.map {
             val pair = it.jsonArray
             pair[0].jsonPrimitive.long to pair[1].jsonPrimitive.long
         }

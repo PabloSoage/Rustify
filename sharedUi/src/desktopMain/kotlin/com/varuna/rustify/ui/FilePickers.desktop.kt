@@ -6,8 +6,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -18,7 +16,7 @@ import kotlinx.coroutines.withContext
 @Composable
 actual fun <T> rememberOpenFile(
     mimeTypes: List<String>,
-    read: suspend (name: String?, input: InputStream) -> T,
+    read: suspend (name: String?, bytes: ByteArray) -> T,
     onResult: (Result<T>?) -> Unit,
 ): () -> Unit {
     val scope = rememberCoroutineScope()
@@ -30,7 +28,7 @@ actual fun <T> rememberOpenFile(
             onResult(null)
         } else {
             scope.launch {
-                val result = withContext(Dispatchers.IO) { runCatching { file.inputStream().use { read(file.name, it) } } }
+                val result = withContext(Dispatchers.IO) { runCatching { read(file.name, file.readBytes()) } }
                 onResult(result)
             }
         }
@@ -41,7 +39,7 @@ actual fun <T> rememberOpenFile(
 actual fun rememberSaveFile(
     mimeType: String,
     onResult: (Result<Unit>?) -> Unit,
-): (suggestedName: String, write: suspend (OutputStream) -> Unit) -> Unit {
+): (suggestedName: String, write: suspend (FileSink) -> Unit) -> Unit {
     val scope = rememberCoroutineScope()
     return { name, write ->
         val dialog = FileDialog(null as Frame?, null, FileDialog.SAVE)
@@ -53,7 +51,9 @@ actual fun rememberSaveFile(
             onResult(null)
         } else {
             scope.launch {
-                val result = withContext(Dispatchers.IO) { runCatching { File(dir, chosen).outputStream().use { write(it) } } }
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { File(dir, chosen).outputStream().use { stream -> write(FileSink { stream.write(it) }) } }
+                }
                 onResult(result)
             }
         }
