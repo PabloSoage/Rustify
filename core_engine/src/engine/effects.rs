@@ -1223,6 +1223,12 @@ mod tests {
         x.iter().fold(0f32, |m, v| m.max(v.abs()))
     }
 
+    /// The level of a signal whatever its frequency: a sampled sine's peak is only its amplitude when
+    /// a sample lands on the crest, which at 8 kHz and 48 kHz (six samples a cycle) none may.
+    fn rms(x: &[f32]) -> f64 {
+        (x.iter().map(|v| f64::from(*v) * f64::from(*v)).sum::<f64>() / x.len() as f64).sqrt()
+    }
+
     fn rising_zero_crossings(x: &[f32]) -> usize {
         x.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count()
     }
@@ -1272,7 +1278,10 @@ mod tests {
         let low = Coeffs::design(FilterKind::LowShelf, 200.0, 6.0, 0.7, rate).expect("a filter");
         let high = Coeffs::design(FilterKind::HighShelf, 2000.0, 6.0, 0.7, rate).expect("a filter");
         let half = RATE as usize / 2;
-        let gain = |c: &Coeffs, hz: f64| peak(&run_mono(c, &sine(hz, 0.25, RATE as usize))[half..]) / 0.25;
+        let gain = |c: &Coeffs, hz: f64| {
+            let input = sine(hz, 0.25, RATE as usize);
+            rms(&run_mono(c, &input)[half..]) / rms(&input[half..])
+        };
         assert!((gain(&low, 20.0) - 1.995).abs() < 0.1);
         assert!((gain(&low, 8000.0) - 1.0).abs() < 0.03);
         assert!((gain(&high, 16000.0) - 1.995).abs() < 0.1);
