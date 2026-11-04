@@ -32,7 +32,9 @@ class ApiDjProvider(
     private val baseUrl: String,
     private val model: String,
     private val apiKey: String,
-    private val fallback: DjProvider = HeuristicDjProvider()
+    private val fallback: DjProvider = HeuristicDjProvider(),
+    /** How long to wait for the answer: a model on this computer's CPU writes slower than a service. */
+    private val readTimeoutMs: Int = 30_000
 ) : DjProvider {
 
     override suspend fun plan(context: DjContext, request: String): DjPlan = withContext(Dispatchers.IO) {
@@ -67,7 +69,7 @@ class ApiDjProvider(
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
-            readTimeout = 30_000
+            readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")

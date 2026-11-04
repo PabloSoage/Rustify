@@ -15,4 +15,17 @@
     <string name="desktop_settings_not_here">The rest of this category is not on the desktop yet: it comes with the features it configures.</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
     <string name="settings_dj_voice_none">No speech engine was found on this computer, so the DJ stays silent. On Linux, install speech-dispatcher (spd-say) or espeak-ng.</string>
+    <!-- The DJ's local mode on the desktop: a model server on this computer. -->
+    <string name="dj_mode_local_desktop">Local model (this computer)</string>
+    <string name="settings_dj_mode_desc_desktop">Heuristic works offline. External AI sends your listening context to an OpenAI-compatible endpoint (opt-in). Local model asks a language model running on this computer (Ollama, LM Studio or llama.cpp), on its graphics card where it has one: nothing leaves the computer.</string>
+    <string name="settings_dj_local_detecting">Looking for a model server on this computer…</string>
+    <string name="settings_dj_local_none">No model server is running on this computer (Ollama, LM Studio or llama.cpp's llama-server). Until one is, the DJ uses the heuristic.</string>
+    <string name="settings_dj_local_found">Found on this computer: %1$s</string>
+    <string name="settings_dj_local_source">Model server</string>
+    <string name="settings_dj_local_auto">Automatic: the first one running</string>
+    <string name="settings_dj_local_at">%1$s at %2$s</string>
+    <string name="settings_dj_local_not_running">%1$s (not running)</string>
+    <string name="settings_dj_local_model">Model</string>
+    <string name="settings_dj_local_no_models">This server has no model yet: pull or load one in it first.</string>
+    <string name="settings_dj_local_rescan">Look again</string>
 </resources>

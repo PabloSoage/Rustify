@@ -98,13 +98,15 @@ fun DjSettingsSection() {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(stringResource(Res.string.settings_dj_mode), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(stringResource(Res.string.settings_dj_mode_desc), color = Color.Gray, fontSize = 12.sp)
+                        // The desktop's local mode is a model on the computer, not Gemini Nano.
+                        val desktop = platform.kind == com.varuna.rustify.ui.AppPlatform.Kind.DESKTOP
+                        Text(stringResource(if (desktop) Res.string.settings_dj_mode_desc_desktop else Res.string.settings_dj_mode_desc), color = Color.Gray, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(8.dp))
 
                         val djModes = listOf(
                             "heuristic" to stringResource(Res.string.dj_mode_heuristic),
                             "api" to stringResource(Res.string.dj_mode_api),
-                            "local" to stringResource(Res.string.dj_mode_local)
+                            "local" to stringResource(if (desktop) Res.string.dj_mode_local_desktop else Res.string.dj_mode_local)
                         )
                         djModes.forEach { (code, name) ->
                             Row(

@@ -2,37 +2,31 @@
 package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalMusicScanner
 import com.varuna.rustify.bridge.LocalScanRequest
 import com.varuna.rustify.bridge.LyricsChain
 import com.varuna.rustify.dj.DesktopDjVoice
+import com.varuna.rustify.dj.DesktopLocalDjProvider
 import com.varuna.rustify.dj.DjAutoController
 import com.varuna.rustify.dj.DjListener
 import com.varuna.rustify.dj.DjProvider
 import com.varuna.rustify.dj.DjVoiceOutput
-import com.varuna.rustify.dj.HeuristicDjProvider
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.Log
-import com.varuna.rustify.ui.resources.Res
-import com.varuna.rustify.ui.resources.feature_not_on_platform
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.jetbrains.compose.resources.stringResource
 import java.io.File
 import java.util.Locale
 
 /**
  * [AppServices] on the desktop. Tempo and downloads are Android's today (MediaCodec, the Storage
  * Access Framework), and so are translation and video; [can] says so and the screens show them as
- * unavailable. The DJ is the shared one and speaks with the system's voice; it has no microphone or
- * local model yet.
+ * unavailable. The DJ is the shared one: it speaks with the system's voice, and its "local" mode is a
+ * model server on this computer; it has no microphone.
  */
 class DesktopAppServices(
     private val platform: AppPlatform,
@@ -79,23 +73,17 @@ class DesktopAppServices(
     private val voice = DesktopDjVoice(platform, onVoice)
     override val djVoice: DjVoiceOutput get() = voice
 
-    // Not yet: a microphone and a model on this computer (docs serie-4.x/27 §2.8).
-
-    override fun localDjProvider(): DjProvider = HeuristicDjProvider()
+    // A model server already running here (Ollama, LM Studio, llama-server), else the heuristic.
+    override fun localDjProvider(): DjProvider = DesktopLocalDjProvider(platform.prefs())
 
     override suspend fun warmUpLocalDj() = Unit
 
+    // Not yet: a microphone (docs serie-4.x/27 §2.8).
     @Composable
     override fun rememberDjListener(): DjListener = NoMicrophone
 
     @Composable
-    override fun LocalDjSettings() {
-        Text(
-            stringResource(Res.string.feature_not_on_platform),
-            color = Color.Gray,
-            fontSize = 12.sp,
-        )
-    }
+    override fun LocalDjSettings() = DesktopLocalDjPanel(platform)
 
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.DesktopLogBook
 

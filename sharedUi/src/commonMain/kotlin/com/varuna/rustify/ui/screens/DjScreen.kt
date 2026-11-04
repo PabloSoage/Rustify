@@ -99,7 +99,9 @@ fun DjScreen(
     val modeLabel = when (mode) {
         DjMode.HEURISTIC -> stringResource(Res.string.dj_mode_heuristic)
         DjMode.API -> stringResource(Res.string.dj_mode_api)
-        DjMode.LOCAL -> stringResource(Res.string.dj_mode_local)
+        DjMode.LOCAL -> stringResource(
+            if (platform.kind == com.varuna.rustify.ui.AppPlatform.Kind.DESKTOP) Res.string.dj_mode_local_desktop else Res.string.dj_mode_local
+        )
     }
     val emptyResultMsg = stringResource(Res.string.dj_no_results)
 

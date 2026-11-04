@@ -14,4 +14,17 @@
     <string name="desktop_settings_not_here">このカテゴリのほかの設定はまだデスクトップにありません。対応する機能と一緒に追加されます。</string>
     <!-- The DJ's voice on a computer with no speech command (desktop). -->
     <string name="settings_dj_voice_none">このコンピューターには音声合成エンジンが見つからないため、DJ は話しません。Linux では speech-dispatcher（spd-say）または espeak-ng をインストールしてください。</string>
+    <!-- The DJ's local mode on the desktop: a model server on this computer. -->
+    <string name="dj_mode_local_desktop">ローカルモデル（このコンピューター）</string>
+    <string name="settings_dj_mode_desc_desktop">ヒューリスティックはオフラインで動作します。外部 AI は再生履歴を OpenAI 互換のエンドポイントに送信します（任意）。ローカルモデルはこのコンピューターで動く言語モデル（Ollama、LM Studio、llama.cpp）に問い合わせ、GPU があれば GPU で実行します。データはコンピューターの外に出ません。</string>
+    <string name="settings_dj_local_detecting">このコンピューターでモデルサーバーを探しています…</string>
+    <string name="settings_dj_local_none">このコンピューターで動いているモデルサーバー（Ollama、LM Studio、llama.cpp の llama-server）はありません。起動するまで DJ はヒューリスティックを使います。</string>
+    <string name="settings_dj_local_found">このコンピューターで見つかりました：%1$s</string>
+    <string name="settings_dj_local_source">モデルサーバー</string>
+    <string name="settings_dj_local_auto">自動：最初に見つかったもの</string>
+    <string name="settings_dj_local_at">%1$s（%2$s）</string>
+    <string name="settings_dj_local_not_running">%1$s（停止中）</string>
+    <string name="settings_dj_local_model">モデル</string>
+    <string name="settings_dj_local_no_models">このサーバーにはまだモデルがありません。先にモデルをダウンロードまたは読み込んでください。</string>
+    <string name="settings_dj_local_rescan">再検索</string>
 </resources>
