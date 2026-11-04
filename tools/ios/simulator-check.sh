@@ -30,7 +30,9 @@ xcrun simctl spawn "$device" log stream --level info --predicate 'processImagePa
 logger=$!
 trap 'kill "$logger" 2>/dev/null || true; xcrun simctl shutdown "$device" || true' EXIT
 
-running() { xcrun simctl spawn "$device" launchctl list | grep -q "$bundle"; }
+# Not `grep -q`: it leaves at the first match, launchctl dies writing to it, and pipefail reads that as
+# "not running". The app "was gone" at random.
+running() { xcrun simctl spawn "$device" launchctl list | grep "$bundle" >/dev/null; }
 
 xcrun simctl launch "$device" "$bundle"
 shot() {
