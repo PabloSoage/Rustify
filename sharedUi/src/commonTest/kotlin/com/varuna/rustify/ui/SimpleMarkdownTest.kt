@@ -1,8 +1,8 @@
 package com.varuna.rustify.ui
 
 import com.varuna.rustify.ui.screens.simpleMarkdown
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class SimpleMarkdownTest {
     @Test

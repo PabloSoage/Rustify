@@ -79,6 +79,10 @@ kotlin {
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
         getByName("iosX64Main").dependsOn(iosMain)
+        val iosTest = maybeCreate("iosTest").apply { dependsOn(commonTest.get()) }
+        getByName("iosArm64Test").dependsOn(iosTest)
+        getByName("iosSimulatorArm64Test").dependsOn(iosTest)
+        getByName("iosX64Test").dependsOn(iosTest)
         getByName("desktopTest").dependencies {
             implementation(kotlin("test-junit"))
         }

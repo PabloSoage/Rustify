@@ -124,18 +124,13 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
-      # Kotlin/Native runs inside Gradle's JVM: two links of the whole interface at once ran the
-      # repository's 2 GB out of heap. This runner has 7 GB, and the Gradle started by Xcode reads
-      # this file too.
+      # One link at a time: this runner has 7 GB, and the Gradle started by Xcode reads this file too.
       - run: |
           mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8\norg.gradle.workers.max=1\n' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.workers.max=1' >> ~/.gradle/gradle.properties
       - run: tools/ios/build-core.sh
       # The device's link is left to the .ipa below, in Release: on this runner each one takes minutes.
       - run: ./gradlew :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon
-      # :shared's common tests again, this time compiled by Kotlin/Native and run on the simulator: the
-      # same code the iOS app runs, not the JVM's reading of it. :sharedUi has none outside desktopTest.
-      - run: ./gradlew :shared:iosSimulatorArm64Test --no-daemon
       - run: brew install xcodegen
       # The app itself, up in a simulator, with what it drew: nothing else here runs the interface.
       - run: tools/ios/simulator-check.sh build/ios-check
@@ -144,6 +139,11 @@ jobs:
         with:
           name: rustify-ios-simulator-check
           path: build/ios-check
+      # The common tests again, this time compiled by Kotlin/Native and run on the simulator: the same
+      # code the iOS app runs, not the JVM's reading of it. Whatever the app did above: neither result
+      # should hide the other.
+      - run: ./gradlew :shared:iosSimulatorArm64Test :sharedUi:iosSimulatorArm64Test --no-daemon
+        if: ${{ !cancelled() }}
       - working-directory: iosApp
         run: xcodegen generate
       # Unsigned: an .ipa from this is installed by AltStore/SideStore, which sign it with the user's
