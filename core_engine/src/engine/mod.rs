@@ -19,6 +19,7 @@
 // split Android has between `PlayerQueue` and ExoPlayer.
 
 pub mod decode;
+pub mod effects;
 pub mod output;
 mod player;
 pub mod resample;

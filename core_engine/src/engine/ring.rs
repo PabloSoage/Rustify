@@ -10,6 +10,10 @@
 // Also here, because it belongs to the consumer: what the device hears is decided at the moment it
 // hears it. Pause, volume and the fade between them are applied in `fill`, not upstream, so they
 // take effect within one device buffer instead of after everything already queued has played.
+//
+// And the anti-click ramps, for the same reason. A flush (seek, skip, stop) jumps from the middle of
+// one waveform to the middle of another; with a declick length set, the first few milliseconds of
+// what is being dropped are played fading out and what follows fades in, so the jump is a dip.
 
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
@@ -46,6 +50,9 @@ pub struct Transport {
     volume: AtomicU32,
     /// How many samples a full fade (silence ↔ volume) takes. 0 means "jump".
     fade_samples: AtomicU32,
+    /// The shortest any change of level may take, and the length of the ramps across a flush. 0
+    /// turns both off.
+    declick_samples: AtomicU32,
 }
 
 impl Transport {
@@ -54,6 +61,7 @@ impl Transport {
             paused: AtomicBool::new(true),
             volume: AtomicU32::new(1.0f32.to_bits()),
             fade_samples: AtomicU32::new(0),
+            declick_samples: AtomicU32::new(0),
         }
     }
 
@@ -78,6 +86,12 @@ impl Transport {
     pub fn set_fade_samples(&self, samples: u32) {
         self.fade_samples.store(samples, Ordering::Release);
     }
+
+    /// In interleaved samples too: a pause with no fade still ramps over this, and a flush fades out
+    /// over it and the new audio in.
+    pub fn set_declick_samples(&self, samples: u32) {
+        self.declick_samples.store(samples, Ordering::Release);
+    }
 }
 
 /// Creates a ring holding `capacity` interleaved samples.
@@ -101,6 +115,7 @@ pub fn ring(capacity: usize) -> (Producer, Consumer) {
         Consumer {
             shared,
             gain: 0.0,
+            declick_in: 0,
         },
     )
 }
@@ -166,6 +181,8 @@ pub struct Consumer {
     shared: Arc<Shared>,
     /// Where the fade currently is, 0.0..=volume. Consumer-only, so a plain field.
     gain: f32,
+    /// Samples left of the fade-in after a flush.
+    declick_in: usize,
 }
 
 impl Consumer {
@@ -177,11 +194,31 @@ impl Consumer {
         let s = &*self.shared;
         let cap = s.buf.len();
 
+        let declick = s.transport.declick_samples.load(Ordering::Acquire) as usize;
+        // Samples at the start of `out` already written: the dropped audio fading out.
+        let mut faded_out = 0usize;
+
         let flush_to = s.flush_to.load(Ordering::Acquire);
         if flush_to != NO_FLUSH {
             let tail = s.tail.load(Ordering::Relaxed);
             // Only ever forwards: a flush target behind the tail has already been played past.
-            if flush_to.wrapping_sub(tail) <= cap {
+            let dropped = flush_to.wrapping_sub(tail);
+            if dropped <= cap {
+                if declick > 0 {
+                    // What is being dropped is still in the buffer (the producer cannot write over
+                    // anything before `tail`), so its first few milliseconds can be played out.
+                    if self.gain > 0.0 {
+                        let n = dropped.min(declick).min(out.len());
+                        for (i, slot) in out[..n].iter_mut().enumerate() {
+                            // SAFETY: [tail, flush_to) was published by the producer before the flush.
+                            let x = unsafe { *s.buf[(tail + i) % cap].get() };
+                            let ramp = 1.0 - (i + 1) as f32 / n as f32;
+                            *slot = (x * self.gain * ramp).clamp(-1.0, 1.0);
+                        }
+                        faded_out = n;
+                    }
+                    self.declick_in = declick;
+                }
                 s.tail.store(flush_to, Ordering::Release);
             }
             // The producer may have flushed again since the load; only clear the one acted on.
@@ -195,7 +232,7 @@ impl Consumer {
 
         let paused = s.transport.paused.load(Ordering::Acquire);
         let volume = f32::from_bits(s.transport.volume.load(Ordering::Acquire));
-        let fade = s.transport.fade_samples.load(Ordering::Acquire);
+        let fade = (s.transport.fade_samples.load(Ordering::Acquire) as usize).max(declick);
         let target = if paused { 0.0 } else { volume };
         let step = if fade == 0 {
             f32::INFINITY
@@ -205,7 +242,7 @@ impl Consumer {
 
         // Paused and already silent: hold the queue where it is, so resuming continues from here.
         if paused && self.gain <= 0.0 {
-            out.fill(0.0);
+            out[faded_out..].fill(0.0);
             return;
         }
 
@@ -213,7 +250,7 @@ impl Consumer {
         let head = s.head.load(Ordering::Acquire);
         let available = head.wrapping_sub(tail);
         let mut taken = 0usize;
-        for slot in out.iter_mut() {
+        for slot in out[faded_out..].iter_mut() {
             // Ramp towards the target one step per sample.
             if self.gain < target {
                 self.gain = (self.gain + step).min(target);
@@ -227,8 +264,12 @@ impl Consumer {
             }
             if taken < available {
                 // SAFETY: [tail, head) was published by the producer with Release on `head`.
-                let x = unsafe { *s.buf[(tail + taken) % cap].get() };
+                let mut x = unsafe { *s.buf[(tail + taken) % cap].get() };
                 taken += 1;
+                if self.declick_in > 0 {
+                    x *= 1.0 - self.declick_in as f32 / declick.max(1) as f32;
+                    self.declick_in -= 1;
+                }
                 *slot = (x * self.gain).clamp(-1.0, 1.0);
             } else {
                 *slot = 0.0;
@@ -313,6 +354,43 @@ mod tests {
         cons.fill(&mut out);
         assert_eq!(out[..4], [0.25, 0.5, 0.75, 1.0]);
         assert_eq!(out[4..], [1.0; 4]);
+    }
+
+    #[test]
+    fn a_flush_with_declick_fades_the_old_audio_out_and_the_new_in() {
+        let (mut prod, mut cons) = ring(64);
+        cons.transport().set_declick_samples(4);
+        playing(&cons);
+        prod.push(&[1.0; 8]);
+        let mut out = [0.0f32; 8];
+        cons.fill(&mut out); // ramps up over the declick, then full
+        assert_eq!(out[4..], [1.0; 4]);
+        prod.push(&[1.0; 8]);
+        prod.flush();
+        prod.push(&[0.5; 8]);
+        let mut out = [0.0f32; 12];
+        cons.fill(&mut out);
+        // Four of the dropped samples, falling to silence; then the new ones rising from it.
+        assert_eq!(out[..4], [0.75, 0.5, 0.25, 0.0]);
+        assert_eq!(out[4..8], [0.0, 0.125, 0.25, 0.375]);
+        assert_eq!(out[8..], [0.5; 4]);
+        assert_eq!(prod.played(), 8 + 8 + 8, "the dropped audio counts as gone, not as queued");
+    }
+
+    #[test]
+    fn a_pause_with_no_fade_still_ramps_over_the_declick() {
+        let (mut prod, mut cons) = ring(64);
+        cons.transport().set_declick_samples(4);
+        playing(&cons);
+        prod.push(&[1.0; 32]);
+        let mut out = [0.0f32; 8];
+        cons.fill(&mut out);
+        cons.transport().set_paused(true);
+        let mut out = [0.0f32; 6];
+        cons.fill(&mut out);
+        assert_eq!(out, [0.75, 0.5, 0.25, 0.0, 0.0, 0.0]);
+        assert!(out.windows(2).all(|w| w[1] <= w[0]), "monotonic");
+        assert_eq!(prod.played(), 8 + 3, "consumption stops once silent");
     }
 
     #[test]
