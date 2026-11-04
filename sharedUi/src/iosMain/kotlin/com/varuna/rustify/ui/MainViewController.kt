@@ -20,21 +20,37 @@ import com.varuna.rustify.ios.IosController
 import com.varuna.rustify.jam.IosJamCore
 import com.varuna.rustify.jam.JamSession
 import com.varuna.rustify.player.EnginePlayerController
+import com.varuna.rustify.platform.Log
 import com.varuna.rustify.player.LocalPlayer
 import com.varuna.rustify.ui.theme.RustifyTheme
+import com.varuna.rustify.util.AppLinksHosts
 import com.varuna.rustify.util.IosLogBook
+import com.varuna.rustify.util.LinkTarget
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import platform.UIKit.UIDevice
 import platform.UIKit.UIViewController
 
-/** The links the system hands the app (`onOpenURL`), for the root to open once it is up. */
+/**
+ * The links the system hands the app (`onOpenURL`), as the tokens the root routes on (`track:ID`), for
+ * it to open once it is up.
+ */
 object IosLinks {
     private val pending = Channel<String>(Channel.UNLIMITED)
     val intents = pending.receiveAsFlow()
 
+    /** The user's own wrapper host, if one is set; the window's prefs, once it is up. */
+    var ownHost: () -> String? = { null }
+
     fun offer(link: String) {
-        pending.trySend(link)
+        val token = runCatching { LinkTarget.tokenOf(link.trim(), listOfNotNull(ownHost()) + AppLinksHosts.verifiedHosts) }
+            .onFailure { Log.w("IosLinks", "could not read a link", it) }
+            .getOrNull()
+        if (token == null) {
+            Log.w("IosLinks", "not a link Rustify opens: ${link.take(200)}")
+            return
+        }
+        pending.trySend(token)
     }
 }
 
@@ -46,7 +62,10 @@ fun MainViewController(controller: IosController): UIViewController = ComposeUIV
     val platform = remember {
         IosLogBook.install()
         IosFolders.restore()
-        IosAppPlatform(controller.secrets).also { IosFolders.seedDefaults(it.prefs()) }
+        IosAppPlatform(controller.secrets).also { app ->
+            IosFolders.seedDefaults(app.prefs())
+            IosLinks.ownHost = { app.prefs().getString("rustify_wrapper_host")?.trim()?.takeIf { it.isNotEmpty() } }
+        }
     }
     val player = remember {
         EnginePlayerController(

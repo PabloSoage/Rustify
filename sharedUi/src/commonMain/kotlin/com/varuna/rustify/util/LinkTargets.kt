@@ -93,6 +93,48 @@ sealed interface LinkTarget {
                 .getOrNull()
                 ?.takeIf { it.isNotBlank() }
         }
+
+        /** Longer than any link Rustify makes or reads; a longer text is not one. */
+        private const val MAX_LINK = 2048
+
+        /**
+         * The token for a link handed over whole, or `null` when it is not one Rustify opens, where the
+         * system does not split it as Android does for `MainActivity.extractDeepLink`. Its three readings,
+         * in its order: the `rustify://` scheme, a Rustify wrapper on one of [knownHosts], and any Spotify
+         * or YouTube Music link (or `spotify:track:ID` URI).
+         */
+        fun tokenOf(text: String, knownHosts: List<String>): String? {
+            if (text.isBlank() || text.length > MAX_LINK) return null
+            schemeTarget(text)?.let { return it.deepLinkToken }
+            if (text.startsWith("https://", ignoreCase = true)) {
+                unwrap(text, knownHosts)?.let { payload -> return parse(payload)?.deepLinkToken }
+            }
+            return parse(text)?.deepLinkToken
+        }
+
+        /**
+         * `rustify://track/ID`, the one shape the core does not parse. Split here into its host and first
+         * path segment, and accepted only if the target's public URL reads back through the core as that
+         * same target: an id the core would not take is not taken here either.
+         */
+        private fun schemeTarget(text: String): LinkTarget? {
+            if (!text.startsWith("rustify://", ignoreCase = true)) return null
+            val rest = text.substring("rustify://".length).substringBefore('?').substringBefore('#')
+            val id = rest.substringAfter('/', "").trim('/').substringBefore('/')
+            if (id.isEmpty()) return null
+            val candidate = when (rest.substringBefore('/').lowercase()) {
+                "track" -> SpotifyTrack(id)
+                "album" -> SpotifyAlbum(id)
+                "playlist" -> SpotifyPlaylist(id)
+                "artist" -> SpotifyArtist(id)
+                "ytmtrack" -> YtmTrack(id)
+                "ytmalbum" -> YtmAlbum(id)
+                "ytmartist" -> YtmArtist(id)
+                "ytmplaylist" -> YtmPlaylist(id)
+                else -> null
+            } ?: return null
+            return parse(candidate.canonicalUrl)?.takeIf { it == candidate }
+        }
     }
 }
 
