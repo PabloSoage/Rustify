@@ -298,10 +298,10 @@ fun DjSettingsSection() {
                         val allVoiceLangs = listOf("en", "es", "ja", "fr", "de", "pt", "it", "ko", "zh")
                         val voiceLangOptions = remember(djMode, systemDefaultLabel) {
                             val appLang = prefs.getString("app_language") ?: "system"
-                            val displayLocale = if (appLang == "system") java.util.Locale.getDefault() else java.util.Locale.forLanguageTag(appLang)
+                            val displayIn = if (appLang == "system") null else appLang
                             val filteredLangs = if (djMode == "api") allVoiceLangs else listOf("en", "es")
                             listOf("" to systemDefaultLabel) + filteredLangs.map { code ->
-                                code to java.util.Locale.forLanguageTag(code).getDisplayName(displayLocale)
+                                code to com.varuna.rustify.ui.localeDisplayName(code, displayIn)
                             }
                         }
                         val voiceLangLabel = voiceLangOptions.firstOrNull { it.first == djVoiceLang }?.second ?: djVoiceLang

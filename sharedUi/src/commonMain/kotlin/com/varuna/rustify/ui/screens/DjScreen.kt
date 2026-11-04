@@ -111,7 +111,7 @@ fun DjScreen(
         // On-device DJ: load the model while the user is still choosing, so the first answer is
         // not the slow one (Gemini Nano: 12.5 s cold vs 6.9 s warm, measured on a POCO F8 Ultra).
         if (mode == DjMode.LOCAL) services.warmUpLocalDj()
-        val now = System.currentTimeMillis()
+        val now = com.varuna.rustify.platform.currentTimeMillis()
         topArtists = runCatching {
             com.varuna.rustify.metrics.ListeningTracker.stats(platform, now - 30L * 86_400_000L, now)
                 .topArtists.map { it.name }.filter { it.isNotBlank() }.take(3)

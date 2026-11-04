@@ -137,7 +137,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                        val currentHour = com.varuna.rustify.ui.currentHourOfDay()
                         val greeting = when (currentHour) {
                             in 5..11 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_morning)
                             in 12..17 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_afternoon)

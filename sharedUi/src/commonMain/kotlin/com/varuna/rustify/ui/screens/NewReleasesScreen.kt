@@ -71,7 +71,7 @@ fun NewReleasesScreen(
     // Recomputed when the list grows, not on a clock: "today" only changes at midnight, and a grid
     // that regroups itself while you scroll is worse than one that is a few hours stale.
     val groups = remember(albums.size) {
-        com.varuna.rustify.util.ReleaseCalendar.group(albums.toList(), System.currentTimeMillis())
+        com.varuna.rustify.util.ReleaseCalendar.group(albums.toList(), com.varuna.rustify.platform.currentTimeMillis())
     }
 
     suspend fun fetch(offset: Int) {

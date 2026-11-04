@@ -117,7 +117,7 @@ fun PlaylistScreen(
     var findQuery by remember(playlistId) { mutableStateOf("") }
     // Its own index name per screen: with one shared name, opening another playlist on top and
     // coming back left this one searching an index the other had replaced and then forgotten.
-    val findIndex = remember(playlistId) { "${com.varuna.rustify.util.LocalSearch.PLAYLIST}:${java.util.UUID.randomUUID()}" }
+    val findIndex = remember(playlistId) { "${com.varuna.rustify.util.LocalSearch.PLAYLIST}:${kotlin.uuid.Uuid.random()}" }
     // A copy as the key: for a Spotify playlist `tracks` is the repo's live list, one object that
     // grows as pages arrive, so keying on it froze the index at the moment it was still empty.
     val trackSnapshot = tracks.toList()
