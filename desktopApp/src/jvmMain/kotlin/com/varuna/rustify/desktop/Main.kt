@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -33,6 +34,8 @@ import com.varuna.rustify.ui.UrlScheme
 import java.io.File
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -130,7 +133,13 @@ fun main(args: Array<String>) {
             })
         }
 
-        val windowState = rememberWindowState(width = 1100.dp, height = 760.dp)
+        // Size, place and maximised as the last run left them (WindowMemory).
+        val savedWindow = remember { WindowMemory.load() }
+        val windowState = rememberWindowState(
+            placement = savedWindow.placement,
+            position = savedWindow.position,
+            size = savedWindow.size,
+        )
         // Hidden, not closed, when closing keeps the music playing: the tray brings it back.
         var windowVisible by remember { mutableStateOf(true) }
         val traySupported = remember { DesktopSettings.traySupported }
@@ -138,6 +147,7 @@ fun main(args: Array<String>) {
         // Closing waits, briefly, for the last listen to be stored and scrobbled and the Jam room to
         // be told: launched and then exited, all three were lost.
         fun quit() {
+            runCatching { WindowMemory.save(windowState) }
             // The next launch is the first again.
             instance?.close()
             // The DJ's model server is a child process: it goes with the window.
@@ -168,6 +178,7 @@ fun main(args: Array<String>) {
         // to come back from).
         fun closeRequested() {
             if (traySupported && appPlatform.prefs().getBoolean(DesktopSettings.CLOSE_TO_TRAY, false)) {
+                runCatching { WindowMemory.save(windowState) }
                 windowVisible = false
             } else {
                 quit()
@@ -191,6 +202,21 @@ fun main(args: Array<String>) {
             state = windowState,
             visible = windowVisible,
         ) {
+            // Narrower or shorter than this and the tablet layout gives way to the phone's.
+            LaunchedEffect(Unit) {
+                window.minimumSize = java.awt.Dimension(
+                    WindowMemory.MIN_SIZE.width.value.toInt(),
+                    WindowMemory.MIN_SIZE.height.value.toInt(),
+                )
+            }
+            // Kept as the user leaves it, a moment after they stop moving it.
+            LaunchedEffect(windowState) {
+                snapshotFlow { listOf(windowState.placement, windowState.position, windowState.size, windowState.isMinimized) }
+                    .collectLatest {
+                        delay(500)
+                        runCatching { WindowMemory.save(windowState) }
+                    }
+            }
             // Up and in front: a second launch, a link, the tray, the Dock, the media overlay.
             LaunchedEffect(Unit) {
                 DesktopLinks.raiseRequests.collect {
