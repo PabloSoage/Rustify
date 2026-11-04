@@ -159,8 +159,11 @@ class EngineDownloads(
 
             writeTags(target, track)
             updateStatus(trackId, DownloadStatus.COMPLETE, progress = 100)
-            platform.toast(Res.string.track_menu_downloaded_toast, trackName)
-            intoLocalMusic(folder)
+            // The file is there: what is left cannot turn it into a failed download.
+            runCatching {
+                platform.toast(Res.string.track_menu_downloaded_toast, trackName)
+                intoLocalMusic(folder)
+            }.onFailure { Log.w(TAG, "downloaded $trackId, but could not announce it", it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
