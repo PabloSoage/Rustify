@@ -88,17 +88,31 @@ class DesktopPlayerController(
         mode.value = Mode.SHUFFLE
     }
 
-    // An audition of one recording is not something the engine can hint yet; play the track.
-    override fun playPreview(track: FullTrack, youtubeVideoId: String) = loadAndPlay(track)
+    // An audition of one recording, as the phone's (AudioPlayerService.playPreview): that video, out
+    // of the queue, and nothing written down — no listen, no position, nothing kept for the track.
+    override fun playPreview(track: FullTrack, youtubeVideoId: String) = player.audition(track, youtubeVideoId)
 
+    // [youtubeId], when given, is the recording to play: an alternative just chosen.
     override fun playSpecificTrackInQueue(trackId: String, youtubeId: String?, queueIndex: Int?) {
-        val i = queueIndex ?: player.ui.value.queue.indexOfFirst { it.id == trackId }
-        if (i >= 0) player.jumpTo(i)
+        val queue = player.ui.value.queue
+        // The row asked for, when it holds that track: a playlist can repeat a song.
+        val i = queueIndex?.takeIf { it in queue.indices && queue[it].id == trackId } ?: queue.indexOfFirst { it.id == trackId }
+        if (i >= 0) player.jumpTo(i, youtubeId = youtubeId)
     }
 
+    /**
+     * Resolves the song again, from the sources: the phone's retry. [youtubeId] is the recording to
+     * play (an alternative just chosen); [fallbackTrackId] the song, when it is not the one playing.
+     * The same song resumes where it was; another starts from the beginning.
+     */
     override fun retryCurrentTrack(youtubeId: String?, fallbackTrackId: String?, isAutoRetry: Boolean) {
-        val i = player.ui.value.index
-        if (i >= 0) player.jumpTo(i)
+        val ui = player.ui.value
+        val i = fallbackTrackId?.let { id -> ui.queue.indexOfFirst { it.id == id }.takeIf { it >= 0 } } ?: ui.index
+        val track = ui.queue.getOrNull(i) ?: return
+        // A forced re-resolution: the source that served it last is not trusted as the good one.
+        track.id?.let { com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(it) }
+        val sameTrack = fallbackTrackId == null || fallbackTrackId == ui.current?.id
+        player.jumpTo(i, startMs = if (sameTrack) ui.positionMs.coerceAtLeast(0) else 0, youtubeId = youtubeId)
     }
 
     override fun play() = player.play()
@@ -229,10 +243,13 @@ class DesktopPlayerController(
         forgetShuffle()
     }
 
-    // The core keeps the alternative and resolves through it; the desktop has no other per-track cache.
+    // The core keeps the alternative and resolves through it. Of what is keyed by the track, the
+    // desktop has the source that served it last (no persisted URL and no stream cache): forgotten,
+    // as on the phone, so the next play is not handed back to it.
     override fun chooseRecording(trackId: String, youtubeId: String) {
         com.varuna.rustify.bridge.NativeEngine.setAlternativeTrackNative(trackId, youtubeId)
         com.varuna.rustify.bridge.UserAlternatives.add(AppDirs.data, trackId)
+        com.varuna.rustify.audio.AudioSourceRegistry.invalidateLastGood(trackId)
     }
 
     override fun clearRecording(trackId: String) {

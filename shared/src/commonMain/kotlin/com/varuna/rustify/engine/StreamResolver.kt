@@ -50,10 +50,19 @@ class StreamResolver(
     /**
      * The stream for [track], or null when there is none. [localCopy] is asked for a track that is
      * not a file of its own (the phone's "match local first"): its answer, a `file://` URI, wins.
+     *
+     * [hint] is a YouTube video id: play *this* recording of the track (a chosen alternative, an
+     * audition, a retry of one). A hint names a recording, and the local copy is the song's, so with
+     * one it is not asked; a chain is asked with the hint; without a chain, the video is played.
      */
-    suspend fun resolve(track: FullTrack, localCopy: (suspend (FullTrack) -> String?)? = null): Stream? {
+    suspend fun resolve(
+        track: FullTrack,
+        localCopy: (suspend (FullTrack) -> String?)? = null,
+        hint: String? = null,
+    ): Stream? {
         val id = track.id ?: return null
         val ref = TrackRef.parse(id) ?: return null
+        val chosen = hint?.takeIf { it.isNotBlank() }
         when (ref) {
             // A file on this computer is played from where it is: no resolver, and not through the
             // core's local server either, which would add a hop to something that has no problem.
@@ -61,21 +70,22 @@ class StreamResolver(
             is TrackRef.Local -> return if (ref.uri.startsWith("file:")) Stream(url = ref.uri) else null
             is TrackRef.Ytm -> Unit
             is TrackRef.Spotify, is TrackRef.SpotifyLocal -> {
-                localCopy?.invoke(track)?.let { return Stream(url = it) }
+                if (chosen == null) localCopy?.invoke(track)?.let { return Stream(url = it) }
                 // The resolvers match a Spotify track by its metadata, so they need it first.
                 backend.registerTrackMetadata(track)
             }
         }
         sources?.let { chain ->
-            // A ytm: id is the video itself, which makes it a hint, as on the phone
-            // (AudioPlayerService.playTrack): only the sources that fetch from YouTube are asked.
-            return chain.resolve(track, (ref as? TrackRef.Ytm)?.videoId)
+            // A ytm: id is the video itself, which makes it a hint (and the one that wins), as on the
+            // phone (AudioPlayerService.playTrack): only the sources that fetch from YouTube are asked.
+            return chain.resolve(track, (ref as? TrackRef.Ytm)?.videoId ?: chosen)
         }
         val videoId = when (ref) {
             is TrackRef.Local -> null // answered above
             is TrackRef.Ytm -> ref.videoId
-            // A Spotify track: the same resolver the phone uses, with the metadata registered above.
-            is TrackRef.Spotify, is TrackRef.SpotifyLocal -> VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
+            // A Spotify track: the video asked for, else the same resolver the phone uses, with the
+            // metadata registered above.
+            is TrackRef.Spotify, is TrackRef.SpotifyLocal -> chosen ?: VIDEO_ID.find(backend.resolveYouTubeId(id))?.value
         } ?: return null
         // AAC (itag 140): the engine's decoder has no Opus (core_engine/src/engine/decode.rs).
         val raw = backend.resolveAudio(videoId, """{"prefer":"aac","maxKbps":0}""")

@@ -180,4 +180,72 @@ class QueuePlayerTest {
 
         assertEquals(1, backend.sent.filterIsInstance<EngineCommand.Preload>().size)
     }
+
+    /** A chain of sources that answers the video it was asked for, and remembers each hint. */
+    private class FakeSources : StreamResolver.Sources {
+        val hints = mutableListOf<String?>()
+        override suspend fun resolve(track: FullTrack, hint: String?): StreamResolver.Stream {
+            hints += hint
+            return StreamResolver.Stream(url = "https://audio.test/${hint ?: "match"}")
+        }
+    }
+
+    private fun lastLoad(backend: FakeBackend) = backend.sent.filterIsInstance<EngineCommand.Load>().last()
+
+    @Test
+    fun `a chosen recording reaches the sources once and skips the local copy`() {
+        val backend = FakeBackend()
+        val sources = FakeSources()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.sources = sources
+        player.localCopy = { "file:///home/me/Music/copy.mp3" }
+        player.playAll(listOf(FullTrack(id = "4uLU6hMCjMI75M1A2tKUQC", name = "A")), start = 0)
+        assertEquals("file:///home/me/Music/copy.mp3", lastLoad(backend).uri, "no hint: the local copy")
+
+        player.jumpTo(0, youtubeId = "ccccccccccc")
+        assertEquals("https://audio.test/ccccccccccc", lastLoad(backend).uri, "the video asked for")
+        assertEquals(listOf<String?>("ccccccccccc"), sources.hints)
+
+        player.jumpTo(0)
+        assertEquals("file:///home/me/Music/copy.mp3", lastLoad(backend).uri, "the hint is used once")
+    }
+
+    @Test
+    fun `a ytm track asks the sources with its own video`() {
+        val backend = FakeBackend()
+        val sources = FakeSources()
+        val player = QueuePlayer(CoroutineScope(Dispatchers.Unconfined), backend)
+        player.sources = sources
+
+        player.playAll(listOf(ytm("aaaaaaaaaaa", "A")), start = 0)
+
+        assertEquals(listOf<String?>("aaaaaaaaaaa"), sources.hints)
+    }
+
+    @Test
+    fun `an audition plays the video and leaves the queue where it was`() {
+        val backend = FakeBackend()
+        val (player, token) = playingFirstOfTwo(backend)
+        backend.incoming.tryEmit(EngineEvent.Position(token, 30_000))
+        backend.sent.clear()
+
+        // A Spotify track: a ytm one is its own video, which wins over a hint, as on the phone.
+        player.audition(FullTrack(id = "4uLU6hMCjMI75M1A2tKUQC", name = "A elsewhere"), "ddddddddddd")
+        val audition = lastLoad(backend)
+        assertEquals("https://audio.test/ddddddddddd", audition.uri)
+        assertTrue(backend.sent.none { it is EngineCommand.Preload }, "nothing behind an audition")
+        backend.incoming.tryEmit(EngineEvent.Ready(audition.token))
+        backend.incoming.tryEmit(EngineEvent.Position(audition.token, 5_000))
+        assertEquals(0, player.ui.value.index, "still the queue's first song")
+
+        // It ends: playback stops there, and play resumes the queue's song where it was.
+        backend.incoming.tryEmit(EngineEvent.Ended(audition.token))
+        assertEquals(0, player.ui.value.index, "the queue did not move on")
+        assertEquals(30_000L, player.ui.value.positionMs)
+        backend.sent.clear()
+        player.togglePause()
+        val resumed = lastLoad(backend)
+        assertEquals("https://audio.test/aaaaaaaaaaa", resumed.uri)
+        assertEquals(30_000L, resumed.startMs)
+    }
 }

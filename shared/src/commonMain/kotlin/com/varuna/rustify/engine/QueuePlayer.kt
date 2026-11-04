@@ -303,7 +303,7 @@ class QueuePlayer(
         }, skipPlay = true)
         // set_queue starts the song over; it has not, it is still playing where it was.
         state = state.copy(positionMs = position)
-        if (currentToken != 0L) indexOfToken[currentToken] = index
+        if (currentToken != 0L && !auditioning) indexOfToken[currentToken] = index
         // What comes next may be another song now.
         dropPreload()
         if (currentToken != 0L) preloadNext()
@@ -336,10 +336,65 @@ class QueuePlayer(
         backend.send(EngineCommand.ClearNext)
     }
 
-    /** Plays the queue's [index]-th song from the start (or [startMs]). */
-    fun jumpTo(index: Int, startMs: Long = 0) {
+    /**
+     * Plays the queue's [index]-th song from the start (or [startMs]). With [youtubeId], that load
+     * plays *that* YouTube video — a chosen alternative, or a retry of one — rather than whatever the
+     * song resolves to: the local copy is not asked, and only the sources that can honour a video id
+     * are (see [StreamResolver.Sources]). Used once: the next load of the song resolves it as usual.
+     */
+    fun jumpTo(index: Int, startMs: Long = 0, youtubeId: String? = null) {
         if (index !in tracks.indices) return
+        hintFor = youtubeId?.takeIf { it.isNotBlank() }?.let { index to it }
         playAll(tracks, index, startMs)
+    }
+
+    /** The row and video [jumpTo] was given, for the load it causes; cleared by that load. */
+    private var hintFor: Pair<Int, String>? = null
+
+    /**
+     * Plays [youtubeId] as [track], outside the queue: an audition of one recording (the play button
+     * in the alternatives dialog), as the phone's preview.
+     *
+     * It writes nothing down. The queue, the song it is at and that song's position stay as they
+     * were, and are what is saved; the audition is not a listen in the history; and nothing about the
+     * track remembers the video. When it ends, or fails, playback stops there and play picks the
+     * queue up where it was. Whatever the queue does next (next, a song chosen) replaces it.
+     */
+    fun audition(track: FullTrack, youtubeId: String) {
+        if (track.id == null || youtubeId.isBlank()) return
+        // The song that was playing stops here, heard as far as it got.
+        finishListening(completed = false, errored = false)
+        val token = nextToken++
+        currentToken = token
+        auditionToken = token
+        hintFor = null
+        dropPreload()
+        _ui.update { it.copy(loading = true, positionMs = 0, durationMs = null, error = null) }
+        scope.launch {
+            // No local copy: that is the song's, and this is one recording of it.
+            val audio = resolver.resolve(track, localCopy = null, hint = youtubeId)
+            if (token != currentToken) return@launch // Something else started meanwhile.
+            if (audio == null) {
+                endAudition(error = "Could not resolve \"${track.name}\"")
+                return@launch
+            }
+            backend.send(EngineCommand.Load(token, audio.url, 0, gainOf(audio), play = true))
+        }
+    }
+
+    /** The token of the audition loaded, while it is the one playing; 0 otherwise. */
+    private var auditionToken = 0L
+
+    private val auditioning: Boolean get() = auditionToken != 0L && auditionToken == currentToken
+
+    /** The audition is over: nothing is loaded, and play resumes the queue where it was. */
+    private fun endAudition(error: String? = null) {
+        auditionToken = 0
+        currentToken = 0
+        backend.send(EngineCommand.Stop)
+        _ui.update {
+            it.copy(playing = false, loading = false, positionMs = state.positionMs, durationMs = null, error = error)
+        }
     }
 
     fun play() {
@@ -362,10 +417,18 @@ class QueuePlayer(
         }
     }
 
-    fun seek(positionMs: Long) = reduce(buildJsonObject {
-        put("type", "seek")
-        put("ms", positionMs)
-    })
+    fun seek(positionMs: Long) {
+        // Within an audition, which is not the queue's song: the queue keeps its own position.
+        if (auditioning) {
+            backend.send(EngineCommand.Seek(positionMs))
+            _ui.update { it.copy(positionMs = positionMs) }
+            return
+        }
+        reduce(buildJsonObject {
+            put("type", "seek")
+            put("ms", positionMs)
+        })
+    }
 
     fun setVolume(volume: Float) {
         _ui.update { it.copy(volume = volume) }
@@ -411,7 +474,12 @@ class QueuePlayer(
                 "play" -> if (!skipPlay) {
                     load(state.index, (effect["positionMs"]?.jsonPrimitive?.long ?: 0).takeIf { it > 0 } ?: startMs)
                 }
-                "seek" -> backend.send(EngineCommand.Seek(effect["positionMs"]?.jsonPrimitive?.long ?: 0))
+                "seek" -> {
+                    val at = effect["positionMs"]?.jsonPrimitive?.long ?: 0
+                    // The reducer means the queue's song ("previous" restarting it), which an
+                    // audition has unloaded: load it there instead of seeking the audition.
+                    if (auditioning) load(state.index, at) else backend.send(EngineCommand.Seek(at))
+                }
                 "stop" -> {
                     backend.send(EngineCommand.Stop)
                     _ui.update { it.copy(playing = false) }
@@ -434,15 +502,18 @@ class QueuePlayer(
 
     private fun load(index: Int, startMs: Long) {
         val track = tracks.getOrNull(index) ?: return
+        val hint = hintFor?.takeIf { it.first == index }?.second
+        hintFor = null
         // A skip, or a new queue: the track that was playing ends here, not completed.
         finishListening(completed = false, errored = false)
         val token = nextToken++
         indexOfToken[token] = index
         currentToken = token
+        auditionToken = 0
         dropPreload()
         _ui.update { it.copy(loading = true, positionMs = startMs, durationMs = null, error = null) }
         scope.launch {
-            val audio = resolve(track)
+            val audio = resolve(track, hint)
             if (token != currentToken) return@launch // Skipped while resolving.
             if (audio == null) {
                 failed("Could not resolve \"${track.name}\"")
@@ -459,7 +530,8 @@ class QueuePlayer(
     }
 
     private fun preloadNext() {
-        if (stopAtTrackEnd) return
+        // Nothing behind an audition: the engine would move on into it when the audition ends.
+        if (stopAtTrackEnd || auditioning) return
         val index = upcomingIndex() ?: return
         val track = tracks.getOrNull(index) ?: return
         val token = nextToken++
@@ -474,6 +546,9 @@ class QueuePlayer(
     }
 
     private fun onEvent(event: EngineEvent) {
+        // An audition is not the queue's: no listen, no position saved, nothing preloaded behind
+        // it, and its end or failure moves the queue nowhere.
+        if (auditioning && auditionEvent(event)) return
         when (event) {
             is EngineEvent.Ready -> if (event.token == currentToken) {
                 failuresInARow = 0
@@ -513,6 +588,30 @@ class QueuePlayer(
             }
             is EngineEvent.Loading, is EngineEvent.Preloaded -> Unit
         }
+    }
+
+    /** [event] while an audition plays; true when it was the audition's and is handled. */
+    private fun auditionEvent(event: EngineEvent): Boolean {
+        when (event) {
+            is EngineEvent.Ready -> {
+                if (event.token != auditionToken) return false
+                _ui.update { it.copy(loading = false, durationMs = event.durationMs) }
+            }
+            is EngineEvent.Position -> {
+                if (event.token != auditionToken) return false
+                _ui.update { it.copy(positionMs = event.positionMs) }
+            }
+            is EngineEvent.Ended -> {
+                if (event.token != auditionToken) return false
+                endAudition()
+            }
+            is EngineEvent.Error -> {
+                if (event.token != auditionToken) return false
+                endAudition(error = event.message)
+            }
+            else -> return false
+        }
+        return true
     }
 
     /**
@@ -555,7 +654,8 @@ class QueuePlayer(
             resolver.sources = value
         }
 
-    private suspend fun resolve(track: FullTrack): StreamResolver.Stream? = resolver.resolve(track, localCopy)
+    private suspend fun resolve(track: FullTrack, hint: String? = null): StreamResolver.Stream? =
+        resolver.resolve(track, localCopy, hint)
 
     /** YouTube's own player turns a loud recording down by its `loudnessDb`, and never up. */
     private fun gainOf(audio: StreamResolver.Stream): Float {
