@@ -70,8 +70,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-24.04-arm: the aarch64 Linux packages Spotube also ships (docs 25 §6, T2.7).
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+        # Linux and macOS both in x86_64 and arm64: ubuntu-24.04-arm for aarch64 Linux (docs 25 §6,
+        # T2.7), macos-15-intel for the Intel Macs beside macos-latest's Apple Silicon.
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
