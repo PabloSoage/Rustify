@@ -138,16 +138,6 @@ import java.io.File
 // es privado *del fichero*, asi que moverlas sin mas las habria hecho invisibles para la pantalla
 // que las llama.
 
-// Health dot color (same scheme as the DJ model latency indicator).
-internal fun voiceDotColor(l: com.varuna.rustify.dj.DjProviders.Latency?): Color =
-    when (l ?: com.varuna.rustify.dj.DjProviders.Latency.UNKNOWN) {
-        com.varuna.rustify.dj.DjProviders.Latency.FAST -> Color(0xFF1DB954)
-        com.varuna.rustify.dj.DjProviders.Latency.OK -> Color(0xFFFFC107)
-        com.varuna.rustify.dj.DjProviders.Latency.SLOW -> Color(0xFFFF7043)
-        com.varuna.rustify.dj.DjProviders.Latency.DOWN -> Color(0xFFE53935)
-        else -> Color.Gray
-    }
-
 // "Downloads" category: custom downloads folder plus access to the download screen.
 @Composable
 internal fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {

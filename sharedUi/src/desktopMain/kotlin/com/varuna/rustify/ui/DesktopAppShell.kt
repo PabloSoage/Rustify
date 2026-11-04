@@ -87,11 +87,15 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
         }
     }
 
-    // What the phone has in General beside the shared sections (yt-dlp, Drive, storage, the DJ)
-    // comes with those features; the other categories say they are not here yet.
+    // What the phone has in General beside the shared sections (yt-dlp, Drive, storage) comes with
+    // those features; the DJ's is shared. The other categories say they are not here yet.
     @Composable
     override fun SettingsSections(slot: SettingsSlot, host: ShellHost) {
-        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.GENERAL_DJ || slot == SettingsSlot.AUDIO) return
+        if (slot == SettingsSlot.GENERAL_DJ) {
+            com.varuna.rustify.ui.screens.DjSettingsSection()
+            return
+        }
+        if (slot == SettingsSlot.GENERAL || slot == SettingsSlot.AUDIO) return
         // The shared sections the phone has further down Audio: here they go after its own, which
         // are not on the desktop yet.
         if (slot == SettingsSlot.AUDIO_SOURCES) {

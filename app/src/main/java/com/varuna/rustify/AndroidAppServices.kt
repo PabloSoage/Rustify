@@ -91,5 +91,8 @@ class AndroidAppServices(context: Context) : AppServices {
     @Composable
     override fun rememberDjListener(): com.varuna.rustify.dj.DjListener = com.varuna.rustify.dj.rememberAndroidDjListener()
 
+    @Composable
+    override fun LocalDjSettings() = com.varuna.rustify.ui.screens.NanoModelPanel()
+
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.LogCapture
 }

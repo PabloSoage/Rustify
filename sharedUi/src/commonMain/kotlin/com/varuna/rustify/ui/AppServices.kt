@@ -87,6 +87,10 @@ interface AppServices {
     @Composable
     fun rememberDjListener(): com.varuna.rustify.dj.DjListener
 
+    /** What the DJ's settings show under the "local" mode (Android: Gemini Nano's panel). */
+    @Composable
+    fun LocalDjSettings()
+
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 

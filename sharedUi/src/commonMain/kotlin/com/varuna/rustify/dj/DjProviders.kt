@@ -1,7 +1,6 @@
 package com.varuna.rustify.dj
 
-import android.content.Context
-import androidx.core.content.edit
+import com.varuna.rustify.ui.AppPlatform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -46,15 +45,13 @@ object DjProviders {
         DjApiProvider("poll-deepseek", "DeepSeek (Pollinations)", "https://text.pollinations.ai/openai", "deepseek"),
     )
 
-    private fun prefs(context: Context) =
-        context.getSharedPreferences(DjSettings.PREFS, Context.MODE_PRIVATE)
+    private fun prefs(platform: AppPlatform) = platform.prefs(DjSettings.PREFS)
 
-    private fun hiddenIds(context: Context): Set<String> =
-        prefs(context).getString(KEY_HIDDEN, "")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
-            ?: emptySet()
+    private fun hiddenIds(platform: AppPlatform): Set<String> =
+        (prefs(platform).getString(KEY_HIDDEN) ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
-    fun customProviders(context: Context): List<DjApiProvider> {
-        val raw = prefs(context).getString(KEY_CUSTOM, null) ?: return emptyList()
+    fun customProviders(platform: AppPlatform): List<DjApiProvider> {
+        val raw = prefs(platform).getString(KEY_CUSTOM) ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
@@ -72,28 +69,28 @@ object DjProviders {
     }
 
     /** Visible list = non-hidden built-ins + custom ones. */
-    fun visibleProviders(context: Context): List<DjApiProvider> {
-        val hidden = hiddenIds(context)
-        return BUILT_IN.filter { it.id !in hidden } + customProviders(context)
+    fun visibleProviders(platform: AppPlatform): List<DjApiProvider> {
+        val hidden = hiddenIds(platform)
+        return BUILT_IN.filter { it.id !in hidden } + customProviders(platform)
     }
 
-    fun addCustom(context: Context, label: String, baseUrl: String, model: String, apiKey: String) {
+    fun addCustom(platform: AppPlatform, label: String, baseUrl: String, model: String, apiKey: String) {
         val id = "custom-" + baseUrl.hashCode().toString() + "-" + model.hashCode().toString()
-        val list = customProviders(context).filter { it.id != id } +
+        val list = customProviders(platform).filter { it.id != id } +
             DjApiProvider(id, label.ifBlank { model.ifBlank { baseUrl } }, baseUrl.trim(), model.trim(), apiKey.trim(), builtIn = false)
-        persistCustom(context, list)
+        persistCustom(platform, list)
     }
 
-    fun removeProvider(context: Context, provider: DjApiProvider) {
+    fun removeProvider(platform: AppPlatform, provider: DjApiProvider) {
         if (provider.builtIn) {
-            val hidden = hiddenIds(context) + provider.id
-            prefs(context).edit { putString(KEY_HIDDEN, hidden.joinToString(",")) }
+            val hidden = hiddenIds(platform) + provider.id
+            prefs(platform).putString(KEY_HIDDEN, hidden.joinToString(","))
         } else {
-            persistCustom(context, customProviders(context).filter { it.id != provider.id })
+            persistCustom(platform, customProviders(platform).filter { it.id != provider.id })
         }
     }
 
-    private fun persistCustom(context: Context, list: List<DjApiProvider>) {
+    private fun persistCustom(platform: AppPlatform, list: List<DjApiProvider>) {
         val arr = JSONArray()
         list.forEach { p ->
             arr.put(JSONObject().apply {
@@ -101,12 +98,12 @@ object DjProviders {
                 put("model", p.model); put("apiKey", p.apiKey)
             })
         }
-        prefs(context).edit { putString(KEY_CUSTOM, arr.toString()) }
+        prefs(platform).putString(KEY_CUSTOM, arr.toString())
     }
 
     /** Selects a provider → writes base/model/key to the prefs consumed by [DjEngine]. */
-    fun select(context: Context, provider: DjApiProvider) {
-        prefs(context).edit {
+    fun select(platform: AppPlatform, provider: DjApiProvider) {
+        prefs(platform).apply {
             putString(KEY_SELECTED, provider.id)
             putString(DjSettings.KEY_API_BASE_URL, provider.baseUrl)
             putString(DjSettings.KEY_API_MODEL, provider.model)
@@ -114,7 +111,7 @@ object DjProviders {
         }
     }
 
-    fun selectedId(context: Context): String? = prefs(context).getString(KEY_SELECTED, null)
+    fun selectedId(platform: AppPlatform): String? = prefs(platform).getString(KEY_SELECTED)
 
     // ── Latency / congestion indicator ───────────────────────────────────────────────────
 

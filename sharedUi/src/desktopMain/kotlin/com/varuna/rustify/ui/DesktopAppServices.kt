@@ -2,7 +2,10 @@
 package com.varuna.rustify.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LocalMusicScanner
@@ -16,8 +19,11 @@ import com.varuna.rustify.dj.HeuristicDjProvider
 import com.varuna.rustify.platform.AppDirs
 import com.varuna.rustify.platform.FileStore
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.ui.resources.Res
+import com.varuna.rustify.ui.resources.feature_not_on_platform
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.jetbrains.compose.resources.stringResource
 import java.io.File
 import java.util.Locale
 
@@ -69,6 +75,13 @@ class DesktopAppServices(
         override fun init() = Unit
         override fun speak(text: String, force: Boolean) = Unit
         override fun stop() = Unit
+        override val engines: List<String> = listOf("native")
+        override fun refreshConfig() = Unit
+        override fun preview(onDone: (() -> Unit)?) { onDone?.invoke() }
+        override fun queryVoices(langCode: String, onResult: (List<Pair<String, String>>) -> Unit) = onResult(emptyList())
+        override suspend fun probeEdge(): Long? = null
+        override suspend fun probeGoogleTranslate(): Long? = null
+        override suspend fun probeVoice(voice: String): Long? = null
     }
 
     override fun localDjProvider(): DjProvider = HeuristicDjProvider()
@@ -77,6 +90,15 @@ class DesktopAppServices(
 
     @Composable
     override fun rememberDjListener(): DjListener = NoMicrophone
+
+    @Composable
+    override fun LocalDjSettings() {
+        Text(
+            stringResource(Res.string.feature_not_on_platform),
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+    }
 
     override val logs: com.varuna.rustify.util.LogBook get() = com.varuna.rustify.util.DesktopLogBook
 

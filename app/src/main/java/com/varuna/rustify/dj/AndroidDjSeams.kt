@@ -17,6 +17,15 @@ class AndroidDjVoice(context: Context) : DjVoiceOutput {
     override fun init() = DjVoice.init(app)
     override fun speak(text: String, force: Boolean) = DjVoice.speak(app, text, force)
     override fun stop() = DjVoice.stop()
+
+    override val engines: List<String> = listOf("native", "edge", "gtranslate", "pollinations", "openai")
+    override fun refreshConfig() = DjVoice.refreshConfig(app)
+    override fun preview(onDone: (() -> Unit)?) = DjVoice.preview(app, onDone)
+    override fun queryVoices(langCode: String, onResult: (List<Pair<String, String>>) -> Unit) =
+        DjVoice.queryVoices(app, langCode, onResult)
+    override suspend fun probeEdge(): Long? = DjVoice.probeEdge()
+    override suspend fun probeGoogleTranslate(): Long? = DjVoice.probeGoogleTranslate(app)
+    override suspend fun probeVoice(voice: String): Long? = DjVoice.probeVoice(app, voice)
 }
 
 /**

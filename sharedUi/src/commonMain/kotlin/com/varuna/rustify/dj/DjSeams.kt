@@ -17,6 +17,27 @@ interface DjVoiceOutput {
 
     /** Stops whatever is being spoken. */
     fun stop()
+
+    /**
+     * The voice engines this platform has, by the code Settings stores in [DjSettings.KEY_TTS_ENGINE]
+     * ("native", "edge", "gtranslate", "pollinations", "openai"), in the order Settings lists them.
+     */
+    val engines: List<String>
+
+    /** Applies the language and voice just chosen in Settings. */
+    fun refreshConfig()
+
+    /** Speaks the test phrase in the chosen voice, even with the voice off; [onDone] when it ends. */
+    fun preview(onDone: (() -> Unit)?)
+
+    /** The system's voices for [langCode] (blank: all) as `(id, label)`, delivered on the main thread. */
+    fun queryVoices(langCode: String, onResult: (List<Pair<String, String>>) -> Unit)
+
+    // How long each online voice takes to answer, in ms, or null when it does not; Settings shows a
+    // dot by each ([DjProviders.classify]).
+    suspend fun probeEdge(): Long?
+    suspend fun probeGoogleTranslate(): Long?
+    suspend fun probeVoice(voice: String): Long?
 }
 
 /**
