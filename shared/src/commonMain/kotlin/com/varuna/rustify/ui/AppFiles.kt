@@ -1,4 +1,4 @@
-// sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/AppFiles.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/ui/AppFiles.kt
 package com.varuna.rustify.ui
 
 /**

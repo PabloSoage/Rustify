@@ -8,17 +8,25 @@ import com.varuna.rustify.bridge.optLong
 import com.varuna.rustify.bridge.optObject
 import com.varuna.rustify.bridge.optString
 import com.varuna.rustify.bridge.parseJsonObject
+import com.varuna.rustify.platform.formUrlEncode
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Deezer client based on the public deemix scheme (uses the user's ARL).
@@ -28,7 +36,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * in the Rust core (`core_engine/src/audio/deezer.rs`), reached through the local player server —
  * see [DeezerAudioSource] and `docs/stremio-core/DEEZER-CRYPTO.md`.
  */
-class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
+class DeezerClient(private val http: HttpClient = AudioHttp.client) {
 
     data class Session(
         val apiToken: String, val licenseToken: String, val arl: String, val sid: String,
@@ -40,30 +48,30 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
 
     private val gw = "https://www.deezer.com/ajax/gw-light.php"
     private val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Rustify"
-    private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private val jsonType = ContentType.parse("application/json; charset=utf-8")
 
     /** Authenticates with an ARL. Returns null if the ARL is invalid (empty checkForm). */
     suspend fun auth(arl: String): Session? = withContext(Dispatchers.IO) {
         runCatching {
             val url = "$gw?method=deezer.getUserData&input=3&api_version=1.0&api_token="
-            val req = Request.Builder().url(url)
-                .header("Cookie", "arl=$arl").header("User-Agent", ua).build()
-            http.newCall(req).execute().use { r ->
-                if (!r.isSuccessful) return@runCatching null
-                val sid = r.headers("Set-Cookie").firstNotNullOfOrNull { c ->
-                    Regex("sid=([^;]+)").find(c)?.groupValues?.get(1)
-                } ?: ""
-                val res = parseJsonObject(r.body.string())?.optObject("results")
-                    ?: return@runCatching null
-                val apiToken = res.optString("checkForm")
-                if (apiToken.isBlank() || apiToken == "0") return@runCatching null // invalid/expired ARL
-                val opts = res.optObject("USER")?.optObject("OPTIONS")
-                val license = opts?.optString("license_token") ?: ""
-                // Free account -> web_hq/web_lossless = false (30s preview only). Premium/HiFi -> true.
-                val hq = opts?.optBoolean("web_hq") == true || opts?.optBoolean("mobile_hq") == true
-                val lossless = opts?.optBoolean("web_lossless") == true || opts?.optBoolean("mobile_lossless") == true
-                Session(apiToken, license, arl, sid, hq, lossless)
+            val r = http.get(url) {
+                header(HttpHeaders.Cookie, "arl=$arl")
+                header(HttpHeaders.UserAgent, ua)
             }
+            if (!r.status.isSuccess()) return@runCatching null
+            val sid = r.headers.getAll(HttpHeaders.SetCookie).orEmpty().firstNotNullOfOrNull { c ->
+                Regex("sid=([^;]+)").find(c)?.groupValues?.get(1)
+            } ?: ""
+            val res = parseJsonObject(r.bodyAsText())?.optObject("results")
+                ?: return@runCatching null
+            val apiToken = res.optString("checkForm")
+            if (apiToken.isBlank() || apiToken == "0") return@runCatching null // invalid/expired ARL
+            val opts = res.optObject("USER")?.optObject("OPTIONS")
+            val license = opts?.optString("license_token") ?: ""
+            // Free account -> web_hq/web_lossless = false (30s preview only). Premium/HiFi -> true.
+            val hq = opts?.optBoolean("web_hq") == true || opts?.optBoolean("mobile_hq") == true
+            val lossless = opts?.optBoolean("web_lossless") == true || opts?.optBoolean("mobile_lossless") == true
+            Session(apiToken, license, arl, sid, hq, lossless)
         }.getOrNull()
     }
 
@@ -104,9 +112,8 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
         // Fallback: search by name + artist, validating duration (±5s).
         runCatching {
             val q = (track.name + " " + track.artists.joinToString(" ") { it.name }).trim()
-            val url = "https://api.deezer.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8") + "&limit=5"
-            val body = http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute()
-                .use { if (it.isSuccessful) it.body.string() else null } ?: return@runCatching null
+            val url = "https://api.deezer.com/search?q=" + formUrlEncode(q) + "&limit=5"
+            val body = textOf(url) ?: return@runCatching null
             val arr = parseJsonObject(body)?.optArray("data") ?: return@runCatching null
             val targetSec = track.durationMs / 1000
             var best: String? = null
@@ -120,10 +127,15 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
         }.getOrNull()
     }
 
-    private fun byIsrc(isrc: String): String? = runCatching {
+    /** The body of a GET to Deezer's public API, or null when it does not answer 2xx. */
+    private suspend fun textOf(url: String): String? {
+        val r = http.get(url) { header(HttpHeaders.UserAgent, ua) }
+        return if (r.status.isSuccess()) r.bodyAsText() else null
+    }
+
+    private suspend fun byIsrc(isrc: String): String? = runCatching {
         val url = "https://api.deezer.com/track/isrc:$isrc"
-        val body = http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute()
-            .use { if (it.isSuccessful) it.body.string() else null } ?: return null
+        val body = textOf(url) ?: return null
         val o = parseJsonObject(body) ?: error("not a JSON object")
         if (o.containsKey("error")) null else o.optLong("id").takeIf { it > 0 }?.toString()
     }.getOrNull()
@@ -132,13 +144,15 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
     private suspend fun trackToken(session: Session, deezerId: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val url = "$gw?method=song.getData&input=3&api_version=1.0&api_token=${session.apiToken}"
-            val payload = buildJsonObject { put("sng_id", deezerId) }.toString().toRequestBody(jsonType)
-            val req = Request.Builder().url(url).post(payload)
-                .header("Cookie", "arl=${session.arl}; sid=${session.sid}").header("User-Agent", ua).build()
-            val res = http.newCall(req).execute().use {
-                if (!it.isSuccessful) return@runCatching null
-                (parseJsonObject(it.body.string()) ?: error("not a JSON object")).optObject("results")
-            } ?: return@runCatching null
+            val payload = buildJsonObject { put("sng_id", deezerId) }.toString()
+            val r = http.post(url) {
+                header(HttpHeaders.Cookie, "arl=${session.arl}; sid=${session.sid}")
+                header(HttpHeaders.UserAgent, ua)
+                setBody(TextContent(payload, jsonType))
+            }
+            if (!r.status.isSuccess()) return@runCatching null
+            val res = (parseJsonObject(r.bodyAsText()) ?: error("not a JSON object")).optObject("results")
+                ?: return@runCatching null
             res.optString("TRACK_TOKEN").takeIf { it.isNotBlank() }
         }.getOrNull()
     }
@@ -158,13 +172,13 @@ class DeezerClient(private val http: OkHttpClient = AudioHttp.client) {
                     })
                 }
                 put("track_tokens", JsonArray(listOf(JsonPrimitive(token))))
-            }.toString().toRequestBody(jsonType)
-            val req = Request.Builder().url("https://media.deezer.com/v1/get_url").post(body)
-                .header("User-Agent", ua).build()
-            val res = http.newCall(req).execute().use {
-                if (!it.isSuccessful) return@runCatching null
-                parseJsonObject(it.body.string()) ?: error("not a JSON object")
+            }.toString()
+            val r = http.post("https://media.deezer.com/v1/get_url") {
+                header(HttpHeaders.UserAgent, ua)
+                setBody(TextContent(body, jsonType))
             }
+            if (!r.status.isSuccess()) return@runCatching null
+            val res = parseJsonObject(r.bodyAsText()) ?: error("not a JSON object")
             val media = res.optArray("data")?.optObject(0)?.optArray("media")?.optObject(0)
                 ?: return@runCatching null
             val url = media.optArray("sources")?.optObject(0)?.optString("url")

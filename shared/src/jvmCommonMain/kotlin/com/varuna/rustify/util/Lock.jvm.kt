@@ -1,4 +1,4 @@
-// sharedUi/src/desktopMain/kotlin/com/varuna/rustify/util/Lock.desktop.kt
+// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/util/Lock.jvm.kt
 package com.varuna.rustify.util
 
 actual class Lock actual constructor()

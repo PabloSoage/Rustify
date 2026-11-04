@@ -9,14 +9,18 @@ import com.varuna.rustify.bridge.optLong
 import com.varuna.rustify.bridge.optString
 import com.varuna.rustify.bridge.parseJsonObject
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.byteSize
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.fileExists
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.io.File
 
 /**
  * One installed addon, wearing the [AudioSourceProvider] interface.
@@ -74,14 +78,14 @@ class AddonAudioSource(
 
     override suspend fun downloadTo(
         track: FullTrack,
-        dst: File,
+        dst: AppFile,
         onProgress: (Int) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<AppFile> = withContext(Dispatchers.IO) {
         runCatching {
             val info = resolveStreamUrl(track, null).getOrThrow()
-            if (dst.exists()) dst.delete()
+            if (dst.fileExists()) dst.deleteFile()
             AudioHttp.download(info.uri, dst, onProgress)
-            require(dst.exists() && dst.length() > 0) { "addon download produced empty file" }
+            require(dst.fileExists() && dst.byteSize() > 0) { "addon download produced empty file" }
             dst
         }
     }

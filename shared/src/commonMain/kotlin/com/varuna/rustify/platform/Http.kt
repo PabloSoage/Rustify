@@ -14,6 +14,9 @@ import io.ktor.client.HttpClientConfig
  */
 expect fun httpClient(config: HttpClientConfig<*>.() -> Unit = {}): HttpClient
 
+/** [httpClient] through the SOCKS proxy on [host]:[port]. */
+expect fun httpClientOverSocks(host: String, port: Int, config: HttpClientConfig<*>.() -> Unit = {}): HttpClient
+
 /**
  * The `User-Agent` the platform's own HTTP stack sends when the caller sets none — what a request
  * made with `HttpURLConnection` carried before it moved to Ktor, which would otherwise send its own.

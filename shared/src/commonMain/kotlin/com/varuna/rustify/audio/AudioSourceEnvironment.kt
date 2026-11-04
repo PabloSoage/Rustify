@@ -1,4 +1,4 @@
-// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/audio/AudioSourceEnvironment.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/audio/AudioSourceEnvironment.kt
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.platform.KeyValueStore

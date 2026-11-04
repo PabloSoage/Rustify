@@ -9,11 +9,18 @@ import com.varuna.rustify.bridge.optString
 import com.varuna.rustify.bridge.parseJsonArray
 import com.varuna.rustify.bridge.parseJsonObject
 import com.varuna.rustify.platform.Log
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.util.concurrent.TimeUnit
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.platform.httpClient
+import com.varuna.rustify.util.LockedMap
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
+import kotlin.concurrent.Volatile
+import kotlinx.coroutines.IO
 
 /**
  * Discovery and health of Invidious instances.
@@ -56,20 +63,18 @@ object InvidiousInstances {
 
     // Short connect timeout on purpose: a dead instance should cost seconds, not the whole budget of
     // the chain, when the next one on the list may be the one that works.
-    private val plainClient by lazy {
-        OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS).build()
-    }
+    private val plainClient by lazy { httpClient { timeouts(connectMs = 5_000, readMs = 12_000) } }
+
+    /** One per proxy: a client holds a connection pool, and this is asked for one per instance tried. */
+    private val torClients = LockedMap<Pair<String, Int>, HttpClient>()
 
     /** Client for .onion/.i2p instances via SOCKS (Orbot 9050). Best-effort/experimental. */
-    fun torClient(env: AudioSourceEnvironment): OkHttpClient {
+    fun torClient(env: AudioSourceEnvironment): HttpClient {
         val host = InvidiousSettings.torHost(env.settings); val port = InvidiousSettings.torPort(env.settings)
-        return OkHttpClient.Builder()
-            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress(host, port)))
-            .connectTimeout(20, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS)
-            .build()
+        return torClients.getOrPut(host to port) { socksClient(host, port, connectMs = 20_000, readMs = 25_000) }
     }
 
-    fun clientFor(env: AudioSourceEnvironment, inst: Instance): OkHttpClient =
+    fun clientFor(env: AudioSourceEnvironment, inst: Instance): HttpClient =
         if (inst.isAnon && InvidiousSettings.torEnabled(env.settings)) torClient(env) else plainClient
 
     /** Combined list (cached remote + user custom), excluding hidden ones. */
@@ -144,19 +149,16 @@ object InvidiousInstances {
      */
     suspend fun resolveAudio(env: AudioSourceEnvironment, inst: Instance, videoId: String): Resolved? {
         val client = clientFor(env, inst)
-        val started = System.currentTimeMillis()
-        fun elapsed() = System.currentTimeMillis() - started
+        val started = currentTimeMillis()
+        fun elapsed() = currentTimeMillis() - started
 
-        val videos = Request.Builder()
-            .url("${inst.baseUrl}/api/v1/videos/$videoId?fields=adaptiveFormats,formatStreams&local=true")
-            .header("User-Agent", UA)
-            .build()
         val (fromApi, csp) = try {
-            client.newCall(videos).await().use { r ->
-                val body = if (r.isSuccessful) r.body.string() else ""
-                Log.d(TAG, "${inst.baseUrl} api ${r.code}, ${body.length} bytes, ${elapsed()} ms")
-                bestAudioFrom(body, env.decodesOpus) to r.header("Content-Security-Policy")
+            val r = client.get("${inst.baseUrl}/api/v1/videos/$videoId?fields=adaptiveFormats,formatStreams&local=true") {
+                header(HttpHeaders.UserAgent, UA)
             }
+            val body = if (r.status.isSuccess()) r.bodyAsText() else ""
+            Log.d(TAG, "${inst.baseUrl} api ${r.status.value}, ${body.length} bytes, ${elapsed()} ms")
+            bestAudioFrom(body, env.decodesOpus) to r.headers["Content-Security-Policy"]
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -164,8 +166,8 @@ object InvidiousInstances {
             // left to try is this same host, and asking it twice more costs two more connect
             // timeouts: measured, a dead instance ate 10 of the 15 seconds before the live one was
             // reached. It is remembered as down for a while so the next song does not pay again.
-            deadUntil[inst.baseUrl] = System.currentTimeMillis() + DEAD_FOR_MS
-            Log.d(TAG, "${inst.baseUrl} unreachable (${e.javaClass.simpleName}), ${elapsed()} ms")
+            deadUntil[inst.baseUrl] = currentTimeMillis() + DEAD_FOR_MS
+            Log.d(TAG, "${inst.baseUrl} unreachable (${e::class.simpleName}), ${elapsed()} ms")
             return null
         }
         if (fromApi != null) {
@@ -200,13 +202,13 @@ object InvidiousInstances {
      * waiting out [DEAD_FOR_MS] when nothing else works.
      */
     fun inTryOrder(instances: List<Instance>): List<Instance> {
-        val now = System.currentTimeMillis()
+        val now = currentTimeMillis()
         val (down, up) = instances.partition { (deadUntil[it.baseUrl] ?: 0L) > now }
         val preferred = up.sortedByDescending { it.baseUrl == lastGood }
         return preferred + down
     }
 
-    private val deadUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val deadUntil = LockedMap<String, Long>()
     @Volatile private var lastGood: String? = null
     private const val DEAD_FOR_MS = 10 * 60 * 1000L
 
@@ -248,20 +250,18 @@ object InvidiousInstances {
      *
      * A `video/` type is accepted as well, for the muxed `formatStreams` fallback, which carries audio.
      */
-    private suspend fun verified(client: OkHttpClient, url: String, via: String): Resolved? {
-        val req = Request.Builder()
-            .url(url)
-            .header("User-Agent", UA)
-            .header("Range", "bytes=0-0")
-            .build()
-        return client.newCall(req).await().use { r ->
-            val type = r.header("Content-Type").orEmpty()
+    private suspend fun verified(client: HttpClient, url: String, via: String): Resolved? =
+        // The body is not read: a host that ignores the range would otherwise send the whole song.
+        client.prepareGet(url) {
+            header(HttpHeaders.UserAgent, UA)
+            header(HttpHeaders.Range, "bytes=0-0")
+        }.execute { r ->
+            val type = r.headers[HttpHeaders.ContentType].orEmpty()
             val media = type.startsWith("audio/", ignoreCase = true) || type.startsWith("video/", ignoreCase = true)
-            if ((r.code == 200 || r.code == 206) && media) {
-                Resolved(r.request.url.toString(), type.substringBefore(';').trim(), via)
+            if ((r.status.value == 200 || r.status.value == 206) && media) {
+                Resolved(r.call.request.url.toString(), type.substringBefore(';').trim(), via)
             } else null
         }
-    }
 
     /**
      * Where this instance's Companion lives: the `https` origins its CSP allows media or connections
@@ -302,22 +302,21 @@ object InvidiousInstances {
         // desktop, where one preference value holds 8 KiB and the directory is several times that.
         val prefs = env.cacheStore
         val ts = prefs.getLong(K_CACHE_TS, 0L)
-        val fresh = System.currentTimeMillis() - ts < CACHE_TTL_MS
+        val fresh = currentTimeMillis() - ts < CACHE_TTL_MS
         if (!force && fresh) {
             val cached = prefs.getString(K_CACHE)
             if (cached != null) return@withContext parse(cached)
         }
-        // `await`, not `execute`: this runs from `isAvailableFor`, inside the chain's timeout, and a
-        // blocking call would sit there past it (see `Call.await`).
+        // This runs from `isAvailableFor`, inside the chain's timeout (see `AudioHttp`).
         val fetched = runCatching {
-            val req = Request.Builder().url(LIST_URL).header("User-Agent", UA).build()
-            plainClient.newCall(req).await().use { r -> if (r.isSuccessful) r.body.string() else null }
+            val r = plainClient.get(LIST_URL) { header(HttpHeaders.UserAgent, UA) }
+            if (r.status.isSuccess()) r.bodyAsText() else null
         }.getOrNull()
         if (fetched != null) {
             val parsed = parse(fetched)
             if (parsed.isNotEmpty()) {
                 prefs.putString(K_CACHE, fetched)
-                prefs.putLong(K_CACHE_TS, System.currentTimeMillis())
+                prefs.putLong(K_CACHE_TS, currentTimeMillis())
                 parsed
             } else {
                 // Directory reachable but empty/format changed -> fall back to cache, then bootstrap.

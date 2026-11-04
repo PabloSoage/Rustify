@@ -2,17 +2,19 @@ package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.platform.Log
-import kotlinx.coroutines.channels.Channel
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.util.LockedMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Chained fallback engine. Walks the providers by priority (already ordered by
@@ -30,7 +32,7 @@ class AudioSourceChain(
     private val hedgeAfterMs: Long = DEFAULT_HEDGE_MS,
     /** trackId -> provider.id that served the stream last time. Shared between chains so the
      *  cache persists across calls (the registry keeps it). */
-    private val lastGood: ConcurrentHashMap<String, String> = ConcurrentHashMap()
+    private val lastGood: MutableMap<String, String> = LockedMap()
 ) {
 
     /**
@@ -106,7 +108,7 @@ class AudioSourceChain(
                     // directory fetch would hang the whole resolution with no upper bound. A null
                     // result means "not available for this track" -> skip quietly (no error).
                     val budget = p.capabilities.resolveTimeoutMs ?: perProviderTimeoutMs
-                    val startedAt = System.currentTimeMillis()
+                    val startedAt = currentTimeMillis()
                     // The work is awaited rather than run under withTimeout directly. A provider
                     // blocked inside a native call (InnerTube's JNI resolve, in withContext(IO)) has
                     // no suspension point for withTimeout to act on, so the budget used to fire only
@@ -122,7 +124,7 @@ class AudioSourceChain(
                     // whether the ceiling was too low or the provider was hung.
                     Log.d(
                         TAG,
-                        "${p.capabilities.id}: ${System.currentTimeMillis() - startedAt} ms of $budget " +
+                        "${p.capabilities.id}: ${currentTimeMillis() - startedAt} ms of $budget " +
                             (if (r.isSuccess) "ok" else "-> ${r.exceptionOrNull()?.message}")
                     )
                     results.send(p to r)
@@ -171,9 +173,9 @@ class AudioSourceChain(
     /** Downloads to [dst]; same fallback pattern, filtering by capabilities.canDownload. */
     suspend fun downloadTo(
         track: FullTrack,
-        dst: File,
+        dst: AppFile,
         onProgress: (Int) -> Unit = {}
-    ): Result<Pair<String, File>> {
+    ): Result<Pair<String, AppFile>> {
         val trackId = track.id ?: return Result.failure(IllegalStateException("track has no id"))
         val ordered = reorderPreferred(providers, lastGood[trackId])
         val errors = mutableListOf<Throwable>()

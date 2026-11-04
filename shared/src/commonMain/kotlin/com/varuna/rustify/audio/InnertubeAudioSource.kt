@@ -5,14 +5,16 @@ import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
 import com.varuna.rustify.bridge.TrackRef
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.AppFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 
 /** A YouTube audio stream as the core resolves it (`youtube::innertube::InnertubeAudio`). */
 @Serializable
@@ -69,7 +71,7 @@ class InnertubeAudioSource(private val env: AudioSourceEnvironment) : AudioSourc
                 Log.d(TAG, "$videoId via ${audio.client}: itag ${audio.itag} ${audio.mimeType} ${audio.bitrate / 1000} kbps")
                 StreamInfo(
                     uri = audio.url,
-                    expiresAtMs = audio.expiresAtMs ?: (System.currentTimeMillis() + 6 * 60 * 60 * 1000L),
+                    expiresAtMs = audio.expiresAtMs ?: (currentTimeMillis() + 6 * 60 * 60 * 1000L),
                     mimeType = audio.mimeType,
                     // The URL expires; the audio behind it does not.
                     cache = CacheHint(upstreamUrl = audio.url),
@@ -78,7 +80,7 @@ class InnertubeAudioSource(private val env: AudioSourceEnvironment) : AudioSourc
             }
         }
 
-    override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit): Result<File> =
+    override suspend fun downloadTo(track: FullTrack, dst: AppFile, onProgress: (Int) -> Unit): Result<AppFile> =
         Result.failure(UnsupportedOperationException("innertube streams only; downloads use yt-dlp"))
 
     private fun prefsJson(): String {

@@ -3,9 +3,13 @@ package com.varuna.rustify.audio
 import com.varuna.rustify.bridge.AddonRepository
 import com.varuna.rustify.bridge.InstalledAddon
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.util.Lock
+import com.varuna.rustify.util.LockedMap
+import com.varuna.rustify.util.locked
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Central registry of audio backends. Builds the available providers, initializes them
@@ -38,7 +42,9 @@ object AudioSourceRegistry {
     val streamCache: StreamCacheAccess get() = environment?.streamCache ?: StreamCacheAccess.None
 
     /** Shared between stream/download chains: "which provider served this track last time". */
-    private val lastGood = ConcurrentHashMap<String, String>()
+    private val lastGood: MutableMap<String, String> = LockedMap()
+
+    private val lock = Lock()
 
     /**
      * Builds and initializes all providers. Idempotent; safe to call multiple times (the first call
@@ -47,7 +53,7 @@ object AudioSourceRegistry {
      */
     fun initialize(env: AudioSourceEnvironment, ytDlp: AudioSourceProvider?) {
         if (initialized) return
-        synchronized(this) {
+        lock.locked {
             if (initialized) return
             environment = env
             // Catalog order = declaration order. New providers are added here. Invidious and Deezer
@@ -115,7 +121,7 @@ object AudioSourceRegistry {
             .filter { it.enabled && (it.canStream || it.canDownload) }
             .map { AddonAudioSource(it) }
 
-        val rebuiltIds = synchronized(this@AudioSourceRegistry) {
+        val rebuiltIds = lock.locked {
             val builtIn = providers.filter { AddonAudioSource.addonIdOf(it.capabilities.id) == null }
             val rebuilt = builtIn + addonProviders
             providers = rebuilt

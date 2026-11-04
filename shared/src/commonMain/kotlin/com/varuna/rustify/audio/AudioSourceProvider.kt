@@ -1,7 +1,7 @@
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
-import java.io.File
+import com.varuna.rustify.ui.AppFile
 
 /**
  * Audio backend abstraction.
@@ -106,9 +106,9 @@ interface AudioSourceProvider {
     /** Downloads to a temporary file (the caller copies it to SAF). onProgress 0..100. */
     suspend fun downloadTo(
         track: FullTrack,
-        dst: File,
+        dst: AppFile,
         onProgress: (Int) -> Unit = {}
-    ): Result<File>
+    ): Result<AppFile>
 }
 
 /**

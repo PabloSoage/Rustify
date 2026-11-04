@@ -3,9 +3,14 @@ package com.varuna.rustify.audio
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.byteSize
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.fileExists
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Invidious provider. Given the YouTube videoId (already resolved by the core via ISRC/name), it asks
@@ -40,7 +45,7 @@ class InvidiousAudioSource(private val env: AudioSourceEnvironment) : AudioSourc
                 Log.d(TAG, "$videoId via ${inst.baseUrl} (${found.via})")
                 return@runCatching StreamInfo(
                     uri = found.url,
-                    expiresAtMs = System.currentTimeMillis() + 6 * 60 * 60 * 1000L,
+                    expiresAtMs = currentTimeMillis() + 6 * 60 * 60 * 1000L,
                     mimeType = found.mimeType,
                     // Worth caching: the URL dies in six hours, the audio does not.
                     cache = CacheHint(upstreamUrl = found.url)
@@ -50,12 +55,12 @@ class InvidiousAudioSource(private val env: AudioSourceEnvironment) : AudioSourc
         }
     }
 
-    override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
+    override suspend fun downloadTo(track: FullTrack, dst: AppFile, onProgress: (Int) -> Unit): Result<AppFile> = withContext(Dispatchers.IO) {
         runCatching {
             val info = resolveStreamUrl(track, null).getOrThrow()
-            if (dst.exists()) dst.delete()
+            if (dst.fileExists()) dst.deleteFile()
             AudioHttp.download(info.uri, dst, onProgress)
-            require(dst.exists() && dst.length() > 0) { "download produced empty file" }
+            require(dst.fileExists() && dst.byteSize() > 0) { "download produced empty file" }
             dst
         }
     }

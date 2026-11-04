@@ -1,4 +1,4 @@
-// sharedUi/src/commonMain/kotlin/com/varuna/rustify/util/Lock.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/util/Lock.kt
 package com.varuna.rustify.util
 
 /**

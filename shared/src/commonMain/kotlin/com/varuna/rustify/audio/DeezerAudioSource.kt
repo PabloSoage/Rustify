@@ -1,9 +1,13 @@
 package com.varuna.rustify.audio
 
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.byteSize
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.fileExists
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Deezer provider (HiFi/FLAC using the user's ARL).
@@ -80,7 +84,7 @@ class DeezerAudioSource(private val env: AudioSourceEnvironment) : AudioSourcePr
      * same format by two different routes. They are one route now: the proxy already serves plain
      * audio over HTTP, so a download is a download.
      */
-    override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
+    override suspend fun downloadTo(track: FullTrack, dst: AppFile, onProgress: (Int) -> Unit): Result<AppFile> = withContext(Dispatchers.IO) {
         runCatching {
             val arl = DeezerArl.ensureArl(env.settings) ?: error("no working Deezer ARL")
             val media = DeezerClient().resolve(track, arl, DeezerSettings.formatChain(env.settings))
@@ -94,9 +98,9 @@ class DeezerAudioSource(private val env: AudioSourceEnvironment) : AudioSourcePr
                 mime = if (media.format.contains("FLAC", true)) "audio/flac" else "audio/mpeg"
             ) ?: error("the local player server is not running, so Deezer cannot be decrypted")
 
-            if (dst.exists()) dst.delete()
+            if (dst.fileExists()) dst.deleteFile()
             AudioHttp.download(decrypted, dst, onProgress)
-            require(dst.exists() && dst.length() > 0) { "empty Deezer download" }
+            require(dst.fileExists() && dst.byteSize() > 0) { "empty Deezer download" }
             dst
         }
     }

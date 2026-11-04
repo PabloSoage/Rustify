@@ -1,4 +1,4 @@
-// sharedUi/src/desktopMain/kotlin/com/varuna/rustify/ui/AppFiles.desktop.kt
+// shared/src/jvmCommonMain/kotlin/com/varuna/rustify/ui/AppFiles.jvm.kt
 package com.varuna.rustify.ui
 
 import java.io.File

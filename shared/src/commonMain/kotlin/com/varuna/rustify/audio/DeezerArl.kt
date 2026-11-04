@@ -2,9 +2,15 @@ package com.varuna.rustify.audio
 
 import com.varuna.rustify.audio.DeezerArl.fetch
 import com.varuna.rustify.platform.KeyValueStore
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 /**
  * Manages ARLs from a URL the user provides.
@@ -50,20 +56,20 @@ object DeezerArl {
         if (sourceUrl.isBlank()) return@withContext FetchResult(emptyList(), "empty url")
         val url = sourceUrl.trim().let { if (it.startsWith("http", true)) it else "https://$it" }
         try {
-            val req = Request.Builder().url(url)
-                .header("User-Agent", BROWSER_UA)
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .header("Accept-Language", "en-US,en;q=0.9,es;q=0.8")
-                .build()
-            AudioHttp.client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext FetchResult(emptyList(), "HTTP ${resp.code}")
-                val html = resp.body.string()
-                if (html.isBlank()) return@withContext FetchResult(emptyList(), "empty body")
-                val entries = parse(html)
-                FetchResult(entries, if (entries.isEmpty()) "0 ARLs (${html.length} chars fetched)" else null)
+            val resp = AudioHttp.client.get(url) {
+                header(HttpHeaders.UserAgent, BROWSER_UA)
+                header(HttpHeaders.Accept, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                header(HttpHeaders.AcceptLanguage, "en-US,en;q=0.9,es;q=0.8")
             }
+            if (!resp.status.isSuccess()) return@withContext FetchResult(emptyList(), "HTTP ${resp.status.value}")
+            val html = resp.bodyAsText()
+            if (html.isBlank()) return@withContext FetchResult(emptyList(), "empty body")
+            val entries = parse(html)
+            FetchResult(entries, if (entries.isEmpty()) "0 ARLs (${html.length} chars fetched)" else null)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            FetchResult(emptyList(), e.message ?: e.javaClass.simpleName)
+            FetchResult(emptyList(), e.message ?: e::class.simpleName.orEmpty())
         }
     }
 

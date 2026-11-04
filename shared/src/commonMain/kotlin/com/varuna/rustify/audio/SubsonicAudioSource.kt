@@ -5,13 +5,17 @@ import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.RustifyJson
 import com.varuna.rustify.platform.KeyValueStore
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.ui.AppFile
+import com.varuna.rustify.ui.byteSize
+import com.varuna.rustify.ui.deleteFile
+import com.varuna.rustify.ui.fileExists
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
-import java.io.File
 
 /** Where the user's Subsonic server is (`20`). Kept in the sources' settings (`rustify_settings`). */
 object SubsonicSettings {
@@ -85,12 +89,12 @@ class SubsonicAudioSource(private val env: AudioSourceEnvironment) : AudioSource
         }
     }
 
-    override suspend fun downloadTo(track: FullTrack, dst: File, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
+    override suspend fun downloadTo(track: FullTrack, dst: AppFile, onProgress: (Int) -> Unit): Result<AppFile> = withContext(Dispatchers.IO) {
         runCatching {
             val found = find(track) ?: error("not on the Subsonic server")
-            if (dst.exists()) dst.delete()
+            if (dst.fileExists()) dst.deleteFile()
             AudioHttp.download(found.streamUrl, dst, onProgress)
-            require(dst.exists() && dst.length() > 0) { "download produced empty file" }
+            require(dst.fileExists() && dst.byteSize() > 0) { "download produced empty file" }
             dst
         }
     }

@@ -1,4 +1,4 @@
-// sharedUi/src/commonMain/kotlin/com/varuna/rustify/util/LockedMap.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/util/LockedMap.kt
 package com.varuna.rustify.util
 
 /**

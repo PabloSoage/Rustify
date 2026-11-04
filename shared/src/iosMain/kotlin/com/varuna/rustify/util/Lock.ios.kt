@@ -1,4 +1,4 @@
-// sharedUi/src/iosMain/kotlin/com/varuna/rustify/util/Lock.ios.kt
+// shared/src/iosMain/kotlin/com/varuna/rustify/util/Lock.ios.kt
 package com.varuna.rustify.util
 
 import platform.Foundation.NSRecursiveLock
