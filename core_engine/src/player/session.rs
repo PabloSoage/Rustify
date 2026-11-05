@@ -24,10 +24,10 @@ use crate::env::{Env, EnvError};
 use serde::{Deserialize, Serialize};
 
 /// Where the list lives. Versioned by `env::schema` like everything else persisted.
-const STORAGE_KEY: &str = "continue_listening";
+pub(crate) const STORAGE_KEY: &str = "continue_listening";
 
 /// How many contexts are kept. A row on a home screen, not a history.
-const MAX_SESSIONS: usize = 12;
+pub(crate) const MAX_SESSIONS: usize = 12;
 
 /// Below this, nothing was really started.
 const MIN_PROGRESS_MS: u64 = 15_000;
@@ -105,9 +105,13 @@ impl Session {
 /// its row disappear, not leave the old halfway position sitting there.
 pub async fn record<E: Env>(session: Session) -> Result<(), EnvError> {
     let mut sessions = list::<E>().await;
+    let had = sessions.iter().any(|s| s.id == session.id);
     sessions.retain(|s| s.id != session.id);
     if session.is_resumable() {
         sessions.push(session);
+    } else if had {
+        // Finished: the other devices must drop it too (`places`).
+        super::places::forgotten_now::<E>("session", &session.id).await?;
     }
     // Newest first, then truncated: the cap is on what is kept, not on what is written.
     sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at_ms));
@@ -134,11 +138,15 @@ pub async fn get<E: Env>(id: &str) -> Option<Session> {
 pub async fn forget<E: Env>(id: &str) -> Result<(), EnvError> {
     let mut sessions = list::<E>().await;
     sessions.retain(|s| s.id != id);
+    super::places::forgotten_now::<E>("session", id).await?;
     storage::set_json::<E, _>(STORAGE_KEY, Some(&sessions)).await
 }
 
 /// Drops all of them.
 pub async fn clear<E: Env>() -> Result<(), EnvError> {
+    for s in list::<E>().await {
+        super::places::forgotten_now::<E>("session", &s.id).await?;
+    }
     storage::set_json::<E, _>(STORAGE_KEY, Some(&Vec::<Session>::new())).await
 }
 

@@ -23,14 +23,15 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::search;
 
 /// A track as this comparison needs it, in the shape the bridge sends.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     #[serde(default)]
     pub name: String,
@@ -46,6 +47,8 @@ pub struct Candidate {
 #[derive(Debug, Clone)]
 struct Folded {
     id: String,
+    /// What was handed over, as it was: [`describe`] gives it back.
+    original: Candidate,
     isrc: String,
     duration_ms: u32,
     name_key: String,
@@ -56,6 +59,7 @@ impl Folded {
     fn of(track: &Candidate) -> Self {
         Self {
             id: track.id.clone(),
+            original: track.clone(),
             isrc: track.isrc.trim().to_string(),
             duration_ms: track.duration_ms,
             name_key: normalise(&track.name),
@@ -175,8 +179,32 @@ pub fn find(spotify: &Candidate) -> Option<String> {
         .map(|candidate| candidate.id.clone())
 }
 
+/// What the library holds for the file [id]: its tags as they were handed over, or `None` when it
+/// is not in the library (or none was handed over). The other half of [`find`]: a song described
+/// here on one device is found by [`find`] on another that has it (`player::places`).
+pub fn describe(id: &str) -> Option<Candidate> {
+    let guard = slot().lock().ok()?;
+    guard.iter().find(|c| c.id == id).map(|c| c.original.clone())
+}
+
+/// Are these two descriptions the same recording, by the same rule [`find`] uses?
+pub fn same_song(a: &Candidate, b: &Candidate) -> bool {
+    is_match(&Folded::of(a), &Folded::of(b))
+}
+
 // There is no `forget`: `put` with an empty list is the same thing, and T10 was a reminder that a
 // second way to do something nobody calls is just code to keep.
+
+// The registry is process-wide, so every test that touches it must set it up itself rather than
+// inherit whatever ran before. `put` replaces, which is what makes that cheap — but tests run on
+// parallel threads, so one test's `put` could land between another's `put` and `find` (CI failed
+// that way on 2026-10-21). Each test that puts holds this lock for its whole body, here and in
+// `player::places`.
+#[cfg(test)]
+pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[cfg(test)]
 mod tests {
@@ -197,13 +225,8 @@ mod tests {
         t
     }
 
-    // The registry is process-wide, so every test that touches it must set it up itself rather than
-    // inherit whatever ran before. `put` replaces, which is what makes that cheap — but tests run on
-    // parallel threads, so one test's `put` could land between another's `put` and `find` (CI failed
-    // that way on 2026-10-21). Each test holds this lock for its whole body.
     fn serial() -> std::sync::MutexGuard<'static, ()> {
-        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        test_lock()
     }
 
     #[test]

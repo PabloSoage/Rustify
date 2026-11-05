@@ -134,6 +134,15 @@ expect object NativeEngine {
     /** Forgets the place in a track, because the person chose to start it over. */
     suspend fun forgetTrackPlace(trackId: String): String
 
+    /** This device's places (contexts, long tracks, their removals) as they travel in the backup. */
+    suspend fun placesExport(): String
+
+    /** Two backups' places as one, newest per place. Memory only. */
+    fun placesMerge(a: String, b: String): String
+
+    /** Takes in a backup's places, in this device's ids; answers `{sessions, bookmarks, skipped}`. */
+    suspend fun placesApply(blockJson: String): String
+
     // ── Local search. Memory only, safe from the composition. ──────────────────────────────────
 
     /** Hands a list over to be folded and kept under [name]; `[{"id":…,"fields":[…]}]`, most important field first. */

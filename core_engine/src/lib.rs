@@ -794,6 +794,56 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetTrackPl
     })
 }
 
+/// JNI Bridge: this device's places — contexts and long tracks, with their removals — as they
+/// travel in the backup (`player::places`).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesExportNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let block = get_runtime().block_on(player::places::export::<env::android::AndroidEnv>());
+        serde_json::to_string(&block).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+/// JNI Bridge: two backups' places as one, newest per place. A block that does not parse is none.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesMergeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    a: JString<'local>,
+    b: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let a = a.mutf8_chars(env)?.to_string();
+        let b = b.mutf8_chars(env)?.to_string();
+        let merged = player::places::merge(
+            serde_json::from_str(&a).unwrap_or_default(),
+            serde_json::from_str(&b).unwrap_or_default(),
+        );
+        serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+/// JNI Bridge: takes in a backup's places, in this device's ids; answers what it did.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesApplyNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    block: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let block = block.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<player::places::Block>(&block) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(block) => serialize_result(
+                get_runtime().block_on(player::places::apply::<env::android::AndroidEnv>(block)),
+            ),
+        }
+    })
+}
+
 // =============================================================================
 // LINKS (point F)
 // =============================================================================

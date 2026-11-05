@@ -3,6 +3,7 @@ package com.varuna.rustify.sync
 import android.annotation.SuppressLint
 import android.content.Context
 import android.provider.Settings
+import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.YtMusicRepository
 import com.varuna.rustify.metrics.ListeningTracker
@@ -23,6 +24,9 @@ import java.io.File
  *    (same `rustify-local-user-data` schema as the manual settings export).
  *  - **ytm**      — YouTube Music library ([YtMusicRepository.exportJson] → `ytm_library.json`).
  *  - **metrics**  — raw listening events (kept by the core since 4.0, via [ListeningTracker]).
+ *  - **places**   — where you left off: "Continue listening" and long tracks, with what was dismissed
+ *    or finished (5.x). The core builds, merges and applies it (`player::places`); a local file
+ *    travels as its tags and only lands on a device whose library has the same song.
  *
  * Format:
  * ```jsonc
@@ -95,6 +99,10 @@ object RustifyBackup {
         // ytm: full library object (favorites/playlists/savedAlbums/savedArtists)
         root.put("ytm", readObject(File(dir, F_YTM)) ?: JSONObject())
 
+        // places: the core's block, with local songs described by their tags.
+        SpotifyRepository.registerLocalLibrary(dir)
+        root.put("places", runCatching { JSONObject(NativeEngine.placesExport()) }.getOrDefault(JSONObject()))
+
         // metrics: array of raw events
         root.put("metrics", ListeningTracker.loadEventsJson(com.varuna.rustify.ui.AndroidAppPlatform(ctx)).let {
             runCatching { JSONArray(it) }.getOrDefault(JSONArray())
@@ -121,6 +129,11 @@ object RustifyBackup {
             Category("ytm_albums", "YT Music: álbumes", ytm.optJSONArray("savedAlbums")?.length() ?: 0),
             Category("ytm_artists", "YT Music: artistas", ytm.optJSONArray("savedArtists")?.length() ?: 0),
             Category("metrics", "Eventos de escucha", c.optJSONArray("metrics")?.length() ?: 0),
+            Category(
+                "places", "Seguir escuchando",
+                (c.optJSONObject("places")?.optJSONArray("sessions")?.length() ?: 0) +
+                    (c.optJSONObject("places")?.optJSONArray("bookmarks")?.length() ?: 0)
+            ),
         )
     }
 
@@ -172,6 +185,13 @@ object RustifyBackup {
             ytmRepo?.reloadLibrary()
         }
 
+        // places — merged with this device's by the core, in this device's ids.
+        container.optJSONObject("places")?.let { places ->
+            SpotifyRepository.registerLocalLibrary(dir)
+            runCatching { NativeEngine.placesApply(places.toString()) }
+                .onFailure { android.util.Log.w("RustifyBackup", "places not applied", it) }
+        }
+
         // metrics — dedupe import (union, not replace)
         container.optJSONArray("metrics")?.let { metrics ->
             runCatching {
@@ -194,7 +214,8 @@ object RustifyBackup {
      *    favorite is never lost to a sync).
      *  - **metrics**: union with dedupe by (trackId, startedAt, listenedMs).
      *
-     * Deletions are NOT propagated (no tombstones in v1, open decision).
+     * Deletions are NOT propagated (no tombstones in v1, open decision), except in **places**,
+     *    whose removals are dated and travel (`player::places`).
      */
     fun merge(a: JSONObject, b: JSONObject): JSONObject {
         val aNewer = a.optLong("updatedAt") >= b.optLong("updatedAt")
@@ -240,6 +261,19 @@ object RustifyBackup {
 
         // metrics — union with dedupe
         out.put("metrics", mergeMetrics(a.optJSONArray("metrics"), b.optJSONArray("metrics")))
+
+        // places — newest per place, removals respected (the core's rule, `player::places`).
+        out.put(
+            "places",
+            runCatching {
+                JSONObject(
+                    NativeEngine.placesMerge(
+                        (a.optJSONObject("places") ?: JSONObject()).toString(),
+                        (b.optJSONObject("places") ?: JSONObject()).toString()
+                    )
+                )
+            }.getOrDefault(JSONObject())
+        )
 
         return out
     }

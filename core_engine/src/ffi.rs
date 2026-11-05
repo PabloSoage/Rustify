@@ -155,6 +155,9 @@ pub const METHODS: &[&str] = &[
     "recordTrackPlace",
     "trackPlace",
     "forgetTrackPlace",
+    "placesExport",
+    "placesMerge",
+    "placesApply",
     "markListened",
     "listenedState",
     "forgetListened",
@@ -449,6 +452,24 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 .block_on(player::bookmark::forget::<env::android::AndroidEnv>(&text(args, "trackId")))
                 .map(|_| crate::ok_result()),
         ),
+        // placesExportNative
+        "placesExport" => {
+            let block = get_runtime().block_on(player::places::export::<env::android::AndroidEnv>());
+            serde_json::to_string(&block).unwrap_or_else(|_| "{}".to_string())
+        }
+        // placesMergeNative — `a` and `b` are blocks; one that does not parse is none.
+        "placesMerge" => {
+            let block = |key: &str| serde_json::from_value(args[key].clone()).unwrap_or_default();
+            let merged = player::places::merge(block("a"), block("b"));
+            serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_string())
+        }
+        // placesApplyNative
+        "placesApply" => match serde_json::from_value::<player::places::Block>(args["block"].clone()) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(block) => serialize_result(
+                get_runtime().block_on(player::places::apply::<env::android::AndroidEnv>(block)),
+            ),
+        },
         // markListenedNative — `queue` is the context's track ids in order, sent every time.
         "markListened" => serialize_result(
             get_runtime()

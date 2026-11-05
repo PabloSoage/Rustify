@@ -136,16 +136,32 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
 
         private fun encodeTracks(tracks: List<FullTrack>): String = RustifyJson.encodeToString(trackList, tracks)
 
-        private fun findLocalMatchFromDisk(filesDir: AppFile, track: FullTrack): FullTrack? {
+        /** The local library as last scanned, from its cache on disk; empty when there is none. */
+        fun cachedLocalTracks(filesDir: AppFile): List<FullTrack> {
             if (memoryCacheLocalTracks == null) {
                 try {
-                    val jsonStr = filesDir.child("local_music_cache.json").readTextOrNull() ?: return null
+                    val jsonStr = filesDir.child("local_music_cache.json").readTextOrNull() ?: return emptyList()
                     memoryCacheLocalTracks = decodeTracks(jsonStr)
                 } catch (e: Exception) {
-                    return null
+                    return emptyList()
                 }
             }
-            val pool = memoryCacheLocalTracks ?: return null
+            return memoryCacheLocalTracks ?: emptyList()
+        }
+
+        /**
+         * Hands the local library to the core's matcher now — the screen's list when it is loaded,
+         * the scan's cache when not — for what describes a local song by its tags or looks one up
+         * (a backup's places, `player::places`).
+         */
+        fun registerLocalLibrary(filesDir: AppFile) {
+            val loaded = instance?.localTracks?.toList().orEmpty()
+            if (loaded.isNotEmpty()) LocalMatcher.ensureRegistered("repo", loaded)
+            else LocalMatcher.ensureRegistered("disk", cachedLocalTracks(filesDir))
+        }
+
+        private fun findLocalMatchFromDisk(filesDir: AppFile, track: FullTrack): FullTrack? {
+            val pool = cachedLocalTracks(filesDir).ifEmpty { return null }
             LocalMatcher.ensureRegistered("disk", pool)
             val id = LocalMatcher.matchId(track) ?: return null
             return pool.firstOrNull { it.id == id }

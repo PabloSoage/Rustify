@@ -210,6 +210,27 @@ actual object NativeEngine {
 
     /** Forgets the place in a track, because the person chose to start it over. */
     actual suspend fun forgetTrackPlace(trackId: String): String = io { forgetTrackPlaceNative(trackId) }
+
+    private external fun placesExportNative(): String
+
+    /**
+     * This device's places — "continue listening" and long tracks, with what was removed — as they
+     * travel in the backup. A file on the device travels as its tags (`player::places`).
+     */
+    actual suspend fun placesExport(): String = io { placesExportNative() }
+
+    private external fun placesMergeNative(a: String, b: String): String
+
+    /** Two backups' places as one, newest per place. Memory only. */
+    actual fun placesMerge(a: String, b: String): String = placesMergeNative(a, b)
+
+    private external fun placesApplyNative(blockJson: String): String
+
+    /**
+     * Takes in a backup's places, written here in this device's ids; a place whose songs this
+     * device does not have is left out. Answers `{sessions, bookmarks, skipped}`.
+     */
+    actual suspend fun placesApply(blockJson: String): String = io { placesApplyNative(blockJson) }
     // =====================================================================
     // LOCAL SEARCH (point J)
     // =====================================================================

@@ -31,6 +31,7 @@ extern "C" {
  *   playerReduce {state, action}       arrangeReleases {entries, nowMs}
  *   recordListening {session}          listContinueListening {}           forgetListening {id}
  *   recordTrackPlace {trackId, positionMs, durationMs}  trackPlace {trackId}  forgetTrackPlace {trackId}
+ *   placesExport {}  placesMerge {a, b}  placesApply {block}   (blocks are JSON objects, player::places)
  *   markListened {contextId, queue, trackId}  listenedState {contextId, queue}  forgetListened {contextId}
  *   recordPlay {event}  importPlayHistory {history}  allPlays {}
  *   playStats {fromMs, toMs, zone}     topCsv {fromMs, toMs, kind}

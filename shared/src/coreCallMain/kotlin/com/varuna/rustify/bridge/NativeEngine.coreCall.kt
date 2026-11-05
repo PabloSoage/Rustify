@@ -177,6 +177,15 @@ actual object NativeEngine {
 
     actual suspend fun forgetTrackPlace(trackId: String): String = io("forgetTrackPlace") { put("trackId", trackId) }
 
+    actual suspend fun placesExport(): String = io("placesExport")
+
+    actual fun placesMerge(a: String, b: String): String = now("placesMerge") {
+        put("a", json(a))
+        put("b", json(b))
+    }
+
+    actual suspend fun placesApply(blockJson: String): String = io("placesApply") { put("block", json(blockJson)) }
+
     // ── Local search ────────────────────────────────────────────────────────────────────────────
 
     actual fun searchIndexNative(name: String, itemsJson: String): String = now("searchIndex") {

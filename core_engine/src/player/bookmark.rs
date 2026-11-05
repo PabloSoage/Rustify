@@ -14,7 +14,7 @@ use crate::env::storage;
 use crate::env::{Env, EnvError};
 use serde::{Deserialize, Serialize};
 
-const STORAGE_KEY: &str = "track_bookmarks";
+pub(crate) const STORAGE_KEY: &str = "track_bookmarks";
 
 /// Tracks shorter than this are songs; nobody wants "resume at 2:10" on a song.
 pub const MIN_DURATION_MS: u64 = 20 * 60_000;
@@ -26,7 +26,7 @@ const MIN_PROGRESS_MS: u64 = 60_000;
 const FINISHED_MARGIN_MS: u64 = 30_000;
 
 /// A cap on what is kept, oldest dropped first. Five hundred long tracks is years of podcasts.
-const MAX_BOOKMARKS: usize = 500;
+pub(crate) const MAX_BOOKMARKS: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bookmark {
@@ -67,6 +67,9 @@ pub async fn record<E: Env>(track_id: &str, position_ms: u64, duration_ms: u64) 
         // Nothing stored and nothing to store: a song ending is the common case, and it must not
         // cost a write.
         return Ok(());
+    } else {
+        // Finished (or rewound to the start): the other devices must drop it too (`places`).
+        super::places::forgotten_now::<E>("bookmark", track_id).await?;
     }
     marks.sort_by_key(|m| std::cmp::Reverse(m.updated_at_ms));
     marks.truncate(MAX_BOOKMARKS);
@@ -90,6 +93,7 @@ pub async fn forget<E: Env>(track_id: &str) -> Result<(), EnvError> {
     if marks.len() == before {
         return Ok(());
     }
+    super::places::forgotten_now::<E>("bookmark", track_id).await?;
     storage::set_json::<E, _>(STORAGE_KEY, Some(&marks)).await
 }
 
