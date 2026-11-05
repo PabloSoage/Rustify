@@ -200,7 +200,7 @@ class EnginePlayerControllerCastTest {
 
     @Test
     fun mockRendererFetchesFileBytesAndPlaysNextTrackSilentlyOnLocalEngine() = runBlocking {
-        if (!isCoreAvailable()) return@runBlocking
+        org.junit.Assume.assumeTrue("no desktop core in this build (-Prustify.desktop=true)", isCoreAvailable())
         val platform = DesktopAppPlatform("ES")
         platform.prefs("rustify_settings").putBoolean("settings_casting_enabled", true)
         val backend = TestBackend { localPlayTriggered.set(true) }
