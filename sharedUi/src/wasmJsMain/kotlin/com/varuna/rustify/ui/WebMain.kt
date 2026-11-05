@@ -70,7 +70,8 @@ fun main() {
         scope,
         platform,
         sources = AudioSourceRegistry.asStreamSources(),
-        output = MutableStateFlow(null),
+        // One output, the browser: AutoEq keeps its profile under it (WebAudioSettings).
+        output = MutableStateFlow(WebAudioSettings.OUTPUT_KEY),
         refreshOutput = {},
     )
     val jam = JamSession(scope, JvmJamCore, queue, platform.prefs(), "Browser")

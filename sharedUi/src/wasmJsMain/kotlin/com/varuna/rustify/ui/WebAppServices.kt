@@ -27,11 +27,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 
-private class WebAudioSettings(platform: AppPlatform) : AudioSettings(platform.prefs()) {
+internal class WebAudioSettings(platform: AppPlatform) : AudioSettings(platform.prefs()) {
     override suspend fun refreshOutput() = Unit
 
-    // The browser chooses where the sound goes and does not say.
-    override fun currentOutput(): Output? = null
+    // The browser chooses where the sound goes and does not say: AutoEq's profile is this browser's.
+    override fun currentOutput(): Output = Output(OUTPUT_KEY, "Browser")
+
+    companion object {
+        const val OUTPUT_KEY = "web:browser"
+    }
 }
 
 /**

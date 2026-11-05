@@ -100,8 +100,15 @@ class WebAppShell(private val onLanguage: (String) -> Unit) : AppShell {
                 com.varuna.rustify.ui.screens.AudioSourcesOrderSection()
                 com.varuna.rustify.ui.screens.AutoplayRadioSection()
                 com.varuna.rustify.ui.screens.BlocklistSection()
+                // What Web Audio can do in the page (WebAudioGraph); not normalisation, ReplayGain
+                // or skipping silence, which need the track measured or read first.
+                com.varuna.rustify.ui.screens.EqualizerSection()
+                com.varuna.rustify.ui.screens.AutoEqSection()
+                com.varuna.rustify.ui.screens.StereoToolsSection()
+                com.varuna.rustify.ui.screens.FadeBetweenSongsSection()
                 com.varuna.rustify.ui.screens.PreviousButtonSection()
                 com.varuna.rustify.ui.screens.ShuffleSection()
+                com.varuna.rustify.ui.screens.PauseFadeSection()
                 com.varuna.rustify.ui.screens.DataExportSection()
                 com.varuna.rustify.ui.screens.ListenBrainzSection()
                 com.varuna.rustify.ui.screens.LastFmSection()
