@@ -63,8 +63,16 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
+      # The desktop tests call the real core (the audio lab's tap, the places, local search): the one
+      # :desktopApp builds, so Rust and what its features link against, as in the desktop job.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core_engine -> target/desktop
+          key: desktop
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
       # :sharedUi too: its desktop tests pin how the shared strings read (StringsTest).
-      - run: ./gradlew :shared:desktopTest :sharedUi:desktopTest --no-daemon
+      - run: ./gradlew -Prustify.desktop=true :shared:desktopTest :sharedUi:desktopTest --no-daemon
 
   # The interface in a browser (docs 28): what rustify-server serves as its web root.
   web:
