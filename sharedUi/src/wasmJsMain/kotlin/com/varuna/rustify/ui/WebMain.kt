@@ -85,6 +85,24 @@ fun main() {
         }
     })
     ComposeViewport {
+        // The canvas draws with Compose's own font, which has no kana or kanji: with the browser in
+        // Japanese the whole interface was empty boxes, and so was every Japanese title in any
+        // language. Noto Sans JP (OFL, web-only resources) is preloaded as the fallback before
+        // anything is drawn, since text laid out before it would keep its boxes.
+        val fonts = androidx.compose.ui.platform.LocalFontFamilyResolver.current
+        var fontsReady by remember { mutableStateOf(false) }
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            runCatching {
+                val bytes = com.varuna.rustify.ui.resources.Res.readBytes("files/NotoSansJP-Regular.otf")
+                fonts.preload(
+                    androidx.compose.ui.text.font.FontFamily(
+                        androidx.compose.ui.text.platform.Font("NotoSansJP", bytes)
+                    )
+                )
+            }.onFailure { com.varuna.rustify.platform.Log.w("WebMain", "no Japanese font: ${it.message}") }
+            fontsReady = true
+        }
+        if (!fontsReady) return@ComposeViewport
         var language by remember {
             mutableStateOf(platform.prefs().getString("app_language") ?: "system")
         }

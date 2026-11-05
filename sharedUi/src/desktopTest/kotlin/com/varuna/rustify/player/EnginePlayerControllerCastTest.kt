@@ -88,8 +88,13 @@ class EnginePlayerControllerCastTest {
         override suspend fun forgetTrackPlace(trackId: String) = """{"success":true}"""
     }
 
+    /** Every controller's work in a test, cancelled after it: a cast poll left running could cast the next song again after the session was stopped, and the next test began already casting. */
+    private var testJob = SupervisorJob()
+
     @BeforeTest
     fun setUp() {
+        testJob = SupervisorJob()
+        CastSession.abandon()
         CastSession.testUrlFor = { handle ->
             LocalStreamServer.streamUrl(handle)
         }
@@ -150,6 +155,7 @@ class EnginePlayerControllerCastTest {
 
     @AfterTest
     fun tearDown() = runBlocking {
+        testJob.cancel()
         CastSession.testUrlFor = null
         runCatching { CastSession.stop() }
         mockTvServer.stop(0)
@@ -160,7 +166,7 @@ class EnginePlayerControllerCastTest {
         val platform = DesktopAppPlatform("ES")
         platform.prefs("rustify_settings").putBoolean("settings_casting_enabled", true)
         val backend = TestBackend { localPlayTriggered.set(true) }
-        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val scope = CoroutineScope(Dispatchers.Unconfined + testJob)
         val queuePlayer = QueuePlayer(scope, backend)
         val controller = EnginePlayerController(
             player = queuePlayer,
@@ -204,7 +210,7 @@ class EnginePlayerControllerCastTest {
         val platform = DesktopAppPlatform("ES")
         platform.prefs("rustify_settings").putBoolean("settings_casting_enabled", true)
         val backend = TestBackend { localPlayTriggered.set(true) }
-        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val scope = CoroutineScope(Dispatchers.Unconfined + testJob)
         val queuePlayer = QueuePlayer(scope, backend)
         val controller = EnginePlayerController(
             player = queuePlayer,
