@@ -294,6 +294,9 @@ class EnginePlayerController(
 
     // ── Editing the queue ───────────────────────────────────────────────────────────────────────
 
+    /** Ids queued by hand and still waiting, in the order they were added. */
+    private val manual = mutableListOf<String?>()
+
     override fun enqueue(track: FullTrack) = enqueueAll(listOf(track))
 
     override fun enqueueAll(tracks: List<FullTrack>) {
@@ -302,9 +305,13 @@ class EnginePlayerController(
             loadPlaylist(tracks, 0)
             return
         }
-        // Right after the song playing and whatever was queued by hand before, as the phone does:
-        // at the end of the queue here, since the desktop does not tell the two apart yet.
-        player.editQueue(ui.queue + tracks, ui.index)
+        // Right after the song playing and whatever was queued by hand before, as the phone does
+        // (ManualQueue): first in, first out, ahead of the rest of the list.
+        val ids = ui.queue.map { it.id }
+        ManualQueue.reconcile(manual, ids.drop(ui.index + 1))
+        val at = ManualQueue.blockEnd(ids, ui.index, manual).coerceIn(0, ui.queue.size)
+        player.editQueue(ui.queue.take(at) + tracks + ui.queue.drop(at), ui.index)
+        manual += tracks.map { it.id }
         beforeShuffle = beforeShuffle?.plus(tracks)
     }
 
@@ -357,6 +364,8 @@ class EnginePlayerController(
             return
         }
         player.editQueue(ui.queue.subList(0, ui.index + 1) + tracks, ui.index)
+        // What was queued by hand went with the rest, as on the phone.
+        manual.clear()
         forgetShuffle()
     }
 

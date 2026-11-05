@@ -191,6 +191,8 @@
     <string name="playlist_find_clear">消去</string>
     <string name="playlist_find_none">このプレイリストに「%1$s」に一致する曲はありません</string>
     <string name="playlist_find_loading">読み込み中: 最初の %1$d 曲を検索しました</string>
+    <string name="album_find_hint">アルバム内を検索</string>
+    <string name="album_find_none">このアルバムに「%1$s」に一致する曲はありません</string>
     <string name="settings_local_data">ローカルデータ（プレイリスト + お気に入り）</string>
     <string name="settings_export_local_empty">エクスポートするローカルデータがありません</string>
 

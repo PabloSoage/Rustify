@@ -906,15 +906,23 @@ fun PlaylistScreen(
 }
 
 
-/** The "find in playlist" box (issue #2). [searchedOf] is how many songs are loaded yet, while loading. */
+/**
+ * The "find in playlist" box (issue #2), also an album's. [searchedOf] is how many songs are loaded
+ * yet, while loading.
+ */
 @Composable
-private fun FindInPlaylistField(query: String, onQueryChange: (String) -> Unit, searchedOf: Int?) {
+internal fun FindInPlaylistField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searchedOf: Int?,
+    hint: org.jetbrains.compose.resources.StringResource = Res.string.playlist_find_hint
+) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         androidx.compose.material3.OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
             singleLine = true,
-            placeholder = { Text(stringResource(Res.string.playlist_find_hint), color = Color.Gray) },
+            placeholder = { Text(stringResource(hint), color = Color.Gray) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
             trailingIcon = {
                 if (query.isNotEmpty()) {

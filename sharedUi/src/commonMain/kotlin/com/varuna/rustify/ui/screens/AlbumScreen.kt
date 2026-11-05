@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -92,6 +92,25 @@ fun AlbumScreen(
     var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
     // Seed from the in-memory cache so returning from the miniplayer does not trigger a reload.
     var tracks by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] ?: emptyList()) }
+
+    // Find in this album, as in a playlist: ids are positions, so playing a result plays the album
+    // from that song, and the index has its own name per screen.
+    var findQuery by remember(albumId) { mutableStateOf("") }
+    val findIndex = remember(albumId) { "${com.varuna.rustify.util.LocalSearch.ALBUM}:${kotlin.uuid.Uuid.random()}" }
+    val indexedTracks = remember(tracks) {
+        tracks.withIndex().toList().also { all ->
+            com.varuna.rustify.util.LocalSearch.index(
+                findIndex, all, { it.index.toString() },
+                { (_, t) -> listOf(t.name) + t.artists.map { a -> a.name } }
+            )
+        }
+    }
+    val shownTracks = remember(indexedTracks, findQuery) {
+        com.varuna.rustify.util.LocalSearch.filter(findIndex, indexedTracks, findQuery) { it.index.toString() }
+    }
+    androidx.compose.runtime.DisposableEffect(albumId) {
+        onDispose { com.varuna.rustify.util.LocalSearch.forget(findIndex) }
+    }
 
     // Which of these have been heard through — point I. Keyed on the track that is playing as well
     // as on the list, because a track finishing while this screen is open is written by the player
@@ -492,7 +511,27 @@ fun AlbumScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(tracks, key = { index, track -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
+                        if (tracks.size > 1) {
+                            item(key = "find_in_album") {
+                                FindInPlaylistField(
+                                    query = findQuery,
+                                    onQueryChange = { findQuery = it },
+                                    searchedOf = if (hasMore) tracks.size else null,
+                                    hint = Res.string.album_find_hint
+                                )
+                            }
+                        }
+                        if (shownTracks.isEmpty() && findQuery.isNotBlank()) {
+                            item(key = "find_no_results") {
+                                Text(
+                                    stringResource(Res.string.album_find_none, findQuery),
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
+                                )
+                            }
+                        }
+                        // `index` stays the song's place in the whole album, as in a playlist.
+                        items(shownTracks, key = { (index, track) -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { (index, track) ->
                             // Request more data when we reach near the end of the list
                             if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
                                 LaunchedEffect(index) {

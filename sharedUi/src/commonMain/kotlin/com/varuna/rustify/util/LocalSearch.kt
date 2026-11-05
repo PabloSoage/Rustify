@@ -119,4 +119,6 @@ object LocalSearch {
     const val LOCAL = "library.local"
     /** Prefix for a playlist screen's index (issue #2); each screen adds its own suffix. */
     const val PLAYLIST = "playlist.tracks"
+    /** Prefix for an album screen's index, the same way. */
+    const val ALBUM = "album.tracks"
 }

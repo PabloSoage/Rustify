@@ -988,6 +988,8 @@
     <string name="playlist_find_clear">Borrar</string>
     <string name="playlist_find_none">Nada en esta playlist coincide con «%1$s»</string>
     <string name="playlist_find_loading">Aún cargando: buscado en las primeras %1$d canciones</string>
+    <string name="album_find_hint">Buscar en el álbum</string>
+    <string name="album_find_none">Nada en este álbum coincide con «%1$s»</string>
     <string name="audio_lab_spec_log">Log</string>
     <string name="audio_lab_spec_mel">Mel</string>
     <string name="audio_lab_key_title">Tonalidad</string>

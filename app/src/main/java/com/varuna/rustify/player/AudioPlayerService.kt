@@ -3292,22 +3292,15 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * and was not: it compared `list[i]` with `pending[p]` and gave up at the first difference, so a
      * single entry out of place — one the user dragged, one left behind by a jump — answered "there
      * is no manual block". Every later addition then landed immediately after the current track, in
-     * front of everything queued before it, and the manual queue played newest-first.
+     * front of everything queued before it, and the manual queue played newest-first. The multiset
+     * walk still stopped at the first row not owed, which is the same failure one step later (5.0):
+     * see [ManualQueue.blockEnd].
      *
      * Membership is only meaningful while [pending] describes the live queue, which is what
      * [reconcileUserQueue] is for.
      */
-    private fun manualBlockEnd(list: List<FullTrack>, currentIdx: Int, pending: List<FullTrack>): Int {
-        val owed = pending.mapNotNull { it.id }.toMutableList()
-        var i = currentIdx + 1
-        while (i < list.size && owed.isNotEmpty()) {
-            val id = list[i].id ?: break
-            // remove() takes out one occurrence, so a song queued twice extends the block twice.
-            if (!owed.remove(id)) break
-            i++
-        }
-        return i
-    }
+    private fun manualBlockEnd(list: List<FullTrack>, currentIdx: Int, pending: List<FullTrack>): Int =
+        ManualQueue.blockEnd(list.map { it.id }, currentIdx, pending.map { it.id })
 
     /**
      * Drops from [userQueue] every track that is no longer waiting to be played.
@@ -3348,7 +3341,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      */
     private fun consumeFromUserQueue(trackId: String?) {
         val id = trackId ?: return
-        synchronized(userQueue) { userQueue.removeAll { it.id == id } }
+        synchronized(userQueue) { ManualQueue.consume(userQueue, id) { it.id } }
     }
 
     /**

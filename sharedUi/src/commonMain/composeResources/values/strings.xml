@@ -322,6 +322,8 @@
     <string name="playlist_find_clear">Clear</string>
     <string name="playlist_find_none">Nothing in this playlist matches "%1$s"</string>
     <string name="playlist_find_loading">Still loading: searched the first %1$d songs</string>
+    <string name="album_find_hint">Find in album</string>
+    <string name="album_find_none">Nothing in this album matches "%1$s"</string>
     <string name="settings_local_data">Local data (playlists + favorites)</string>
     <string name="settings_export_local_empty">No local data to export</string>
     
