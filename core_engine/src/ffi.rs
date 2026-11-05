@@ -1154,8 +1154,8 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         // registerLocalFileNative — `{"path":…, "mime":…}` -> `{"handle":…}`
         "registerLocalFile" => {
             let path = text(args, "path");
-            let mime = opt_text(args, "mime");
-            match server::register_file::<env::android::AndroidEnv>(&path, mime) {
+            let mime = args["mime"].as_str();
+            match server::register_file::<env::android::AndroidEnv>(&path, mime.map(|s| s.to_string())) {
                 Some(handle) => serde_json::json!({ "handle": handle }).to_string(),
                 None => serde_json::json!({ "handle": null }).to_string(),
             }
