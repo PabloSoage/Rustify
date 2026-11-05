@@ -6,13 +6,16 @@
   <meta name="theme-color" content="#121212">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Rustify</title>
-  <link rel="manifest" href="manifest.webmanifest">
+  <!-- With the session cookie: a manifest is fetched without credentials, and the server would answer the login page. -->
+  <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <style>
     html, body { margin: 0; height: 100%; background: #121212; overflow: hidden; }
     #loading { color: #b0b0b0; font: 15px system-ui, sans-serif; text-align: center; padding-top: 40vh; }
   </style>
   <script src="rustify.js" defer></script>
+  <!-- Installable as an app where the browser allows a service worker (https, or localhost): sw.js keeps the interface only. -->
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});</script>
 </head>
 <body>
   <div id="loading">Rustify</div>
