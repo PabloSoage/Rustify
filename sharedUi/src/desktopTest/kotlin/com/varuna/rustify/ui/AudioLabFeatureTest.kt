@@ -38,6 +38,9 @@ class AudioLabFeatureTest {
 
     @Test
     fun audioLabTapReturnsNonZeroSamplesWhenEnginePlays() = runBlocking {
+        // The tap is what reaches the device: a machine with none (CI's Linux runners, "Unknown PCM
+        // default") has nothing to read. Skipped there, saying so; it runs wherever there is an output.
+        org.junit.Assume.assumeTrue("no audio output on this machine", com.varuna.rustify.engine.RustAudioEngine.outputDevice() != null)
         val platform = DesktopAppPlatform("ES")
         val services = DesktopAppServices(platform)
         val audioLab = services.audioLab
