@@ -30,6 +30,8 @@ class AndroidAppServices(context: Context) : AppServices {
 
     override val travel: com.varuna.rustify.travel.TravelPlatform = com.varuna.rustify.travel.AndroidTravelPlatform(app)
 
+    override val driveAuth: com.varuna.rustify.sync.DriveAuth = com.varuna.rustify.sync.AndroidDriveAuth(app)
+
     override fun bpmCached(trackId: String): Float? = BpmAnalyzer.cached(app, trackId)
     override fun bpmScale(trackId: String, factor: Float): Float? = BpmAnalyzer.scale(app, trackId, factor)
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? =

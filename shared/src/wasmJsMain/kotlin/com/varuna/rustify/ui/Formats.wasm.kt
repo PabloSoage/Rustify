@@ -39,6 +39,9 @@ private fun yearNow(): Int = js("new Date().getFullYear()")
 
 private fun hourNow(): Int = js("new Date().getHours()")
 
+private fun dateTimeOf(tag: String, ms: Double): String =
+    js("new Date(ms).toLocaleString(tag, { dateStyle: 'medium', timeStyle: 'medium' })")
+
 private fun todayNow(): String =
     js("(d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))(new Date())")
 
@@ -97,6 +100,8 @@ actual fun weekdayName(weekday: Int): String = nameOfWeekday(WebLocale.tag, week
 actual fun currentYear(): Int = yearNow()
 
 actual fun todayIso(): String = todayNow()
+
+actual fun formatDateTime(epochMs: Long): String = dateTimeOf(WebLocale.tag, epochMs.toDouble())
 
 actual fun currentHourOfDay(): Int = hourNow()
 

@@ -111,41 +111,8 @@ class AndroidAppShell(context: Context) : AppShell {
             }
         }
 
-        // Silent auto-sync on app open: only if the account is linked, the "auto-sync" toggle is on,
-        // and a token is available WITHOUT prompting for consent (background refresh). If it needs a
-        // consent UI, it is deferred until the user taps "Sync now" in Settings. Never shows a dialog
-        // here.
-        LaunchedEffect(Unit) {
-            val appCtx = context.applicationContext
-            if (com.varuna.rustify.sync.DriveSyncPrefs.isLinked(appCtx) &&
-                com.varuna.rustify.sync.DriveSyncPrefs.isAutoSync(appCtx)
-            ) {
-                val drive = com.varuna.rustify.sync.GoogleDriveSync(appCtx)
-                val syncWith = { token: String ->
-                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        runCatching {
-                            com.varuna.rustify.sync.DriveSyncManager(appCtx, drive, spotifyRepo, ytmRepo).syncNow(token)
-                        }
-                    }
-                    Unit
-                }
-                if (com.varuna.rustify.sync.DriveSyncPrefs.authMethod(appCtx) == "browser") {
-                    // Browser — silent refresh with AppAuth; if consent is needed it is deferred to Settings.
-                    com.varuna.rustify.sync.AppAuthDriveAuth(appCtx).getFreshToken(
-                        onToken = syncWith,
-                        onNone = { /* requires UI; the user syncs from Settings */ },
-                        onError = { /* silent during auto-sync */ }
-                    )
-                } else {
-                    // Play Services — silent token if consent is cached.
-                    drive.authorize(
-                        onToken = syncWith,
-                        onNeedConsent = { /* defer: requires UI; the user syncs from Settings */ },
-                        onError = { /* silent during auto-sync */ }
-                    )
-                }
-            }
-        }
+        // Silent Drive sync on app open (shared since 5.x: DriveAutoSync says when).
+        com.varuna.rustify.ui.screens.DriveAutoSync(spotifyRepo, ytmRepo)
 
         // Updater overlay: shown over any screen (app or standby), but not over the sign-in, which
         // stands in place of the app; it waits there until the sign-in closes. Read live: the root

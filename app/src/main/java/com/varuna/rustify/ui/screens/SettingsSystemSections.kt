@@ -106,7 +106,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.edit
 import com.varuna.rustify.R
 import com.varuna.rustify.bridge.YtMusicRepository
-import com.varuna.rustify.sync.DriveSyncManager
 import com.varuna.rustify.sync.DriveSyncPrefs
 import com.varuna.rustify.sync.GoogleDriveSync
 import androidx.lifecycle.compose.LifecycleResumeEffect

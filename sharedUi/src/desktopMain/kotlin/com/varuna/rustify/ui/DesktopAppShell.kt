@@ -170,7 +170,10 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
 
     // The phone's check for an update on launch; the release page instead of an install.
     @Composable
-    override fun StartupEffects(host: ShellHost) = DesktopStartupUpdateCheck(host)
+    override fun StartupEffects(host: ShellHost) {
+        DesktopStartupUpdateCheck(host)
+        com.varuna.rustify.ui.screens.DriveAutoSync(host.spotifyRepo, host.ytmRepo)
+    }
 
     @Composable
     override fun SystemBars(landscape: Boolean) = Unit
@@ -201,6 +204,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             DesktopWindowSection()
             com.varuna.rustify.ui.screens.CacheStorageSection()
             com.varuna.rustify.ui.screens.AdvancedDataSection()
+            com.varuna.rustify.ui.screens.DriveSyncSection(host.spotifyRepo, host.ytmRepo)
             return
         }
         if (slot == SettingsSlot.AUDIO) return

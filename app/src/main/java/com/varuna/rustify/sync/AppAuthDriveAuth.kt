@@ -25,7 +25,7 @@ import net.openid.appauth.ResponseTypeValues
  *
  * The Drive REST layer ([GoogleDriveSync]) is token-agnostic, so this backend only produces *access
  * tokens* (and refreshes them). It coexists with the Play Services `AuthorizationClient` backend;
- * the user chooses the method in Settings ([DriveSyncPrefs.authMethod]).
+ * the user chooses the method in Settings ([DriveSyncPrefs.authMethod], [AndroidDriveAuth]).
  *
  * **Configuration without touching code** (`res/values/strings.xml`, `translatable=false`):
  *  - `drive_appauth_client_id`  → Client ID of the **Web** OAuth client.

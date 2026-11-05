@@ -55,6 +55,10 @@ class DesktopAppServices(
 
     override val audioSettings = com.varuna.rustify.player.DesktopAudioSettings(platform.prefs())
 
+    // Only with the OAuth client the build was given (generateDriveClient); without it, no Drive section.
+    override val driveAuth: com.varuna.rustify.sync.DriveAuth? =
+        com.varuna.rustify.sync.DesktopDriveAuth(platform).takeIf { it.isConfigured(com.varuna.rustify.sync.DriveAuth.BROWSER) }
+
     // A file rather than Preferences: the per-song choice is a JSON map that outgrows a Preferences
     // value (8 KB). A local track's own lyrics come from its .lrc or its tag, as on the phone.
     override val lyrics: LyricsChain by lazy {

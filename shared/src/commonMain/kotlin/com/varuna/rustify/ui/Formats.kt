@@ -57,6 +57,9 @@ expect fun currentYear(): Int
 /** Today as "2026-11-05": `SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())`. */
 expect fun todayIso(): String
 
+/** A moment as date and time: `DateFormat.getDateTimeInstance().format(Date(epochMs))`, default locale. */
+expect fun formatDateTime(epochMs: Long): String
+
 /** The hour of the day, 0 to 23, in the system's time zone: `Calendar.HOUR_OF_DAY`. */
 expect fun currentHourOfDay(): Int
 

@@ -73,4 +73,14 @@
     <string name="lyrics_translate_not_json">the model did not answer with the lines asked for</string>
     <string name="lyrics_translate_wrong_count">the model gave back %1$s lines for %2$s</string>
     <string name="travel_pick_origin_first">This device has no location: pick Origin first, then search a place or long-press the map.</string>
+    <string name="drive_kind_mappings">YouTube matches</string>
+    <string name="drive_kind_user_alternatives">Matches you chose</string>
+    <string name="drive_kind_local_playlists">Local playlists</string>
+    <string name="drive_kind_local_favorites">Local favourites</string>
+    <string name="drive_kind_ytm_favorites">YT Music: favourites</string>
+    <string name="drive_kind_ytm_playlists">YT Music: playlists</string>
+    <string name="drive_kind_ytm_albums">YT Music: albums</string>
+    <string name="drive_kind_ytm_artists">YT Music: artists</string>
+    <string name="drive_kind_metrics">Listening events</string>
+    <string name="drive_kind_places">Where you left off</string>
 </resources>

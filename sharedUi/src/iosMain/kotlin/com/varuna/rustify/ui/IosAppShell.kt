@@ -134,7 +134,7 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
     override fun onLoginFailed() = Unit
 
     @Composable
-    override fun StartupEffects(host: ShellHost) = Unit
+    override fun StartupEffects(host: ShellHost) = com.varuna.rustify.ui.screens.DriveAutoSync(host.spotifyRepo, host.ytmRepo)
 
     @Composable
     override fun SystemBars(landscape: Boolean) = Unit
@@ -159,6 +159,7 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
             SettingsSlot.GENERAL -> {
                 com.varuna.rustify.ui.screens.CacheStorageSection()
                 com.varuna.rustify.ui.screens.AdvancedDataSection()
+                com.varuna.rustify.ui.screens.DriveSyncSection(host.spotifyRepo, host.ytmRepo)
             }
             SettingsSlot.AUDIO -> Unit
             SettingsSlot.GENERAL_DJ -> com.varuna.rustify.ui.screens.DjSettingsSection()

@@ -51,7 +51,7 @@ targets:
         FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         # The framework is static and carries the Rust core inside it (cinterop's staticLibraries);
         # these are what that core links against.
-        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -framework CoreLocation -lc++"
+        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -framework CoreLocation -framework AuthenticationServices -lc++"
         ENABLE_BITCODE: NO
         # Compose publishes no iosX64 (sharedUi/build.gradle.kts): only arm64, also in the simulator.
         ARCHS: arm64

@@ -66,6 +66,12 @@ private fun calendar(): NSCalendar = NSCalendar.currentCalendar.also { it.locale
 
 actual fun currentYear(): Int = calendar().component(NSCalendarUnitYear, fromDate = NSDate()).toInt()
 
+actual fun formatDateTime(epochMs: Long): String = NSDateFormatter().apply {
+    locale = IosLocale.current
+    dateStyle = NSDateFormatterMediumStyle
+    timeStyle = NSDateFormatterMediumStyle
+}.stringFromDate(NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0))
+
 actual fun todayIso(): String = NSDateFormatter().apply {
     locale = NSLocale(localeIdentifier = "en_US_POSIX")
     dateFormat = "yyyy-MM-dd"

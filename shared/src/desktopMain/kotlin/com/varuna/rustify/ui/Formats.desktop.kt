@@ -44,6 +44,9 @@ actual fun weekdayName(weekday: Int): String = DateFormatSymbols.getInstance().w
 
 actual fun currentYear(): Int = LocalDate.now().year
 
+actual fun formatDateTime(epochMs: Long): String =
+    java.text.DateFormat.getDateTimeInstance().format(java.util.Date(epochMs))
+
 actual fun todayIso(): String =
     java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
 

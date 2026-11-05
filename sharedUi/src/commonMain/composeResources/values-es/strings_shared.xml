@@ -71,4 +71,14 @@
     <string name="lyrics_translate_not_json">el modelo no ha respondido con las líneas pedidas</string>
     <string name="lyrics_translate_wrong_count">el modelo ha devuelto %1$s líneas de %2$s</string>
     <string name="travel_pick_origin_first">Este dispositivo no tiene ubicación: elige primero Origen y luego busca un lugar o mantén pulsado el mapa.</string>
+    <string name="drive_kind_mappings">Coincidencias de YouTube</string>
+    <string name="drive_kind_user_alternatives">Coincidencias elegidas</string>
+    <string name="drive_kind_local_playlists">Listas locales</string>
+    <string name="drive_kind_local_favorites">Favoritos locales</string>
+    <string name="drive_kind_ytm_favorites">YT Music: favoritos</string>
+    <string name="drive_kind_ytm_playlists">YT Music: listas</string>
+    <string name="drive_kind_ytm_albums">YT Music: álbumes</string>
+    <string name="drive_kind_ytm_artists">YT Music: artistas</string>
+    <string name="drive_kind_metrics">Eventos de escucha</string>
+    <string name="drive_kind_places">Donde lo dejaste</string>
 </resources>

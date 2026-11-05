@@ -154,6 +154,10 @@ class IosAppServices(
     override val logs: LogBook get() = IosLogBook
 
     override val travel: com.varuna.rustify.travel.TravelPlatform get() = com.varuna.rustify.travel.IosTravelPlatform
+
+    // Only with the OAuth client the build was given (generateDriveClient); without it, no Drive section.
+    override val driveAuth: com.varuna.rustify.sync.DriveAuth? =
+        com.varuna.rustify.sync.IosDriveAuth(platform).takeIf { it.isConfigured(com.varuna.rustify.sync.DriveAuth.BROWSER) }
 }
 
 /** No speech recognition here yet: the DJ screen says so when the microphone is pressed. */

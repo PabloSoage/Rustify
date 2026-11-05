@@ -71,4 +71,14 @@
     <string name="lyrics_translate_not_json">モデルが求めた形式の行で答えませんでした</string>
     <string name="lyrics_translate_wrong_count">%2$s 行に対してモデルが %1$s 行を返しました</string>
     <string name="travel_pick_origin_first">この端末では現在地を取得できません。先に「出発地」を選び、場所を検索するか地図を長押ししてください。</string>
+    <string name="drive_kind_mappings">YouTube の対応</string>
+    <string name="drive_kind_user_alternatives">自分で選んだ対応</string>
+    <string name="drive_kind_local_playlists">ローカルのプレイリスト</string>
+    <string name="drive_kind_local_favorites">ローカルのお気に入り</string>
+    <string name="drive_kind_ytm_favorites">YT Music: お気に入り</string>
+    <string name="drive_kind_ytm_playlists">YT Music: プレイリスト</string>
+    <string name="drive_kind_ytm_albums">YT Music: アルバム</string>
+    <string name="drive_kind_ytm_artists">YT Music: アーティスト</string>
+    <string name="drive_kind_metrics">再生の記録</string>
+    <string name="drive_kind_places">前回の続き</string>
 </resources>

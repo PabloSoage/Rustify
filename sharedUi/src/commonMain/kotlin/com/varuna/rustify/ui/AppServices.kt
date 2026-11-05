@@ -106,6 +106,9 @@ interface AppServices {
     /** The Travel screen's map, location and directions; MapLibre and GPS on Android, [com.varuna.rustify.travel.TileMap] elsewhere. */
     val travel: com.varuna.rustify.travel.TravelPlatform get() = com.varuna.rustify.travel.TravelPlatform.Default
 
+    /** How this platform signs in to Google Drive for the backup; null where it cannot (no client, or the web). */
+    val driveAuth: com.varuna.rustify.sync.DriveAuth? get() = null
+
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 
