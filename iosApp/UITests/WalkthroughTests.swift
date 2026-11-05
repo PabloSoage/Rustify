@@ -75,7 +75,7 @@ final class WalkthroughTests: XCTestCase {
         // The engine has no audio cache here, so nothing offers to clear one; the images are real.
         XCTAssertTrue(element("Clear images").exists, "the images can be cleared")
         XCTAssertFalse(element("Clear audio").exists, "no audio cache to clear on iOS")
-        guard tap("Back"), tap("Advanced") else { return }
+        guard back(), tap("Advanced") else { return }
         step("settings-advanced", shows: "Diagnostics")
         guard tap("View logs") else { return }
         // The button is gone with the screen it was on; what the viewer holds is read on the screenshot.
@@ -85,13 +85,13 @@ final class WalkthroughTests: XCTestCase {
     /// Sets up the server own-server.py is, as a person would, then plays from it and downloads from it.
     /// That the bytes came from there is for simulator-check.sh to read, in the server's log.
     private func ownServer() {
-        guard tap("Back"), tap("Back"), tap("Audio & backends") else { return }
+        guard back(), back(), tap("Audio & backends") else { return }
         guard fill("Server address", "http://127.0.0.1:8765"), fill("User", "walkthrough") else { return }
         guard scrollTo(element("Save and test")) else { return }
         element("Save and test").tap()
         step("own-server", shows: "Connected: walkthrough 1", timeout: 20)
 
-        guard tap("Back"), tap("Home"), tap("Search") else { return }
+        guard back(), back(), tap("Home"), tap("Search") else { return }
         if !element("Around the World").waitForExistence(timeout: 5) {
             guard tap("What do you want to listen to?") else { return }
             app.typeText("Around the World Daft Punk\n")
@@ -106,6 +106,18 @@ final class WalkthroughTests: XCTestCase {
 
         guard tap("More options"), tap("Download track") else { return }
         step("own-server-downloaded", shows: "Track downloaded", timeout: 60)
+    }
+
+    /// The screen's arrow. By its whole label: the log viewer's lines say "playback" and "AudioBackend".
+    private func back() -> Bool {
+        let arrow = app.buttons.matching(NSPredicate(format: "label == %@", "Back")).firstMatch
+        guard arrow.waitForExistence(timeout: 20) else {
+            XCTFail("no arrow back")
+            record("missing-back")
+            return false
+        }
+        arrow.tap()
+        return true
     }
 
     /// The text field labelled exactly [label], further down a screen of many.

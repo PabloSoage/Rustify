@@ -108,7 +108,7 @@ fun LogViewerScreen(
                 title = { Text(stringResource(Res.string.log_viewer_title), color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
                     }
                 },
                 actions = {
