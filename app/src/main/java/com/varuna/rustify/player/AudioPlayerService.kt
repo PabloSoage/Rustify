@@ -749,6 +749,25 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     @Volatile
     private var playbackContext: PlaybackContext? = null
 
+    /**
+     * The radio that carries on after [playbackContext] ran out, and the position in the queue where
+     * its songs start. Once playback reaches them, the context *is* that radio: "Radio of X", seeded
+     * on X's last song. Otherwise the album went on being recorded as where you were while its radio
+     * played, and resuming it opened the album at a song the album does not have.
+     */
+    @Volatile
+    private var radioAfterContext: Pair<PlaybackContext, Int>? = null
+
+    /** [playbackContext], switched to the radio after it once playback is past its own songs. */
+    private fun liveContext(st: AudioPlayerState): PlaybackContext? {
+        val (radio, startsAt) = radioAfterContext ?: return playbackContext
+        if (currentIndexIn(st) < startsAt) return playbackContext
+        playbackContext = radio
+        radioAfterContext = null
+        requestSave()
+        return radio
+    }
+
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private var mediaControllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
 
@@ -1835,8 +1854,8 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * those is a session, and none of them is worth a log line every twenty seconds.
      */
     private fun recordListeningContext() {
-        val context = playbackContext ?: return
         val st = _state.value
+        val context = liveContext(st) ?: return
         if (st.isError || st.queue.isEmpty()) return
         val index = currentIndexIn(st)
         if (index < 0) return
@@ -1873,7 +1892,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * a playlist has been edited since.
      */
     private fun markCurrentAsListened(st: AudioPlayerState) {
-        val context = playbackContext ?: return
+        val context = liveContext(st) ?: return
         val trackId = st.currentTrack?.id ?: return
         val ids = st.queue.mapNotNull { it.id }
         // A queue with an idless track in it would shift every position after it, so the marks
@@ -2135,6 +2154,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         // one that is no longer pending — that is how a queue from another day ends up trailing a
         // song picked today.
         reconcileUserQueue(_state.value)
+        radioAfterContext = null
         val queue = listOf(track) + synchronized(userQueue) { userQueue.filter { it.id != track.id } }
         currentQueueIndex = 0
         _state.value = _state.value.copy(
@@ -2183,6 +2203,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         // with no context must not inherit the last one, or resuming would take you to an album you
         // never opened.
         playbackContext = context
+        radioAfterContext = null
         // Foreground bind happens in playTrack() right before playback (see loadAndPlay note).
         val idx = initialIndex.coerceIn(0, tracks.lastIndex)
         val selected = tracks[idx]
@@ -3115,6 +3136,17 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         if (fresh.isEmpty()) return false
 
         val newQueue = live.queue + fresh
+        // The first radio after an album or a playlist becomes the context when its songs start
+        // playing ([liveContext]). A radio's own radio stays that radio.
+        val from = playbackContext
+        if (from != null && from.id.substringBefore(':') != "radio" && radioAfterContext == null) {
+            radioAfterContext = PlaybackContext(
+                id = "radio:$seed",
+                label = context.getString(com.varuna.rustify.R.string.radio_after_context, from.label),
+                subtitle = from.subtitle,
+                imageUrl = from.imageUrl
+            ) to live.queue.size
+        }
         _state.value = live.copy(queue = newQueue, originalQueue = live.originalQueue + fresh)
         notifyQueueChanged(newQueue)
         requestSave()
