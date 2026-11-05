@@ -48,7 +48,7 @@ final class WalkthroughTests: XCTestCase {
         sleep(15)
         record("link")
         // iOS has no back button of its own: a screen with no arrow of its own, an error's too, is a trap.
-        _ = tap("Back")
+        _ = back()
         record("link-back")
     }
 
