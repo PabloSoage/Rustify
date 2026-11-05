@@ -29,6 +29,21 @@ pub const RESERVED: &[&str] = &[
     "bpmAnalyze",
 ];
 
+/// The methods that read a file and write nothing, which may reach the music the server offers.
+const READS_A_FILE: &[&str] = &["readTags", "readCover", "readReplayGain", "readEmbeddedLyrics", "bpmAnalyze"];
+
+/// [args] with its `path` made the real one, when [method] only reads and the path is in the music
+/// offered (`/music/<n>/...`). `None` otherwise, and [vet] decides as for anything else.
+pub fn into_music(method: &str, args: &str, roots: &crate::files::Roots) -> Option<String> {
+    if !READS_A_FILE.contains(&method) {
+        return None;
+    }
+    let mut value: serde_json::Value = serde_json::from_str(args).ok()?;
+    let real = roots.music(value.get("path")?.as_str()?)?;
+    value["path"] = serde_json::Value::String(real.to_string_lossy().into_owned());
+    Some(value.to_string())
+}
+
 /// Checks a browser's call before the core sees it. The stream cache's methods take the folder to
 /// work in, and that folder is the server's: whatever the browser named is replaced by it.
 pub fn vet(method: &str, args: String, stream_cache: &str) -> Result<String, &'static str> {
@@ -123,6 +138,23 @@ pub fn succeeded(answer: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_what_reads_may_reach_the_music_and_only_the_music() {
+        let dir = std::env::temp_dir().join(format!("rustify-into-music-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.flac"), "x").unwrap();
+        let roots = crate::files::Roots { web: dir.clone(), music: vec![dir.clone()] };
+        let args = r#"{"path":"/music/0/a.flac"}"#;
+
+        let real = into_music("readTags", args, &roots).unwrap();
+        assert!(real.contains("a.flac") && !real.contains("/music/0"), "{real}");
+        assert_eq!(into_music("writeTags", args, &roots), None, "it writes");
+        assert_eq!(into_music("readTags", r#"{"path":"/etc/passwd"}"#, &roots), None);
+        assert_eq!(into_music("readTags", r#"{"path":"/music/0/../../etc/passwd"}"#, &roots), None);
+        assert!(vet("readTags", r#"{"path":"/etc/passwd"}"#.into(), "/srv/cache").is_err(), "and what is left is refused");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_failure_is_read_as_one() {

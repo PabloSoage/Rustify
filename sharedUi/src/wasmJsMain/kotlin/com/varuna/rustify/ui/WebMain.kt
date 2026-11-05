@@ -47,7 +47,13 @@ fun main() {
         newRustifyImageLoader(coil3.PlatformContext.INSTANCE, platform.cacheDir, platform.prefs()) {
             // The browser keeps what it fetched; a page has no folder for Coil's own cache.
             diskCache(null)
-            components { add(coil3.network.ktor3.KtorNetworkFetcherFactory(com.varuna.rustify.platform.httpClient())) }
+            components {
+                add(coil3.network.ktor3.KtorNetworkFetcherFactory(com.varuna.rustify.platform.httpClient()))
+                // A local track's cover is a file on the server.
+                add(coil3.map.Mapper<String, String> { data, _ ->
+                    if (data.startsWith("file://")) com.varuna.rustify.platform.rawUrlOf(data.removePrefix("file://")) else null
+                })
+            }
         }
     }
     AudioSourceRegistry.initialize(
@@ -55,6 +61,8 @@ fun main() {
         AudioSourceEnvironment(settings = platform.prefs(), streamCache = StreamCacheAccess.None, decodesOpus = false),
         ytDlp = null,
     )
+    // The music the server was told to offer is local music here, and it decides: no folder can be picked.
+    platform.prefs().putStringSet("local_music_directories", AppFile("/music").listChildren().map { it.fullPath }.toSet())
     val queue = QueuePlayer(scope, WebPlayerBackend, platform.prefs()).also { it.restore() }
     scope.launch { queue.start() }
     val player = EnginePlayerController(
@@ -91,7 +99,7 @@ fun main() {
             LocalAppServices provides services,
             LocalPlayer provides player,
         ) {
-            val repo = remember { SpotifyRepository(platform, FileTreeMusicScanner({ it }, { null })) }
+            val repo = remember { SpotifyRepository(platform, FileTreeMusicScanner({ it })) }
             key(language) {
                 RememberStringEnvironment()
                 RustifyTheme {

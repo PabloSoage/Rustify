@@ -27,6 +27,9 @@ private data class FileRequest(
 )
 
 @Serializable
+private data class FileEntry(val name: String = "", val folder: Boolean = false, val size: Long = 0, val modified: Long = 0)
+
+@Serializable
 private data class FileAnswer(
     val ok: Boolean = false,
     val exists: Boolean = false,
@@ -34,8 +37,11 @@ private data class FileAnswer(
     val size: Long = 0,
     val modified: Long = 0,
     val data: String? = null,
-    val children: List<String> = emptyList(),
+    val entries: List<FileEntry> = emptyList(),
 )
+
+/** A file as a listing found it: what a scan asks of each one, without a round trip for each. */
+private class ListedFile(path: String, val entry: FileEntry) : AppFile(path)
 
 private fun ask(op: String, path: String, target: String? = null, data: String? = null, length: Int? = null): FileAnswer {
     val body = RustifyJson.encodeToString(FileRequest.serializer(), FileRequest(op, path, target, data, length))
@@ -88,17 +94,19 @@ actual fun AppFile.deleteFile(): Boolean = ask("delete", path).ok
 
 actual fun AppFile.makeDirs(): Boolean = ask("mkdirs", path).ok
 
-actual fun AppFile.listChildren(): List<AppFile> = ask("list", path).children.map { child(it) }
+actual fun AppFile.listChildren(): List<AppFile> =
+    ask("list", path).entries.map { ListedFile(path.trimEnd('/') + "/" + it.name, it) }
 
-actual fun AppFile.byteSize(): Long = ask("stat", path).size
+actual fun AppFile.byteSize(): Long = (this as? ListedFile)?.entry?.size ?: ask("stat", path).size
 
 actual fun appFileAt(path: String): AppFile = AppFile(path)
 
-actual fun AppFile.isFolder(): Boolean = ask("stat", path).folder
+actual fun AppFile.isFolder(): Boolean = (this as? ListedFile)?.entry?.folder ?: ask("stat", path).folder
 
-actual fun AppFile.isPlainFile(): Boolean = ask("stat", path).let { it.exists && !it.folder }
+actual fun AppFile.isPlainFile(): Boolean =
+    (this as? ListedFile)?.let { !it.entry.folder } ?: ask("stat", path).let { it.exists && !it.folder }
 
-actual fun AppFile.modifiedMillis(): Long = ask("stat", path).modified
+actual fun AppFile.modifiedMillis(): Long = (this as? ListedFile)?.entry?.modified ?: ask("stat", path).modified
 
 actual fun AppFile.resolvedPath(): String? = path
 

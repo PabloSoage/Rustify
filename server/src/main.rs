@@ -49,6 +49,9 @@ struct Args {
     /// The language the core asks Spotify and YouTube for (`setLanguage`).
     #[arg(long, env = "RUSTIFY_LANG", default_value = "en")]
     lang: String,
+    /// Folders of music to offer, read only, as local music in the interface.
+    #[arg(long = "music-dir", env = "RUSTIFY_MUSIC_DIRS", value_delimiter = ',')]
+    music_dirs: Vec<PathBuf>,
     /// How many core calls may run at once.
     #[arg(long, env = "RUSTIFY_PARALLEL_CALLS", default_value_t = 16)]
     parallel_calls: usize,
@@ -74,8 +77,8 @@ pub struct Inner {
     pub http: reqwest::Client,
     /// For `/api/fetch`: follows redirects, as the platforms' clients do.
     pub fetcher: reqwest::Client,
-    /// The interface's own files (`files`), under `files` and `cache`.
-    pub web_files: PathBuf,
+    /// What a browser can name (`files`).
+    pub roots: files::Roots,
 }
 
 impl std::ops::Deref for App {
@@ -152,7 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .redirect(reqwest::redirect::Policy::none())
             .build()?,
         fetcher: reqwest::Client::builder().build()?,
-        web_files,
+        roots: files::Roots { web: web_files, music: args.music_dirs.clone() },
     }));
 
     let router = Router::new()
@@ -167,6 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/api/stream/{handle}", get(stream::forward))
         .route("/api/file", post(files::handle).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)))
+        .route("/api/raw/{*path}", get(files::raw))
         .route("/api/fetch", any(fetch::forward).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)));
     let router = match args.web_root.as_ref().filter(|root| root.join("index.html").is_file()) {
         Some(root) => {
@@ -201,6 +205,11 @@ async fn call(State(app): State<App>, Path(method): Path<String>, body: Bytes) -
             Err(_) => return (StatusCode::BAD_REQUEST, "the body is not UTF-8").into_response(),
         }
     };
+    // What takes a path may read the music offered, and that alone: the path is turned into the real one.
+    if let Some(args) = core::into_music(&method, &args, &app.roots) {
+        let answer = app.core.call(&method, args).await;
+        return ([(header::CONTENT_TYPE, "application/json")], answer).into_response();
+    }
     let args = match core::vet(&method, args, &app.stream_cache) {
         Ok(args) => args,
         Err(why) => return (StatusCode::FORBIDDEN, why).into_response(),

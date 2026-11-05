@@ -26,6 +26,9 @@ fun throughServer(url: String): String = pageOrigin() + "api/fetch?url=" + encod
 
 private fun encodeUri(s: String): String = js("encodeURIComponent(s)")
 
+/** A file on the server (`/music/0/a b.flac`, a cover under `/cache`) as what an `<audio>` or a picture can load. */
+fun rawUrlOf(path: String): String = pageOrigin() + "api/raw" + path.split('/').joinToString("/") { encodeUri(it) }
+
 /**
  * A Ktor client whose requests leave through the server (`/api/fetch`), with the headers the caller set
  * passed along for it to send, since a page cannot set `User-Agent` or `Cookie` by itself.

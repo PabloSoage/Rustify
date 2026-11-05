@@ -105,6 +105,7 @@ object WebPlayerBackend : PlayerBackend {
         uri.startsWith("http://127.0.0.1") || uri.startsWith("http://localhost") ->
             "api/stream/" + uri.substringAfter("/stream/")
         uri.startsWith("http") -> throughServer(uri)
+        uri.startsWith("file://") -> com.varuna.rustify.platform.rawUrlOf(uri.removePrefix("file://"))
         else -> uri
     }
 
