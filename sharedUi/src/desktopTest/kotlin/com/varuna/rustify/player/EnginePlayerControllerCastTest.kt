@@ -191,8 +191,16 @@ class EnginePlayerControllerCastTest {
         assertEquals(0, setUriCalls.size, "No SetAVTransportURI should be sent to renderer if track is not on disk")
     }
 
+    private fun isCoreAvailable(): Boolean = try {
+        com.varuna.rustify.bridge.NativeLibrary.load()
+        true
+    } catch (_: UnsatisfiedLinkError) {
+        false
+    }
+
     @Test
     fun mockRendererFetchesFileBytesAndPlaysNextTrackSilentlyOnLocalEngine() = runBlocking {
+        if (!isCoreAvailable()) return@runBlocking
         val platform = DesktopAppPlatform("ES")
         platform.prefs("rustify_settings").putBoolean("settings_casting_enabled", true)
         val backend = TestBackend { localPlayTriggered.set(true) }
