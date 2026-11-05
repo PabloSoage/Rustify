@@ -181,3 +181,8 @@ if (rootProject.findProject(":desktopApp") != null) {
         (this as Test).systemProperty("java.library.path", rootProject.file("core_engine/target/desktop/release").absolutePath)
     }
 }
+
+// A failed test says which assertion and why in CI's log, not only the line of the test's lambda.
+tasks.withType<Test>().configureEach {
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+}
