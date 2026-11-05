@@ -80,6 +80,8 @@ sleep 3
 # engine asks in ranges, one that starts past zero is it going on reading), and that a file came of it.
 grep -E '^STREAM .* from [1-9]' "$out/own-server.log" >/dev/null \
   || { echo "the app never read past the start of the stream" >&2; exit 1; }
+# Asked again: running the tests reinstalled the app, which moves its container.
+data="$(xcrun simctl get_app_container "$device" "$bundle" data)"
 ls -l "$data/Documents" | tee "$out/documents.txt"
 [ "$(find "$data/Documents" -name '*Around the World*' -size +1M | wc -l)" -ge 1 ] \
   || { echo "the download left no file in Documents" >&2; exit 1; }
