@@ -182,6 +182,7 @@ final class WalkthroughTests: XCTestCase {
         record("own-server-after-25s")
         guard tap("Pause") else { return }
         gone("own-server-paused", "Pause")
+        sleep(2)
 
         // The menu first, tapped again when the simulator drops the tap (seen in CI: the results
         // scrolled under scrollTo with no menu open). Then further down it than the screen reaches.
@@ -248,6 +249,7 @@ final class WalkthroughTests: XCTestCase {
     }
 
     private func scrollTo(_ target: XCUIElement) -> Bool {
+        _ = target.waitForExistence(timeout: 5)
         for _ in 0..<40 where !(target.exists && target.isHittable) {
             app.swipeUp()
         }
