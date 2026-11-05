@@ -27,12 +27,16 @@ class DlnaControllerTest {
     private val recordedActions = CopyOnWriteArrayList<String>()
     private val recordedBodies = CopyOnWriteArrayList<String>()
     private var returnErrorOnSetUri = false
+    private var fetchMediaOnSetUri = false
+    private val fetchedMediaBytes = java.util.concurrent.atomic.AtomicReference<ByteArray?>(null)
 
     @BeforeTest
     fun setUp() {
         recordedActions.clear()
         recordedBodies.clear()
         returnErrorOnSetUri = false
+        fetchMediaOnSetUri = false
+        fetchedMediaBytes.set(null)
 
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/control/AVTransport") { exchange: HttpExchange ->
@@ -49,6 +53,22 @@ class DlnaControllerTest {
                 exchange.sendResponseHeaders(500, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
                 return@createContext
+            }
+
+            if (actionName == "SetAVTransportURI" && fetchMediaOnSetUri) {
+                val uri = Regex("<CurrentURI>(.*?)</CurrentURI>").find(body)?.groupValues?.get(1)?.let {
+                    it.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                }
+                if (uri != null) {
+                    runCatching {
+                        val conn = java.net.URL(uri).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 2000
+                        conn.readTimeout = 2000
+                        if (conn.responseCode == 200) {
+                            fetchedMediaBytes.set(conn.inputStream.readBytes())
+                        }
+                    }
+                }
             }
 
             val responseXml = when (actionName) {

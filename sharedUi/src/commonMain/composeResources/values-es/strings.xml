@@ -671,7 +671,8 @@
     <string name="settings_casting_none">No se encontró nada. Algunas wifis —hoteles, cafeterías— impiden que los aparatos se hablen entre sí, y ahí el casting no puede funcionar.</string>
     <string name="settings_casting_idle">Sin castear</string>
     <string name="settings_casting_to">Sonando en %1$s</string>
-    <string name="settings_casting_stop">Parar</string>    <!-- Radio automatica al acabar la cola -->
+    <string name="settings_casting_stop">Parar</string>
+    <string name="cast_track_not_on_device">«%1$s» aún no está en este dispositivo, así que no hay nada que enviar</string>    <!-- Radio automatica al acabar la cola -->
     <string name="settings_autoplay_radio">Cuando se acaba la cola</string>
     <string name="settings_autoplay_radio_enabled">Seguir con música parecida</string>
     <string name="settings_autoplay_radio_desc">Cuando termina la última canción de un álbum, una lista o la cola, Rustify sigue con una radio hecha a partir de ella. Desactívalo si prefieres que la música pare donde tú dijiste.</string>

@@ -168,6 +168,26 @@ object LocalStreamServer {
         }
     }
 
+    /**
+     * Registers an existing file on this device with the streaming server.
+     *
+     * @return the stream handle, or null if the server is not running or the file does not exist.
+     */
+    suspend fun registerFile(path: String, mime: String? = null): String? {
+        if (!ensureStarted()) return null
+        val raw = runCatching { NativeEngine.registerLocalFileNative(path, mime.orEmpty()) }
+            .onFailure { Log.w(TAG, "registerLocalFile threw", it) }
+            .getOrNull() ?: return null
+
+        return runCatching {
+            val json = parseJsonObject(raw) ?: error("not a JSON object")
+            json.optString("handle").takeIf { it.isNotBlank() }
+        }.getOrElse {
+            Log.w(TAG, "could not read registerLocalFile answer: $raw", it)
+            null
+        }
+    }
+
     /** Drops a registration. The handle is the last path segment of the URL [registerReady] gave. */
     fun forget(streamUrl: String) {
         val handle = streamUrl.substringAfterLast("/stream/", "").substringBefore('?')

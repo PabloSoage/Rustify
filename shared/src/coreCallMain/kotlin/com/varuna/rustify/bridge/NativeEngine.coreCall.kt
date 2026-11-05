@@ -252,6 +252,7 @@ actual object NativeEngine {
 
     actual fun closeCastListenerNative(): String = now("closeCastListener")
 
+    actual fun registerLocalFileNative(path: String, mime: String): String = now("registerLocalFile") { put("path", path); put("mime", mime) }
     actual fun castUrlForNative(handle: String): String = now("castUrlFor") { put("handle", handle) }
 
     actual fun castSessionNative(): String = now("castSession")

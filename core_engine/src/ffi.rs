@@ -256,6 +256,7 @@ pub const METHODS: &[&str] = &[
     "jamLeave",
     "startLocalServer",
     "registerLocalStream",
+    "registerLocalFile",
     "forgetLocalStream",
     "streamCacheSize",
     "clearStreamCache",
@@ -1149,6 +1150,15 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             ok()
         }
         // castUrlForNative — `{"url":…}`, or `{}` when no session is open.
+        // registerLocalFileNative — `{"path":…, "mime":…}` -> `{"handle":…}`
+        "registerLocalFile" => {
+            let path = text(args, "path");
+            let mime = opt_text(args, "mime");
+            match server::register_file::<env::android::AndroidEnv>(&path, mime) {
+                Some(handle) => serde_json::json!({ "handle": handle }).to_string(),
+                None => serde_json::json!({ "handle": null }).to_string(),
+            }
+        }
         "castUrlFor" => match server::lan::url_for(&text(args, "handle")) {
             Some(url) => serde_json::json!({ "url": url }).to_string(),
             None => "{}".to_string(),

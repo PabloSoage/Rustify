@@ -77,7 +77,7 @@ extern "C" {
  *   reorderAddons {ids}  resolveViaAddon {addonId, query}
  *   jamNewCode {}  jamJoin {config}  jamPoll {timeoutMs}  jamPublishState {state}
  *   jamSend {command}  jamKick {id}  jamLeave {}
- *   startLocalServer {}  registerLocalStream {request}  forgetLocalStream {handle}
+ *   startLocalServer {}  registerLocalStream {request}  registerLocalFile {path, mime}  forgetLocalStream {handle}
  *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}  engineTap {n}

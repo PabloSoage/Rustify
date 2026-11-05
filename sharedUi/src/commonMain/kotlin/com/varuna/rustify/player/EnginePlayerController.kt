@@ -22,6 +22,19 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import com.varuna.rustify.bridge.LocalStreamServer
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.TrackRef
+import com.varuna.rustify.cast.CastDiscovery
+import com.varuna.rustify.cast.CastSession
+import com.varuna.rustify.cast.DlnaController
+import com.varuna.rustify.ui.appFileOfUri
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.child
+import com.varuna.rustify.ui.fileExists
+import com.varuna.rustify.ui.fullPath
+import com.varuna.rustify.ui.resources.Res
+import com.varuna.rustify.ui.resources.cast_track_not_on_device
 
 /**
  * [PlayerController] where the core's engine plays (the desktop and iOS), over [QueuePlayer] (the core's engine; the queue is still
@@ -50,22 +63,34 @@ class EnginePlayerController(
 
     private val mode = MutableStateFlow(Mode.OFF)
 
-    override val state: StateFlow<AudioPlayerState> =
-        combine(player.ui, mode) { ui, m -> ui.toState(m) }
-            .stateIn(scope, SharingStarted.Eagerly, player.ui.value.toState(mode.value))
+    private data class CastUiOverride(
+        val isPlaying: Boolean = false,
+        val isBuffering: Boolean = false,
+        val positionMs: Long = 0L,
+        val currentTrack: FullTrack? = null,
+        val currentIndex: Int? = null,
+        val errorMessage: String? = null,
+        val isError: Boolean = false,
+    )
 
-    private fun PlayerUi.toState(m: Mode) = AudioPlayerState(
-        currentTrack = current,
-        isPlaying = playing,
-        isBuffering = loading,
-        isError = error != null,
-        errorMessage = error.orEmpty(),
+    private val _castOverride = MutableStateFlow<CastUiOverride?>(null)
+
+    override val state: StateFlow<AudioPlayerState> =
+        combine(player.ui, mode, _castOverride) { ui, m, cast -> ui.toState(m, cast) }
+            .stateIn(scope, SharingStarted.Eagerly, player.ui.value.toState(mode.value, null))
+
+    private fun PlayerUi.toState(m: Mode, cast: CastUiOverride?) = AudioPlayerState(
+        currentTrack = cast?.currentTrack ?: current,
+        isPlaying = cast?.isPlaying ?: playing,
+        isBuffering = cast?.isBuffering ?: loading,
+        isError = (cast?.isError ?: false) || error != null,
+        errorMessage = cast?.errorMessage ?: error.orEmpty(),
         queue = queue,
         originalQueue = beforeShuffle ?: queue,
         isShuffle = m == Mode.SHUFFLE,
         isRepeat = m == Mode.REPEAT,
-        positionMs = positionMs,
-        durationMs = durationMs ?: current?.durationMs?.toLong() ?: 0L,
+        positionMs = cast?.positionMs ?: positionMs,
+        durationMs = (cast?.currentTrack ?: current)?.durationMs?.toLong() ?: durationMs ?: 0L,
     )
 
     override val preloadedLyrics: StateFlow<LyricsResult?> = MutableStateFlow(null)
@@ -106,10 +131,16 @@ class EnginePlayerController(
 
     // [youtubeId], when given, is the recording to play: an alternative just chosen.
     override fun playSpecificTrackInQueue(trackId: String, youtubeId: String?, queueIndex: Int?) {
-        val queue = player.ui.value.queue
-        // The row asked for, when it holds that track: a playlist can repeat a song.
-        val i = queueIndex?.takeIf { it in queue.indices && queue[it].id == trackId } ?: queue.indexOfFirst { it.id == trackId }
-        if (i >= 0) player.jumpTo(i, youtubeId = youtubeId)
+        if (isCasting) {
+            val q = state.value.queue
+            val i = queueIndex?.takeIf { it in q.indices && q[it].id == trackId } ?: q.indexOfFirst { it.id == trackId }
+            if (i >= 0) castTrack(q[i], i)
+        } else {
+            val queue = player.ui.value.queue
+            // The row asked for, when it holds that track: a playlist can repeat a song.
+            val i = queueIndex?.takeIf { it in queue.indices && queue[it].id == trackId } ?: queue.indexOfFirst { it.id == trackId }
+            if (i >= 0) player.jumpTo(i, youtubeId = youtubeId)
+        }
     }
 
     /**
@@ -161,8 +192,40 @@ class EnginePlayerController(
             player.seek(positionMs)
         }
     }
-    override fun skipToNext() = player.next()
-    override fun skipToPrevious() = player.previous()
+    override fun skipToNext() {
+        if (isCasting) {
+            val q = state.value.queue
+            val curTrack = state.value.currentTrack
+            val curIdx = _castOverride.value?.currentIndex
+                ?: q.indexOfFirst { it.id == curTrack?.id }.takeIf { it >= 0 }
+                ?: player.ui.value.index
+            val nextIdx = curIdx + 1
+            if (nextIdx in q.indices) {
+                castTrack(q[nextIdx], nextIdx)
+            } else {
+                endCastSession("Queue ended")
+            }
+        } else {
+            player.next()
+        }
+    }
+
+    override fun skipToPrevious() {
+        if (isCasting) {
+            val q = state.value.queue
+            val curTrack = state.value.currentTrack
+            val curIdx = _castOverride.value?.currentIndex
+                ?: q.indexOfFirst { it.id == curTrack?.id }.takeIf { it >= 0 }
+                ?: player.ui.value.index
+            val prevIdx = (curIdx - 1).coerceAtLeast(0)
+            if (prevIdx in q.indices) {
+                castTrack(q[prevIdx], prevIdx)
+            }
+        } else {
+            player.previous()
+        }
+    }
+
     override fun startOver() = player.startOver()
 
     // Speed and pitch are two of the effects: all of them go again, from the settings.
@@ -174,7 +237,9 @@ class EnginePlayerController(
 
     /** The phone's audio settings to the engine, with AutoEq's profile for the output playing now. */
     private fun applyEffects() = player.setEffects(EffectsConfig.fromSettings(settings, output.value))
-    override fun currentQueuePosition(st: AudioPlayerState): Int = player.ui.value.index
+    override fun currentQueuePosition(st: AudioPlayerState): Int =
+        if (isCasting) (_castOverride.value?.currentIndex ?: player.ui.value.index)
+        else player.ui.value.index
 
     // ── Shuffle and repeat ──────────────────────────────────────────────────────────────────────
 
@@ -504,31 +569,83 @@ class EnginePlayerController(
     override fun setWebPlayerMode(enabled: Boolean) = Unit
 
     override val isCasting: Boolean
-        get() = com.varuna.rustify.cast.CastSession.device != null
+        get() = CastSession.device != null
 
     private var castPollJob: Job? = null
     private var castStartConfirmed = false
     private var lastCastEndedTrackId: String? = null
 
-    override suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? {
+    private suspend fun localFilePathFor(track: FullTrack): String? {
+        val id = track.id ?: return null
+        if (TrackRef.isLocal(id)) {
+            val uri = TrackRef.localUriOf(id) ?: return null
+            val file = appFileOfUri(uri)
+            if (file != null && file.fileExists()) return file.fullPath
+        }
+        val match = localCopyOf(platform, track)
+        if (match != null) {
+            val file = appFileOfUri(match)
+            if (file != null && file.fileExists()) return file.fullPath
+        }
+        val localMatch = withContext(Dispatchers.IO) {
+            SpotifyRepository.findLocalMatch(platform.filesDir, track)
+        }
+        if (localMatch != null) {
+            val uri = TrackRef.localUriOf(localMatch.id)
+            if (uri != null) {
+                val file = appFileOfUri(uri)
+                if (file != null && file.fileExists()) return file.fullPath
+            }
+        }
+        return null
+    }
+
+    private suspend fun castHandleFor(track: FullTrack): String? {
+        val path = localFilePathFor(track)
+        if (path != null) {
+            return LocalStreamServer.registerFile(path)
+        }
+        val id = track.id
+        if (!id.isNullOrBlank()) {
+            val cacheRoot = platform.cacheDir.child("stream-cache").fullPath
+            val cachedUrl = LocalStreamServer.registerReady(
+                cacheKey = id,
+                cacheRoot = cacheRoot
+            )
+            if (cachedUrl != null) {
+                return cachedUrl.substringAfterLast("/stream/", "").substringBefore('?').takeIf { it.isNotBlank() }
+            }
+        }
+        return null
+    }
+
+    override suspend fun startCastingTo(device: CastDiscovery.Device): String? {
         val currentTrack = state.value.currentTrack ?: return "nothing is playing"
-        val wasPlaying = state.value.isPlaying
         val position = state.value.positionMs
+        val handle = castHandleFor(currentTrack)
+            ?: return appString(Res.string.cast_track_not_on_device, currentTrack.name)
+
         pause()
         val store = platform.prefs("rustify_settings")
-        val failure = com.varuna.rustify.cast.CastSession.start(
+        val failure = CastSession.start(
             store = store,
             target = device,
-            handle = currentTrack.id.orEmpty(),
+            handle = handle,
             title = currentTrack.name,
             artist = currentTrack.artists.joinToString(", ") { it.name },
             durationMs = currentTrack.durationMs.toLong()
         )
         if (failure != null) {
-            if (wasPlaying) play()
             return failure
         }
-        if (position > 1_000L) runCatching { com.varuna.rustify.cast.CastSession.seekTo(position) }
+        _castOverride.value = CastUiOverride(
+            isPlaying = true,
+            isBuffering = false,
+            positionMs = position,
+            currentTrack = currentTrack,
+            currentIndex = player.ui.value.index
+        )
+        if (position > 1_000L) runCatching { CastSession.seekTo(position) }
         startCastPolling(device)
         return null
     }
@@ -538,23 +655,80 @@ class EnginePlayerController(
         castPollJob = null
         castStartConfirmed = false
         lastCastEndedTrackId = null
+        _castOverride.value = null
         scope.launch {
-            com.varuna.rustify.cast.CastSession.stop()
+            CastSession.stop()
         }
     }
 
-    private fun startCastPolling(device: com.varuna.rustify.cast.CastDiscovery.Device) {
+    private fun endCastSession(reason: String) {
+        castPollJob?.cancel()
+        castPollJob = null
+        castStartConfirmed = false
+        lastCastEndedTrackId = null
+        scope.launch {
+            CastSession.stop()
+        }
+        _castOverride.value = CastUiOverride(
+            isPlaying = false,
+            isBuffering = false,
+            isError = true,
+            errorMessage = reason,
+            currentTrack = state.value.currentTrack,
+            positionMs = state.value.positionMs,
+            currentIndex = _castOverride.value?.currentIndex ?: player.ui.value.index
+        )
+    }
+
+    private fun castTrack(track: FullTrack, newIndex: Int? = null) {
+        val device = CastSession.device ?: return
+        castStartConfirmed = false
+        _castOverride.value = _castOverride.value?.copy(
+            isPlaying = false,
+            isBuffering = true,
+            currentTrack = track,
+            positionMs = 0L,
+            currentIndex = newIndex
+        ) ?: CastUiOverride(
+            isPlaying = false,
+            isBuffering = true,
+            currentTrack = track,
+            positionMs = 0L,
+            currentIndex = newIndex
+        )
+        scope.launch {
+            val handle = castHandleFor(track)
+            if (handle == null) {
+                endCastSession(appString(Res.string.cast_track_not_on_device, track.name))
+                return@launch
+            }
+            val store = platform.prefs("rustify_settings")
+            val failure = CastSession.start(
+                store = store,
+                target = device,
+                handle = handle,
+                title = track.name,
+                artist = track.artists.joinToString(", ") { it.name },
+                durationMs = track.durationMs.toLong()
+            )
+            if (failure != null) {
+                endCastSession(failure)
+            }
+        }
+    }
+
+    private fun startCastPolling(device: CastDiscovery.Device) {
         castPollJob?.cancel()
         castStartConfirmed = false
         lastCastEndedTrackId = null
         castPollJob = scope.launch {
             var unanswered = 0
             while (isCasting) {
-                val currentDevice = com.varuna.rustify.cast.CastSession.device ?: break
-                val transport = com.varuna.rustify.cast.DlnaController.transportState(currentDevice.controlUrl)
+                val currentDevice = CastSession.device ?: break
+                val transport = DlnaController.transportState(currentDevice.controlUrl)
                 if (transport == null) {
                     if (++unanswered >= 5) {
-                        stopCasting()
+                        endCastSession("${currentDevice.friendlyName} stopped answering")
                         return@launch
                     }
                     delay(1000)
@@ -562,6 +736,13 @@ class EnginePlayerController(
                 }
                 unanswered = 0
                 if (transport == "PLAYING") castStartConfirmed = true
+
+                val pos = CastSession.positionMs()
+                _castOverride.value = _castOverride.value?.copy(
+                    isPlaying = transport == "PLAYING",
+                    isBuffering = transport == "TRANSITIONING",
+                    positionMs = pos ?: _castOverride.value?.positionMs ?: 0L
+                )
 
                 val finished = castStartConfirmed && (transport == "STOPPED" || transport == "NO_MEDIA_PRESENT")
                 val playingId = state.value.currentTrack?.id

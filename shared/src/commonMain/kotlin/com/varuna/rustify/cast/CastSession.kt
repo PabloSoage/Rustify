@@ -84,27 +84,30 @@ object CastSession {
         val deviceAddress = CastDiscovery.literalAddress(target.address)
             ?: return@withContext "could not work out ${target.friendlyName}'s address"
 
-        val ours = CastDiscovery.localAddressOn()
-            ?: return@withContext "this device has no address on a local network"
+        val isLoopback = deviceAddress == "127.0.0.1" || deviceAddress == "::1"
+        if (!isLoopback) {
+            val ours = CastDiscovery.localAddressOn()
+                ?: return@withContext "this device has no address on a local network"
 
-        // A guard, not the guard: the core checks every connection's peer regardless. This is here
-        // so that opening onto the wrong interface fails loudly instead of quietly not working.
-        if (!CastDiscovery.sameNetwork(ours, deviceAddress)) {
-            return@withContext "${target.friendlyName} is not on the same network as this device"
-        }
+            // A guard, not the guard: the core checks every connection's peer regardless. This is here
+            // so that opening onto the wrong interface fails loudly instead of quietly not working.
+            if (!CastDiscovery.sameNetwork(ours, deviceAddress)) {
+                return@withContext "${target.friendlyName} is not on the same network as this device"
+            }
 
-        val opened = runCatching {
-            val raw = NativeEngine.openCastListenerNative(ours, deviceAddress)
-            Json.parseToJsonElement(raw).jsonObject
-        }.getOrElse {
-            Log.e(TAG, "could not open the cast listener", it)
-            return@withContext "could not open the connection"
-        }
+            val opened = runCatching {
+                val raw = NativeEngine.openCastListenerNative(ours, deviceAddress)
+                Json.parseToJsonElement(raw).jsonObject
+            }.getOrElse {
+                Log.e(TAG, "could not open the cast listener", it)
+                return@withContext "could not open the connection"
+            }
 
-        val success = opened["success"]?.jsonPrimitive?.booleanOrNull ?: false
-        if (!success) {
-            val error = opened["error"]?.jsonPrimitive?.content ?: "could not open the connection"
-            return@withContext error
+            val success = opened["success"]?.jsonPrimitive?.booleanOrNull ?: false
+            if (!success) {
+                val error = opened["error"]?.jsonPrimitive?.content ?: "could not open the connection"
+                return@withContext error
+            }
         }
 
         val url = runCatching {

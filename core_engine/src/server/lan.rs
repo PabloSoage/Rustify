@@ -206,12 +206,15 @@ pub fn close<E: Env>() {
 /// Deliberately built here rather than by string-formatting on the Kotlin side: it is the same
 /// `handle` and the same token as the loopback URL, and the only thing that changes is the host.
 pub fn url_for(handle: &str) -> Option<String> {
-    let session = current()?;
     let server = super::current()?;
-    Some(format!(
-        "http://{}:{}/stream/{}?t={}",
-        session.bound_to, session.port, handle, server.token
-    ))
+    if let Some(session) = current() {
+        Some(format!(
+            "http://{}:{}/stream/{}?t={}",
+            session.bound_to, session.port, handle, server.token
+        ))
+    } else {
+        Some(server.stream_url(handle))
+    }
 }
 
 #[cfg(test)]

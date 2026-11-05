@@ -197,6 +197,7 @@ expect object NativeEngine {
     fun closeCastListenerNative(): String
 
     /** The URL to hand the cast device for a registered handle, `{"url":…}`, or `{}`. */
+    fun registerLocalFileNative(path: String, mime: String): String
     fun castUrlForNative(handle: String): String
 
     /** The session as the core sees it: `{"active":true,…}` or `{"active":false}`. */

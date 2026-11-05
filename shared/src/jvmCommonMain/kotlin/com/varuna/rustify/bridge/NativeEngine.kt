@@ -421,6 +421,7 @@ actual object NativeEngine {
      * The URL to hand the cast device for an already-registered handle, or `{}` when no session is
      * open. Same handle and same token as the loopback URL; only the host differs.
      */
+    actual external fun registerLocalFileNative(path: String, mime: String): String
     actual external fun castUrlForNative(handle: String): String
 
     /**

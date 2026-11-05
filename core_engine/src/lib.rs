@@ -2936,6 +2936,27 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_closeCastList
 /// Pure and in-memory.
 ///
 /// @return `{"url":"http://192.168.1.34:41234/stream/<handle>?t=<token>"}` or `{}`
+/// JNI Bridge: registers an existing local file so the local streaming server can serve it.
+///
+/// Returns `{"handle":"<hex>"}` or `{"handle":null}`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocalFileNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    mime: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path_str = path.mutf8_chars(env)?.to_string();
+        let mime_str = mime.mutf8_chars(env)?.to_string();
+        let mime_opt = if mime_str.is_empty() { None } else { Some(mime_str) };
+        match server::register_file::<env::android::AndroidEnv>(&path_str, mime_opt) {
+            Some(handle) => serde_json::json!({ "handle": handle }).to_string(),
+            None => serde_json::json!({ "handle": null }).to_string(),
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_castUrlForNative<'local>(
     mut env_unowned: EnvUnowned<'local>,
