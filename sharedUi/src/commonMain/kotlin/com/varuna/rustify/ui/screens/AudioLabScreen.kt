@@ -274,7 +274,7 @@ fun AudioLabScreen(onBack: () -> Unit) {
                 }
                 val currentRate = audioLab.sampleRate
                 Text(
-                    stringResource(Res.string.audio_lab_frame, frameUs, if (currentRate > 0) currentRate else 0),
+                    com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_frame), frameUs, if (currentRate > 0) currentRate else 0),
                     color = green, fontSize = 12.sp
                 )
             }
@@ -301,7 +301,7 @@ fun AudioLabScreen(onBack: () -> Unit) {
                 }
             }
             Text(
-                stringResource(Res.string.audio_lab_peak, if (level > 0f) 20f * kotlin.math.log10(level) else FLOOR_DB),
+                com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_peak), if (level > 0f) 20f * kotlin.math.log10(level) else FLOOR_DB),
                 color = Color.Gray, fontSize = 12.sp
             )
 
@@ -415,9 +415,9 @@ fun AudioLabScreen(onBack: () -> Unit) {
                 val base = benchRows.first().third.coerceAtLeast(1)
                 benchRows.forEach { (_, name, ns) ->
                     val text = if (benchRows.size > 1) {
-                        stringResource(Res.string.audio_lab_bench_row, name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1))
+                        com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_bench_row), name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1))
                     } else {
-                        stringResource(Res.string.audio_lab_bench_row_single, name, ns / 1000f)
+                        com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_bench_row_single), name, ns / 1000f)
                     }
                     Text(text, color = Color.LightGray, fontSize = 13.sp)
                 }
@@ -426,9 +426,9 @@ fun AudioLabScreen(onBack: () -> Unit) {
                 val base = matRows.first().third.coerceAtLeast(1)
                 matRows.forEach { (_, name, ns) ->
                     val text = if (matRows.size > 1) {
-                        stringResource(Res.string.audio_lab_mat_row, name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1))
+                        com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_mat_row), name, ns / 1000f, base.toFloat() / ns.coerceAtLeast(1))
                     } else {
-                        stringResource(Res.string.audio_lab_mat_row_single, name, ns / 1000f)
+                        com.varuna.rustify.ui.formatTemplate(stringResource(Res.string.audio_lab_mat_row_single), name, ns / 1000f)
                     }
                     Text(text, color = Color.LightGray, fontSize = 13.sp)
                 }

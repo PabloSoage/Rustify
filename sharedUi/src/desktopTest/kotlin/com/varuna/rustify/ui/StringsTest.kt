@@ -64,4 +64,25 @@ class StringsTest {
     fun noRunOfSpacesSurvivesFromTheAndroidFiles() = runBlocking {
         assertEquals(false, getString(Res.string.logs_levels).contains("  "))
     }
-}
+
+    /**
+     * Compose's `stringResource(res, args)` fills `%1$s` and `%1$d` and leaves `%1$.1f` as it is: the
+     * audio lab read "%1$.0f µs per frame" on the phone once it moved here. A string with a decimal is
+     * read whole and filled with `formatTemplate`, never passed its arguments.
+     */
+    @Test
+    fun aStringWithADecimalIsNeverGivenItsArgumentsByStringResource() {
+        val root = java.io.File(System.getProperty("user.dir"))
+        val withDecimals = java.io.File(root, "src/commonMain/composeResources/values").listFiles().orEmpty()
+            .filter { it.extension == "xml" }
+            .flatMap { file -> Regex("""<string name="(\w+)">([^<]*)</string>""").findAll(file.readText()).toList() }
+            .filter { Regex("""%(\d\$)?\.?\d*f""").containsMatchIn(it.groupValues[2]) }
+            .map { it.groupValues[1] }
+        val sources = java.io.File(root, "src").walk().filter { it.extension == "kt" && "Test" !in it.name }.toList()
+        val misuse = withDecimals.flatMap { name ->
+            sources.filter { Regex("""stringResource\(\s*Res\.string\.$name\s*,""").containsMatchIn(it.readText()) }
+                .map { "${it.name}: $name" }
+        }
+        kotlin.test.assertTrue(withDecimals.isNotEmpty(), "the strings were found")
+        assertEquals(emptyList(), misuse)
+    }}
