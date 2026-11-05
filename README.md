@@ -34,6 +34,23 @@ lab's SME kernels and Gemini Nano need the real hardware.
 | <img src="assets/screenshots/nano-chat-photo.webp" width="180" alt="A photo of a cover → the album, then play it"> | <img src="assets/screenshots/nano-panel.webp" width="180" alt="Gemini Nano for the DJ"> |
 | A cover photo → the album → "play it" | Gemini Nano for the DJ |
 
+### Other platforms
+
+The same app, from the same shared interface, on iOS, macOS, Linux and Windows, and in a browser
+through `rustify-server`.
+
+| iOS | | |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/platforms/ios-search.webp" width="200" alt="iOS: search, playing"> | <img src="assets/screenshots/platforms/ios-dj.webp" width="200" alt="iOS: the DJ"> | <img src="assets/screenshots/platforms/ios-settings.webp" width="200" alt="iOS: settings"> |
+
+| macOS | |
+|:---:|:---:|
+| <img src="assets/screenshots/platforms/macos-home.webp" width="380" alt="macOS: Home, in Spanish"> | <img src="assets/screenshots/platforms/macos-local-music.webp" width="380" alt="macOS: local music"> |
+
+| Linux |
+|:---:|
+| <img src="assets/screenshots/platforms/linux-library.webp" width="560" alt="Linux: the library, playing"> |
+
 ---
 
 ## ✨ Key Features
