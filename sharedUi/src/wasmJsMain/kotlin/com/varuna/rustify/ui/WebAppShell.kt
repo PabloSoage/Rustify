@@ -179,6 +179,7 @@ class WebAppShell(private val onLanguage: (String) -> Unit) : AppShell {
             SettingsSlot.GENERAL -> {
                 com.varuna.rustify.ui.screens.CacheStorageSection()
                 com.varuna.rustify.ui.screens.AdvancedDataSection()
+                com.varuna.rustify.ui.screens.DriveSyncSection(host.spotifyRepo, host.ytmRepo)
             }
             SettingsSlot.AUDIO -> Unit
             SettingsSlot.GENERAL_DJ -> com.varuna.rustify.ui.screens.DjSettingsSection()

@@ -251,12 +251,15 @@ fn may_make_account(extensions: &axum::http::Extensions, headers: &HeaderMap) ->
     !proxied(headers) && peer_of(extensions).is_some_and(home_network)
 }
 
-/// Lets through what needs no session (`/healthz`, `/login`) and what has one, and gives one to a
+/// Lets through what needs no session (`/healthz`, `/login`, `/drive-callback.html`) and what has one, and gives one to a
 /// page opened at this machine (unless `--password-on-this-machine`); the API answers 401 to
 /// anything else and a page is sent to the login.
 pub async fn require(State(app): State<App>, request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
-    if path == "/healthz" || path == "/login" {
+    // drive-callback.html is a static page with nothing in it but a script that hands Google's answer
+    // to the tab that asked; it arrives from the https redirect page, a navigation from another
+    // site, which carries no SameSite=Strict cookie.
+    if path == "/healthz" || path == "/login" || path == "/drive-callback.html" {
         return next.run(request).await;
     }
     if session_of(request.headers()).is_some_and(|id| app.sessions.contains(&id)) {

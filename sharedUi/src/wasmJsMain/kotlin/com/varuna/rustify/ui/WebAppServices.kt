@@ -98,6 +98,11 @@ class WebAppServices(
 
     override val audioSettings: AudioSettings = WebAudioSettings(platform)
 
+    // The desktop's sign-in with the answer brought back to this server (WebDriveAuth); only with the
+    // OAuth client the build was given, as on the desktop.
+    override val driveAuth: com.varuna.rustify.sync.DriveAuth? =
+        com.varuna.rustify.sync.WebDriveAuth(platform).takeIf { it.isConfigured(com.varuna.rustify.sync.DriveAuth.BROWSER) }
+
     private val chat = com.varuna.rustify.dj.DjServiceChatModel(platform, device = "this browser")
     private val translator = ModelLyricsTranslator(client = { chat.client() })
 
