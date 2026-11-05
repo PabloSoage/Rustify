@@ -27,7 +27,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
@@ -130,6 +133,7 @@ fun LibraryScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
+    onShufflePlay: (List<FullTrack>) -> Unit = {},
     // YouTube Music: shared repo plus navigation callbacks to the top-level NavHost screens.
     ytmRepo: YtMusicRepository? = null,
     onYtmOpenSearch: () -> Unit = {},
@@ -260,6 +264,7 @@ fun LibraryScreen(
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
                     onGoToRadio = onGoToRadio,
+                    onShufflePlay = onShufflePlay,
                     currentTrackId = currentTrackId,
                     searchQuery = globalSearchQuery
                 )
@@ -668,6 +673,7 @@ fun LibraryTracks(
     onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
     onArtistClick: (String) -> Unit,
     onGoToRadio: ((String, String) -> Unit)? = null,
+    onShufflePlay: (List<FullTrack>) -> Unit = {},
     currentTrackId: String?,
     searchQuery: String = ""
 ) {
@@ -729,12 +735,68 @@ fun LibraryTracks(
                 }
             }
         } else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = lazyListState,
-                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding),
-                    modifier = Modifier.fillMaxSize()
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Surface(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clickable {
+                                if (tracks.isNotEmpty()) {
+                                    onTrackClick(tracks.toList(), 0)
+                                }
+                            },
+                        shape = CircleShape,
+                        color = Color(0xFF1DB954)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play",
+                                tint = Color.Black,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clickable {
+                                if (tracks.isNotEmpty()) {
+                                    onShufflePlay(tracks.toList())
+                                }
+                            },
+                        shape = CircleShape,
+                        color = Color(0xFF1DB954)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = stringResource(Res.string.cd_shuffle_play),
+                                tint = Color.Black,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    LazyColumn(
+                        state = lazyListState,
+                        contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
                     itemsIndexed(filteredTracks, key = { index, track -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { index, track ->
                         val trackId = track.id ?: ""
                         val isLiked = spotifyRepo.isTrackLiked(trackId)
@@ -812,6 +874,7 @@ fun LibraryTracks(
                         .padding(top = 8.dp, bottom = bottomPadding)
                 )
             }
+        }
         }
         }
     }

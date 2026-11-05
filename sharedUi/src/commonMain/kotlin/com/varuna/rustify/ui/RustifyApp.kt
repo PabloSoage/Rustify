@@ -622,6 +622,7 @@ fun RustifyApp(
                                 navigationStack.add(Screen.AlbumDetail(id, name, images))
                             },
                             onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
+                            onShufflePlay = { audioPlayerService.shufflePlay(it) },
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {
                                 currentTrack?.id?.let { id ->
