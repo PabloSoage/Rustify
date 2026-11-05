@@ -425,7 +425,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         get() = com.varuna.rustify.cast.CastSession.device
 
     /** True while a device on the network — not ExoPlayer, not the page — is producing the audio. */
-    val isCasting: Boolean get() = castingTo != null
+    override val isCasting: Boolean get() = castingTo != null
 
     /**
      * The local server's handle for [trackId], or null when the server cannot serve it.
@@ -458,8 +458,9 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         val handle = castHandleFor(track.id)
             ?: return "\"${track.name}\" is not on this phone yet, so there is nothing to send"
 
+        val store = com.varuna.rustify.platform.SharedPreferencesStore(context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE))
         val failure = com.varuna.rustify.cast.CastSession.start(
-            context = context,
+            store = store,
             target = device,
             handle = handle,
             title = track.name,
@@ -493,7 +494,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      *
      * @return null on success, or the reason it did not start.
      */
-    suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? {
+    override suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? {
         val track = _state.value.currentTrack ?: return "nothing is playing"
         val wasPlaying = _state.value.isPlaying
         val at = withContext(Dispatchers.Main) {
@@ -607,7 +608,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
     }
 
     /** Ends the session because the user said so. Not an error, so nothing is reported as one. */
-    fun stopCasting() {
+    override fun stopCasting() {
         if (!isCasting) return
         clearCastSession()
         mainScope.launch {

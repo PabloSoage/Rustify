@@ -126,6 +126,9 @@ interface AppServices {
 
         /** Audio lab with effects and analysis (Android only; not implemented on iOS or desktop). */
         AUDIO_LAB,
+
+        /** Cast / DLNA streaming over the local network. */
+        CAST,
     }
 }
 

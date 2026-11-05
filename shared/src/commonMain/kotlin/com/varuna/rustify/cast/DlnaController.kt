@@ -1,10 +1,21 @@
+// shared/src/commonMain/kotlin/com/varuna/rustify/cast/DlnaController.kt
 package com.varuna.rustify.cast
 
-import android.util.Log
+import com.varuna.rustify.platform.IO
+import com.varuna.rustify.platform.Log
+import com.varuna.rustify.platform.httpClient
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
+import io.ktor.http.withCharset
+import io.ktor.utils.io.charsets.Charsets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Telling a DLNA renderer what to do — E16.
@@ -19,14 +30,24 @@ import java.net.URL
  * ## What a renderer does with a URL
  *
  * `SetAVTransportURI` hands it the address; `Play` starts it. From then on the device is doing HTTP
- * range requests against the phone, and the phone is a web server for as long as the session lasts.
+ * range requests against the host, and the host is a web server for as long as the session lasts.
  * Nothing about that is hidden — see `server/lan.rs`.
  */
 object DlnaController {
 
     private const val TAG = "DlnaController"
     private const val AV_TRANSPORT = "urn:schemas-upnp-org:service:AVTransport:1"
-    private const val TIMEOUT_MS = 5_000
+    private const val TIMEOUT_MS = 5_000L
+
+    private val client: HttpClient by lazy {
+        httpClient {
+            install(HttpTimeout) {
+                connectTimeoutMillis = TIMEOUT_MS
+                requestTimeoutMillis = TIMEOUT_MS
+                socketTimeoutMillis = TIMEOUT_MS
+            }
+        }
+    }
 
     /**
      * Hands the device a URL and starts it.
@@ -74,7 +95,7 @@ object DlnaController {
      * Where the device says it is, in milliseconds, or null if it will not say.
      *
      * Asked rather than assumed: once the device is playing, it owns the clock. A progress bar
-     * driven by the phone's idea of the position drifts within a minute.
+     * driven by the host's idea of the position drifts within a minute.
      */
     suspend fun position(controlUrl: String): Long? {
         val body = soapRaw(controlUrl, "GetPositionInfo", "<InstanceID>0</InstanceID>") ?: return null
@@ -107,28 +128,16 @@ object DlnaController {
   <s:Body><u:$action xmlns:u="$AV_TRANSPORT">$body</u:$action></s:Body>
 </s:Envelope>"""
             runCatching {
-                val connection = (URL(controlUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = TIMEOUT_MS
-                    readTimeout = TIMEOUT_MS
-                    doOutput = true
-                    setRequestProperty("Content-Type", "text/xml; charset=\"utf-8\"")
-                    setRequestProperty("SOAPAction", "\"$AV_TRANSPORT#$action\"")
+                val response = client.post(controlUrl) {
+                    header("SOAPAction", "\"$AV_TRANSPORT#$action\"")
+                    setBody(TextContent(envelope, ContentType.Text.Xml.withCharset(Charsets.UTF_8)))
                 }
-                connection.outputStream.use { it.write(envelope.toByteArray()) }
-                val code = connection.responseCode
+                val code = response.status.value
+                val text = response.bodyAsText()
                 if (code !in 200..299) {
-                    // The device's fault string says which of the twenty ways it refused, and it is
-                    // the only thing that makes a DLNA problem debuggable at all.
-                    val fault = connection.errorStream?.use {
-                        it.readBytes().toString(Charsets.UTF_8)
-                    }.orEmpty()
-                    Log.w(TAG, "$action answered $code: ${fault.take(300)}")
-                    connection.disconnect()
+                    Log.w(TAG, "$action answered $code: ${text.take(300)}")
                     return@runCatching null
                 }
-                val text = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                connection.disconnect()
                 text
             }.getOrElse {
                 Log.w(TAG, "$action failed", it)
@@ -142,7 +151,7 @@ object DlnaController {
      * Minimal on purpose. A renderer that dislikes one optional field tends to reject the whole
      * request rather than ignore the field, so there is nothing here that is not needed.
      */
-    private fun didl(url: String, title: String, artist: String, durationMs: Long): String =
+    internal fun didl(url: String, title: String, artist: String, durationMs: Long): String =
         """<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
 <item id="0" parentID="-1" restricted="1">
 <dc:title>${escape(title)}</dc:title>
@@ -153,13 +162,18 @@ object DlnaController {
 </DIDL-Lite>"""
 
     /** `H:MM:SS`, which is what AVTransport means by a time. */
-    private fun clock(ms: Long): String {
+    internal fun clock(ms: Long): String {
         val total = (ms / 1000).coerceAtLeast(0)
-        return "%d:%02d:%02d".format(total / 3600, (total % 3600) / 60, total % 60)
+        val hours = total / 3600
+        val minutes = (total % 3600) / 60
+        val seconds = total % 60
+        val minStr = if (minutes < 10) "0$minutes" else "$minutes"
+        val secStr = if (seconds < 10) "0$seconds" else "$seconds"
+        return "$hours:$minStr:$secStr"
     }
 
     /** The inverse of [clock], tolerant of the fractional seconds some devices add. */
-    private fun millis(clock: String): Long? {
+    internal fun millis(clock: String): Long? {
         val parts = clock.trim().split(':')
         if (parts.size != 3) return null
         val h = parts[0].toLongOrNull() ?: return null
@@ -168,7 +182,7 @@ object DlnaController {
         return ((h * 3600) + (m * 60) + s) * 1000
     }
 
-    private fun tag(xml: String, name: String): String? {
+    internal fun tag(xml: String, name: String): String? {
         val open = xml.indexOf("<$name>")
         if (open < 0) return null
         val start = open + name.length + 2
@@ -179,12 +193,8 @@ object DlnaController {
 
     /**
      * XML-escapes a value.
-     *
-     * It matters more than it looks: the URL carries a `?t=<token>` query, and an unescaped `&` in a
-     * SOAP envelope makes the whole envelope invalid — which a device reports as a generic failure,
-     * so it looks like casting simply not working.
      */
-    private fun escape(value: String): String = value
+    internal fun escape(value: String): String = value
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

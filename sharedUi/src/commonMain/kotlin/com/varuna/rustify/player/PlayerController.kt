@@ -102,6 +102,15 @@ interface PlayerController {
     fun switchToAudioStream()
     fun setWebPlayerMode(enabled: Boolean)
 
+    /** Starts casting the current track to [device]. Returns null on success or failure reason. */
+    suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? = "not supported on this platform"
+
+    /** Stops active cast session. */
+    fun stopCasting() {}
+
+    /** True if currently casting to a remote device. */
+    val isCasting: Boolean get() = false
+
     /** Writes the session to disk now (the app is going to the background). */
     fun saveNow()
 
@@ -121,6 +130,8 @@ enum class PlayerFeature {
     SPEED,
     /** The system equaliser, AutoEq, bit-perfect and the other Android audio effects. */
     AUDIO_EFFECTS,
+    /** Casting to a DLNA / UPnP renderer on the local network. */
+    CAST,
 }
 
 /** The player of the running app, provided at the root of the interface. */

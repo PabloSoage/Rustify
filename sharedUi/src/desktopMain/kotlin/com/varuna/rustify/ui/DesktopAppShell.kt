@@ -237,6 +237,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             com.varuna.rustify.ui.screens.DataExportSection()
             com.varuna.rustify.ui.screens.ListenBrainzSection()
             com.varuna.rustify.ui.screens.LastFmSection()
+            com.varuna.rustify.ui.screens.CastingSection()
             com.varuna.rustify.ui.screens.InvidiousBackendSection()
             com.varuna.rustify.ui.screens.DeezerBackendSection()
             com.varuna.rustify.ui.screens.SubsonicBackendSection()

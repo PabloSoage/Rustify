@@ -1,11 +1,17 @@
+// shared/src/commonMain/kotlin/com/varuna/rustify/cast/CastSession.kt
 package com.varuna.rustify.cast
 
-import android.content.Context
-import android.util.Log
 import com.varuna.rustify.bridge.NativeEngine
+import kotlin.concurrent.Volatile
+import com.varuna.rustify.platform.IO
+import com.varuna.rustify.platform.KeyValueStore
+import com.varuna.rustify.platform.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * A cast session, start to finish — E16.
@@ -25,7 +31,6 @@ import org.json.JSONObject
 object CastSession {
 
     private const val TAG = "CastSession"
-    private const val PREFS = "rustify_settings"
 
     /**
      * The user's switch. **Off by default**, like Deezer.
@@ -35,17 +40,13 @@ object CastSession {
      */
     const val ENABLED_KEY = "settings_casting_enabled"
 
-    fun isEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED_KEY, false)
+    fun isEnabled(store: KeyValueStore): Boolean =
+        store.getBoolean(ENABLED_KEY, false)
 
-    fun setEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(ENABLED_KEY, enabled).apply()
+    fun setEnabled(store: KeyValueStore, enabled: Boolean) {
+        store.putBoolean(ENABLED_KEY, enabled)
         if (!enabled) {
-            // Turning the switch off has to end whatever is running, or the switch is a label. Via
-            // [abandon] rather than the bridge alone: closing the port while [device] still held a
-            // device left everything that asks "am I casting?" answering yes to a session with no
-            // port behind it.
+            // Turning the switch off has to end whatever is running, or the switch is a label.
             abandon()
         }
     }
@@ -57,53 +58,60 @@ object CastSession {
 
     /** Is a session open, as the **core** sees it — not as this object remembers it. */
     fun isActive(): Boolean = runCatching {
-        JSONObject(NativeEngine.castSessionNative()).optBoolean("active", false)
+        val raw = NativeEngine.castSessionNative()
+        Json.parseToJsonElement(raw).jsonObject["active"]?.jsonPrimitive?.booleanOrNull ?: false
     }.getOrDefault(false)
 
     /**
      * Starts casting [handle] to [target].
      *
      * [handle] is what `LocalStreamServer` already registered for the track — the same opaque
-     * identifier the phone's own player would use. Nothing new is registered and nothing extra is
+     * identifier the host's own player would use. Nothing new is registered and nothing extra is
      * exposed: the only difference is which host is in the URL.
      *
      * @return null on success, or a message saying why not.
      */
     suspend fun start(
-        context: Context,
+        store: KeyValueStore,
         target: CastDiscovery.Device,
         handle: String,
         title: String,
         artist: String,
         durationMs: Long
     ): String? = withContext(Dispatchers.IO) {
-        if (!isEnabled(context)) return@withContext "casting is switched off"
+        if (!isEnabled(store)) return@withContext "casting is switched off"
 
         val deviceAddress = CastDiscovery.literalAddress(target.address)
             ?: return@withContext "could not work out ${target.friendlyName}'s address"
 
         val ours = CastDiscovery.localAddressOn()
-            ?: return@withContext "this phone has no address on a local network"
+            ?: return@withContext "this device has no address on a local network"
 
         // A guard, not the guard: the core checks every connection's peer regardless. This is here
         // so that opening onto the wrong interface fails loudly instead of quietly not working.
         if (!CastDiscovery.sameNetwork(ours, deviceAddress)) {
-            return@withContext "${target.friendlyName} is not on the same network as this phone"
+            return@withContext "${target.friendlyName} is not on the same network as this device"
         }
 
         val opened = runCatching {
-            JSONObject(NativeEngine.openCastListenerNative(ours, deviceAddress))
+            val raw = NativeEngine.openCastListenerNative(ours, deviceAddress)
+            Json.parseToJsonElement(raw).jsonObject
         }.getOrElse {
             Log.e(TAG, "could not open the cast listener", it)
             return@withContext "could not open the connection"
         }
-        if (!opened.optBoolean("success", false)) {
-            return@withContext opened.optString("error").ifBlank { "could not open the connection" }
+
+        val success = opened["success"]?.jsonPrimitive?.booleanOrNull ?: false
+        if (!success) {
+            val error = opened["error"]?.jsonPrimitive?.content ?: "could not open the connection"
+            return@withContext error
         }
 
         val url = runCatching {
-            JSONObject(NativeEngine.castUrlForNative(handle)).optString("url")
+            val raw = NativeEngine.castUrlForNative(handle)
+            Json.parseToJsonElement(raw).jsonObject["url"]?.jsonPrimitive?.content.orEmpty()
         }.getOrNull().orEmpty()
+
         if (url.isBlank()) {
             stop()
             return@withContext "the track is not being served, so there is nothing to send"
@@ -111,8 +119,6 @@ object CastSession {
 
         val played = DlnaController.play(target.controlUrl, url, title, artist, durationMs)
         if (!played) {
-            // Failing to play must not leave the port open. This is the case that would otherwise
-            // leave the phone serving to the LAN with nothing listening.
             stop()
             return@withContext "${target.friendlyName} did not accept the track"
         }
@@ -134,10 +140,6 @@ object CastSession {
     /**
      * Closes the port without telling the device — for teardown, where there is no time to wait on a
      * SOAP round trip.
-     *
-     * The device is left holding a URL it can no longer reach, and that is the right way round: the
-     * port closes first and the device finds out by failing, rather than staying open while a polite
-     * `Stop` is in flight. Blocking and argument-free, so it can run on the way out.
      */
     fun abandon() {
         device = null
@@ -159,7 +161,7 @@ object CastSession {
         return DlnaController.seek(current.controlUrl, positionMs)
     }
 
-    /** Where the device says it is. The device owns the clock once it is playing, not the phone. */
+    /** Where the device says it is. The device owns the clock once it is playing. */
     suspend fun positionMs(): Long? {
         val current = device ?: return null
         return DlnaController.position(current.controlUrl)

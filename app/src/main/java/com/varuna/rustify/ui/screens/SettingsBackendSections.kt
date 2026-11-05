@@ -165,5 +165,5 @@ internal fun AudioBackendsSection(context: Context) {
     ListenBrainzSection()
     LastFmSection()
     JamSection(context)
-    CastingSection(context)
+    CastingSection()
 }

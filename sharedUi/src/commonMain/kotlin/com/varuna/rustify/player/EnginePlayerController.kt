@@ -73,7 +73,10 @@ class EnginePlayerController(
     override val resumedAt: StateFlow<Pair<String, Long>?> = player.resumedAt
     override val isWebPlayerMode: Boolean = false
 
-    override fun can(feature: PlayerFeature): Boolean = feature == PlayerFeature.SPEED
+    override fun can(feature: PlayerFeature): Boolean = when (feature) {
+        PlayerFeature.SPEED, PlayerFeature.CAST -> true
+        else -> false
+    }
 
     // ── Playing ─────────────────────────────────────────────────────────────────────────────────
 
@@ -124,10 +127,40 @@ class EnginePlayerController(
         player.jumpTo(i, startMs = if (sameTrack) ui.positionMs.coerceAtLeast(0) else 0, youtubeId = youtubeId, isAutoRetry = isAutoRetry)
     }
 
-    override fun play() = player.play()
-    override fun pause(immediate: Boolean) = player.pause()
-    override fun togglePlayPause() = player.togglePause()
-    override fun seekTo(positionMs: Long) = player.seek(positionMs)
+    override fun play() {
+        if (isCasting) {
+            scope.launch { com.varuna.rustify.cast.CastSession.resume() }
+        } else {
+            player.play()
+        }
+    }
+    override fun pause(immediate: Boolean) {
+        if (isCasting) {
+            scope.launch { com.varuna.rustify.cast.CastSession.pause() }
+        } else {
+            player.pause()
+        }
+    }
+    override fun togglePlayPause() {
+        if (isCasting) {
+            scope.launch {
+                val state = com.varuna.rustify.cast.CastSession.device?.let {
+                    com.varuna.rustify.cast.DlnaController.transportState(it.controlUrl)
+                }
+                if (state == "PLAYING") com.varuna.rustify.cast.CastSession.pause()
+                else com.varuna.rustify.cast.CastSession.resume()
+            }
+        } else {
+            player.togglePause()
+        }
+    }
+    override fun seekTo(positionMs: Long) {
+        if (isCasting) {
+            scope.launch { com.varuna.rustify.cast.CastSession.seekTo(positionMs) }
+        } else {
+            player.seek(positionMs)
+        }
+    }
     override fun skipToNext() = player.next()
     override fun skipToPrevious() = player.previous()
     override fun startOver() = player.startOver()
@@ -469,6 +502,77 @@ class EnginePlayerController(
     override fun switchToVideoStream(videoUrl: String, audioUrl: String?) = Unit
     override fun switchToAudioStream() = Unit
     override fun setWebPlayerMode(enabled: Boolean) = Unit
+
+    override val isCasting: Boolean
+        get() = com.varuna.rustify.cast.CastSession.device != null
+
+    private var castPollJob: Job? = null
+    private var castStartConfirmed = false
+    private var lastCastEndedTrackId: String? = null
+
+    override suspend fun startCastingTo(device: com.varuna.rustify.cast.CastDiscovery.Device): String? {
+        val currentTrack = state.value.currentTrack ?: return "nothing is playing"
+        val wasPlaying = state.value.isPlaying
+        val position = state.value.positionMs
+        pause()
+        val store = platform.prefs("rustify_settings")
+        val failure = com.varuna.rustify.cast.CastSession.start(
+            store = store,
+            target = device,
+            handle = currentTrack.id.orEmpty(),
+            title = currentTrack.name,
+            artist = currentTrack.artists.joinToString(", ") { it.name },
+            durationMs = currentTrack.durationMs.toLong()
+        )
+        if (failure != null) {
+            if (wasPlaying) play()
+            return failure
+        }
+        if (position > 1_000L) runCatching { com.varuna.rustify.cast.CastSession.seekTo(position) }
+        startCastPolling(device)
+        return null
+    }
+
+    override fun stopCasting() {
+        castPollJob?.cancel()
+        castPollJob = null
+        castStartConfirmed = false
+        lastCastEndedTrackId = null
+        scope.launch {
+            com.varuna.rustify.cast.CastSession.stop()
+        }
+    }
+
+    private fun startCastPolling(device: com.varuna.rustify.cast.CastDiscovery.Device) {
+        castPollJob?.cancel()
+        castStartConfirmed = false
+        lastCastEndedTrackId = null
+        castPollJob = scope.launch {
+            var unanswered = 0
+            while (isCasting) {
+                val currentDevice = com.varuna.rustify.cast.CastSession.device ?: break
+                val transport = com.varuna.rustify.cast.DlnaController.transportState(currentDevice.controlUrl)
+                if (transport == null) {
+                    if (++unanswered >= 5) {
+                        stopCasting()
+                        return@launch
+                    }
+                    delay(1000)
+                    continue
+                }
+                unanswered = 0
+                if (transport == "PLAYING") castStartConfirmed = true
+
+                val finished = castStartConfirmed && (transport == "STOPPED" || transport == "NO_MEDIA_PRESENT")
+                val playingId = state.value.currentTrack?.id
+                if (finished && playingId != null && playingId != lastCastEndedTrackId) {
+                    lastCastEndedTrackId = playingId
+                    skipToNext()
+                }
+                delay(1000)
+            }
+        }
+    }
 
     // QueuePlayer stores the queue on every change that matters and on close.
     override fun saveNow() = Unit
