@@ -17,7 +17,7 @@ path = "src/main.rs"
 # never sees axum, and the core's lock file stays what it was.
 core_engine = { path = "../core_engine", features = ["c-api"] }
 
-tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "time"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "time", "process", "io-util"] }
 axum = "0.8"
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br", "set-header", "trace"] }
 # /api/stream, to the core's own server on 127.0.0.1, and /api/fetch, what a page cannot ask for itself.

@@ -12,6 +12,7 @@ mod auth;
 mod core;
 mod fetch;
 mod files;
+mod spotify_window;
 mod stream;
 
 use std::net::SocketAddr;
@@ -181,6 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer::<_, std::convert::Infallible>(CompressionLayer::new())
                 .layer(DefaultBodyLimit::max(MAX_CALL_BYTES)),
         )
+        .route("/api/spotify-window", get(spotify_window::available).post(spotify_window::open))
         .route("/api/stream/{handle}", get(stream::forward))
         .route("/api/file", post(files::handle).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)))
         .route("/api/raw/{*path}", get(files::raw))

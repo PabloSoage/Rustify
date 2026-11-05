@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,9 +36,35 @@ import com.varuna.rustify.ui.resources.spotify_sign_in
 import com.varuna.rustify.ui.resources.web_sign_in_check_again
 import com.varuna.rustify.ui.resources.web_sign_in_from_app
 import com.varuna.rustify.ui.resources.web_sign_in_or_paste
+import com.varuna.rustify.ui.resources.web_sign_in_other_ways
+import com.varuna.rustify.ui.resources.web_sign_in_waiting
+import com.varuna.rustify.ui.resources.web_sign_in_window
+import com.varuna.rustify.ui.resources.web_sign_in_window_failed
+import com.varuna.rustify.ui.resources.web_sign_in_window_hint
+import kotlin.js.Promise
+import kotlinx.coroutines.await
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 private fun pageOrigin(): String = js("window.location.origin")
+
+/** Whether the server can open the Spotify window (`GET /api/spotify-window`). */
+private fun windowAvailable(): Promise<JsBoolean> = js(
+    """fetch('api/spotify-window').then(function(r) { return r.ok ? r.json() : {}; })
+        .then(function(a) { return a.available === true; }, function() { return false; })"""
+)
+
+/**
+ * The server opens Spotify's sign-in on its screen and answers the cookie (`POST /api/spotify-window`):
+ * the cookie, `""` when the window was closed, `"!"` when it could not open.
+ */
+private fun openWindow(lang: String): Promise<JsString> = js(
+    """fetch('api/spotify-window?lang=' + encodeURIComponent(lang), { method: 'POST' })
+        .then(function(r) {
+            if (r.status === 200) { return r.json().then(function(a) { return a.sp_dc || '!'; }); }
+            return r.status === 204 ? '' : '!';
+        }, function() { return '!'; })"""
+)
 
 private fun reloadPage() {
     js("window.location.reload()")
@@ -48,18 +75,58 @@ private val Accent = Color(0xFF1DB954)
 
 /**
  * [AppShell] in a browser. The Spotify cookie cannot be read from a page of another site (docs
- * serie-4.x/28 §5 bis), so signing in is pasting it; the screens no browser can have say so.
+ * serie-4.x/28 §5 bis), so signing in is the server's Spotify window when it has a screen, else the
+ * session from the app (ServerLink) or the pasted cookie; the screens no browser can have say so.
  */
 class WebAppShell(private val onLanguage: (String) -> Unit) : AppShell {
     @Composable
     override fun SignIn(onLogin: (String) -> Unit, onCancel: () -> Unit) {
         var cookie by remember { mutableStateOf("") }
+        // null while asking the server; then whether it can open the Spotify window.
+        var window by remember { mutableStateOf<Boolean?>(null) }
+        var waiting by remember { mutableStateOf(false) }
+        var windowFailed by remember { mutableStateOf(false) }
+        var otherWays by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(Unit) {
+            window = runCatching { windowAvailable().await<JsBoolean>().toBoolean() }.getOrDefault(false)
+        }
         Column(
             Modifier.fillMaxSize().background(Background).statusBarsPadding().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // The easy way first: the phone or desktop app hands this server its session (ServerLink),
-            // since no page can sign in to Spotify for another site. Then the page only has to look again.
+            // The way the phone and the desktop do it: Spotify's own page, in a window the server opens
+            // (rustify-login), since no page can frame Spotify's login or read its cookie.
+            if (window == true && !windowFailed) {
+                Text(stringResource(Res.string.web_sign_in_window_hint), color = Color.LightGray)
+                Button(
+                    enabled = !waiting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
+                    onClick = {
+                        waiting = true
+                        scope.launch {
+                            val answer = runCatching { openWindow(WebLocale.tag).await<JsString>().toString() }.getOrDefault("!")
+                            waiting = false
+                            when (answer) {
+                                "" -> Unit
+                                "!" -> windowFailed = true
+                                else -> onLogin(answer)
+                            }
+                        }
+                    },
+                ) { Text(stringResource(Res.string.web_sign_in_window)) }
+                if (waiting) Text(stringResource(Res.string.web_sign_in_waiting), color = Color.Gray)
+                if (!otherWays) {
+                    TextButton(onClick = { otherWays = true }) {
+                        Text(stringResource(Res.string.web_sign_in_other_ways), color = Accent)
+                    }
+                    TextButton(onClick = onCancel) { Text(stringResource(Res.string.cancel), color = Accent) }
+                    return@Column
+                }
+            }
+            if (windowFailed) Text(stringResource(Res.string.web_sign_in_window_failed), color = Color(0xFFFFB74D))
+            // Without a screen on the server: the phone or desktop app hands this server its session
+            // (ServerLink), and the page only has to look again.
             Text(stringResource(Res.string.web_sign_in_from_app, pageOrigin()), color = Color.White)
             Button(
                 colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),

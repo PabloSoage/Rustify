@@ -98,4 +98,9 @@
     <string name="web_sign_in_from_app">簡単な方法: スマホかパソコンの Rustify で「設定」→「連携」→「自分の Rustify サーバー」を開き、このアドレス（%1$s）とサーバーのアクセストークンを入力します。Spotify のセッションが何もコピーせずにここへ届きます。</string>
     <string name="web_sign_in_check_again">連携しました: もう一度確認</string>
     <string name="web_sign_in_or_paste">または Cookie を手で貼り付け:</string>
+    <string name="web_sign_in_window">Spotify でログイン</string>
+    <string name="web_sign_in_window_hint">アプリと同じように、このパソコンのウィンドウで Spotify のログインが開きます。</string>
+    <string name="web_sign_in_waiting">Spotify のウィンドウでログインを完了してください…</string>
+    <string name="web_sign_in_window_failed">ここでは Spotify のウィンドウを開けませんでした。下のほかの方法を使ってください。</string>
+    <string name="web_sign_in_other_ways">ほかのログイン方法</string>
 </resources>
