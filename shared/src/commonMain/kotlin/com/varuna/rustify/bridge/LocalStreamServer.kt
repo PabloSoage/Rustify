@@ -29,6 +29,7 @@ object LocalStreamServer {
     private const val TAG = "LocalStreamServer"
 
     @Volatile private var port: Int = 0
+    @Volatile private var token: String = ""
     @Volatile private var running: Boolean = false
 
     /** Whether the server came up. When false, callers play upstream URLs directly. */
@@ -36,6 +37,12 @@ object LocalStreamServer {
 
     /** The bound loopback port, or 0 if the server is not running. Diagnostics only. */
     val boundPort: Int get() = port
+
+    /** Loopback URL for an already registered stream handle, for testing or loopback playback. */
+    fun streamUrl(handle: String): String? {
+        if (!running || port == 0 || token.isBlank() || handle.isBlank()) return null
+        return "http://127.0.0.1:$port/stream/$handle?t=$token"
+    }
 
     /**
      * Starts the server if it is not already up. Idempotent.
@@ -58,6 +65,7 @@ object LocalStreamServer {
                 return false
             }
             port = json.optInt("port", 0)
+            token = json.optString("token")
             running = port != 0
             if (running) Log.i(TAG, "local server on 127.0.0.1:$port")
             running

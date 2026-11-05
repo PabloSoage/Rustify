@@ -56,6 +56,13 @@ object CastSession {
     var device: CastDiscovery.Device? = null
         private set
 
+    /**
+     * Test seam: when non-null, [start] bypasses LAN interface discovery and uses this URL generator.
+     * In production this is always null, so only a real LAN listener via [NativeEngine.openCastListenerNative]
+     * is used.
+     */
+    var testUrlFor: ((handle: String) -> String?)? = null
+
     /** Is a session open, as the **core** sees it — not as this object remembers it. */
     fun isActive(): Boolean = runCatching {
         val raw = NativeEngine.castSessionNative()
@@ -77,15 +84,17 @@ object CastSession {
         handle: String,
         title: String,
         artist: String,
-        durationMs: Long
+        durationMs: Long,
+        urlFor: ((handle: String) -> String?)? = testUrlFor
     ): String? = withContext(Dispatchers.IO) {
         if (!isEnabled(store)) return@withContext "casting is switched off"
 
-        val deviceAddress = CastDiscovery.literalAddress(target.address)
-            ?: return@withContext "could not work out ${target.friendlyName}'s address"
+        val url = if (urlFor != null) {
+            urlFor(handle) ?: return@withContext "the track is not being served, so there is nothing to send"
+        } else {
+            val deviceAddress = CastDiscovery.literalAddress(target.address)
+                ?: return@withContext "could not work out ${target.friendlyName}'s address"
 
-        val isLoopback = deviceAddress == "127.0.0.1" || deviceAddress == "::1"
-        if (!isLoopback) {
             val ours = CastDiscovery.localAddressOn()
                 ?: return@withContext "this device has no address on a local network"
 
@@ -108,16 +117,17 @@ object CastSession {
                 val error = opened["error"]?.jsonPrimitive?.content ?: "could not open the connection"
                 return@withContext error
             }
-        }
 
-        val url = runCatching {
-            val raw = NativeEngine.castUrlForNative(handle)
-            Json.parseToJsonElement(raw).jsonObject["url"]?.jsonPrimitive?.content.orEmpty()
-        }.getOrNull().orEmpty()
+            val u = runCatching {
+                val raw = NativeEngine.castUrlForNative(handle)
+                Json.parseToJsonElement(raw).jsonObject["url"]?.jsonPrimitive?.content.orEmpty()
+            }.getOrNull().orEmpty()
 
-        if (url.isBlank()) {
-            stop()
-            return@withContext "the track is not being served, so there is nothing to send"
+            if (u.isBlank()) {
+                stop()
+                return@withContext "the track is not being served, so there is nothing to send"
+            }
+            u
         }
 
         val played = DlnaController.play(target.controlUrl, url, title, artist, durationMs)
@@ -127,7 +137,7 @@ object CastSession {
         }
 
         device = target
-        Log.i(TAG, "casting to ${target.friendlyName} at $deviceAddress")
+        Log.i(TAG, "casting to ${target.friendlyName} at ${target.address}")
         null
     }
 

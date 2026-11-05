@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.varuna.rustify.audio.DesktopAudioSources
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LocalStreamServer
 import com.varuna.rustify.bridge.TrackRef
 import com.varuna.rustify.cast.CastDiscovery
 import com.varuna.rustify.cast.CastSession
@@ -89,6 +90,9 @@ class EnginePlayerControllerCastTest {
 
     @BeforeTest
     fun setUp() {
+        CastSession.testUrlFor = { handle ->
+            LocalStreamServer.streamUrl(handle)
+        }
         setUriCalls.clear()
         fetchedBytes.clear()
         localPlayTriggered.set(false)
@@ -146,6 +150,7 @@ class EnginePlayerControllerCastTest {
 
     @AfterTest
     fun tearDown() = runBlocking {
+        CastSession.testUrlFor = null
         runCatching { CastSession.stop() }
         mockTvServer.stop(0)
     }

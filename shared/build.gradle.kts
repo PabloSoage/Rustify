@@ -107,3 +107,6 @@ kotlin {
         }
     }
 }
+tasks.withType<Test>().configureEach {
+    systemProperty("rustify.coreLibDir", rootProject.file("core_engine/target/desktop/release").absolutePath)
+}
