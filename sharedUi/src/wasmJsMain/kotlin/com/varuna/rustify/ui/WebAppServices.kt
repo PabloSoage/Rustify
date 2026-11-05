@@ -48,7 +48,7 @@ class WebAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.TRANSLATION -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.TRANSLATION, AppServices.Feature.VIDEO -> true
         else -> false
     }
 
@@ -75,13 +75,14 @@ class WebAppServices(
 
     override fun translationTarget(): String = WebLocale.tag.substringBefore('-')
 
-    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? = null
+    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? =
+        com.varuna.rustify.bridge.resolveVideoFromCore(youtubeId)
 
     @Composable
-    override fun CanvasVideo(url: String, fitWidth: Boolean) = Unit
+    override fun CanvasVideo(url: String, fitWidth: Boolean) = WebCanvasVideo(url, fitWidth)
 
     @Composable
-    override fun PlayerVideo(video: Pair<String, String?>) = Unit
+    override fun PlayerVideo(video: Pair<String, String?>) = WebPlayerVideo(video.first)
 
     @Composable
     override fun JamDialog(onDismiss: () -> Unit) {
