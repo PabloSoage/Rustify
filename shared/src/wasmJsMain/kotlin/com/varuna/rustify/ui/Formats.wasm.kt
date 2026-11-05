@@ -6,27 +6,37 @@ import kotlin.time.Instant
 
 /** The interface's language, a BCP 47 tag; the browser's until Settings picks another. */
 object WebLocale {
+    /** The browser's own, read before anything below overrides it. */
+    private val browsers: String = browserLanguage()
+
     /**
-     * Setting it also tells Compose: its resources read `Locale.current`, which on the web is the
-     * browser's language unless `window.__customLocale` says otherwise. Without that, picking Spanish
-     * in Settings changed the dates and numbers and left every string in the browser's language.
+     * Setting it also tells Compose. Its resources take the language from `Locale.current`, which on
+     * the web is `navigator.languages` and nothing else (Compose Multiplatform 1.12 has no public way
+     * to set it, and `window.__customLocale` is not read): without this, picking Spanish in Settings
+     * changed the dates and numbers and left every string in the browser's language. So the page's
+     * `navigator` answers with the chosen language.
      */
-    var tag: String = browserLanguage()
+    var tag: String = browsers
         set(value) {
             field = value
-            setComposeLocale(value)
+            setNavigatorLanguage(value)
         }
 
     /** Back to the browser's language ("System" in Settings). */
     fun useBrowsers() {
-        tag = browserLanguage()
+        tag = browsers
     }
 }
 
 private fun browserLanguage(): String = js("navigator.language || 'en'")
 
-private fun setComposeLocale(tag: String) {
-    js("window.__customLocale = tag")
+private fun setNavigatorLanguage(tag: String) {
+    js(
+        """(function() {
+            Object.defineProperty(navigator, 'language', { get: function() { return tag; }, configurable: true });
+            Object.defineProperty(navigator, 'languages', { get: function() { return [tag]; }, configurable: true });
+        })()"""
+    )
 }
 
 private fun numberParts(tag: String, kind: String): String = js(
