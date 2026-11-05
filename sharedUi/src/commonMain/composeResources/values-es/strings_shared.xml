@@ -70,4 +70,5 @@
     <string name="lyrics_translate_no_model">no hay ningún modelo de lenguaje en marcha en este ordenador, y el DJ no usa IA externa</string>
     <string name="lyrics_translate_not_json">el modelo no ha respondido con las líneas pedidas</string>
     <string name="lyrics_translate_wrong_count">el modelo ha devuelto %1$s líneas de %2$s</string>
+    <string name="travel_pick_origin_first">Este dispositivo no tiene ubicación: elige primero Origen y luego busca un lugar o mantén pulsado el mapa.</string>
 </resources>

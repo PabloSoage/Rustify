@@ -39,6 +39,9 @@ private fun yearNow(): Int = js("new Date().getFullYear()")
 
 private fun hourNow(): Int = js("new Date().getHours()")
 
+private fun todayNow(): String =
+    js("(d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))(new Date())")
+
 private fun yearStart(year: Int): Double = js("new Date(year, 0, 1).getTime()")
 
 private fun spanStart(span: Int, epochMs: Double, firstWeekday: Int): Double = js(
@@ -92,6 +95,8 @@ actual fun monthName(index: Int): String = if (index in 0..11) nameOfMonth(WebLo
 actual fun weekdayName(weekday: Int): String = nameOfWeekday(WebLocale.tag, weekday)
 
 actual fun currentYear(): Int = yearNow()
+
+actual fun todayIso(): String = todayNow()
 
 actual fun currentHourOfDay(): Int = hourNow()
 

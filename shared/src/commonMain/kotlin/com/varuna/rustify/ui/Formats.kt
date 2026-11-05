@@ -54,6 +54,9 @@ expect fun weekdayName(weekday: Int): String
 /** This year in the system's time zone: `LocalDate.now().year`. */
 expect fun currentYear(): Int
 
+/** Today as "2026-11-05": `SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())`. */
+expect fun todayIso(): String
+
 /** The hour of the day, 0 to 23, in the system's time zone: `Calendar.HOUR_OF_DAY`. */
 expect fun currentHourOfDay(): Int
 

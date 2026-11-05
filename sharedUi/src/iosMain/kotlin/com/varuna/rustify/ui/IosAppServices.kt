@@ -152,6 +152,8 @@ class IosAppServices(
     override fun chatModel(): ChatModel = chat
 
     override val logs: LogBook get() = IosLogBook
+
+    override val travel: com.varuna.rustify.travel.TravelPlatform get() = com.varuna.rustify.travel.IosTravelPlatform
 }
 
 /** No speech recognition here yet: the DJ screen says so when the microphone is pressed. */

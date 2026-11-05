@@ -70,4 +70,5 @@
     <string name="lyrics_translate_no_model">このコンピューターで動いている言語モデルがなく、DJ も外部 AI を使っていません</string>
     <string name="lyrics_translate_not_json">モデルが求めた形式の行で答えませんでした</string>
     <string name="lyrics_translate_wrong_count">%2$s 行に対してモデルが %1$s 行を返しました</string>
+    <string name="travel_pick_origin_first">この端末では現在地を取得できません。先に「出発地」を選び、場所を検索するか地図を長押ししてください。</string>
 </resources>

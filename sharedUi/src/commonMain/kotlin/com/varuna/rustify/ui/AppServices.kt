@@ -103,6 +103,9 @@ interface AppServices {
      */
     fun chatModel(): com.varuna.rustify.dj.ChatModel?
 
+    /** The Travel screen's map, location and directions; MapLibre and GPS on Android, [com.varuna.rustify.travel.TileMap] elsewhere. */
+    val travel: com.varuna.rustify.travel.TravelPlatform get() = com.varuna.rustify.travel.TravelPlatform.Default
+
     /** The app's own log, for the log viewer. */
     val logs: com.varuna.rustify.util.LogBook
 

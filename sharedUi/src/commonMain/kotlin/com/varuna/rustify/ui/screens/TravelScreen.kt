@@ -1,16 +1,6 @@
 package com.varuna.rustify.ui.screens
 
 import com.varuna.rustify.bridge.TrackRef
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
-import android.os.Bundle
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -70,11 +60,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -89,39 +77,31 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.varuna.rustify.ui.LocalAppPlatform
+import com.varuna.rustify.ui.LocalAppServices
 import com.varuna.rustify.ui.MiniPlayer
-import com.varuna.rustify.R
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.ui.todayIso
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.travel.TravelCamera
+import com.varuna.rustify.travel.TravelMarks
 import com.varuna.rustify.travel.TravelPlaylist
 import com.varuna.rustify.travel.TravelRouting
 import com.varuna.rustify.travel.TravelSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.CircleLayer
-import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.android.style.sources.GeoJsonSource
+import org.jetbrains.compose.resources.stringResource
 
 /**
- * "Travel playlist": full-screen interactive map (OpenFreeMap OSM basemap by default,
- * or MapTiler Cloud if the user provides a key), with destination autocomplete (Photon + Nominatim,
+ * "Travel playlist": full-screen interactive map (MapLibre over OpenFreeMap on Android, OSM raster
+ * tiles drawn in Compose elsewhere; see [com.varuna.rustify.travel.TravelPlatform]), with destination autocomplete (Photon + Nominatim,
  * keyless), live location drawn on the map, an OSRM route drawn on the map, a prompt to enable GPS,
  * and two playlist modes:
  *  - **Auto**: filled from liked tracks.
@@ -148,13 +128,15 @@ fun TravelScreen(
     onMiniPlayerClick: () -> Unit,
     initialDestination: TravelRouting.Geo? = null
 ) {
-    val context = LocalContext.current
+    val platform = LocalAppPlatform.current
+    val prefs = platform.prefs()
+    val travel = LocalAppServices.current.travel
     val scope = rememberCoroutineScope()
     val green = Color(0xFF1DB954)
 
-    var hasPerm by remember { mutableStateOf(hasLocationPermission(context)) }
-    var locationEnabled by remember { mutableStateOf(TravelRouting.isLocationEnabled(context)) }
-    var current by remember { mutableStateOf<Location?>(null) }
+    val location = travel.rememberLocation()
+    val current = location.current
+    val camera = remember { TravelCamera() }
 
     var query by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<TravelRouting.Geo>>(emptyList()) }
@@ -163,8 +145,9 @@ fun TravelScreen(
     var pickedDestination by remember { mutableStateOf<TravelRouting.Geo?>(null) }
     // Optional explicit origin: if null, the current GPS location is used as the origin.
     var originOverride by remember { mutableStateOf<TravelRouting.Geo?>(null) }
-    // What the search / long-press sets: 0 = destination, 1 = origin.
-    var pickMode by remember { mutableIntStateOf(0) }
+    // What the search / long-press sets: 0 = destination, 1 = origin. Where there is no location the
+    // origin comes first, since nothing else would give one.
+    var pickMode by remember { mutableIntStateOf(if (location.supported) 0 else 1) }
 
     var route by remember { mutableStateOf<TravelRouting.Route?>(null) }
     var bufferMin by remember { mutableFloatStateOf(10f) }
@@ -190,10 +173,8 @@ fun TravelScreen(
 
     var followUser by remember { mutableStateOf(true) }
 
-    var mapStyleIndex by remember { mutableIntStateOf(TravelSettings.mapStyleIndex(context)) }
+    var mapStyleIndex by remember { mutableIntStateOf(TravelSettings.mapStyleIndex(prefs)) }
     var showStyleMenu by remember { mutableStateOf(false) }
-    var mapBearing by remember { mutableDoubleStateOf(0.0) }
-    var styleSwitching by remember { mutableStateOf(false) }
     val isDarkMap = mapStyleIndex == TravelSettings.STYLE_DARK_INDEX
     val titleColor = if (isDarkMap) Color.White else Color.Black
     val onMapTextColor = if (isDarkMap) Color.White else Color.Black
@@ -207,102 +188,11 @@ fun TravelScreen(
         inactiveContainerColor = scrimColor, inactiveContentColor = onMapTextColor
     )
 
-    // When the style changes from the dropdown, apply it to the already-loaded map
-    // (MapView is created only once in the MapLibreView remember).
-    LaunchedEffect(mapStyleIndex) {
-        val m = mapRef[0] ?: return@LaunchedEffect
-        val uri = TravelSettings.MAP_STYLES[mapStyleIndex]
-        styleSwitching = true
-        m.setStyle(Style.Builder().fromUri(uri)) { style ->
-            registerLayers(style)
-            // Reapply state: registerLayers recreates the GeoJsonSources with empty geojson, so we
-            // push the current position/destination/route back in so they don't disappear until the
-            // next GPS callback (~2 s).
-            current?.let { loc ->
-                userSourceRef[0]?.setGeoJson(pointFeatureJson(loc.latitude, loc.longitude))
-            }
-            originOverride?.let { o -> originSourceRef[0]?.setGeoJson(pointFeatureJson(o.lat, o.lon)) }
-            pickedDestination?.let { d ->
-                destSourceRef[0]?.setGeoJson(pointFeatureJson(d.lat, d.lon))
-                route?.geometryGeoJson?.let { geoStr ->
-                    runCatching {
-                        val feature = org.json.JSONObject().apply {
-                            put("type", "Feature")
-                            put("geometry", org.json.JSONObject(geoStr))
-                            put("properties", org.json.JSONObject())
-                        }
-                        val fc = org.json.JSONObject().apply {
-                            put("type", "FeatureCollection")
-                            put("features", org.json.JSONArray().apply { put(feature) })
-                        }
-                        routeSourceRef[0]?.setGeoJson(fc.toString())
-                    }
-                }
-            }
-            // Release the guard: from here on, user gestures do unset follow.
-            styleSwitching = false
-        }
-    }
-
-    val noLocationMsg = stringResource(R.string.travel_no_location)
-    val routeFailedMsg = stringResource(R.string.travel_route_failed)
-    val noTracksMsg = stringResource(R.string.travel_no_tracks)
-
-    val activity = context as? android.app.Activity
-    // "Permanently denied": the user chose "don't ask again" or revoked the permission from Android
-    // settings. In that case the system dialog no longer appears, so send them to app settings.
-    var permPermanentlyDenied by remember { mutableStateOf(false) }
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasPerm = granted
-        locationEnabled = TravelRouting.isLocationEnabled(context)
-        if (granted) {
-            permPermanentlyDenied = false
-            if (locationEnabled) current = lastKnownLocation(context)
-        } else {
-            // If it can't be requested again (rationale=false after denial), it's permanently denied.
-            permPermanentlyDenied = activity?.let {
-                !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.ACCESS_FINE_LOCATION)
-            } ?: false
-        }
-    }
-
-    // Re-check the permission when returning to the foreground: if the user revoked it from Android
-    // settings, hasPerm goes back to false and the "Grant location" button reappears. hasPerm would
-    // otherwise be read only once on entry.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                hasPerm = hasLocationPermission(context)
-                locationEnabled = TravelRouting.isLocationEnabled(context)
-                if (hasPerm) { permPermanentlyDenied = false; if (locationEnabled && current == null) current = lastKnownLocation(context) }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-    }
-
-    // Request the permission; if permanently denied, open the app settings instead.
-    fun requestLocationPermission() {
-        if (permPermanentlyDenied) {
-            runCatching {
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        android.net.Uri.fromParts("package", context.packageName, null))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-        } else {
-            permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-    }
-
-    val locationSettingsLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            locationEnabled = TravelRouting.isLocationEnabled(context)
-            if (locationEnabled && hasPerm) current = lastKnownLocation(context)
-        }
+    val noLocationMsg = stringResource(
+        if (location.supported) Res.string.travel_no_location else Res.string.travel_pick_origin_first
+    )
+    val routeFailedMsg = stringResource(Res.string.travel_route_failed)
+    val noTracksMsg = stringResource(Res.string.travel_no_tracks)
 
     fun ensureCache() {
         scope.launch {
@@ -314,7 +204,6 @@ fun TravelScreen(
         }
     }
 
-    LaunchedEffect(Unit) { locationEnabled = TravelRouting.isLocationEnabled(context) }
     // Preload liked tracks on entry so "Start trip" in Auto mode works without first opening the
     // Preview sheet (the only thing that used to load them).
     LaunchedEffect(Unit) { ensureCache() }
@@ -324,44 +213,19 @@ fun TravelScreen(
         pickedDestination = dest
         query = dest.label
         ensureCache()
-        // Once the map is ready (mapRef is set in onMapReady) the route is computed from the current
-        // location. If there is no location yet, at least mark the destination.
-        destSourceRef[0]?.setGeoJson(pointFeatureJson(dest.lat, dest.lon))
+        // The route is computed once there is a location (below); until then the destination is marked.
+        camera.animateTo(dest.lat, dest.lon, 11.0)
     }
-    LaunchedEffect(hasPerm, locationEnabled) {
-        if (hasPerm && locationEnabled && current == null) current = lastKnownLocation(context)
-    }
-
-    DisposableEffect(hasPerm, locationEnabled) {
-        if (!hasPerm || !locationEnabled) return@DisposableEffect onDispose {}
-        val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
-            ?: return@DisposableEffect onDispose {}
-        val listener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                current = location
-                userSourceRef[0]?.setGeoJson(pointFeatureJson(location.latitude, location.longitude))
-                if (followUser) {
-                    mapRef[0]?.animateCamera(
-                        CameraUpdateFactory.newLatLngZoom(
-                            LatLng(location.latitude, location.longitude),
-                            mapRef[0]?.cameraPosition?.zoom ?: 13.0
-                        )
-                    )
-                }
-            }
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
-            // Deprecated since API 29, but `LocationListener` only gained a default implementation in
-            // API 30 and minSdk here is 29 - dropping the override would be an AbstractMethodError on a
-            // device running 29.
-            @Suppress("OVERRIDE_DEPRECATION")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    // The map follows each new location while following is on; the first one centres it closer in.
+    var centredOnUser by remember { mutableStateOf(initialDestination != null) }
+    LaunchedEffect(current) {
+        val loc = current ?: return@LaunchedEffect
+        if (!followUser) return@LaunchedEffect
+        if (centredOnUser) camera.animateTo(loc.lat, loc.lon)
+        else {
+            camera.moveTo(loc.lat, loc.lon, 13.0)
+            centredOnUser = true
         }
-        try {
-            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 2f, listener)
-            lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 2f, listener)
-        } catch (_: SecurityException) { }
-        onDispose { try { lm.removeUpdates(listener) } catch (_: Exception) { } }
     }
 
     var debounceJob by remember { mutableStateOf<Job?>(null) }
@@ -377,9 +241,11 @@ fun TravelScreen(
             delay(400)
             val sugg = TravelRouting.geocodeSuggestions(
                 query, limit = 12,
-                biasLat = current?.latitude,
-                biasLon = current?.longitude,
-                context = context
+                biasLat = current?.lat,
+                biasLon = current?.lon,
+                googleKey = TravelSettings.geocodingApiKey(prefs),
+                country = Locale.current.region,
+                lang = Locale.current.language.ifBlank { "en" }
             )
             suggestions = sugg
             searching = false
@@ -395,14 +261,12 @@ fun TravelScreen(
         showSuggestions = false
         manualTracks.clear()
         showManualCard = false
-        destSourceRef[0]?.setGeoJson(EMPTY_POINT_GEO_JSON)
-        routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
     }
 
     // Effective origin: the manually fixed point if any, otherwise the current GPS location.
     fun originLatLon(): Pair<Double, Double>? {
         originOverride?.let { return it.lat to it.lon }
-        current?.let { return it.latitude to it.longitude }
+        current?.let { return it.lat to it.lon }
         return null
     }
 
@@ -421,25 +285,9 @@ fun TravelScreen(
             if (r == null) {
                 status = routeFailedMsg
             } else {
-                runCatching {
-                    val feature = org.json.JSONObject().apply {
-                        put("type", "Feature")
-                        put("geometry", org.json.JSONObject(r.geometryGeoJson ?: EMPTY_LINE_GEO_JSON))
-                        put("properties", org.json.JSONObject())
-                    }
-                    val fc = org.json.JSONObject().apply {
-                        put("type", "FeatureCollection")
-                        put("features", org.json.JSONArray().apply { put(feature) })
-                    }
-                    routeSourceRef[0]?.setGeoJson(fc.toString())
-                }
                 val centerLat = (oLat + dest.lat) / 2.0
                 val centerLon = (oLon + dest.lon) / 2.0
-                val approxDistanceKm = Location("a").apply {
-                    latitude = oLat; longitude = oLon
-                }.distanceTo(Location("b").apply {
-                    latitude = dest.lat; longitude = dest.lon
-                }) / 1000.0
+                val approxDistanceKm = TravelRouting.distanceM(oLat, oLon, dest.lat, dest.lon) / 1000.0
                 val zoom = when {
                     approxDistanceKm < 5 -> 15.0
                     approxDistanceKm < 20 -> 12.0
@@ -447,9 +295,7 @@ fun TravelScreen(
                     approxDistanceKm < 400 -> 6.5
                     else -> 4.0
                 }
-                mapRef[0]?.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(centerLat, centerLon), zoom)
-                )
+                camera.animateTo(centerLat, centerLon, zoom)
             }
         }
     }
@@ -466,7 +312,6 @@ fun TravelScreen(
     // Set (or clear with null) the explicit origin, draw its blue marker, and recompute the route.
     fun setOrigin(g: TravelRouting.Geo?) {
         originOverride = g
-        originSourceRef[0]?.setGeoJson(if (g == null) EMPTY_POINT_GEO_JSON else pointFeatureJson(g.lat, g.lon))
         pickedDestination?.let { computeRoute(it) }
     }
 
@@ -477,92 +322,43 @@ fun TravelScreen(
     // Full screen: root Box, map fills everything, overlays painted on top.
     Box(Modifier.fillMaxSize()) {
 
-        MapLibreView(
+        travel.Map(
             Modifier.fillMaxSize(),
-            styleUri = { TravelSettings.MAP_STYLES[mapStyleIndex] },
-            onMapReady = { map, style ->
-                mapRef[0] = map
-                registerLayers(style)
-                // MapLibre's native compass is disabled: we use our own (Compose) one, always visible
-                // and clickable to reset north.
-                map.uiSettings.isCompassEnabled = false
-                // Bearing rotates our compass.
-                map.addOnCameraMoveListener { mapBearing = map.cameraPosition.bearing }
-                // When the user drags the map manually, unset followUser.
-                // REASON_GESTURE = 1 (MapLibre/Mapbox OnCameraMoveStartedListener).
-                map.addOnCameraMoveStartedListener { reason ->
-                    if (reason == 1 && !styleSwitching) followUser = false
-                }
-                // Long-press on the map: mark the destination and compute the route to that point.
-                map.addOnMapLongClickListener { point ->
-                    val lat = point.latitude
-                    val lon = point.longitude
-                    val coordLabel = "%.5f, %.5f".format(lat, lon)
-                    if (pickMode == 1) {
-                        // Long-press in Origin mode: fix the origin at that point.
-                        val g = TravelRouting.Geo(lat, lon, coordLabel)
-                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
-                        ensureCache()
-                        setOrigin(g)
-                        scope.launch {
-                            val label = TravelRouting.reverseGeocode(lat, lon, context)
-                            if (originOverride?.lat == g.lat && originOverride?.lon == g.lon) {
-                                originOverride = originOverride?.copy(label = label)
-                            }
+            styleIndex = mapStyleIndex,
+            marks = TravelMarks(current, originOverride, pickedDestination, route),
+            camera = camera,
+            // When the user drags the map manually, unset followUser.
+            onUserMove = { followUser = false },
+            // Long-press on the map: mark the destination and compute the route to that point.
+            onLongPress = { lat, lon ->
+                val coordLabel = TravelRouting.coordinatesLabel(lat, lon)
+                if (pickMode == 1) {
+                    // Long-press in Origin mode: fix the origin at that point.
+                    val g = TravelRouting.Geo(lat, lon, coordLabel)
+                    camera.animateTo(lat, lon, 11.0)
+                    ensureCache()
+                    setOrigin(g)
+                    scope.launch {
+                        val label = TravelRouting.reverseGeocode(lat, lon, TravelSettings.geocodingApiKey(prefs))
+                        if (originOverride?.lat == g.lat && originOverride?.lon == g.lon) {
+                            originOverride = originOverride?.copy(label = label)
                         }
-                    } else {
-                        pickedDestination = TravelRouting.Geo(lat, lon, coordLabel)
-                        query = ""
-                        suggestions = emptyList()
-                        showSuggestions = false
-                        destSourceRef[0]?.setGeoJson(pointFeatureJson(lat, lon))
-                        routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
-                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(point, 11.0))
-                        ensureCache()
-                        computeRoute(pickedDestination!!)
-                        // Reverse geocode in the background to replace "lat, lon" with the label.
-                        scope.launch {
-                            val label = TravelRouting.reverseGeocode(lat, lon, context)
-                            pickedDestination = pickedDestination?.copy(label = label)
-                            query = label
-                        }
-                    }
-                    true
-                }
-                current?.let { loc ->
-                    userSourceRef[0]?.setGeoJson(pointFeatureJson(loc.latitude, loc.longitude))
-                }
-                originOverride?.let { o -> originSourceRef[0]?.setGeoJson(pointFeatureJson(o.lat, o.lon)) }
-                pickedDestination?.let { d ->
-                    destSourceRef[0]?.setGeoJson(pointFeatureJson(d.lat, d.lon))
-                    route?.geometryGeoJson?.let { geoStr ->
-                        runCatching {
-                            val feature = org.json.JSONObject().apply {
-                                put("type", "Feature")
-                                put("geometry", org.json.JSONObject(geoStr))
-                                put("properties", org.json.JSONObject())
-                            }
-                            val fc = org.json.JSONObject().apply {
-                                put("type", "FeatureCollection")
-                                put("features", org.json.JSONArray().apply { put(feature) })
-                            }
-                            routeSourceRef[0]?.setGeoJson(fc.toString())
-                        }
-                    }
-                }
-                if (followUser) {
-                    current?.let { loc ->
-                        map.moveCamera(
-                            CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 13.0)
-                        )
                     }
                 } else {
-                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(40.0, -3.7), 5.0))
-                }
-                // If an initial destination came from a shared link, center it and compute the route.
-                initialDestination?.let { d ->
-                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(d.lat, d.lon), 11.0))
-                    if (current != null) computeRoute(d)
+                    pickedDestination = TravelRouting.Geo(lat, lon, coordLabel)
+                    query = ""
+                    suggestions = emptyList()
+                    showSuggestions = false
+                    route = null
+                    camera.animateTo(lat, lon, 11.0)
+                    ensureCache()
+                    computeRoute(pickedDestination!!)
+                    // Reverse geocode in the background to replace "lat, lon" with the label.
+                    scope.launch {
+                        val label = TravelRouting.reverseGeocode(lat, lon, TravelSettings.geocodingApiKey(prefs))
+                        pickedDestination = pickedDestination?.copy(label = label)
+                        query = label
+                    }
                 }
             }
         )
@@ -578,7 +374,7 @@ fun TravelScreen(
         TopAppBar(
             title = {
                 Text(
-                    text = stringResource(R.string.travel_title),
+                    text = stringResource(Res.string.travel_title),
                     color = titleColor,
                     fontWeight = FontWeight.Bold,
                     // One line: four action icons share the bar, and on a narrow phone the title wrapped.
@@ -604,10 +400,7 @@ fun TravelScreen(
                     current?.let { loc ->
                         // Zoom in when centering: if the current zoom is far out (world/country view),
                         // zoom to 14. If already closer, respect the user's zoom.
-                        val z = (mapRef[0]?.cameraPosition?.zoom ?: 14.0).coerceAtLeast(14.0)
-                        mapRef[0]?.animateCamera(
-                            CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), z)
-                        )
+                        camera.animateTo(loc.lat, loc.lon, camera.zoom.coerceAtLeast(14.0))
                     }
                 }) {
                     Icon(
@@ -617,20 +410,12 @@ fun TravelScreen(
                     )
                 }
                 // Custom compass (always visible, rotates with the bearing, click = north up).
-                IconButton(onClick = {
-                    val pos = mapRef[0]?.cameraPosition ?: return@IconButton
-                    mapRef[0]?.animateCamera(
-                        CameraUpdateFactory.newCameraPosition(
-                            org.maplibre.android.camera.CameraPosition.Builder(pos).bearing(0.0).build()
-                        )
-                    )
-                    mapBearing = 0.0
-                }) {
+                IconButton(onClick = { camera.north() }) {
                     Icon(
                         Icons.Filled.Explore,
                         contentDescription = null,
                         tint = onMapIconColor,
-                        modifier = Modifier.rotate(mapBearing.toFloat())
+                        modifier = Modifier.rotate(camera.bearing.toFloat())
                     )
                 }
                 // Map style selector (layers). Opens a dropdown with the available styles.
@@ -644,7 +429,7 @@ fun TravelScreen(
                                 text = { Text(if (idx == mapStyleIndex) "✔ $label" else label, color = Color.Black) },
                                 onClick = {
                                     mapStyleIndex = idx
-                                    TravelSettings.setMapStyleIndex(context, idx)
+                                    TravelSettings.setMapStyleIndex(prefs, idx)
                                     showStyleMenu = false
                                 }
                             )
@@ -670,12 +455,12 @@ fun TravelScreen(
                     selected = pickMode == 0, onClick = { pickMode = 0 },
                     shape = SegmentedButtonDefaults.itemShape(0, 2),
                     colors = segColors
-                ) { Text(stringResource(R.string.travel_pick_destination), color = if (pickMode == 0) Color.Black else onMapTextColor) }
+                ) { Text(stringResource(Res.string.travel_pick_destination), color = if (pickMode == 0) Color.Black else onMapTextColor) }
                 SegmentedButton(
                     selected = pickMode == 1, onClick = { pickMode = 1 },
                     shape = SegmentedButtonDefaults.itemShape(1, 2),
                     colors = segColors
-                ) { Text(stringResource(R.string.travel_pick_origin), color = if (pickMode == 1) Color.Black else onMapTextColor) }
+                ) { Text(stringResource(Res.string.travel_pick_origin), color = if (pickMode == 1) Color.Black else onMapTextColor) }
             }
             Spacer(Modifier.height(4.dp))
             // Chip for the fixed origin (if any), with a button to return to the current location.
@@ -688,7 +473,7 @@ fun TravelScreen(
                         Icon(Icons.Filled.MyLocation, contentDescription = null, tint = Color(0xFF2196F3), modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            stringResource(R.string.travel_origin_prefix, o.label),
+                            stringResource(Res.string.travel_origin_prefix, o.label),
                             color = onMapTextColor, fontSize = 12.sp, maxLines = 1,
                             modifier = Modifier.weight(1f)
                         )
@@ -703,7 +488,7 @@ fun TravelScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text(stringResource(R.string.travel_search_hint), color = onMapTextColor.copy(alpha = 0.6f)) },
+                    placeholder = { Text(stringResource(Res.string.travel_search_hint), color = onMapTextColor.copy(alpha = 0.6f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     leadingIcon = { Icon(Icons.Filled.LocationOn, contentDescription = null, tint = onMapIconColor) },
@@ -741,9 +526,7 @@ fun TravelScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         showSuggestions = false
-                                        mapRef[0]?.animateCamera(
-                                            CameraUpdateFactory.newLatLngZoom(LatLng(s.lat, s.lon), 10.0)
-                                        )
+                                        camera.animateTo(s.lat, s.lon, 10.0)
                                         ensureCache()
                                         if (pickMode == 1) {
                                             query = ""
@@ -753,8 +536,7 @@ fun TravelScreen(
                                             pickedDestination = s
                                             queryFromPick = true
                                             query = s.label
-                                            destSourceRef[0]?.setGeoJson(pointFeatureJson(s.lat, s.lon))
-                                            routeSourceRef[0]?.setGeoJson(EMPTY_LINE_GEO_JSON)
+                                            route = null
                                             computeRoute(s)
                                         }
                                     }
@@ -766,9 +548,9 @@ fun TravelScreen(
             }
         }
 
-// Minimal attribution (over the map, instead of MapLibre's logo/(i) which crashes).
+        // Minimal attribution (over the map, instead of MapLibre's logo/(i) which crashes).
         Text(
-            "© OpenStreetMap · OpenFreeMap · Esri · OpenTopoMap",
+            travel.attribution,
             color = onMapTextColor.copy(alpha = 0.65f),
             fontSize = 9.sp,
             modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 6.dp, bottom = 4.dp)
@@ -798,12 +580,12 @@ fun TravelScreen(
                                 selected = !useManualDuration, onClick = { useManualDuration = false },
                                 shape = SegmentedButtonDefaults.itemShape(0, 2),
                                 colors = segColors
-                            ) { Text(stringResource(R.string.travel_route_mode), color = if (!useManualDuration) Color.Black else cardText) }
+                            ) { Text(stringResource(Res.string.travel_route_mode), color = if (!useManualDuration) Color.Black else cardText) }
                             SegmentedButton(
                                 selected = useManualDuration, onClick = { useManualDuration = true },
                                 shape = SegmentedButtonDefaults.itemShape(1, 2),
                                 colors = segColors
-                            ) { Text(stringResource(R.string.travel_time_mode), color = if (useManualDuration) Color.Black else cardText) }
+                            ) { Text(stringResource(Res.string.travel_time_mode), color = if (useManualDuration) Color.Black else cardText) }
                         }
                         Spacer(Modifier.height(8.dp))
                     }
@@ -811,7 +593,7 @@ fun TravelScreen(
                     if (useManualDuration || route == null) {
                         // Hours / minutes selector.
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.travel_duration), color = cardText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text(stringResource(Res.string.travel_duration), color = cardText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -844,14 +626,14 @@ fun TravelScreen(
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            stringResource(R.string.travel_duration_total, TravelPlaylist.formatDuration(currentTargetMs())),
+                            stringResource(Res.string.travel_duration_total, TravelPlaylist.formatDuration(currentTargetMs())),
                             color = cardSub, fontSize = 11.sp
                         )
                         if (route != null) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.travel_route_available), color = cardSub, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                Text(stringResource(Res.string.travel_route_available), color = cardSub, fontSize = 11.sp, modifier = Modifier.weight(1f))
                                 Button(onClick = { clearDestination() }, colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = green)) {
-                                    Text(stringResource(R.string.travel_clear), fontSize = 12.sp)
+                                    Text(stringResource(Res.string.travel_clear), fontSize = 12.sp)
                                 }
                             }
                         }
@@ -860,7 +642,7 @@ fun TravelScreen(
                         route?.let { r ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    stringResource(R.string.travel_eta, r.durationSec / 60, (r.distanceM / 1000).toInt()),
+                                    stringResource(Res.string.travel_eta, r.durationSec / 60, (r.distanceM / 1000).toInt()),
                                     color = cardText, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -872,25 +654,25 @@ fun TravelScreen(
                                 Text(it.label, color = cardSub, fontSize = 11.sp, maxLines = 2)
                             }
                             Spacer(Modifier.height(8.dp))
-                            Text(stringResource(R.string.travel_buffer, bufferMin.toInt()), color = cardSub, fontSize = 12.sp)
+                            Text(stringResource(Res.string.travel_buffer, bufferMin.toInt()), color = cardSub, fontSize = 12.sp)
                             Slider(value = bufferMin, onValueChange = { bufferMin = it }, valueRange = 0f..30f, steps = 29)
                         }
                     }
 
                     Spacer(Modifier.height(6.dp))
-                    Text(stringResource(R.string.travel_playlist_mode), color = cardSub, fontSize = 12.sp)
+                    Text(stringResource(Res.string.travel_playlist_mode), color = cardSub, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = !manualMode, onClick = { manualMode = false },
                             shape = SegmentedButtonDefaults.itemShape(0, 2),
                             colors = segColors
-                        ) { Text(stringResource(R.string.travel_mode_auto), color = if (!manualMode) Color.Black else cardText) }
+                        ) { Text(stringResource(Res.string.travel_mode_auto), color = if (!manualMode) Color.Black else cardText) }
                         SegmentedButton(
                             selected = manualMode, onClick = { manualMode = true; ensureCache() },
                             shape = SegmentedButtonDefaults.itemShape(1, 2),
                             colors = segColors
-                        ) { Text(stringResource(R.string.travel_mode_manual), color = if (manualMode) Color.Black else cardText) }
+                        ) { Text(stringResource(Res.string.travel_mode_manual), color = if (manualMode) Color.Black else cardText) }
                     }
 
                     val tMs = currentTargetMs()
@@ -905,7 +687,7 @@ fun TravelScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            stringResource(R.string.travel_coverage, TravelPlaylist.formatDuration(covered), TravelPlaylist.formatDuration(tMs)),
+                            stringResource(Res.string.travel_coverage, TravelPlaylist.formatDuration(covered), TravelPlaylist.formatDuration(tMs)),
                             color = cardText, fontSize = 11.sp
                         )
                         Spacer(Modifier.height(10.dp))
@@ -917,7 +699,7 @@ fun TravelScreen(
                             ) {
                                 Icon(Icons.Filled.Add, contentDescription = null, tint = cardText, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.travel_add_tracks), color = cardText, fontSize = 13.sp)
+                                Text(stringResource(Res.string.travel_add_tracks), color = cardText, fontSize = 13.sp)
                             }
                             if (manualTracks.isNotEmpty()) {
                                 Button(
@@ -927,13 +709,13 @@ fun TravelScreen(
                                 ) {
                                     Icon(Icons.Filled.Visibility, contentDescription = null, tint = cardText, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(R.string.travel_preview), color = cardText, fontSize = 13.sp)
+                                    Text(stringResource(Res.string.travel_preview), color = cardText, fontSize = 13.sp)
                                 }
                             }
                         }
                         if (manualTracks.isNotEmpty()) {
                             Text(
-                                stringResource(R.string.travel_manual_count, manualTracks.size),
+                                stringResource(Res.string.travel_manual_count, manualTracks.size),
                                 color = cardSub, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp)
                             )
                         }
@@ -946,7 +728,7 @@ fun TravelScreen(
                         ) {
                             Icon(Icons.Filled.Visibility, contentDescription = null, tint = cardText, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.travel_preview_auto), color = cardText, fontSize = 13.sp)
+                            Text(stringResource(Res.string.travel_preview_auto), color = cardText, fontSize = 13.sp)
                         }
                     }
 
@@ -959,25 +741,14 @@ fun TravelScreen(
                                 val sb = StringBuilder("https://www.google.com/maps/dir/?api=1")
                                 originOverride?.let { sb.append("&origin=${it.lat},${it.lon}") }
                                 sb.append("&destination=${dest.lat},${dest.lon}&travelmode=driving")
-                                val uri = sb.toString().toUri()
-                                // 1) try to open the Google Maps app directly; 2) if it isn't installed
-                                // (or visible), open the URL with any browser/maps app; 3) as a last
-                                // resort, a geo: turn-by-turn intent. FLAG_ACTIVITY_NEW_TASK in case the
-                                // context is not an Activity.
-                                fun launch(i: Intent): Boolean = runCatching {
-                                    context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
-                                }.getOrDefault(false)
-                                val ok = launch(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")) ||
-                                    launch(Intent(Intent.ACTION_VIEW, uri)) ||
-                                    launch(Intent(Intent.ACTION_VIEW, "google.navigation:q=${dest.lat},${dest.lon}&mode=d".toUri()))
-                                if (!ok) android.widget.Toast.makeText(context, "Google Maps no disponible", android.widget.Toast.LENGTH_SHORT).show()
+                                travel.navigate(sb.toString(), dest.lat, dest.lon, platform)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Filled.Navigation, contentDescription = null, tint = green, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.travel_navigate_gmaps), color = cardText, fontSize = 13.sp)
+                            Text(stringResource(Res.string.travel_navigate_gmaps), color = cardText, fontSize = 13.sp)
                         }
                     }
 
@@ -997,14 +768,14 @@ fun TravelScreen(
                         if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.Black)
                         else Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                         Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.travel_start), color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(stringResource(Res.string.travel_start), color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
         // Prompt shown when location is disabled.
-        if (!locationEnabled) {
+        if (location.supported && !location.enabled) {
             val promptScrim = scrimColor
             val promptText = if (isDarkMap) Color.White else Color.Black
             Surface(
@@ -1013,18 +784,18 @@ fun TravelScreen(
                 modifier = Modifier.align(Alignment.Center).padding(20.dp)
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(stringResource(R.string.travel_enable_location), color = promptText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(Res.string.travel_enable_location), color = promptText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { locationSettingsLauncher.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
+                            onClick = { location.openSettings() },
                             colors = ButtonDefaults.buttonColors(containerColor = green)
-                        ) { Text(stringResource(R.string.travel_enable), color = Color.Black, fontWeight = FontWeight.Bold) }
-                        if (!hasPerm) {
+                        ) { Text(stringResource(Res.string.travel_enable), color = Color.Black, fontWeight = FontWeight.Bold) }
+                        if (!location.hasPermission) {
                             Button(
-                                onClick = { requestLocationPermission() },
+                                onClick = { location.requestPermission() },
                                 colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMap) Color(0xFF2C2C2E) else Color(0xFFEEEEEE))
-                            ) { Text(stringResource(R.string.travel_grant_location), color = promptText) }
+                            ) { Text(stringResource(Res.string.travel_grant_location), color = promptText) }
                         }
                     }
                 }
@@ -1136,7 +907,7 @@ private fun ManualPickerContent(
     val covered = TravelPlaylist.totalMs(manualTracks)
     val ratio = if (targetMs > 0) (covered.toFloat() / targetMs.toFloat()).coerceIn(0f, 1f) else 0f
     Column(modifier) {
-        Text(stringResource(R.string.travel_pick_tracks), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(stringResource(Res.string.travel_pick_tracks), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         LinearProgressIndicator(
             progress = { ratio },
@@ -1145,7 +916,7 @@ private fun ManualPickerContent(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            stringResource(R.string.travel_coverage, TravelPlaylist.formatDuration(covered), TravelPlaylist.formatDuration(targetMs)),
+            stringResource(Res.string.travel_coverage, TravelPlaylist.formatDuration(covered), TravelPlaylist.formatDuration(targetMs)),
             color = Color.White, fontSize = 11.sp
         )
         Spacer(Modifier.height(10.dp))
@@ -1194,22 +965,22 @@ private fun PreviewSheetContent(
     val rowHeightPx = with(density) { 56.dp.toPx() }
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    var saveName by remember { mutableStateOf("Travel ${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())}") }
+    var saveName by remember { mutableStateOf("Travel ${todayIso()}") }
     var saving by remember { mutableStateOf(false) }
     var saveResult by remember { mutableStateOf<Boolean?>(null) }
 
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.travel_preview_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-            Text(stringResource(R.string.travel_preview_count, tracks.size), color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(Res.string.travel_preview_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text(stringResource(Res.string.travel_preview_count, tracks.size), color = Color.Gray, fontSize = 12.sp)
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            stringResource(R.string.travel_preview_total, TravelPlaylist.formatDuration(TravelPlaylist.totalMs(tracks))),
+            stringResource(Res.string.travel_preview_total, TravelPlaylist.formatDuration(TravelPlaylist.totalMs(tracks))),
             color = Color.Gray, fontSize = 11.sp
         )
         Spacer(Modifier.height(8.dp))
-        Text(stringResource(R.string.travel_drag_hint), color = Color.Gray, fontSize = 11.sp)
+        Text(stringResource(Res.string.travel_drag_hint), color = Color.Gray, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
 
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
@@ -1264,7 +1035,7 @@ private fun PreviewSheetContent(
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = saveName, onValueChange = { saveName = it },
-            label = { Text(stringResource(R.string.travel_save_name)) },
+            label = { Text(stringResource(Res.string.travel_save_name)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             colors = TextFieldDefaults.colors(
@@ -1282,10 +1053,10 @@ private fun PreviewSheetContent(
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                 Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.travel_play), color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(stringResource(Res.string.travel_play), color = Color.Black, fontWeight = FontWeight.Bold)
             }
             // Saving needs an account; without one the button only led to a failure message.
-            val signedIn = remember { com.varuna.rustify.bridge.SpotifyRepository.instance?.hasSavedSession() == true }
+            val signedIn = remember { SpotifyRepository.instance?.hasSavedSession() == true }
             if (signedIn) Button(
                 onClick = {
                     saving = true; saveResult = null
@@ -1298,155 +1069,16 @@ private fun PreviewSheetContent(
                 if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                 else Icon(Icons.Filled.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.travel_save_spotify), color = Color.White, fontSize = 13.sp)
+                Text(stringResource(Res.string.travel_save_spotify), color = Color.White, fontSize = 13.sp)
             }
         }
         saveResult?.let { ok ->
             Spacer(Modifier.height(6.dp))
             Text(
-                if (ok) stringResource(R.string.travel_save_ok) else stringResource(R.string.travel_save_fail),
+                if (ok) stringResource(Res.string.travel_save_ok) else stringResource(Res.string.travel_save_fail),
                 color = if (ok) green else Color(0xFFE57373), fontSize = 12.sp
             )
         }
         Spacer(Modifier.height(10.dp))
     }
 }
-
-// Map state refs (shared across the module's composables).
-private val mapRef = arrayOfNulls<MapLibreMap>(1)
-private val userSourceRef = arrayOfNulls<GeoJsonSource>(1)
-private val destSourceRef = arrayOfNulls<GeoJsonSource>(1)
-private val routeSourceRef = arrayOfNulls<GeoJsonSource>(1)
-private val originSourceRef = arrayOfNulls<GeoJsonSource>(1)
-
-private const val EMPTY_POINT_GEO_JSON = """{"type":"FeatureCollection","features":[]}"""
-private const val EMPTY_LINE_GEO_JSON = """{"type":"FeatureCollection","features":[]}"""
-
-private fun pointFeatureJson(lat: Double, lon: Double): String =
-    """{"type":"Feature","geometry":{"type":"Point","coordinates":[$lon,$lat]},"properties":{}}"""
-
-private fun registerLayers(style: Style) {
-    runCatching {
-        if (style.getSource("user-loc-source") == null) {
-            val us = GeoJsonSource("user-loc-source", EMPTY_POINT_GEO_JSON)
-            style.addSource(us)
-            userSourceRef[0] = us
-            style.addLayer(
-                CircleLayer("user-loc-layer", "user-loc-source")
-                    .withProperties(
-                        PropertyFactory.circleColor("#1DB954"),
-                        PropertyFactory.circleRadius(8f),
-                        PropertyFactory.circleStrokeColor("#FFFFFF"),
-                        PropertyFactory.circleStrokeWidth(2f),
-                        PropertyFactory.circleOpacity(0.95f)
-                    )
-            )
-        }
-        if (style.getSource("dest-source") == null) {
-            val ds = GeoJsonSource("dest-source", EMPTY_POINT_GEO_JSON)
-            style.addSource(ds)
-            destSourceRef[0] = ds
-            style.addLayer(
-                CircleLayer("dest-layer", "dest-source")
-                    .withProperties(
-                        PropertyFactory.circleColor("#E53935"),
-                        PropertyFactory.circleRadius(10f),
-                        PropertyFactory.circleStrokeColor("#FFFFFF"),
-                        PropertyFactory.circleStrokeWidth(2f)
-                    )
-            )
-        }
-        // Explicit origin (blue) — only visible when the user fixes an origin different from GPS.
-        if (style.getSource("origin-source") == null) {
-            val os = GeoJsonSource("origin-source", EMPTY_POINT_GEO_JSON)
-            style.addSource(os)
-            originSourceRef[0] = os
-            style.addLayer(
-                CircleLayer("origin-layer", "origin-source")
-                    .withProperties(
-                        PropertyFactory.circleColor("#2196F3"),
-                        PropertyFactory.circleRadius(10f),
-                        PropertyFactory.circleStrokeColor("#FFFFFF"),
-                        PropertyFactory.circleStrokeWidth(2f)
-                    )
-            )
-        }
-        if (style.getSource("route-source") == null) {
-            val rs = GeoJsonSource("route-source", EMPTY_LINE_GEO_JSON)
-            style.addSource(rs)
-            routeSourceRef[0] = rs
-            style.addLayerBelow(
-                LineLayer("route-layer", "route-source")
-                    .withProperties(
-                        PropertyFactory.lineColor("#1DB954"),
-                        PropertyFactory.lineWidth(5f),
-                        PropertyFactory.lineOpacity(0.85f),
-                        PropertyFactory.lineCap("round")
-                    ),
-                "user-loc-layer"
-            )
-        }
-    }
-}
-
-@Composable
-private fun MapLibreView(
-    modifier: Modifier,
-    styleUri: () -> String,
-    onMapReady: (MapLibreMap, Style) -> Unit
-) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    val mapView = remember {
-        MapLibre.getInstance(context)
-        MapView(context).also { it.onCreate(null) }
-    }
-
-    DisposableEffect(lifecycleOwner, mapView) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            when (e) {
-                androidx.lifecycle.Lifecycle.Event.ON_START -> mapView.onStart()
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> mapView.onStop()
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(obs)
-            try { mapView.onPause(); mapView.onStop(); mapView.onDestroy() } catch (_: Exception) { }
-        }
-    }
-
-    AndroidView(modifier = modifier, factory = {
-        mapView.getMapAsync { map ->
-            // Hide MapLibre's logo + (i): the (i) crashes when opening the attribution sheet over
-            // asset:// styles without valid URLs. Attribution is shown as a Text overlay instead.
-            map.uiSettings.isLogoEnabled = false
-            map.uiSettings.isAttributionEnabled = false
-            map.uiSettings.isCompassEnabled = true
-            map.setStyle(Style.Builder().fromUri(styleUri())) { style ->
-                map.uiSettings.apply {
-                    isRotateGesturesEnabled = true
-                    isScrollGesturesEnabled = true
-                    isZoomGesturesEnabled = true
-                    isTiltGesturesEnabled = true
-                    isDoubleTapGesturesEnabled = true
-                }
-                onMapReady(map, style)
-            }
-        }
-        mapView
-    })
-}
-
-private fun hasLocationPermission(context: android.content.Context): Boolean =
-    androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-        PackageManager.PERMISSION_GRANTED
-
-private fun lastKnownLocation(context: android.content.Context): Location? = try {
-    val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
-    lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-} catch (e: SecurityException) { null } catch (e: Exception) { null }

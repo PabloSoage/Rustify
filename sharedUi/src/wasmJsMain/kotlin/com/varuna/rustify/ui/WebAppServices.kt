@@ -113,6 +113,8 @@ class WebAppServices(
     override fun chatModel(): ChatModel = chat
 
     override val logs: LogBook get() = WebLogBook
+
+    override val travel: com.varuna.rustify.travel.TravelPlatform get() = com.varuna.rustify.travel.WebTravelPlatform
 }
 
 private object NoMicrophone : DjListener {

@@ -39,7 +39,6 @@ import com.varuna.rustify.ui.screens.LogViewerScreen
 import com.varuna.rustify.ui.SettingsSlot
 import com.varuna.rustify.ui.screens.AndroidSettingsActions
 import com.varuna.rustify.ui.screens.AndroidSettingsSections
-import com.varuna.rustify.ui.screens.TravelScreen
 import kotlinx.coroutines.launch
 
 /**
@@ -222,49 +221,6 @@ class AndroidAppShell(context: Context) : AppShell {
             }
             is Screen.AudioLab -> {
                 com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { host.back() })
-            }
-            is Screen.Travel -> {
-                TravelScreen(
-                    spotifyRepo = host.spotifyRepo,
-                    onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                    onBack = { host.back() },
-                    currentTrack = currentTrack,
-                    isPlaying = playerState.isPlaying,
-                    isBuffering = playerState.isBuffering,
-                    positionMs = playerState.positionMs,
-                    durationMs = playerState.durationMs,
-                    hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
-                    hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
-                    onTogglePlayPause = { audioPlayerService.togglePlayPause() },
-                    onSkipPrev = { audioPlayerService.skipToPrevious() },
-                    onSkipNext = { audioPlayerService.skipToNext() },
-                    onMiniPlayerClick = {
-                        currentTrack?.id?.let { id -> host.navigate(Screen.TrackDetail(id)) }
-                    }
-                )
-            }
-            is Screen.TravelWithDestination -> {
-                TravelScreen(
-                    spotifyRepo = host.spotifyRepo,
-                    onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
-                    onBack = { host.back() },
-                    currentTrack = currentTrack,
-                    isPlaying = playerState.isPlaying,
-                    isBuffering = playerState.isBuffering,
-                    positionMs = playerState.positionMs,
-                    durationMs = playerState.durationMs,
-                    hasPrev = playerState.queue.indexOfFirst { it.id == currentTrack?.id } > 0,
-                    hasNext = playerState.queue.indexOfFirst { it.id == currentTrack?.id }.let { it != -1 && it < playerState.queue.lastIndex },
-                    onTogglePlayPause = { audioPlayerService.togglePlayPause() },
-                    onSkipPrev = { audioPlayerService.skipToPrevious() },
-                    onSkipNext = { audioPlayerService.skipToNext() },
-                    onMiniPlayerClick = {
-                        currentTrack?.id?.let { id -> host.navigate(Screen.TrackDetail(id)) }
-                    },
-                    initialDestination = com.varuna.rustify.travel.TravelRouting.Geo(
-                        lat = screen.lat, lon = screen.lon, label = screen.label ?: ""
-                    )
-                )
             }
             else -> Unit
         }

@@ -844,10 +844,34 @@ fun RustifyApp(
                         onOpenCustom = { navigationStack.add(Screen.CustomDownload) }
                     )
                 }
+                is Screen.Travel, is Screen.TravelWithDestination -> {
+                    val destination = currentScreen as? Screen.TravelWithDestination
+                    val index = playerState.queue.indexOfFirst { it.id == currentTrack?.id }
+                    com.varuna.rustify.ui.screens.TravelScreen(
+                        spotifyRepo = spotifyRepo,
+                        onPlayTracks = { tracks -> if (tracks.isNotEmpty()) audioPlayerService.loadPlaylist(tracks, 0) },
+                        onBack = { host.back() },
+                        currentTrack = currentTrack,
+                        isPlaying = playerState.isPlaying,
+                        isBuffering = playerState.isBuffering,
+                        positionMs = playerState.positionMs,
+                        durationMs = playerState.durationMs,
+                        hasPrev = index > 0,
+                        hasNext = index != -1 && index < playerState.queue.lastIndex,
+                        onTogglePlayPause = { audioPlayerService.togglePlayPause() },
+                        onSkipPrev = { audioPlayerService.skipToPrevious() },
+                        onSkipNext = { audioPlayerService.skipToNext() },
+                        onMiniPlayerClick = {
+                            currentTrack?.id?.let { id -> navigationStack.add(Screen.TrackDetail(id)) }
+                        },
+                        initialDestination = destination?.let {
+                            com.varuna.rustify.travel.TravelRouting.Geo(lat = it.lat, lon = it.lon, label = it.label ?: "")
+                        }
+                    )
+                }
                 // Not moved yet (docs serie-4.x/27): the platform draws them.
                 is Screen.WebPlayer, is Screen.CustomDownload,
-                is Screen.AudioLab, is Screen.Travel,
-                is Screen.TravelWithDestination -> shell.PlatformScreen(currentScreen, host)
+                is Screen.AudioLab -> shell.PlatformScreen(currentScreen, host)
                 is Screen.NanoChat -> {
                     // The platform's model (Gemini Nano on Android); without one, the shell's screen.
                     val chat = services.chatModel()

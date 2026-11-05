@@ -44,6 +44,9 @@ actual fun weekdayName(weekday: Int): String = DateFormatSymbols.getInstance().w
 
 actual fun currentYear(): Int = LocalDate.now().year
 
+actual fun todayIso(): String =
+    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+
 actual fun currentHourOfDay(): Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
 
 actual fun startOfYearMillis(year: Int): Long =

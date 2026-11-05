@@ -66,6 +66,11 @@ private fun calendar(): NSCalendar = NSCalendar.currentCalendar.also { it.locale
 
 actual fun currentYear(): Int = calendar().component(NSCalendarUnitYear, fromDate = NSDate()).toInt()
 
+actual fun todayIso(): String = NSDateFormatter().apply {
+    locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    dateFormat = "yyyy-MM-dd"
+}.stringFromDate(NSDate())
+
 actual fun currentHourOfDay(): Int = calendar().component(NSCalendarUnitHour, fromDate = NSDate()).toInt()
 
 actual fun startOfYearMillis(year: Int): Long {
