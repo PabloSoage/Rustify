@@ -18,49 +18,14 @@ import java.io.File
  */
 object CustomDownload {
 
-    /** A downloadable format. [isAudio] = audio-only (no video). */
-    data class Fmt(
-        val id: String,
-        val isAudio: Boolean,
-        val height: Int,
-        val fps: Int,
-        val ext: String,
-        val codec: String,
-        val abr: Int,
-        val tbr: Float,
-        val sizeBytes: Long,
-        val note: String
-    ) {
-        /** Human-readable label for the UI. */
-        fun label(): String {
-            val size = if (sizeBytes > 0) " · " + humanBytes(sizeBytes) else ""
-            return if (isAudio) {
-                val br = if (abr > 0) "${abr}kbps" else if (tbr > 0) "${tbr.toInt()}kbps" else "audio"
-                "$br · $ext${if (codec.isNotBlank()) " · $codec" else ""}$size"
-            } else {
-                val res = if (height > 0) "${height}p" else "video"
-                val f = if (fps > 30) " ${fps}fps" else ""
-                "$res$f · $ext${if (codec.isNotBlank()) " · $codec" else ""}$size"
-            }
-        }
-    }
-
-    data class Probe(
-        val title: String,
-        val thumbnail: String?,
-        val durationSec: Int,
-        val video: List<Fmt>,
-        val audio: List<Fmt>
-    )
-
     /** Probes a URL and returns its video and audio formats. */
-    suspend fun probe(url: String): Result<Probe> = withContext(Dispatchers.IO) {
+    suspend fun probe(url: String): Result<CustomProbe> = withContext(Dispatchers.IO) {
         runCatching {
             try { DownloadManager.initDeferred.await() } catch (_: Exception) {}
             val info = YoutubeDL.getInstance().getInfo(url.trim())
             val formats = info.formats ?: emptyList()
-            val video = ArrayList<Fmt>()
-            val audio = ArrayList<Fmt>()
+            val video = ArrayList<CustomFormat>()
+            val audio = ArrayList<CustomFormat>()
             for (f in formats) {
                 val id = f.formatId ?: continue
                 val vcodec = (f.vcodec ?: "none")
@@ -72,18 +37,18 @@ object CustomDownload {
                 val size = runCatching { f.fileSize }.getOrDefault(0L)
                 val note = f.formatNote ?: ""
                 if (hasVideo) {
-                    video.add(Fmt(id, false, f.height, runCatching { f.fps }.getOrDefault(0), ext,
+                    video.add(CustomFormat(id, false, f.height, runCatching { f.fps }.getOrDefault(0), ext,
                         vcodec.substringBefore('.').take(10), 0, runCatching { f.tbr.toFloat() }.getOrDefault(0f), size, note))
                 } else {
-                    audio.add(Fmt(id, true, 0, 0, ext,
+                    audio.add(CustomFormat(id, true, 0, 0, ext,
                         acodec.substringBefore('.').take(10), runCatching { f.abr }.getOrDefault(0), runCatching { f.tbr.toFloat() }.getOrDefault(0f), size, note))
                 }
             }
-            Probe(
+            CustomProbe(
                 title = info.title ?: url,
                 thumbnail = info.thumbnail,
                 durationSec = runCatching { info.duration }.getOrDefault(0),
-                video = video.sortedWith(compareByDescending<Fmt> { it.height }.thenByDescending { it.tbr }),
+                video = video.sortedWith(compareByDescending<CustomFormat> { it.height }.thenByDescending { it.tbr }),
                 audio = audio.sortedByDescending { if (it.abr > 0) it.abr.toFloat() else it.tbr }
             )
         }
@@ -150,14 +115,6 @@ object CustomDownload {
         else -> "application/octet-stream"
     }
 
-    private fun humanBytes(b: Long): String {
-        if (b <= 0) return ""
-        val units = arrayOf("B", "KB", "MB", "GB")
-        var v = b.toDouble(); var i = 0
-        while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
-        return if (i == 0) "${b}B" else String.format(java.util.Locale.US, "%.1f%s", v, units[i])
-    }
-
     // Preference for the custom downloads folder (SAF tree URI).
     private const val PREFS = "rustify_settings"
     private const val K_FOLDER = "custom_dl_folder"
@@ -165,4 +122,27 @@ object CustomDownload {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_FOLDER, "") ?: ""
     fun setFolder(context: Context, uri: String) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(K_FOLDER, uri) }
+}
+
+/** [CustomDownloads] over the phone's yt-dlp and Storage Access Framework folders. */
+class AndroidCustomDownloads(context: Context) : CustomDownloads {
+    private val app = context.applicationContext
+
+    override suspend fun probe(url: String): Result<CustomProbe> = CustomDownload.probe(url)
+
+    override suspend fun download(
+        url: String,
+        formatId: String,
+        isAudio: Boolean,
+        folder: String,
+        baseName: String,
+        onProgress: (Int) -> Unit,
+    ): Result<String> = CustomDownload.download(app, url, formatId, isAudio, folder, baseName, onProgress)
+
+    override fun folder(): String = CustomDownload.folder(app)
+
+    override fun setFolder(folder: String) = CustomDownload.setFolder(app, folder)
+
+    override fun folderLabel(folder: String): String =
+        android.net.Uri.decode(folder.substringAfterLast("%3A").substringAfterLast("/").ifBlank { folder })
 }

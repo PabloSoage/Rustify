@@ -216,6 +216,7 @@ class AndroidAppShell(context: Context) : AppShell {
             }
             is Screen.CustomDownload -> {
                 com.varuna.rustify.ui.screens.CustomDownloadScreen(
+                    downloads = com.varuna.rustify.ui.LocalAppServices.current.customDownloads!!,
                     onBack = { host.back() }
                 )
             }

@@ -179,6 +179,10 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
 
     @Composable
     override fun PlatformScreen(screen: Screen, host: ShellHost) {
+        if (screen is Screen.CustomDownload) {
+            com.varuna.rustify.ui.screens.CustomDownloadScreen(LocalAppServices.current.customDownloads!!, onBack = host.back)
+            return
+        }
         Page("", onBack = host.back) {
             Text(stringResource(Res.string.desktop_screen_not_here), color = Color.LightGray)
         }
@@ -229,8 +233,11 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             com.varuna.rustify.ui.screens.DeezerBackendSection()
             com.varuna.rustify.ui.screens.SubsonicBackendSection()
         }
-        // The standard downloads folder; the custom downloads (yt-dlp) are not on the desktop yet.
-        if (slot == SettingsSlot.DOWNLOADS) com.varuna.rustify.ui.screens.DownloadFolderSection()
+        if (slot == SettingsSlot.DOWNLOADS) {
+            com.varuna.rustify.ui.screens.DownloadFolderSection()
+            com.varuna.rustify.ui.screens.CustomDownloadSection(LocalAppServices.current.customDownloads!!) { host.navigate(Screen.CustomDownload) }
+            return
+        }
         Text(
             stringResource(Res.string.desktop_settings_not_here),
             color = Color.Gray,

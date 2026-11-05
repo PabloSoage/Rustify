@@ -19,6 +19,9 @@ interface AppServices {
     fun can(feature: Feature): Boolean
 
     // Tempo, measured from the audio (Android decodes a window of the track with MediaCodec).
+    /** Downloads from any URL with their qualities listed; null where there is no yt-dlp to ask. */
+    val customDownloads: com.varuna.rustify.audio.CustomDownloads? get() = null
+
     fun bpmCached(trackId: String): Float?
     fun bpmScale(trackId: String, factor: Float): Float?
     suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float?

@@ -1,9 +1,13 @@
 package com.varuna.rustify.ui.screens
 
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import com.varuna.rustify.audio.CustomDownloads
+import com.varuna.rustify.audio.CustomFormat
+import com.varuna.rustify.audio.CustomProbe
+import com.varuna.rustify.ui.LocalAppPlatform
+import com.varuna.rustify.ui.formatMinSec
+import com.varuna.rustify.ui.rememberPickFolder
+import com.varuna.rustify.ui.resources.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,18 +55,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.varuna.rustify.R
-import com.varuna.rustify.audio.CustomDownload
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Locale
 
 private val GREENC = Color(0xFF1DB954)
 private val BGC = Color(0xFF121212)
@@ -70,32 +67,26 @@ private val CARDC = Color(0xFF1E1E1E)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomDownloadScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
+fun CustomDownloadScreen(downloads: CustomDownloads, onBack: () -> Unit) {
+    val platform = LocalAppPlatform.current
     val scope = rememberCoroutineScope()
 
     var url by remember { mutableStateOf("") }
     var probing by remember { mutableStateOf(false) }
-    var probe by remember { mutableStateOf<CustomDownload.Probe?>(null) }
+    var probe by remember { mutableStateOf<CustomProbe?>(null) }
     var status by remember { mutableStateOf("") }
-    var folder by remember { mutableStateOf(CustomDownload.folder(context)) }
+    var folder by remember { mutableStateOf(downloads.folder()) }
     var downloadingId by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableIntStateOf(0) }
 
-    val doneFmt = stringResource(R.string.cd_done)
-    val errFmt = stringResource(R.string.cd_error)
-    val emptyFormats = stringResource(R.string.cd_empty_formats)
+    val doneFmt = Res.string.cd_done
+    val errFmt = Res.string.cd_error
+    val emptyFormats = stringResource(Res.string.cd_empty_formats)
 
-    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            }
-            CustomDownload.setFolder(context, uri.toString())
-            folder = uri.toString()
+    val folderPicker = rememberPickFolder(write = true) { picked ->
+        if (picked != null) {
+            downloads.setFolder(picked)
+            folder = picked
         }
     }
 
@@ -103,32 +94,31 @@ fun CustomDownloadScreen(onBack: () -> Unit) {
         if (url.isBlank() || probing) return
         probing = true; probe = null; status = ""
         scope.launch {
-            val result = withContext(Dispatchers.IO) { CustomDownload.probe(url) }
+            val result = downloads.probe(url)
             probing = false
             result.onSuccess { p ->
                 probe = p
                 if (p.video.isEmpty() && p.audio.isEmpty()) status = emptyFormats
-            }.onFailure { e -> status = errFmt.format(e.message ?: "error") }
+            }.onFailure { e -> status = com.varuna.rustify.ui.appString(errFmt, e.message ?: "error") }
         }
     }
 
-    fun startDownload(f: CustomDownload.Fmt) {
+    fun startDownload(f: CustomFormat) {
         if (downloadingId != null) return
-        if (folder.isBlank()) { folderPicker.launch(null); return }
+        if (folder.isBlank()) { folderPicker(); return }
         downloadingId = f.id; progress = 0; status = ""
         val base = probe?.title ?: "download"
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                CustomDownload.download(context, url, f.id, f.isAudio, folder, base) { p ->
-                    // Callback arrives on the yt-dlp thread; publish progress on the main thread.
-                    scope.launch(Dispatchers.Main) { progress = p }
-                }
+            val result = downloads.download(url, f.id, f.isAudio, folder, base) { p ->
+                // Callback arrives on yt-dlp's thread; publish progress on the main thread.
+                scope.launch { progress = p }
             }
             downloadingId = null
             result.onSuccess { name ->
-                status = doneFmt.format(name)
-                Toast.makeText(context, doneFmt.format(name), Toast.LENGTH_SHORT).show()
-            }.onFailure { e -> status = errFmt.format(e.message ?: "error") }
+                val done = com.varuna.rustify.ui.appString(doneFmt, name)
+                status = done
+                platform.toast(done)
+            }.onFailure { e -> status = com.varuna.rustify.ui.appString(errFmt, e.message ?: "error") }
         }
     }
 
@@ -137,7 +127,7 @@ fun CustomDownloadScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-                title = { Text(stringResource(R.string.cd_title), color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(Res.string.cd_title), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BGC)
             )
@@ -152,7 +142,7 @@ fun CustomDownloadScreen(onBack: () -> Unit) {
             item {
                 OutlinedTextField(
                     value = url, onValueChange = { url = it },
-                    label = { Text(stringResource(R.string.cd_url_hint)) },
+                    label = { Text(stringResource(Res.string.cd_url_hint)) },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White, unfocusedTextColor = Color.White,
@@ -166,17 +156,17 @@ fun CustomDownloadScreen(onBack: () -> Unit) {
                         onClick = { analyze() }, enabled = !probing && url.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = GREENC),
                         modifier = Modifier.weight(1f)
-                    ) { Text(stringResource(R.string.cd_analyze), color = Color.Black) }
-                    OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f)) {
+                    ) { Text(stringResource(Res.string.cd_analyze), color = Color.Black) }
+                    OutlinedButton(onClick = { folderPicker() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Default.Folder, null, tint = GREENC, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.cd_pick_folder), color = Color.White, fontSize = 12.sp, maxLines = 1)
+                        Text(stringResource(Res.string.cd_pick_folder), color = Color.White, fontSize = 12.sp, maxLines = 1)
                     }
                 }
             }
             item {
-                val folderLabel = if (folder.isBlank()) stringResource(R.string.cd_no_folder)
-                    else Uri.decode(folder.substringAfterLast("%3A").substringAfterLast("/").ifBlank { folder })
+                val folderLabel = if (folder.isBlank()) stringResource(Res.string.cd_no_folder)
+                    else downloads.folderLabel(folder)
                 Text("📁 $folderLabel", color = Color.Gray, fontSize = 11.sp, maxLines = 1)
             }
 
@@ -200,19 +190,19 @@ fun CustomDownloadScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(p.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
                             if (p.durationSec > 0) {
-                                val m = p.durationSec / 60; val s = p.durationSec % 60
-                                Text(String.format(Locale.US, "%d:%02d", m, s), color = Color.Gray, fontSize = 11.sp)
+                                val m = p.durationSec / 60L; val s = p.durationSec % 60L
+                                Text(formatMinSec(m, s), color = Color.Gray, fontSize = 11.sp)
                             }
                         }
                     }
                 }
 
                 if (p.video.isNotEmpty()) {
-                    item { SectionHdr(stringResource(R.string.cd_video)) }
+                    item { SectionHdr(stringResource(Res.string.cd_video)) }
                     items(p.video.size) { i -> FormatRow(p.video[i], downloadingId, progress) { startDownload(p.video[i]) } }
                 }
                 if (p.audio.isNotEmpty()) {
-                    item { SectionHdr(stringResource(R.string.cd_audio)) }
+                    item { SectionHdr(stringResource(Res.string.cd_audio)) }
                     items(p.audio.size) { i -> FormatRow(p.audio[i], downloadingId, progress) { startDownload(p.audio[i]) } }
                 }
             }
@@ -226,7 +216,7 @@ private fun SectionHdr(text: String) {
 }
 
 @Composable
-private fun FormatRow(f: CustomDownload.Fmt, downloadingId: String?, progress: Int, onClick: () -> Unit) {
+private fun FormatRow(f: CustomFormat, downloadingId: String?, progress: Int, onClick: () -> Unit) {
     val busy = downloadingId != null
     val thisBusy = downloadingId == f.id
     Card(
@@ -246,6 +236,32 @@ private fun FormatRow(f: CustomDownload.Fmt, downloadingId: String?, progress: I
                     modifier = Modifier.fillMaxWidth().height(3.dp),
                     color = GREENC, trackColor = Color(0xFF2A2A2A)
                 )
+            }
+        }
+    }
+}
+
+/** The custom downloads' card in Settings > Downloads: their folder, and the way to the screen. */
+@Composable
+fun CustomDownloadSection(downloads: CustomDownloads, onOpen: () -> Unit) {
+    var folder by remember { mutableStateOf(downloads.folder()) }
+    val picker = rememberPickFolder(write = true) { picked ->
+        if (picked != null) {
+            downloads.setFolder(picked)
+            folder = picked
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    Text(stringResource(Res.string.settings_custom_download), color = GREENC, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    Card(colors = CardDefaults.cardColors(containerColor = CARDC), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            val folderLabel = if (folder.isBlank()) stringResource(Res.string.cd_no_folder) else downloads.folderLabel(folder)
+            Text("📁 $folderLabel", color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.TextButton(onClick = picker) { Text(stringResource(Res.string.cd_pick_folder), color = GREENC) }
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = onOpen, colors = ButtonDefaults.buttonColors(containerColor = GREENC), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Text(stringResource(Res.string.cd_title), color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     }

@@ -26,6 +26,8 @@ class AndroidAppServices(context: Context) : AppServices {
 
     override fun can(feature: AppServices.Feature): Boolean = true
 
+    override val customDownloads: com.varuna.rustify.audio.CustomDownloads = com.varuna.rustify.audio.AndroidCustomDownloads(app)
+
     override fun bpmCached(trackId: String): Float? = BpmAnalyzer.cached(app, trackId)
     override fun bpmScale(trackId: String, factor: Float): Float? = BpmAnalyzer.scale(app, trackId, factor)
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? =

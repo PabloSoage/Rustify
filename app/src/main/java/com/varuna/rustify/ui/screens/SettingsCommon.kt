@@ -144,31 +144,5 @@ internal fun DownloadsCategory(context: Context, onOpenCustom: () -> Unit) {
     val green = Color(0xFF1DB954)
     // Standard downloads folder (in addition to the custom one).
     DownloadFolderSection { DownloadMp3Switch(context) }
-    var folder by remember { mutableStateOf(com.varuna.rustify.audio.CustomDownload.folder(context)) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            }
-            com.varuna.rustify.audio.CustomDownload.setFolder(context, uri.toString())
-            folder = uri.toString()
-        }
-    }
-    Spacer(Modifier.height(16.dp))
-    Text(stringResource(R.string.settings_custom_download), color = green, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            val folderLabel = if (folder.isBlank()) stringResource(R.string.cd_no_folder)
-                else Uri.decode(folder.substringAfterLast("%3A").substringAfterLast("/")).ifBlank { folder }
-            Text("📁 $folderLabel", color = Color.Gray, fontSize = 12.sp, maxLines = 1)
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.cd_pick_folder), color = green) }
-            Spacer(Modifier.height(4.dp))
-            Button(onClick = onOpenCustom, colors = ButtonDefaults.buttonColors(containerColor = green), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                Text(stringResource(R.string.cd_title), color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
+    CustomDownloadSection(com.varuna.rustify.ui.LocalAppServices.current.customDownloads!!, onOpenCustom)
 }

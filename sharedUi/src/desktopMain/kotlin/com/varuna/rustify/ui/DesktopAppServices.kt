@@ -149,6 +149,8 @@ class DesktopAppServices(
 
     private val bpm by lazy { com.varuna.rustify.bridge.EngineBpm(platform.filesDir) }
 
+    override val customDownloads: com.varuna.rustify.audio.CustomDownloads = com.varuna.rustify.audio.DesktopCustomDownloads(platform.prefs())
+
     override fun bpmCached(trackId: String): Float? = bpm.cached(trackId)
     override fun bpmScale(trackId: String, factor: Float): Float? = bpm.scale(trackId, factor)
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = bpm.analyze(trackId)
