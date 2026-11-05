@@ -11,11 +11,28 @@ final class WalkthroughTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = true
+        addUIInterruptionMonitor(withDescription: "System Dialogs") { alert in
+            if alert.buttons["Allow While Using App"].exists {
+                alert.buttons["Allow While Using App"].tap()
+                return true
+            }
+            if alert.buttons["OK"].exists {
+                alert.buttons["OK"].tap()
+                return true
+            }
+            if alert.buttons["Allow"].exists {
+                alert.buttons["Allow"].tap()
+                return true
+            }
+            return false
+        }
     }
 
     func testWalkthrough() {
         app.launch()
         home()
+        travel()
+        dj()
         search()
         link()
         localMusic()
@@ -25,6 +42,44 @@ final class WalkthroughTests: XCTestCase {
 
     private func home() {
         step("home", shows: "Connect Spotify", timeout: 60)
+    }
+
+    /// 1. Travel: map, Core Location, destination search and OSRM route ETA card.
+    private func travel() {
+        guard tap("Open menu") else { return }
+        guard tap("Travel playlist") else { return }
+        acceptPermissionIfPresent()
+        step("travel-map", shows: "Search destination or place", timeout: 20)
+
+        guard tap("Search destination or place") else { return }
+        app.typeText("Santiago de Compostela\n")
+
+        let suggestion = element("Santiago de Compostela")
+        XCTContext.runActivity(named: "Travel Destination and Route") { activity in
+            if suggestion.waitForExistence(timeout: 15) {
+                suggestion.tap()
+                let eta = element("ETA")
+                if eta.waitForExistence(timeout: 20) {
+                    record("travel-route")
+                } else {
+                    activity.add(XCTAttachment(string: "OSRM routing did not return an ETA card within 20s (possible runner network limit)"))
+                    record("travel-route-timeout")
+                }
+            } else {
+                activity.add(XCTAttachment(string: "Nominatim/Photon autocomplete returned no suggestions for Santiago de Compostela (possible runner network limit)"))
+                record("travel-search-timeout")
+            }
+        }
+        guard back() else { return }
+    }
+
+    /// 3. DJ: verify the DJ screen opens and the microphone button is present.
+    private func dj() {
+        guard tap("Open menu") else { return }
+        guard tap("DJ") else { return }
+        acceptPermissionIfPresent()
+        step("dj", shows: "Talk to the DJ", timeout: 20)
+        guard back() else { return }
     }
 
     private func search() {
@@ -67,6 +122,12 @@ final class WalkthroughTests: XCTestCase {
         record("local-after-8s")
         guard tap("Pause") else { return }
         gone("local-paused", "Pause")
+        // Resume playing so the engine's tap continues to stream audio buffers for Audio Lab
+        let play = app.buttons.matching(NSPredicate(format: "label == %@", "Play")).firstMatch
+        if play.waitForExistence(timeout: 5) {
+            play.tap()
+            step("local-resumed", shows: "Pause", timeout: 10)
+        }
     }
 
     private func settings() {
@@ -79,9 +140,19 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertFalse(element("Clear audio").exists, "no audio cache to clear on iOS")
         guard back(), tap("Advanced") else { return }
         step("settings-advanced", shows: "Diagnostics")
+        audioLab()
         guard tap("View logs") else { return }
         // The button is gone with the screen it was on; what the viewer holds is read on the screenshot.
         gone("logs", "View logs")
+    }
+
+    /// 2. Audio Lab: with local track playing, verify it does not show "play something".
+    private func audioLab() {
+        guard tap("Audio lab") else { return }
+        sleep(4)
+        XCTAssertFalse(element("Play something to see it here.").exists, "Audio lab should receive audio from the running engine")
+        record("audio-lab")
+        guard back() else { return }
     }
 
     /// Sets up the server own-server.py is, as a person would, then plays from it and downloads from it.
@@ -122,6 +193,25 @@ final class WalkthroughTests: XCTestCase {
         guard scrollTo(element("Download track")) else { return }
         element("Download track").tap()
         step("own-server-downloaded", shows: "Track downloaded", timeout: 60)
+    }
+
+    /// Dismisses any system permission alerts (Location, Microphone, Speech) via SpringBoard.
+    private func acceptPermissionIfPresent() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allowWhileUsing = springboard.buttons["Allow While Using App"]
+        if allowWhileUsing.waitForExistence(timeout: 5) {
+            allowWhileUsing.tap()
+            return
+        }
+        let allow = springboard.buttons["Allow"]
+        if allow.waitForExistence(timeout: 2) {
+            allow.tap()
+            return
+        }
+        let ok = springboard.buttons["OK"]
+        if ok.waitForExistence(timeout: 2) {
+            ok.tap()
+        }
     }
 
     /// The screen's arrow. By its whole label: the log viewer's lines say "playback" and "AudioBackend".

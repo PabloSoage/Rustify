@@ -24,6 +24,7 @@ device="$(xcrun simctl list devices available | sed -nE 's/^ +iPhone[^(]*\(([0-9
 xcrun simctl boot "$device" || true
 xcrun simctl bootstatus "$device" -b
 trap 'xcrun simctl shutdown "$device" || true' EXIT
+xcrun simctl location "$device" set 43.3709,-8.3959
 
 xcrun simctl install "$device" "$app"
 xcrun simctl spawn "$device" log stream --level info --predicate 'processImagePath CONTAINS "Rustify"' >"$out/app.log" 2>&1 &
@@ -67,6 +68,8 @@ python3 tools/ios/own-server.py 8765 "$out/own-server.log" &
 server=$!
 trap 'kill "$logger" "$server" 2>/dev/null || true; xcrun simctl shutdown "$device" || true' EXIT
 sleep 3
+
+xcrun simctl location "$device" set 43.3709,-8.3959
 
 # The app used, not only looked at (iosApp/UITests).
 (
