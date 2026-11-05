@@ -44,7 +44,7 @@ class WebAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.TRANSLATION -> true
         else -> false
     }
 
@@ -63,8 +63,11 @@ class WebAppServices(
 
     override val audioSettings: AudioSettings = WebAudioSettings(platform)
 
+    private val chat = com.varuna.rustify.dj.DjServiceChatModel(platform, device = "this browser")
+    private val translator = ModelLyricsTranslator(client = { chat.client() })
+
     override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
-        LyricsTranslation.Failed(LyricsTranslation.UNAVAILABLE)
+        translator.translate(key, lines, translationTarget(), onProgress)
 
     override fun translationTarget(): String = WebLocale.tag.substringBefore('-')
 
@@ -107,7 +110,7 @@ class WebAppServices(
         Text(stringResource(Res.string.feature_not_on_platform), color = androidx.compose.ui.graphics.Color.Gray)
     }
 
-    override fun chatModel(): ChatModel? = null
+    override fun chatModel(): ChatModel = chat
 
     override val logs: LogBook get() = WebLogBook
 }

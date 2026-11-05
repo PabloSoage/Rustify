@@ -56,7 +56,7 @@ private class IosAudioSettings(platform: AppPlatform) : AudioSettings(platform.p
 /**
  * [AppServices] on iOS. Lyrics, the DJ and the audio settings are the shared ones; the DJ speaks with
  * the system's voice, and with no model on the phone its "local" mode is the heuristic. What is not
- * here yet ([can] says so, and the screens with it): translation. Downloads stop if
+ * here ([can] says so, and the screens with it): a model on the phone, so the chat and the translation ask the service set for the DJ. Downloads stop if
  * the system suspends the app, which only keeps playing audio in the background.
  */
 class IosAppServices(
@@ -65,7 +65,7 @@ class IosAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO, AppServices.Feature.BPM -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO, AppServices.Feature.BPM, AppServices.Feature.TRANSLATION -> true
         else -> false
     }
 
@@ -101,8 +101,11 @@ class IosAppServices(
 
     override val audioSettings: AudioSettings = IosAudioSettings(platform)
 
+    private val chat = com.varuna.rustify.dj.DjServiceChatModel(platform, device = "this phone")
+    private val translator = ModelLyricsTranslator(client = { chat.client() })
+
     override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
-        LyricsTranslation.Failed(LyricsTranslation.UNAVAILABLE)
+        translator.translate(key, lines, translationTarget(), onProgress)
 
     override fun translationTarget(): String = IosLocale.languageCode
 
@@ -146,7 +149,7 @@ class IosAppServices(
         Text(stringResource(Res.string.feature_not_on_platform), color = androidx.compose.ui.graphics.Color.Gray)
     }
 
-    override fun chatModel(): ChatModel? = null
+    override fun chatModel(): ChatModel = chat
 
     override val logs: LogBook get() = IosLogBook
 }

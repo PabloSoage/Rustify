@@ -33,7 +33,7 @@ import java.util.Locale
  * (MediaCodec), and so is video; [can] says so and the screens show them as unavailable. The DJ is
  * the shared one: it speaks with the system's voice, and its "local" mode is a model server on this
  * computer, one already there or Rustify's own; it has no microphone. The chat and the lyrics
- * translation ask the model the DJ asks ([DesktopChatModel], [DesktopLyricsTranslator]).
+ * translation ask the model the DJ asks ([DesktopChatModel], [ModelLyricsTranslator]).
  */
 class DesktopAppServices(
     private val platform: AppPlatform,
@@ -62,7 +62,7 @@ class DesktopAppServices(
     }
 
     // ML Kit is Android's: here the model the DJ asks translates, with the whole song as context.
-    private val translator = DesktopLyricsTranslator(client = { chat.client() })
+    private val translator = ModelLyricsTranslator(client = { chat.client() })
 
     override suspend fun translateLyrics(key: String, lines: List<String>, onProgress: (LyricsTranslation) -> Unit): LyricsTranslation =
         translator.translate(key, lines, translationTarget(), onProgress)

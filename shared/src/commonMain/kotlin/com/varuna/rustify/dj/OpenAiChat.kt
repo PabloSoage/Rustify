@@ -1,11 +1,21 @@
-// shared/src/desktopMain/kotlin/com/varuna/rustify/dj/OpenAiChat.kt
+// shared/src/commonMain/kotlin/com/varuna/rustify/dj/OpenAiChat.kt
 package com.varuna.rustify.dj
 
+import com.varuna.rustify.platform.IO
+import com.varuna.rustify.platform.httpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
+import io.ktor.client.request.preparePost
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -15,14 +25,11 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * An OpenAI-compatible chat completion, streamed: `"stream": true`, and the answer read as it comes
  * from the server-sent events' `data:` lines (`choices[0].delta.content`, until `data: [DONE]`). For
- * the desktop's chat with the DJ's model and its lyrics translation, against what the DJ asks: a
+ * the chat with the DJ's model and the lyrics translation, where there is no Gemini Nano, against what the DJ asks: a
  * model server on this computer ([LocalLlmDetector], [LocalModelManager]) or the service set in the
  * DJ's settings, through the same endpoint rules as [ApiDjProvider].
  *
@@ -49,35 +56,33 @@ class OpenAiChat(
         maxTokens: Int? = null,
         onText: (String) -> Unit = {},
     ): String = withContext(Dispatchers.IO) {
-        val conn = (URL(ApiDjProvider.resolveEndpoint(baseUrl)).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15_000
-            readTimeout = readTimeoutMs
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "text/event-stream, application/json")
-            if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
-        }
-        // A read blocked on the socket does not see a cancellation; closing the connection ends it.
-        val closer = launch {
-            try { awaitCancellation() } finally { conn.disconnect() }
+        val client = httpClient {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 15_000
+                socketTimeoutMillis = readTimeoutMs.toLong()
+            }
         }
         try {
-            conn.outputStream.use { it.write(requestBody(model, messages, temperature, maxTokens).toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val said = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                throw IOException("HTTP $code: ${errorMessage(said) ?: said.take(200)}")
-            }
-            val answer = StringBuilder()
-            val rest = StringBuilder()
-            var events = false
-            val reader = conn.inputStream.bufferedReader(Charsets.UTF_8)
-            try {
+            // Cancelling the caller ends the read and closes the connection.
+            client.preparePost(ApiDjProvider.resolveEndpoint(baseUrl)) {
+                contentType(ContentType.Application.Json)
+                header("Accept", "text/event-stream, application/json")
+                if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
+                setBody(requestBody(model, messages, temperature, maxTokens))
+            }.execute { response ->
+                val code = response.status.value
+                if (code !in 200..299) {
+                    val said = response.bodyAsText()
+                    throw IOException("HTTP $code: ${errorMessage(said) ?: said.take(200)}")
+                }
+                val answer = StringBuilder()
+                val rest = StringBuilder()
+                var events = false
+                val channel = response.bodyAsChannel()
                 var done = false
                 while (!done) {
                     ensureActive()
-                    val line = reader.readLine() ?: break
+                    val line = channel.readUTF8Line() ?: break
                     when (val event = parseEvent(line)) {
                         is Event.Text -> {
                             events = true
@@ -90,20 +95,17 @@ class OpenAiChat(
                         Event.NotData -> if (!events) rest.append(line).append('\n')
                     }
                 }
-            } finally {
-                reader.close()
+                if (!events) {
+                    // Not a stream: the whole completion in one body.
+                    val whole = completionContent(rest.toString())
+                        ?: throw IOException("not an OpenAI-compatible answer: ${rest.take(200)}")
+                    if (whole.isNotEmpty()) onText(whole)
+                    answer.append(whole)
+                }
+                answer.toString()
             }
-            if (!events) {
-                // Not a stream: the whole completion in one body.
-                val whole = completionContent(rest.toString())
-                    ?: throw IOException("not an OpenAI-compatible answer: ${rest.take(200)}")
-                if (whole.isNotEmpty()) onText(whole)
-                answer.append(whole)
-            }
-            answer.toString()
         } finally {
-            closer.cancel()
-            conn.disconnect()
+            client.close()
         }
     }
 

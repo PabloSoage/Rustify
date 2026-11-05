@@ -1,19 +1,19 @@
-// sharedUi/src/desktopMain/kotlin/com/varuna/rustify/ui/DesktopLyricsTranslator.kt
+// sharedUi/src/commonMain/kotlin/com/varuna/rustify/ui/ModelLyricsTranslator.kt
 package com.varuna.rustify.ui
 
 import com.varuna.rustify.bridge.LyricsByModel
 import com.varuna.rustify.dj.OpenAiChat
 import com.varuna.rustify.platform.Log
+import com.varuna.rustify.util.LockedMap
 import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.lyrics_translate_no_model
 import com.varuna.rustify.ui.resources.lyrics_translate_not_json
 import com.varuna.rustify.ui.resources.lyrics_translate_wrong_count
 import kotlinx.coroutines.CancellationException
-import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Lyrics translation on the desktop, by the model the DJ asks ([DesktopChatModel.client]): the phone
- * has ML Kit and Gemini Nano, which a computer does not. Each block of lines goes with the whole song
+ * Lyrics translation by the model the DJ asks, where there is neither ML Kit nor Gemini Nano: the
+ * desktop, iOS and the web. Each block of lines goes with the whole song
  * as context ([LyricsByModel], the phone's translation in context), so this is that one, not ML
  * Kit's line by line.
  *
@@ -22,8 +22,8 @@ import java.util.concurrent.ConcurrentHashMap
  * says why. Repeated lines (every chorus) are asked once. Kept in memory per track and language for
  * the session, as on the phone; a failure is not kept, so tapping again asks again.
  */
-class DesktopLyricsTranslator(private val client: suspend () -> OpenAiChat?) {
-    private val cache = ConcurrentHashMap<String, LyricsTranslation>()
+class ModelLyricsTranslator(private val client: suspend () -> OpenAiChat?) {
+    private val cache = LockedMap<String, LyricsTranslation>()
 
     suspend fun translate(
         key: String,

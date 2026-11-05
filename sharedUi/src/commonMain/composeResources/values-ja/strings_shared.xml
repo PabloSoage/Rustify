@@ -61,6 +61,7 @@
     <string name="chat_title_desktop">DJ のモデルとチャット</string>
     <string name="chat_empty_desktop">何でも質問できます。曲の再生・キューへの追加・検索、ミックスの作成、一時停止やスキップも頼めます。DJ が使うモデルと話します：このコンピューターのモデルサーバー（Ollama、LM Studio、llama.cpp、または Rustify 内蔵）、または設定で DJ に外部 AI を選んでいればその AI です。ローカルモデルなら会話はこのコンピューターから出ません。再生や検索を頼んだときは、アプリの通常の検索と同じくその検索だけが送信されます。</string>
     <string name="chat_no_model">話せるモデルがありません：このコンピューターで動いているモデルがありません。Ollama、LM Studio、llama-server を起動するか、下で Rustify 内蔵のものを入手してください。または設定で DJ に外部 AI を選んでください。</string>
+    <string name="chat_no_service">DJ に設定したサービスに問い合わせます。DJ の設定で外部 AI (API) を選んでください。</string>
     <string name="chat_no_model_short">動いているモデルなし</string>
     <string name="chat_no_images">ここでは写真は使えません：モデルにはテキストだけで問い合わせます。モデルサーバーが画像を読めるのはビジョンモデルのときだけで、動いているモデルがそうとは限らないためです。</string>
     <string name="chat_no_token_count">各回答には時間を表示しますが、トークン/秒の速度は表示しません：書いたトークン数を返さないモデルサーバーもあるためです。</string>

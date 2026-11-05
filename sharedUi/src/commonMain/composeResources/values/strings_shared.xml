@@ -63,6 +63,7 @@
     <string name="chat_title_desktop">Chat with the DJ's model</string>
     <string name="chat_empty_desktop">Ask anything, or ask it to play, queue or find music, start a mix, pause or skip. It is the model the DJ asks: a model server on this computer (Ollama, LM Studio, llama.cpp or Rustify's own), or the external AI chosen for the DJ in Settings when it uses one. With a local model the conversation stays on this computer; when it plays or finds something, only that search goes out, like any search in the app.</string>
     <string name="chat_no_model">No model to chat with: none is running on this computer. Start Ollama, LM Studio or llama-server, or get Rustify's own below; or choose External AI for the DJ in Settings.</string>
+    <string name="chat_no_service">Asks the service set for the DJ. Choose “External AI (API)” in the DJ’s settings.</string>
     <string name="chat_no_model_short">no model running</string>
     <string name="chat_no_images">No photos here: the model is asked in text only, since a model server reads images only with a vision model, and the one running may not be.</string>
     <string name="chat_no_token_count">Each answer shows its times but not its speed in tokens per second: not every model server says how many tokens it wrote.</string>
