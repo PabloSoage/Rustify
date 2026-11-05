@@ -146,8 +146,28 @@ jobs:
           path: release-out/*
           if-no-files-found: error
 
+  # The interface in a browser, which goes inside every server package and the image.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew -Prustify.web=true :sharedUi:wasmJsBrowserDistribution --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-root
+          path: sharedUi/build/dist/wasmJs/productionExecutable/
+          if-no-files-found: error
+
   # rustify-server (docs 28): a tarball per architecture, and the binary for the Docker image.
   server:
+    needs: web
     strategy:
       fail-fast: false
       matrix:
@@ -178,6 +198,10 @@ jobs:
             cargo build --release
             echo "BIN=server/target/release/rustify-server" >> "$GITHUB_ENV"
           fi
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-root
+          path: web-root
       - name: Package
         shell: bash
         run: |
@@ -185,6 +209,7 @@ jobs:
           name="rustify-server-${TAG#v}-linux-${{ matrix.arch }}"
           mkdir -p "$name/web" release-out "docker-bin/${{ matrix.docker }}"
           cp "$BIN" "$name/"
+          cp -r web-root/. "$name/web/"
           cp server/rustify-server.service "$name/"
           tar -czf "release-out/$name.tar.gz" "$name"
           cp "$BIN" "docker-bin/${{ matrix.docker }}/rustify-server"
@@ -213,6 +238,10 @@ jobs:
           pattern: docker-bin-*
           path: server/dist
           merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-root
+          path: server/dist/web
       - name: Platforms that were built
         shell: bash
         run: |
