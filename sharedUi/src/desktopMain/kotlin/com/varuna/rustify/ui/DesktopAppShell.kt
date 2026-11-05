@@ -234,7 +234,7 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             com.varuna.rustify.ui.screens.SubsonicBackendSection()
         }
         if (slot == SettingsSlot.DOWNLOADS) {
-            com.varuna.rustify.ui.screens.DownloadFolderSection()
+            com.varuna.rustify.ui.screens.DownloadFolderSection { com.varuna.rustify.bridge.DesktopMp3.Switch() }
             com.varuna.rustify.ui.screens.CustomDownloadSection(LocalAppServices.current.customDownloads!!) { host.navigate(Screen.CustomDownload) }
             return
         }

@@ -11,4 +11,5 @@ fun DesktopDownloads(platform: AppPlatform): EngineDownloads = EngineDownloads(
     platform,
     StreamResolver(JvmPlayerBackend, com.varuna.rustify.audio.DesktopAudioSources.install(platform.prefs())),
     folderOf = { folder -> File(folder).takeIf { it.isAbsolute } },
+    finish = { file -> if (DesktopMp3.wanted(platform.prefs())) DesktopMp3.convert(file) else file },
 )

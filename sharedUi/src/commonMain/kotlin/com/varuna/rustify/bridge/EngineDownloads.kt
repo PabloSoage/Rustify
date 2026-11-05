@@ -68,6 +68,8 @@ class EngineDownloads(
     private val resolver: StreamResolver,
     /** A setting's folder as a file; null when it can be no folder here (a phone's tree URI). */
     private val folderOf: (String) -> AppFile?,
+    /** What becomes of a finished file before it is tagged; the file it answers is the download. */
+    private val finish: (AppFile) -> AppFile = { it },
 ) {
     private val _downloads = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloads: StateFlow<List<DownloadTask>> = _downloads.asStateFlow()
@@ -157,7 +159,7 @@ class EngineDownloads(
             if (!temp.renameToFile(target)) throw IOException("could not move the download to ${target.fileName}")
             partial = null
 
-            writeTags(target, track)
+            writeTags(finish(target), track)
             updateStatus(trackId, DownloadStatus.COMPLETE, progress = 100)
             // The file is there: what is left cannot turn it into a failed download.
             runCatching {
