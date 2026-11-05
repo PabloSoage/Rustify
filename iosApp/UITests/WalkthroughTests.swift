@@ -171,10 +171,10 @@ final class WalkthroughTests: XCTestCase {
         }
         // Coming back to Search, the row is there before the screen takes touches: a tap then does nothing.
         sleep(3)
-        guard tap("Around the World") else { return }
-        if !element("Pause").waitForExistence(timeout: 10) {
-            record("own-server-tap-again")
-            guard tap("Around the World") else { return }
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Around the World")).firstMatch
+        for i in 0..<4 where !element("Pause").waitForExistence(timeout: 5) {
+            if i > 0 { record("own-server-tap-again") }
+            row.tap()
         }
         step("own-server-playing", shows: "Pause", timeout: 30)
         // Long enough for the engine to want its second range.

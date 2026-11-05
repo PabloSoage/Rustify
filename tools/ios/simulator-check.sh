@@ -58,7 +58,7 @@ python3 - "$tone/tone.wav" <<'PY'
 import math, struct, sys, wave
 with wave.open(sys.argv[1], "wb") as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(44100)
-    w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i * 0.0626))) for i in range(44100 * 30)))
+    w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i * 0.0626))) for i in range(44100 * 120)))
 PY
 mkdir -p "$data/Documents"
 afconvert -d aac -f m4af "$tone/tone.wav" "$data/Documents/Walkthrough Ñandú.m4a"
