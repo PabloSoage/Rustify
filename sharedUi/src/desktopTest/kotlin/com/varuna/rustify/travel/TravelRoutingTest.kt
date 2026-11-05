@@ -69,6 +69,13 @@ class TravelRoutingTest {
     }
 
     @Test
+    fun photonIsAskedInALanguageItHasOrInNone() {
+        // photon.komoot.io answered "400 Bad Request" to lang=es, seen from the web build.
+        assertEquals("https://photon.komoot.io/api/?q=A+Coru%C3%B1a&limit=12", TravelRouting.photonUrl("A Coruña", 12, "es", null, null))
+        assertEquals("https://photon.komoot.io/api/?q=x&limit=5&lang=de&lon=-8.4&lat=43.3", TravelRouting.photonUrl("x", 5, "de", 43.3, -8.4))
+    }
+
+    @Test
     fun aHouseNumberIsDroppedToFindTheStreet() {
         assertEquals("Rúa X", TravelRouting.stripTrailingNumber("Rúa X 5"))
         assertEquals("Castro", TravelRouting.stripTrailingNumber("Castro, 24"))

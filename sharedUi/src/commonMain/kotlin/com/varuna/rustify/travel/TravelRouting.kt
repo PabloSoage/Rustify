@@ -165,12 +165,7 @@ object TravelRouting {
         val vb = viewboxParam(biasLat, biasLon)
 
         val photon = runCatching {
-            val sb = StringBuilder("https://photon.komoot.io/api/?q=")
-                .append(formUrlEncode(q)).append("&limit=").append(limit).append("&lang=").append(lang)
-            if (biasLat != null && biasLon != null && biasLat != 0.0 && biasLon != 0.0) {
-                sb.append("&lon=").append(biasLon).append("&lat=").append(biasLat)
-            }
-            parsePhoton(httpGet(sb.toString()))
+            parsePhoton(httpGet(photonUrl(q, limit, lang, biasLat, biasLon)))
         }.getOrDefault(emptyList())
 
         // Nominatim free-form, biased (not restricted) toward the user's area via viewbox+bounded=0.
@@ -253,6 +248,21 @@ object TravelRouting {
 
     // ── Geocoding helpers ────────────────────────────────────────────────────────────────
 
+    /**
+     * Photon answers 400 to a language it does not have, and it has few: asked in Spanish, every
+     * search lost its Photon half and lived on Nominatim alone. Without `lang` it names places in
+     * their own language, which is what a Spanish speaker in Spain reads anyway.
+     */
+    private val PHOTON_LANGUAGES = setOf("en", "de", "fr")
+
+    internal fun photonUrl(q: String, limit: Int, lang: String, biasLat: Double?, biasLon: Double?): String {
+        val sb = StringBuilder("https://photon.komoot.io/api/?q=").append(formUrlEncode(q)).append("&limit=").append(limit)
+        if (lang in PHOTON_LANGUAGES) sb.append("&lang=").append(lang)
+        if (biasLat != null && biasLon != null && biasLat != 0.0 && biasLon != 0.0) {
+            sb.append("&lon=").append(biasLon).append("&lat=").append(biasLat)
+        }
+        return sb.toString()
+    }
 
     /** viewbox = lonMin,latMin,lonMax,latMax with bounded=0 ⇒ **biases** toward the area without excluding. */
     private fun viewboxParam(lat: Double?, lon: Double?): String {
