@@ -6,10 +6,28 @@ import kotlin.time.Instant
 
 /** The interface's language, a BCP 47 tag; the browser's until Settings picks another. */
 object WebLocale {
+    /**
+     * Setting it also tells Compose: its resources read `Locale.current`, which on the web is the
+     * browser's language unless `window.__customLocale` says otherwise. Without that, picking Spanish
+     * in Settings changed the dates and numbers and left every string in the browser's language.
+     */
     var tag: String = browserLanguage()
+        set(value) {
+            field = value
+            setComposeLocale(value)
+        }
+
+    /** Back to the browser's language ("System" in Settings). */
+    fun useBrowsers() {
+        tag = browserLanguage()
+    }
 }
 
 private fun browserLanguage(): String = js("navigator.language || 'en'")
+
+private fun setComposeLocale(tag: String) {
+    js("window.__customLocale = tag")
+}
 
 private fun numberParts(tag: String, kind: String): String = js(
     """(function() {

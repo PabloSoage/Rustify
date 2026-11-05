@@ -95,4 +95,7 @@
     <string name="server_link_wrong_token">El servidor no aceptó ese token de acceso.</string>
     <string name="server_link_refused">El servidor no pudo entrar en Spotify: %1$s</string>
     <string name="server_link_failed">No se pudo llegar al servidor: %1$s</string>
+    <string name="web_sign_in_from_app">Lo fácil: en Rustify del móvil o del ordenador, abre Ajustes → Integraciones → Tu servidor Rustify y pon esta dirección (%1$s) y el token de acceso del servidor. Tu sesión de Spotify llega aquí sin copiar nada.</string>
+    <string name="web_sign_in_check_again">Ya lo vinculé: comprobar</string>
+    <string name="web_sign_in_or_paste">O pega la cookie a mano:</string>
 </resources>

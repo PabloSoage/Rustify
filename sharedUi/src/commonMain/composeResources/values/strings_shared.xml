@@ -97,4 +97,7 @@
     <string name="server_link_wrong_token">The server did not take that access token.</string>
     <string name="server_link_refused">The server could not sign in to Spotify: %1$s</string>
     <string name="server_link_failed">Could not reach the server: %1$s</string>
+    <string name="web_sign_in_from_app">The easy way: in Rustify on your phone or computer, open Settings → Integrations → Your Rustify server, and enter this address (%1$s) and the server\'s access token. Your Spotify session comes here without copying anything.</string>
+    <string name="web_sign_in_check_again">I linked it: check again</string>
+    <string name="web_sign_in_or_paste">Or paste the cookie by hand:</string>
 </resources>

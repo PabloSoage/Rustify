@@ -108,7 +108,7 @@ fun main() {
         }
         val shell = remember {
             WebAppShell(onLanguage = { code ->
-                if (code != "system") WebLocale.tag = code
+                if (code != "system") WebLocale.tag = code else WebLocale.useBrowsers()
                 NativeEngine.setLanguageNative(WebLocale.tag.substringBefore('-'))
                 language = code
             })

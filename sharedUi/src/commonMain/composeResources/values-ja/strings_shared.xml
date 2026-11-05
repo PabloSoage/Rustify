@@ -95,4 +95,7 @@
     <string name="server_link_wrong_token">サーバーがそのアクセストークンを受け付けませんでした。</string>
     <string name="server_link_refused">サーバーが Spotify にログインできませんでした: %1$s</string>
     <string name="server_link_failed">サーバーに接続できませんでした: %1$s</string>
+    <string name="web_sign_in_from_app">簡単な方法: スマホかパソコンの Rustify で「設定」→「連携」→「自分の Rustify サーバー」を開き、このアドレス（%1$s）とサーバーのアクセストークンを入力します。Spotify のセッションが何もコピーせずにここへ届きます。</string>
+    <string name="web_sign_in_check_again">連携しました: もう一度確認</string>
+    <string name="web_sign_in_or_paste">または Cookie を手で貼り付け:</string>
 </resources>

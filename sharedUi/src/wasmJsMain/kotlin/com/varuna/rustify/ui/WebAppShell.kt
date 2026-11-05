@@ -32,7 +32,16 @@ import com.varuna.rustify.ui.resources.feature_not_on_platform
 import com.varuna.rustify.ui.resources.web_downloads_no_folder
 import com.varuna.rustify.ui.resources.web_downloads_on_server
 import com.varuna.rustify.ui.resources.spotify_sign_in
+import com.varuna.rustify.ui.resources.web_sign_in_check_again
+import com.varuna.rustify.ui.resources.web_sign_in_from_app
+import com.varuna.rustify.ui.resources.web_sign_in_or_paste
 import org.jetbrains.compose.resources.stringResource
+
+private fun pageOrigin(): String = js("window.location.origin")
+
+private fun reloadPage() {
+    js("window.location.reload()")
+}
 
 private val Background = Color(0xFF121212)
 private val Accent = Color(0xFF1DB954)
@@ -49,6 +58,14 @@ class WebAppShell(private val onLanguage: (String) -> Unit) : AppShell {
             Modifier.fillMaxSize().background(Background).statusBarsPadding().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // The easy way first: the phone or desktop app hands this server its session (ServerLink),
+            // since no page can sign in to Spotify for another site. Then the page only has to look again.
+            Text(stringResource(Res.string.web_sign_in_from_app, pageOrigin()), color = Color.White)
+            Button(
+                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
+                onClick = { reloadPage() },
+            ) { Text(stringResource(Res.string.web_sign_in_check_again)) }
+            Text(stringResource(Res.string.web_sign_in_or_paste), color = Color.Gray)
             Text(stringResource(Res.string.desktop_sign_in_help), color = Color.LightGray)
             OutlinedTextField(
                 value = cookie,
