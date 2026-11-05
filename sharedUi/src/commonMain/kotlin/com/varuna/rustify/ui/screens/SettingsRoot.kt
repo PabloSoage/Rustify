@@ -138,6 +138,11 @@ fun SettingsScreen(shell: AppShell, host: ShellHost) {
             "integrations" -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 shell.SettingsSections(SettingsSlot.INTEGRATIONS, host)
+                // The web interface is the server; everywhere else can hand it this app's session.
+                if (com.varuna.rustify.ui.LocalAppPlatform.current.kind != com.varuna.rustify.ui.AppPlatform.Kind.WEB) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ServerLinkSection(host.spotifyRepo)
+                }
             }
             "advanced" -> {
                 Spacer(modifier = Modifier.height(8.dp))

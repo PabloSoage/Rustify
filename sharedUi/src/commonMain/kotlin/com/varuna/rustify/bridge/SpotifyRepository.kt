@@ -1042,6 +1042,9 @@ loadLocalTracksFromCache()
         decodeWire<OperationResult>(json)
     }
 
+    /** The saved sp_dc cookie, for handing the session to the person's own server (ServerLink); null signed out. */
+    fun linkableCookie(): String? = prefs.getString(KEY_SP_DC)?.takeIf { it.isNotBlank() }
+
     /**
      * Check if there's a saved session available (sp_dc cookie).
      */

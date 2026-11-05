@@ -83,4 +83,16 @@
     <string name="drive_kind_places">Donde lo dejaste</string>
     <string name="web_downloads_on_server">Las descargas se guardan en el servidor, en su carpeta de descargas, y pasan a su música para cualquier navegador que lo abra.</string>
     <string name="web_downloads_no_folder">El servidor no tiene carpeta de descargas. Arráncalo con --download-dir para descargar desde el navegador.</string>
+    <string name="server_link_title">Tu servidor Rustify</string>
+    <string name="server_link_desc">Da a tu propio rustify-server (la interfaz web de tu NAS u ordenador) la sesión de Spotify de esta app, para que se abra con tu cuenta. No se cambia nada en la cuenta.</string>
+    <string name="server_link_no_session">Inicia sesión en Spotify en esta app primero.</string>
+    <string name="server_link_address">Dirección del servidor (https://…, o http:// en tu red)</string>
+    <string name="server_link_token">El token de acceso del servidor</string>
+    <string name="server_link_button">Vincular servidor</string>
+    <string name="server_link_ok">Vinculado: la interfaz web del servidor ya tiene tu cuenta de Spotify.</string>
+    <string name="server_link_insecure">No por http sin cifrar a una dirección fuera de tu red: la sesión viajaría a la vista. Usa https.</string>
+    <string name="server_link_bad_address">Eso no es la dirección de un servidor.</string>
+    <string name="server_link_wrong_token">El servidor no aceptó ese token de acceso.</string>
+    <string name="server_link_refused">El servidor no pudo entrar en Spotify: %1$s</string>
+    <string name="server_link_failed">No se pudo llegar al servidor: %1$s</string>
 </resources>

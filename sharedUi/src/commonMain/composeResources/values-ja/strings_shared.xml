@@ -83,4 +83,16 @@
     <string name="drive_kind_places">前回の続き</string>
     <string name="web_downloads_on_server">ダウンロードはサーバーのダウンロード用フォルダーに保存され、どのブラウザーから開いてもその音楽に加わります。</string>
     <string name="web_downloads_no_folder">サーバーにダウンロード用フォルダーがありません。ブラウザーからダウンロードするには --download-dir を付けて起動してください。</string>
+    <string name="server_link_title">自分の Rustify サーバー</string>
+    <string name="server_link_desc">このアプリの Spotify セッションを自分の rustify-server（NAS やパソコンの Web 版）に渡し、アカウントで開けるようにします。アカウントは変更されません。</string>
+    <string name="server_link_no_session">先にこのアプリで Spotify にログインしてください。</string>
+    <string name="server_link_address">サーバーのアドレス（https://…、またはネットワーク内の http://）</string>
+    <string name="server_link_token">サーバーのアクセストークン</string>
+    <string name="server_link_button">サーバーと連携</string>
+    <string name="server_link_ok">連携しました。サーバーの Web 版で Spotify アカウントが使えます。</string>
+    <string name="server_link_insecure">ネットワーク外のアドレスへ暗号化なしの http では送れません。セッションが丸見えになります。https を使ってください。</string>
+    <string name="server_link_bad_address">サーバーのアドレスではありません。</string>
+    <string name="server_link_wrong_token">サーバーがそのアクセストークンを受け付けませんでした。</string>
+    <string name="server_link_refused">サーバーが Spotify にログインできませんでした: %1$s</string>
+    <string name="server_link_failed">サーバーに接続できませんでした: %1$s</string>
 </resources>
