@@ -29,6 +29,8 @@ import com.varuna.rustify.ui.resources.cancel
 import com.varuna.rustify.ui.resources.desktop_sign_in_cookie
 import com.varuna.rustify.ui.resources.desktop_sign_in_help
 import com.varuna.rustify.ui.resources.feature_not_on_platform
+import com.varuna.rustify.ui.resources.web_downloads_no_folder
+import com.varuna.rustify.ui.resources.web_downloads_on_server
 import com.varuna.rustify.ui.resources.spotify_sign_in
 import org.jetbrains.compose.resources.stringResource
 
@@ -116,7 +118,14 @@ class WebAppShell(private val onLanguage: (String) -> Unit) : AppShell {
                 com.varuna.rustify.ui.screens.DeezerBackendSection()
                 com.varuna.rustify.ui.screens.SubsonicBackendSection()
             }
-            SettingsSlot.DOWNLOADS, SettingsSlot.INTEGRATIONS ->
+            SettingsSlot.DOWNLOADS -> Text(
+                stringResource(
+                    if (LocalAppServices.current.can(AppServices.Feature.DOWNLOADS)) Res.string.web_downloads_on_server
+                    else Res.string.web_downloads_no_folder
+                ),
+                color = Color.Gray
+            )
+            SettingsSlot.INTEGRATIONS ->
                 Text(stringResource(Res.string.feature_not_on_platform), color = Color.Gray)
             SettingsSlot.ADVANCED -> {
                 com.varuna.rustify.ui.screens.DiagnosticsSection(onViewLogs = { host.navigate(Screen.LogViewer) })

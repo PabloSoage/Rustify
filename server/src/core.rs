@@ -32,14 +32,26 @@ pub const RESERVED: &[&str] = &[
 /// The methods that read a file and write nothing, which may reach the music the server offers.
 const READS_A_FILE: &[&str] = &["readTags", "readCover", "readReplayGain", "readEmbeddedLyrics", "bpmAnalyze"];
 
+/// Writes a file's tags: let through only into the downloads' folder, which is the server's to change.
+const WRITES_TAGS: &[&str] = &["writeTags"];
+
 /// [args] with its `path` made the real one, when [method] only reads and the path is in the music
-/// offered (`/music/<n>/...`). `None` otherwise, and [vet] decides as for anything else.
+/// offered (`/music/<n>/...`) or the downloads (`/downloads/...`), or when it writes tags into the
+/// downloads. `None` otherwise, and [vet] decides as for anything else.
 pub fn into_music(method: &str, args: &str, roots: &crate::files::Roots) -> Option<String> {
-    if !READS_A_FILE.contains(&method) {
+    let reads = READS_A_FILE.contains(&method);
+    if !reads && !WRITES_TAGS.contains(&method) {
         return None;
     }
     let mut value: serde_json::Value = serde_json::from_str(args).ok()?;
-    let real = roots.music(value.get("path")?.as_str()?)?;
+    let asked = value.get("path")?.as_str()?;
+    let real = if asked.starts_with("/downloads/") {
+        roots.downloads(asked).filter(|p| p.is_file())?
+    } else if reads {
+        roots.music(asked)?
+    } else {
+        return None;
+    };
     value["path"] = serde_json::Value::String(real.to_string_lossy().into_owned());
     Some(value.to_string())
 }
@@ -144,12 +156,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rustify-into-music-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.flac"), "x").unwrap();
-        let roots = crate::files::Roots { web: dir.clone(), music: vec![dir.clone()] };
+        let roots = crate::files::Roots { web: dir.clone(), music: vec![dir.clone()], downloads: Some(dir.clone()) };
         let args = r#"{"path":"/music/0/a.flac"}"#;
 
         let real = into_music("readTags", args, &roots).unwrap();
         assert!(real.contains("a.flac") && !real.contains("/music/0"), "{real}");
-        assert_eq!(into_music("writeTags", args, &roots), None, "it writes");
+        assert_eq!(into_music("writeTags", args, &roots), None, "it writes, and the music is read only");
+        // Into the downloads, tags may be written, and read back.
+        std::fs::write(dir.join("d.m4a"), b"x").unwrap();
+        let written = into_music("writeTags", r#"{"path":"/downloads/d.m4a","tags":"{}"}"#, &roots).unwrap();
+        assert!(written.contains("d.m4a") && !written.contains("/downloads/"), "{written}");
+        assert!(into_music("readTags", r#"{"path":"/downloads/d.m4a"}"#, &roots).is_some());
+        assert_eq!(into_music("writeTags", r#"{"path":"/downloads/../d.m4a"}"#, &roots), None);
+        assert_eq!(into_music("writeTags", r#"{"path":"/downloads/missing.m4a"}"#, &roots), None);
         assert_eq!(into_music("readTags", r#"{"path":"/etc/passwd"}"#, &roots), None);
         assert_eq!(into_music("readTags", r#"{"path":"/music/0/../../etc/passwd"}"#, &roots), None);
         assert!(vet("readTags", r#"{"path":"/etc/passwd"}"#.into(), "/srv/cache").is_err(), "and what is left is refused");

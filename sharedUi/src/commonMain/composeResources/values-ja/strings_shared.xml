@@ -81,4 +81,6 @@
     <string name="drive_kind_ytm_artists">YT Music: アーティスト</string>
     <string name="drive_kind_metrics">再生の記録</string>
     <string name="drive_kind_places">前回の続き</string>
+    <string name="web_downloads_on_server">ダウンロードはサーバーのダウンロード用フォルダーに保存され、どのブラウザーから開いてもその音楽に加わります。</string>
+    <string name="web_downloads_no_folder">サーバーにダウンロード用フォルダーがありません。ブラウザーからダウンロードするには --download-dir を付けて起動してください。</string>
 </resources>

@@ -52,6 +52,10 @@ struct Args {
     /// Folders of music to offer, read only, as local music in the interface.
     #[arg(long = "music-dir", env = "RUSTIFY_MUSIC_DIRS", value_delimiter = ',')]
     music_dirs: Vec<PathBuf>,
+    /// A folder for what the browser downloads (`/downloads` in the interface), made if missing; without
+    /// one, the web offers no downloads.
+    #[arg(long = "download-dir", env = "RUSTIFY_DOWNLOAD_DIR")]
+    download_dir: Option<PathBuf>,
     /// How many core calls may run at once.
     #[arg(long, env = "RUSTIFY_PARALLEL_CALLS", default_value_t = 16)]
     parallel_calls: usize,
@@ -143,6 +147,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("the core's stream server did not start ({local}); /api/stream is off");
     }
 
+    // The browser's downloads land here, which must exist for /downloads to be offered.
+    let download_dir = match &args.download_dir {
+        Some(dir) => {
+            std::fs::create_dir_all(dir)?;
+            Some(dir.clone())
+        }
+        None => None,
+    };
+
     let app = App(Arc::new(Inner {
         core,
         token,
@@ -155,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .redirect(reqwest::redirect::Policy::none())
             .build()?,
         fetcher: reqwest::Client::builder().build()?,
-        roots: files::Roots { web: web_files, music: args.music_dirs.clone() },
+        roots: files::Roots { web: web_files, music: args.music_dirs.clone(), downloads: download_dir },
     }));
 
     let router = Router::new()

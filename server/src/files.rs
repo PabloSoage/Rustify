@@ -4,7 +4,7 @@
 // on the web). One folder of the server's, with `/files` and `/cache` under it, as the other platforms
 // have `filesDir` and `cacheDir`, and nothing outside it can be named: a path is taken apart before it is
 // used. Settings, playlists and the like. The music the server was told to offer (`--music-dir`) is under
-// `/music/<n>`, read only.
+// `/music/<n>`, read only; the folder downloads go to (`--download-dir`) is `/downloads`, writable.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -21,14 +21,38 @@ use crate::App;
 
 const ENGINE: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
-/// The folders a browser can name: the interface's own, and the music the server was told to offer.
+/// The folders a browser can name: the interface's own, the music the server was told to offer, and
+/// where downloads go when it was given a folder for them.
 #[derive(Clone, Default)]
 pub struct Roots {
     pub web: PathBuf,
     pub music: Vec<PathBuf>,
+    pub downloads: Option<PathBuf>,
 }
 
 impl Roots {
+    /// The file `/downloads/...` names, in the folder given for downloads; the folder itself for
+    /// `/downloads`. Only plain names under it: no `..`, and no link that leads out of it — what is
+    /// there already is followed and must stay inside; what is about to be made has a parent that does.
+    pub fn downloads(&self, path: &str) -> Option<PathBuf> {
+        let root = self.downloads.as_ref()?;
+        let rest = if path == "/downloads" { "" } else { path.strip_prefix("/downloads/")? };
+        let mut out = root.clone();
+        for part in Path::new(rest).components() {
+            match part {
+                Component::Normal(name) => out.push(name),
+                _ => return None,
+            }
+        }
+        let base = root.canonicalize().ok()?;
+        // The nearest part of the path that exists, followed through any link, is inside the folder.
+        let mut existing = out.as_path();
+        while !existing.exists() {
+            existing = existing.parent()?;
+        }
+        existing.canonicalize().ok()?.starts_with(&base).then_some(out)
+    }
+
     /// The file `/music/<n>/...` names, in the folder given to the server. A link inside it that leads
     /// outside it is refused: what is offered is the folder, not whatever it points at.
     pub fn music(&self, path: &str) -> Option<PathBuf> {
@@ -51,7 +75,15 @@ impl Roots {
         if path.starts_with("/music/") {
             return self.music(path).map(|p| (p, false));
         }
+        if path == "/downloads" || path.starts_with("/downloads/") {
+            return self.downloads(path).map(|p| (p, true));
+        }
         confine(&self.web, path).map(|p| (p, true))
+    }
+
+    /// Where a rename may land: the same kind of place it may write.
+    fn writable(&self, path: &str) -> Option<PathBuf> {
+        self.resolve(path).filter(|(_, w)| *w).map(|(p, _)| p)
     }
 
     /// For `/api/raw`: a file to read, of either kind.
@@ -135,7 +167,7 @@ pub fn answer(roots: &Roots, request: &Value) -> Option<Value> {
             ok(written)
         }
         "rename" => {
-            let target = confine(&roots.web, request.get("target")?.as_str()?)?;
+            let target = roots.writable(request.get("target")?.as_str()?)?;
             ok(std::fs::rename(&path, &target).is_ok())
         }
         "delete" => {
@@ -202,6 +234,31 @@ mod tests {
     }
 
     #[test]
+    fn downloads_are_written_inside_their_folder_only() {
+        let root = temp("downloads");
+        let dl = root.join("dl");
+        std::fs::create_dir_all(&dl).unwrap();
+        let roots = Roots { web: root.join("web"), music: vec![], downloads: Some(dl.clone()) };
+        let write = |path: &str| answer(&roots, &json!({ "op": "write", "path": path, "data": ENGINE.encode(b"m4a") }));
+        assert_eq!(write("/downloads/Artist - Song.m4a"), Some(json!({ "ok": true })));
+        assert_eq!(std::fs::read(dl.join("Artist - Song.m4a")).unwrap(), b"m4a");
+        assert_eq!(write("/downloads/sub/deeper/a.m4a"), Some(json!({ "ok": true })), "a new folder inside");
+        for bad in ["/downloads/../web/files/x", "/downloads/sub/../../x", "/downloadsx/a", "/downloads/./a/../../b"] {
+            assert_eq!(write(bad), None, "{bad}");
+        }
+        let renamed = answer(&roots, &json!({ "op": "rename", "path": "/downloads/Artist - Song.m4a", "target": "/downloads/b.m4a" }));
+        assert_eq!(renamed, Some(json!({ "ok": true })));
+        let out = answer(&roots, &json!({ "op": "rename", "path": "/downloads/b.m4a", "target": "/music/0/b.m4a" }));
+        assert_eq!(out, None, "nothing renamed into the music, which is read only");
+        let stat = answer(&roots, &json!({ "op": "stat", "path": "/downloads" })).unwrap();
+        assert_eq!(stat.get("folder"), Some(&json!(true)));
+        // Without a folder given, there is no /downloads at all.
+        let none = Roots { web: root.join("web"), music: vec![], downloads: None };
+        assert_eq!(answer(&none, &json!({ "op": "stat", "path": "/downloads" })), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn nothing_outside_the_two_folders_can_be_named() {
         let root = Path::new("/data/web");
         assert_eq!(confine(root, "/files/prefs/a.json"), Some(root.join("files").join("prefs").join("a.json")));
@@ -214,7 +271,7 @@ mod tests {
     #[test]
     fn a_file_is_written_read_listed_renamed_and_deleted() {
         let root = temp("cycle");
-        let roots = Roots { web: root.clone(), music: vec![] };
+        let roots = Roots { web: root.clone(), music: vec![], downloads: None };
         let ask = |request: Value| answer(&roots, &request).unwrap();
         let hello = ENGINE.encode("hello");
 
@@ -244,7 +301,7 @@ mod tests {
         std::fs::write(music.join("Björk").join("a b.flac"), "tone").unwrap();
         let outside = temp("music-outside");
         std::fs::write(outside.join("secret"), "no").unwrap();
-        let roots = Roots { web, music: vec![music.clone()] };
+        let roots = Roots { web, music: vec![music.clone()], downloads: None };
         let ask = |request: Value| answer(&roots, &request);
 
         assert_eq!(ask(json!({"op":"list","path":"/music"})).unwrap()["entries"][0]["name"], "0");

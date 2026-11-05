@@ -81,4 +81,6 @@
     <string name="drive_kind_ytm_artists">YT Music: artistas</string>
     <string name="drive_kind_metrics">Eventos de escucha</string>
     <string name="drive_kind_places">Donde lo dejaste</string>
+    <string name="web_downloads_on_server">Las descargas se guardan en el servidor, en su carpeta de descargas, y pasan a su música para cualquier navegador que lo abra.</string>
+    <string name="web_downloads_no_folder">El servidor no tiene carpeta de descargas. Arráncalo con --download-dir para descargar desde el navegador.</string>
 </resources>

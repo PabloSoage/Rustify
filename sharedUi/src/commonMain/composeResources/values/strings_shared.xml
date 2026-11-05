@@ -83,4 +83,6 @@
     <string name="drive_kind_ytm_artists">YT Music: artists</string>
     <string name="drive_kind_metrics">Listening events</string>
     <string name="drive_kind_places">Where you left off</string>
+    <string name="web_downloads_on_server">Downloads are saved on the server, in its downloads folder, and join its music for every browser that opens it.</string>
+    <string name="web_downloads_no_folder">The server has no folder for downloads. Start it with --download-dir to download from the browser.</string>
 </resources>

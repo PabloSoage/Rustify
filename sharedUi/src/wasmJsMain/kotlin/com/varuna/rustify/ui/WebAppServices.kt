@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.unit.dp
+import com.varuna.rustify.audio.asStreamSources
 import com.varuna.rustify.bridge.DownloadTask
 import com.varuna.rustify.bridge.FullTrack
 import com.varuna.rustify.bridge.LyricsChain
@@ -40,8 +41,12 @@ internal class WebAudioSettings(platform: AppPlatform) : AudioSettings(platform.
 
 /**
  * [AppServices] in a browser. Lyrics, the DJ and the settings are the shared ones. What a page has no way
- * to do yet, [can] says so and the screens with it: tempo, downloads to the listener's device, video.
+ * to do, [can] says so and the screens with it: tempo, and downloads where the server has no folder
+ * for them (`--download-dir`): a download lands on the server, not on the listener's device.
  */
+/** The server's folder for downloads, as the interface names it (server/src/files.rs). */
+internal const val DOWNLOADS = "/downloads"
+
 class WebAppServices(
     private val platform: AppPlatform,
     private val jam: JamSession,
@@ -49,19 +54,45 @@ class WebAppServices(
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
         AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.TRANSLATION, AppServices.Feature.VIDEO -> true
+        AppServices.Feature.DOWNLOADS -> serverDownloads
         else -> false
+    }
+
+    /** Whether the server was given a folder for downloads: `/downloads` exists only then. Asked once. */
+    private val serverDownloads: Boolean by lazy { runCatching { appFileAt(DOWNLOADS).isFolder() }.getOrDefault(false) }
+
+    init {
+        // The track menu offers a download where a folder is set: on the web that folder is the server's.
+        if (serverDownloads && platform.prefs().getString("download_directory").isNullOrBlank()) {
+            platform.prefs().putString("download_directory", DOWNLOADS)
+        }
+    }
+
+    /** The phone's downloads, on the server: the player's sources, and the one folder the server offers. */
+    private val downloader by lazy {
+        com.varuna.rustify.bridge.EngineDownloads(
+            platform,
+            com.varuna.rustify.engine.StreamResolver(
+                com.varuna.rustify.engine.WebPlayerBackend,
+                com.varuna.rustify.audio.AudioSourceRegistry.asStreamSources(),
+            ),
+            folderOf = { appFileAt(DOWNLOADS) },
+        )
     }
 
     override fun bpmCached(trackId: String): Float? = null
     override fun bpmScale(trackId: String, factor: Float): Float? = null
     override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = null
 
-    override val downloads: StateFlow<List<DownloadTask>> = MutableStateFlow(emptyList())
-    override val activeDownloadCount: StateFlow<Int> = MutableStateFlow(0)
+    override val downloads: StateFlow<List<DownloadTask>> get() = downloader.downloads
+    override val activeDownloadCount: StateFlow<Int> get() = downloader.activeDownloadCount
 
-    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) = Unit
+    // Whatever folder the settings name, a browser's downloads go to the server's.
+    override fun enqueueDownload(trackId: String, trackName: String, trackArtist: String, downloadUriStr: String, track: FullTrack?) {
+        if (serverDownloads) downloader.enqueue(trackId, trackName, trackArtist, DOWNLOADS, track)
+    }
 
-    override fun clearCompleted() = Unit
+    override fun clearCompleted() = downloader.clearCompleted()
 
     override val lyrics: LyricsChain by lazy { LyricsChain(platform.prefs("lyrics"), readLocal = { null }) }
 
