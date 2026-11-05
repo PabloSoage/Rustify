@@ -4,20 +4,21 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
- * Task 11 item a: Audio Lab and Chat feature gating.
+ * Task 11 item a / Task 17: Audio Lab and Chat feature gating.
  *
- * Audio Lab has an Android implementation (AudioTrack effects, ExoPlayer); iOS and desktop do not.
+ * Audio Lab is supported on Android and desktop; iOS keeps it hidden.
  * Chat is supported on Android (Gemini Nano) and desktop (DJ model server), but null on iOS.
  */
 class AudioLabFeatureTest {
 
     @Test
-    fun audioLabFeatureDisabledOnDesktop() {
+    fun audioLabFeatureEnabledOnDesktop() {
         val platform = DesktopAppPlatform("ES")
         val services = DesktopAppServices(platform)
-        assertFalse(services.can(AppServices.Feature.AUDIO_LAB), "Desktop must not advertise AUDIO_LAB")
+        assertTrue(services.can(AppServices.Feature.AUDIO_LAB), "Desktop must advertise AUDIO_LAB")
     }
 
     @Test

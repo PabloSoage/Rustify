@@ -37,7 +37,16 @@ pub enum Kernel {
 impl Kernel {
     pub fn name(self) -> &'static str {
         match self {
-            Kernel::Baseline => "armv8.0 NEON (compiler)",
+            Kernel::Baseline => {
+                #[cfg(any(rustify_arm_kernels, target_arch = "aarch64"))]
+                {
+                    "armv8.0 NEON (compiler)"
+                }
+                #[cfg(not(any(rustify_arm_kernels, target_arch = "aarch64")))]
+                {
+                    "Scalar (compiler)"
+                }
+            }
             Kernel::V82 => "armv8.2 (compiler)",
             Kernel::Sve2 => "armv9 SVE2 (compiler)",
             Kernel::NeonHand => "armv8.0 NEON (hand)",

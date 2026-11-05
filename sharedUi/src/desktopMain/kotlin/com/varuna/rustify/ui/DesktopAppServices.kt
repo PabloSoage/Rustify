@@ -151,6 +151,7 @@ class DesktopAppServices(
         AppServices.Feature.TRANSLATION -> true
         // Looked for each time: installing ffmpeg needs no restart.
         AppServices.Feature.VIDEO -> DesktopVideo.available()
+        AppServices.Feature.AUDIO_LAB -> true
         else -> false
     }
 

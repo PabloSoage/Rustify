@@ -534,4 +534,51 @@ actual object NativeEngine {
         put("limit", limit)
         put("offset", offset)
     }
+
+    // ── Audio lab (4.7.1) ────────────────────────────────────────────────────────────────────────
+
+    actual fun dspAnalyzeNative(samples: FloatArray, sampleRate: Int, bands: Int, kernel: String): FloatArray? {
+        val raw = now("dspAnalyze") {
+            put("samples", JsonArray(samples.map { JsonPrimitive(if (it.isFinite()) it else 0f) }))
+            put("sampleRate", sampleRate)
+            put("bands", bands)
+            put("kernel", kernel)
+        }
+        return parseFloats(raw)
+    }
+
+    actual fun dspInfoNative(): String = now("dspInfo")
+
+    actual fun dspBenchNative(n: Int, iterations: Int): String = now("dspBench") {
+        put("n", n)
+        put("iterations", iterations)
+    }
+
+    actual fun dspTonalNative(samples: FloatArray, sampleRate: Int, reset: Boolean): FloatArray? {
+        val raw = now("dspTonal") {
+            put("samples", JsonArray(samples.map { JsonPrimitive(if (it.isFinite()) it else 0f) }))
+            put("sampleRate", sampleRate)
+            put("reset", reset)
+        }
+        return parseFloats(raw)
+    }
+
+    actual fun dspMatBenchNative(n: Int, iterations: Int): String = now("dspMatBench") {
+        put("n", n)
+        put("iterations", iterations)
+    }
+
+    private fun parseFloats(raw: String): FloatArray? {
+        if (raw.isEmpty() || raw == "null") return null
+        return try {
+            val element = kotlinx.serialization.json.Json.parseToJsonElement(raw)
+            if (element is JsonArray) {
+                FloatArray(element.size) { i ->
+                    (element[i] as? JsonPrimitive)?.content?.toFloatOrNull() ?: 0f
+                }
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

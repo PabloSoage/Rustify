@@ -36,7 +36,7 @@ use serde_json::Value;
 
 use crate::{
     addon, audio, autoeq, calendar, env, export, get_runtime, jam, links, listened, matcher, metrics,
-    player, scrobble, search, serialize_result, server, spotify, subsonic, tempo, youtube,
+    dsp, player, scrobble, search, serialize_result, server, spotify, subsonic, tempo, tonal, youtube,
 };
 
 /// Calls `method` with `args_json` (a JSON object) and answers JSON. Free the answer with
@@ -271,6 +271,11 @@ pub const METHODS: &[&str] = &[
     "secretGet",
     "secretSet",
     "secretRemove",
+    "dspInfo",
+    "dspBench",
+    "dspMatBench",
+    "dspAnalyze",
+    "dspTonal",
 ];
 
 pub(crate) fn dispatch(method: &str, args: &Value) -> String {
@@ -1166,6 +1171,91 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         // The system's credential store (SecretStore *Native on the desktop JVM). Needs `secure-store`.
         "secretGet" | "secretSet" | "secretRemove" => secret_call(method, args),
 
+        // Audio lab: CPU-only scalar DSP operations on non-ARM, or ARM kernels on ARM.
+        "dspInfo" => {
+            serde_json::json!({
+                "features": dsp::cpu_features(),
+                "kernels": dsp::Kernel::available().iter().map(|k| serde_json::json!({"id": k.id(), "name": k.name()})).collect::<Vec<_>>(),
+                "best": dsp::Kernel::best().id(),
+                "sve_bits": dsp::vector_lengths().0,
+                "sme_bits": dsp::vector_lengths().1,
+                "mat_kernels": tonal::MatKernel::available().iter().map(|k| serde_json::json!({"id": k.id(), "name": k.name()})).collect::<Vec<_>>(),
+                "mat_best": tonal::MatKernel::best().id(),
+            })
+            .to_string()
+        }
+        "dspBench" => {
+            let n = (int(args, "n", 64).max(64) as usize).next_power_of_two();
+            let iterations = int(args, "iterations", 1).max(1) as usize;
+            let rows: Vec<serde_json::Value> = std::panic::catch_unwind(|| dsp::bench(n, iterations))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))
+                .collect();
+            serde_json::Value::Array(rows).to_string()
+        }
+        "dspMatBench" => {
+            let n = (int(args, "n", 64).max(64) as usize).next_power_of_two();
+            let iterations = int(args, "iterations", 1).max(1) as usize;
+            let rows: Vec<serde_json::Value> = std::panic::catch_unwind(|| tonal::bench(n, iterations))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, ns)| serde_json::json!({"id": k.id(), "name": k.name(), "ns": ns}))
+                .collect();
+            serde_json::Value::Array(rows).to_string()
+        }
+        "dspAnalyze" => {
+            let samples: Vec<f32> = args.get("samples")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+                .unwrap_or_default();
+            let sample_rate = int(args, "sampleRate", 0);
+            let bands = int(args, "bands", 64).max(1) as usize;
+            let wanted = text(args, "kernel");
+            let n = samples.len();
+            let k = dsp::Kernel::available()
+                .into_iter()
+                .find(|k| k.id() == wanted)
+                .unwrap_or_else(dsp::Kernel::best);
+            let values: Vec<f32> = if n >= 64 && n.is_power_of_two() && sample_rate > 0 {
+                std::panic::catch_unwind(|| dsp::analyse(k, &samples, sample_rate as u32, bands))
+                    .map(|a| a.bands_db.into_iter().chain([a.rms, a.peak]).collect())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            serde_json::json!(values).to_string()
+        }
+        "dspTonal" => {
+            let samples: Vec<f32> = args.get("samples")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+                .unwrap_or_default();
+            let sample_rate = int(args, "sampleRate", 0);
+            let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
+            let n = samples.len();
+            let values: Vec<f32> = if n >= 64 && n.is_power_of_two() && sample_rate > 0 {
+                let rate = sample_rate as u32;
+                let mut slot = crate::TONAL.lock().unwrap_or_else(|e| e.into_inner());
+                if reset || !slot.as_ref().is_some_and(|t| t.fits(n, rate)) {
+                    *slot = Some(tonal::Tonal::new(n, rate));
+                }
+                let t = slot.as_mut().expect("set above");
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| t.push(&samples, dsp::Kernel::best(), tonal::MatKernel::best())))
+                    .map(|u| {
+                        let (key, r) = u.key.map(|(k, r)| (k as f32, r)).unwrap_or((-1.0, 0.0));
+                        let mut v = vec![u.mel_db.len() as f32, key, r];
+                        v.extend_from_slice(&u.chroma);
+                        u.mel_db.iter().for_each(|c| v.extend_from_slice(c));
+                        v
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            serde_json::json!(values).to_string()
+        }
+
         _ => unknown(method),
     }
 }
@@ -1385,5 +1475,28 @@ mod tests {
         let text = unsafe { CStr::from_ptr(v) }.to_string_lossy().into_owned();
         unsafe { rustify_free(v) };
         assert_eq!(text, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn dsp_operations_work_via_ffi() {
+        let info: Value = serde_json::from_str(&call("dspInfo", "{}")).unwrap();
+        assert!(info["kernels"].as_array().is_some());
+        assert!(info["mat_kernels"].as_array().is_some());
+
+        let bench: Value = serde_json::from_str(&call("dspBench", r#"{"n":64,"iterations":1}"#)).unwrap();
+        assert!(!bench.as_array().unwrap().is_empty());
+
+        let mat_bench: Value = serde_json::from_str(&call("dspMatBench", r#"{"n":64,"iterations":1}"#)).unwrap();
+        assert!(!mat_bench.as_array().unwrap().is_empty());
+
+        let samples: Vec<f64> = (0..64).map(|i| (i as f64 * 0.1).sin()).collect();
+        let samples_json = serde_json::to_string(&samples).unwrap();
+        let analyze_arg = format!(r#"{{"samples":{samples_json},"sampleRate":44100,"bands":16,"kernel":""}}"#);
+        let analyzed: Value = serde_json::from_str(&call("dspAnalyze", &analyze_arg)).unwrap();
+        assert_eq!(analyzed.as_array().unwrap().len(), 16 + 2);
+
+        let tonal_arg = format!(r#"{{"samples":{samples_json},"sampleRate":44100,"reset":true}}"#);
+        let tonal_res: Value = serde_json::from_str(&call("dspTonal", &tonal_arg)).unwrap();
+        assert!(!tonal_res.as_array().unwrap().is_empty());
     }
 }

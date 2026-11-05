@@ -24,9 +24,8 @@ package com.varuna.rustify.bridge
  * - A plain call that is documented as blocking (`readReplayGain`, `openCastListenerNative`) is the
  *   caller's to keep off the main thread.
  *
- * What only Android has a use for — the WebView ad blocker (`adblock*`) and the audio lab's ARM
- * kernels (`dsp*`) — is not here: it is on the JVM implementation alone, which Android code reaches
- * directly.
+ * What only Android has a use for — the WebView ad blocker (`adblock*`) — is not here: it is on
+ * the JVM implementation alone, which Android code reaches directly.
  */
 expect object NativeEngine {
 
@@ -388,4 +387,28 @@ expect object NativeEngine {
     suspend fun getYtmAlbum(browseId: String): String
     suspend fun getYtmArtist(channelId: String): String
     suspend fun getYtmPlaylist(playlistId: String): String
+
+    // ── Audio lab (4.7.1). CPU only, no I/O: plain calls, but keep them off the main thread. ──
+
+    /**
+     * One frame of mono PCM (length a power of two, ≥ 64) → [bands] dB values, then RMS and peak.
+     * Empty on unusable input. [kernel] is an id from [dspInfoNative], or "" for the best one.
+     */
+    fun dspAnalyzeNative(samples: FloatArray, sampleRate: Int, bands: Int, kernel: String): FloatArray?
+
+    /** `{"features":[…],"kernels":[{"id","name"}],"best":"…"}` — the CPU's ARM extensions and kernels. */
+    fun dspInfoNative(): String
+
+    /** `[{"id","name","ns"}]` — nanoseconds per [n]-sample frame for each kernel, [iterations] runs. */
+    fun dspBenchNative(n: Int, iterations: Int): String
+
+    /**
+     * Pushes one frame into the key and mel analysis: `[columns, key, r, chroma×12, columns×52 mel dB]`.
+     * `columns` is 0 or 16 (a batch went through the matrix product); `key` 0–11 major on C…B, 12–23
+     * minor, -1 for none yet. [reset] starts over. Empty on unusable input.
+     */
+    fun dspTonalNative(samples: FloatArray, sampleRate: Int, reset: Boolean): FloatArray?
+
+    /** `[{"id","name","ns"}]` — nanoseconds per 64×k by k×16 matrix product, k = [n] / 2. */
+    fun dspMatBenchNative(n: Int, iterations: Int): String
 }

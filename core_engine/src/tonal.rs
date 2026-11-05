@@ -44,7 +44,16 @@ pub enum MatKernel {
 impl MatKernel {
     pub fn name(self) -> &'static str {
         match self {
-            MatKernel::Baseline => "armv8.0 (compiler)",
+            MatKernel::Baseline => {
+                #[cfg(any(rustify_arm_kernels, target_arch = "aarch64"))]
+                {
+                    "armv8.0 (compiler)"
+                }
+                #[cfg(not(any(rustify_arm_kernels, target_arch = "aarch64")))]
+                {
+                    "Scalar (compiler)"
+                }
+            }
             MatKernel::Neon => "armv8.0 NEON FMLA (hand)",
             MatKernel::Bf16 => "armv8.6 BF16 BFMMLA",
             MatKernel::Sme => "armv9.2 SME FMOPA",

@@ -896,6 +896,7 @@
     <string name="audio_lab_measure">このプロセッサで各パスを計測</string>
     <string name="audio_lab_measuring">計測中…</string>
     <string name="audio_lab_bench_row">%1$s: 4096 点 FFT あたり %2$.1f µs（×%3$.2f）</string>
+    <string name="audio_lab_bench_row_single">%1$s: 4096 点 FFT あたり %2$.1f µs</string>
     <string name="queue_title">再生キュー</string>
     <string name="queue_save_as">キューに名前を付けて保存…</string>
     <string name="queue_default_name">キュー</string>
@@ -994,6 +995,7 @@
     <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
     <string name="audio_lab_key_note">直近数秒の音高から推定します。調とメル帯域は 16 フレームごとに 1 回の行列積で求め、%1$s を使います。</string>
     <string name="audio_lab_mat_row">%1$s: 64×4096×16 行列積あたり %2$.1f µs（×%3$.2f）</string>
+    <string name="audio_lab_mat_row_single">%1$s: 64×4096×16 行列積あたり %2$.1f µs</string>
     <string name="nano_chat_done_playing">▶ %1$s を再生中、続けて似た曲を再生</string>
     <string name="nano_chat_done_queued">＋ キューに追加：%1$s</string>
     <string name="nano_chat_done_results">「%1$s」の曲 — タップで再生：</string>

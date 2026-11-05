@@ -899,6 +899,7 @@
     <string name="audio_lab_measure">Measure every path on this processor</string>
     <string name="audio_lab_measuring">Measuring…</string>
     <string name="audio_lab_bench_row">%1$s: %2$.1f µs per 4096-point FFT (×%3$.2f)</string>
+    <string name="audio_lab_bench_row_single">%1$s: %2$.1f µs per 4096-point FFT</string>
     <string name="queue_title">Queue</string>
     <string name="queue_save_as">Save queue as…</string>
     <string name="queue_default_name">Queue</string>
@@ -997,6 +998,7 @@
     <string name="audio_lab_notes">C C♯ D D♯ E F F♯ G G♯ A A♯ B</string>
     <string name="audio_lab_key_note">From the pitch classes of the last few seconds. Key and mel bands come out of one matrix product every 16 frames, on %1$s.</string>
     <string name="audio_lab_mat_row">%1$s: %2$.1f µs per 64×4096×16 matrix product (×%3$.2f)</string>
+    <string name="audio_lab_mat_row_single">%1$s: %2$.1f µs per 64×4096×16 matrix product</string>
     <string name="nano_chat_done_playing">▶ Playing %1$s, then similar music</string>
     <string name="nano_chat_done_queued">＋ Added to the queue: %1$s</string>
     <string name="nano_chat_done_results">Songs for “%1$s” — tap one to play it:</string>

@@ -187,6 +187,13 @@ class AndroidAppShell(context: Context) : AppShell {
                 )
             }
             is Screen.AudioLab -> {
+                com.varuna.rustify.ui.AudioLabBridge.sampleRate = { com.varuna.rustify.player.AudioTap.sampleRate }
+                com.varuna.rustify.ui.AudioLabBridge.latestSamples = { n -> com.varuna.rustify.player.AudioTap.latest(n) }
+                com.varuna.rustify.ui.AudioLabBridge.onVisibilityChanged = { on ->
+                    com.varuna.rustify.player.AudioOffload.labOpen = on
+                    com.varuna.rustify.player.AudioTap.listening = on
+                    audioPlayerService.applyAudioOffload()
+                }
                 com.varuna.rustify.ui.screens.AudioLabScreen(onBack = { host.back() })
             }
             else -> Unit

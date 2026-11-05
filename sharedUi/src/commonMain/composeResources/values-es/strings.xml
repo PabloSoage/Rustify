@@ -893,6 +893,7 @@
     <string name="audio_lab_measure">Medir cada ruta en este procesador</string>
     <string name="audio_lab_measuring">Midiendo…</string>
     <string name="audio_lab_bench_row">%1$s: %2$.1f µs por FFT de 4096 puntos (×%3$.2f)</string>
+    <string name="audio_lab_bench_row_single">%1$s: %2$.1f µs por FFT de 4096 puntos</string>
     <string name="queue_title">Cola de reproducción</string>
     <string name="queue_save_as">Guardar cola como…</string>
     <string name="queue_default_name">Cola</string>
@@ -995,6 +996,7 @@
     <string name="audio_lab_notes">Do Do♯ Re Re♯ Mi Fa Fa♯ Sol Sol♯ La La♯ Si</string>
     <string name="audio_lab_key_note">Por las notas de los últimos segundos. La tonalidad y las bandas mel salen de un producto de matrices cada 16 fotogramas, con %1$s.</string>
     <string name="audio_lab_mat_row">%1$s: %2$.1f µs por producto de matrices 64×4096×16 (×%3$.2f)</string>
+    <string name="audio_lab_mat_row_single">%1$s: %2$.1f µs por producto de matrices 64×4096×16</string>
     <string name="nano_chat_done_playing">▶ Sonando %1$s, y luego música parecida</string>
     <string name="nano_chat_done_queued">＋ Añadida a la cola: %1$s</string>
     <string name="nano_chat_done_results">Canciones para «%1$s»; toca una para ponerla:</string>

@@ -3121,7 +3121,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspBenchNativ
 }
 
 /// The lab's key and mel analysis, kept between calls (one lab screen at a time).
-static TONAL: std::sync::Mutex<Option<tonal::Tonal>> = std::sync::Mutex::new(None);
+pub(crate) static TONAL: std::sync::Mutex<Option<tonal::Tonal>> = std::sync::Mutex::new(None);
 
 /// JNI Bridge: push one frame into the key and mel analysis. Answers `[columns, key, r, chroma×12,
 /// columns×52 mel dB]`: `columns` is 0, or 16 when this frame completed a batch (one matrix product);

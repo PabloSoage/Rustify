@@ -82,6 +82,8 @@ extern "C" {
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}
  *   secretGet {key}  secretSet {key, value}  secretRemove {key}
+ *   dspInfo {}  dspBench {n, iterations}  dspMatBench {n, iterations}
+ *   dspAnalyze {samples, sampleRate, bands, kernel}  dspTonal {samples, sampleRate, reset}
  *
  * Where the JNI twin answers something that is not JSON, the answer here is its JSON form: a bare
  * string (wrapLink, unwrapLink, resolveYouTubeId, getAlternativeTrack) is a JSON string, a long

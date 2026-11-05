@@ -186,6 +186,10 @@ class DesktopAppShell(private val onLanguage: (String) -> Unit = {}) : AppShell 
             com.varuna.rustify.ui.screens.CustomDownloadScreen(LocalAppServices.current.customDownloads!!, onBack = host.back)
             return
         }
+        if (screen is Screen.AudioLab) {
+            com.varuna.rustify.ui.screens.AudioLabScreen(onBack = host.back)
+            return
+        }
         Page("", onBack = host.back) {
             Text(stringResource(Res.string.desktop_screen_not_here), color = Color.LightGray)
         }
