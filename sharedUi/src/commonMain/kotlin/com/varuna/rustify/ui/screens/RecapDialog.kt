@@ -54,7 +54,7 @@ import com.varuna.rustify.metrics.Recap
 import com.varuna.rustify.metrics.RecapBuilder
 import com.varuna.rustify.metrics.TopRow
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.varuna.rustify.ui.formatCount

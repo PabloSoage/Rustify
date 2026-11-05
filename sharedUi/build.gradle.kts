@@ -52,6 +52,19 @@ kotlin {
         }
     }
 
+    // The interface in a browser (docs serie-4.x/28), opt-in as in :shared. The output, `rustify.js`
+    // and what it loads, is what rustify-server serves as its web root.
+    val web = providers.gradleProperty("rustify.web").orNull.toBoolean()
+    if (web) {
+        @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+        wasmJs {
+            browser {
+                commonWebpackConfig { outputFileName = "rustify.js" }
+            }
+            binaries.executable()
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":shared"))
@@ -106,6 +119,12 @@ kotlin {
         }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)
+        if (web) {
+            getByName("wasmJsMain").dependencies {
+                implementation(libs.coil.network.ktor3)
+                implementation(libs.ktor.client.js)
+            }
+        }
         val iosTest = maybeCreate("iosTest").apply { dependsOn(commonTest.get()) }
         getByName("iosArm64Test").dependsOn(iosTest)
         getByName("iosSimulatorArm64Test").dependsOn(iosTest)

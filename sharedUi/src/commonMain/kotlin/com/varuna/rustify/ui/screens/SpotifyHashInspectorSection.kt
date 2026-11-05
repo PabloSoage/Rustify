@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.varuna.rustify.bridge.NativeEngine
 import com.varuna.rustify.platform.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

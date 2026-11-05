@@ -8,7 +8,7 @@ import com.varuna.rustify.platform.currentTimeMillis
 import com.varuna.rustify.util.countryNameInEnglish
 import com.varuna.rustify.util.defaultLanguageTag
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope

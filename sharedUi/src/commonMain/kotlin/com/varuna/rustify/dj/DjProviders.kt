@@ -9,7 +9,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject

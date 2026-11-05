@@ -13,7 +13,7 @@ import com.varuna.rustify.ui.resources.Res
 import com.varuna.rustify.ui.resources.home_error_loading
 import com.varuna.rustify.ui.resources.home_offline
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 
 sealed class Screen {

@@ -10,6 +10,8 @@
 
 mod auth;
 mod core;
+mod fetch;
+mod files;
 mod stream;
 
 use std::net::SocketAddr;
@@ -20,7 +22,7 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use axum::Router;
 use clap::Parser;
 use tower_http::compression::{Compression, CompressionLayer};
@@ -70,6 +72,10 @@ pub struct Inner {
     /// The stream cache's folder, the only one its methods may be pointed at.
     pub stream_cache: String,
     pub http: reqwest::Client,
+    /// For `/api/fetch`: follows redirects, as the platforms' clients do.
+    pub fetcher: reqwest::Client,
+    /// The interface's own files (`files`), under `files` and `cache`.
+    pub web_files: PathBuf,
 }
 
 impl std::ops::Deref for App {
@@ -102,7 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let core_dir = data.join("core");
     let cache_dir = data.join("cache");
     let stream_cache = data.join("streams");
-    for dir in [&core_dir, &cache_dir, &stream_cache] {
+    let web_files = data.join("web");
+    for dir in [&core_dir, &cache_dir, &stream_cache, &web_files.join("files"), &web_files.join("cache")] {
         std::fs::create_dir_all(dir)?;
     }
 
@@ -144,6 +151,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()?,
+        fetcher: reqwest::Client::builder().build()?,
+        web_files,
     }));
 
     let router = Router::new()
@@ -156,7 +165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer::<_, std::convert::Infallible>(CompressionLayer::new())
                 .layer(DefaultBodyLimit::max(MAX_CALL_BYTES)),
         )
-        .route("/api/stream/{handle}", get(stream::forward));
+        .route("/api/stream/{handle}", get(stream::forward))
+        .route("/api/file", post(files::handle).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)))
+        .route("/api/fetch", any(fetch::forward).layer(DefaultBodyLimit::max(MAX_CALL_BYTES)));
     let router = match args.web_root.as_ref().filter(|root| root.join("index.html").is_file()) {
         Some(root) => {
             let files = ServeDir::new(root).fallback(ServeFile::new(root.join("index.html")));

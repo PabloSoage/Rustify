@@ -10,7 +10,7 @@ import com.varuna.rustify.util.optString
 import com.varuna.rustify.ui.writeTextAtomically
 import com.varuna.rustify.util.parseObject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

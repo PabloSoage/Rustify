@@ -66,7 +66,7 @@ import com.varuna.rustify.bridge.SpotifyRepository
 import com.varuna.rustify.bridge.UserAlternatives
 import com.varuna.rustify.player.PlayerController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 
 /**

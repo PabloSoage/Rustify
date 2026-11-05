@@ -23,3 +23,10 @@ expect fun isIoException(t: Throwable): Boolean
 
 /** The English name of a language code (`ja` → "Japanese"), or "" when the platform has none. */
 expect fun languageNameInEnglish(code: String): String
+
+/**
+ * Where work that blocks goes: `Dispatchers.IO` itself on the JVMs and Native. A common file imports this
+ * one, since the library's is not there for the browser (which has one thread, and blocks on nothing behind
+ * a suspending call).
+ */
+expect val kotlinx.coroutines.Dispatchers.IO: kotlinx.coroutines.CoroutineDispatcher

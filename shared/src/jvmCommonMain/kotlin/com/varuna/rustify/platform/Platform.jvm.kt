@@ -11,3 +11,5 @@ actual fun isIoException(t: Throwable): Boolean = t is java.io.IOException
 
 actual fun languageNameInEnglish(code: String): String =
     java.util.Locale.forLanguageTag(code).getDisplayLanguage(java.util.Locale.ENGLISH)
+
+actual val kotlinx.coroutines.Dispatchers.IO: kotlinx.coroutines.CoroutineDispatcher get() = IO

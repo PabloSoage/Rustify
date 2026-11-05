@@ -48,6 +48,14 @@ kotlin {
         }
     }
 
+    // The interface in the browser (docs serie-4.x/28), opt-in like the desktop app: nothing Android
+    // or iOS builds configures or downloads anything for it.
+    val web = providers.gradleProperty("rustify.web").orNull.toBoolean()
+    if (web) {
+        @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+        wasmJs { browser() }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.serialization.json)
@@ -75,9 +83,17 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
         }
 
-        val iosMain = maybeCreate("iosMain").apply { dependsOn(commonMain.get()) }
+        // Where the core is one JSON call away ([NativeEngine] over CoreCall): iOS and the web.
+        val coreCallMain = maybeCreate("coreCallMain").apply { dependsOn(commonMain.get()) }
+        val iosMain = maybeCreate("iosMain").apply { dependsOn(coreCallMain) }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+        }
+        if (web) {
+            getByName("wasmJsMain").apply {
+                dependsOn(coreCallMain)
+                dependencies { implementation(libs.ktor.client.js) }
+            }
         }
         getByName("iosArm64Main").dependsOn(iosMain)
         getByName("iosSimulatorArm64Main").dependsOn(iosMain)

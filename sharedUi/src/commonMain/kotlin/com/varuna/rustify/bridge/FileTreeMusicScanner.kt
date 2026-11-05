@@ -19,7 +19,7 @@ import com.varuna.rustify.ui.modifiedMillis
 import com.varuna.rustify.ui.resolvedPath
 import com.varuna.rustify.ui.writeAllBytes
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope

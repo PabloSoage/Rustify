@@ -18,6 +18,8 @@ fun newRustifyImageLoader(
     context: PlatformContext,
     cacheDir: AppFile,
     prefs: KeyValueStore,
+    /** What this platform adds or leaves out: the web has no disk of its own and no fetcher found by itself. */
+    configure: (ImageLoader.Builder.() -> Unit)? = null,
 ): ImageLoader {
     val cacheMaxMb = prefs.getInt("cache_max_mb", 500).coerceIn(100, 8192).toLong()
     return ImageLoader.Builder(context)
@@ -32,5 +34,6 @@ fun newRustifyImageLoader(
                 .maxSizeBytes(cacheMaxMb * 1024 * 1024)
                 .build()
         }
+        .apply { configure?.invoke(this) }
         .build()
 }

@@ -9,7 +9,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 
 /**

@@ -8,7 +8,7 @@ import com.varuna.rustify.platform.Log
 import com.varuna.rustify.platform.currentTimeMillis
 import com.varuna.rustify.ui.AppFile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject

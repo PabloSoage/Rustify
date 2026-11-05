@@ -29,7 +29,7 @@ import com.varuna.rustify.util.parseArray
 import com.varuna.rustify.util.parseObject
 import com.varuna.rustify.util.retrying
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope

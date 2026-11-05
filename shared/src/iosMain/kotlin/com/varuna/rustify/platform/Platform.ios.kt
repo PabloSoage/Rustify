@@ -4,6 +4,9 @@ package com.varuna.rustify.platform
 // A star import on purpose: Foundation declares half of these in categories, which Kotlin/Native
 // turns into extensions that need importing, and which half is which is not worth guessing blind.
 import platform.Foundation.*
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO as LibraryIo
 
 actual fun currentTimeMillis(): Long = (NSDate().timeIntervalSince1970 * 1000.0).toLong()
 
@@ -18,3 +21,5 @@ actual fun isIoException(t: Throwable): Boolean = false
 
 actual fun languageNameInEnglish(code: String): String =
     NSLocale(localeIdentifier = "en").localizedStringForLanguageCode(code) ?: ""
+
+actual val Dispatchers.IO: CoroutineDispatcher get() = Dispatchers.LibraryIo

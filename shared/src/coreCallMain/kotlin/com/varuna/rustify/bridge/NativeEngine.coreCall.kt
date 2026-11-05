@@ -1,4 +1,4 @@
-// shared/src/iosMain/kotlin/com/varuna/rustify/bridge/NativeEngine.ios.kt
+// shared/src/coreCallMain/kotlin/com/varuna/rustify/bridge/NativeEngine.coreCall.kt
 package com.varuna.rustify.bridge
 
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +10,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * [NativeEngine] on iOS: every method through [CoreCall], the C ABI's `rustify_call`.
+ * [NativeEngine] where the core is one JSON call away: iOS, by the C ABI's `rustify_call`, and the web,
+ * by `rustify-server`'s `/api/call`, which is the same dispatcher. Every method goes through [CoreCall].
  *
  * Each method calls the ABI method of the JNI bridge's name without `Native`, with the arguments
  * `core_engine/include/rustify.h` lists for it, and answers what the JNI twin answers:

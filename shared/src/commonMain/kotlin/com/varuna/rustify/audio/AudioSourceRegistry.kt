@@ -8,7 +8,7 @@ import com.varuna.rustify.util.LockedMap
 import com.varuna.rustify.util.locked
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 
 /**

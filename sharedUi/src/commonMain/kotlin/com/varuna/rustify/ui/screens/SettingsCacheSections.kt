@@ -77,7 +77,7 @@ import com.varuna.rustify.ui.writeTextAtomically
 import com.varuna.rustify.util.optStringOrNull
 import com.varuna.rustify.util.parseArray
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString

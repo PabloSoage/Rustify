@@ -141,7 +141,7 @@ import com.varuna.rustify.ui.components.SpotifyLikeButton
 import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
 import com.varuna.rustify.util.bouncingMarquee
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

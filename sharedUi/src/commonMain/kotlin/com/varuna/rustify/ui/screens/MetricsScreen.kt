@@ -42,7 +42,7 @@ import com.varuna.rustify.ui.currentYear
 import com.varuna.rustify.ui.formatTemplate
 import com.varuna.rustify.ui.startOfSpan
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI

@@ -13,7 +13,7 @@ import com.varuna.rustify.ui.renameToFile
 import com.varuna.rustify.util.deviceZoneOffsetsJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex

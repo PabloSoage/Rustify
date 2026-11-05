@@ -10,7 +10,7 @@ import com.varuna.rustify.ui.byteSize
 import com.varuna.rustify.ui.deleteFile
 import com.varuna.rustify.ui.fileExists
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer

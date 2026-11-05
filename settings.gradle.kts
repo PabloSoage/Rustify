@@ -15,7 +15,10 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    // The web build fetches its Node, Yarn and Binaryen from repositories its Kotlin plugin adds by itself.
+    repositoriesMode.set(
+        if (providers.gradleProperty("rustify.web").orNull.toBoolean()) RepositoriesMode.PREFER_PROJECT else RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    )
     repositories {
         google()
         mavenCentral()

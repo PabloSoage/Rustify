@@ -10,8 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.buildJsonObject
 
 /**
  * The core on iOS: `rustify_call` from `core_engine/include/rustify.h`, through the `rustify` cinterop.
@@ -25,10 +23,10 @@ import kotlinx.serialization.json.buildJsonObject
  * what `NativeEngine` does not cover, the audio engine (`engine*`) and the version.
  */
 @OptIn(ExperimentalForeignApi::class)
-object CoreCall {
+actual object CoreCall {
     private const val FAILURE = """{"success":false,"error":"no answer from the core","kind":"permanent"}"""
 
-    fun callBlocking(method: String, args: JsonObject = JsonObject(emptyMap())): String {
+    actual fun callBlocking(method: String, args: JsonObject): String {
         val answer = rustify_call(method, args.toString()) ?: return FAILURE
         return try {
             answer.toKString()
@@ -37,11 +35,8 @@ object CoreCall {
         }
     }
 
-    suspend fun call(method: String, args: JsonObject = JsonObject(emptyMap())): String =
+    actual suspend fun call(method: String, args: JsonObject): String =
         withContext(Dispatchers.IO) { callBlocking(method, args) }
-
-    suspend fun call(method: String, build: JsonObjectBuilder.() -> Unit): String =
-        call(method, buildJsonObject(build))
 
     /** The core's version, to compare with the app's: a framework built from another commit says so. */
     fun version(): String {

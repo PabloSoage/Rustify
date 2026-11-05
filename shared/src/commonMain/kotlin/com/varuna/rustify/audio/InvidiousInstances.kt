@@ -20,7 +20,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlin.concurrent.Volatile
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 
 /**
  * Discovery and health of Invidious instances.

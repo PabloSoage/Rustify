@@ -20,7 +20,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import com.varuna.rustify.platform.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
