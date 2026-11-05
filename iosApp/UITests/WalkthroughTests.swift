@@ -49,6 +49,8 @@ final class WalkthroughTests: XCTestCase {
         record("link")
         // iOS has no back button of its own: a screen with no arrow of its own, an error's too, is a trap.
         _ = back()
+        // In the simulator a tap sometimes goes unanswered (seen here and on Search's result).
+        if !element("Library").waitForExistence(timeout: 5) { _ = back() }
         record("link-back")
     }
 
