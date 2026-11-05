@@ -96,7 +96,13 @@ final class WalkthroughTests: XCTestCase {
             guard tap("What do you want to listen to?") else { return }
             app.typeText("Around the World Daft Punk\n")
         }
+        // Coming back to Search, the row is there before the screen takes touches: a tap then does nothing.
+        sleep(3)
         guard tap("Around the World") else { return }
+        if !element("Pause").waitForExistence(timeout: 10) {
+            record("own-server-tap-again")
+            guard tap("Around the World") else { return }
+        }
         step("own-server-playing", shows: "Pause", timeout: 30)
         // Long enough for the engine to want its second range.
         sleep(25)
