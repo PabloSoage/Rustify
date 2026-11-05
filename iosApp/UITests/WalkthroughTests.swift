@@ -134,7 +134,17 @@ final class WalkthroughTests: XCTestCase {
     private func fill(_ label: String, _ text: String) -> Bool {
         let field = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", label, label + " ")).firstMatch
         guard scrollTo(field) else { return false }
+        // A tap the simulator drops leaves no keyboard, and typing then fails the whole run (seen in
+        // CI on "Server address"): tap again until the keyboard is up.
         field.tap()
+        for _ in 0..<2 where !app.keyboards.firstMatch.waitForExistence(timeout: 3) {
+            field.tap()
+        }
+        guard app.keyboards.count > 0 else {
+            XCTFail("no keyboard for \(label)")
+            record("no-keyboard-\(label)")
+            return false
+        }
         app.typeText(text + "\n")
         sleep(1)
         record("filled-\(label)")
