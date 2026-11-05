@@ -34,10 +34,14 @@ private const val FAILURE = """{"success":false,"error":"the server could not be
  * to a server on the same network, and there is no other way to answer a plain function here.
  */
 actual object CoreCall {
-    actual fun callBlocking(method: String, args: JsonObject): String =
-        postBlocking("api/call/$method", args.toString()).ifEmpty { FAILURE }
+    /** The server told the core its folders when it started, and refuses a browser that names others. */
+    private val SERVERS_OWN = setOf("initCacheDir", "initSpotifyCacheDir")
+    private const val DONE = """{"success":true}"""
 
-    actual suspend fun call(method: String, args: JsonObject): String = try {
+    actual fun callBlocking(method: String, args: JsonObject): String =
+        if (method in SERVERS_OWN) DONE else postBlocking("api/call/$method", args.toString()).ifEmpty { FAILURE }
+
+    actual suspend fun call(method: String, args: JsonObject): String = if (method in SERVERS_OWN) DONE else try {
         post("api/call/$method", args.toString()).await<JsString>().toString()
     } catch (_: Throwable) {
         FAILURE
