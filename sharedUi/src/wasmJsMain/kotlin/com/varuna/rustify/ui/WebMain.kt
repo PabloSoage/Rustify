@@ -40,6 +40,9 @@ fun main() {
     WebLogBook.install()
     val scope = MainScope()
     val platform = WebAppPlatform(VERSION)
+    // The interface's language, for what the core asks Spotify and YouTube in: the server starts with its own.
+    platform.prefs().getString("app_language")?.takeIf { it != "system" }?.let { WebLocale.tag = it }
+    NativeEngine.setLanguageNative(WebLocale.tag.substringBefore('-'))
     coil3.SingletonImageLoader.setSafe {
         newRustifyImageLoader(coil3.PlatformContext.INSTANCE, platform.cacheDir, platform.prefs()) {
             // The browser keeps what it fetched; a page has no folder for Coil's own cache.
@@ -74,9 +77,7 @@ fun main() {
     })
     ComposeViewport {
         var language by remember {
-            val code = platform.prefs().getString("app_language") ?: "system"
-            if (code != "system") WebLocale.tag = code
-            mutableStateOf(code)
+            mutableStateOf(platform.prefs().getString("app_language") ?: "system")
         }
         val shell = remember {
             WebAppShell(onLanguage = { code ->
