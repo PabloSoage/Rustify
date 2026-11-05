@@ -102,10 +102,6 @@ fn text(args: &Value, key: &str) -> String {
     }
 }
 
-fn opt_text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args[key].as_str()
-}
-
 fn int(args: &Value, key: &str, default: i64) -> i64 {
     args[key].as_i64().unwrap_or(default)
 }
@@ -1485,6 +1481,8 @@ mod tests {
         assert_eq!(call("tempoOf", r#"{"samples":[0.0,0.5,-0.5],"sampleRate":44100}"#), "null");
     }
 
+    // Only where the C ABI has the engine (desktop-audio); elsewhere it answers no samples at all.
+    #[cfg(feature = "desktop-audio")]
     #[test]
     fn engine_tap_dispatch_returns_sample_rate_and_samples() {
         let res: Value = serde_json::from_str(&call("engineTap", r#"{"n":16}"#)).unwrap();

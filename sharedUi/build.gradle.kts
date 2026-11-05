@@ -171,3 +171,13 @@ val driveClient = tasks.register("generateDriveClient") {
     }
 }
 kotlin.sourceSets.named("commonMain") { kotlin.srcDir(driveClient) }
+
+// The desktop's core for the tests that call it (the audio lab's tap, the places, local search): the
+// one :desktopApp builds, on java.library.path for the test JVM only — never a path the app itself
+// searches. Without the desktop build (-Prustify.desktop=true) there is none, and those calls fail.
+if (rootProject.findProject(":desktopApp") != null) {
+    tasks.matching { it.name == "desktopTest" }.configureEach {
+        dependsOn(":desktopApp:buildRustCoreDesktop")
+        (this as Test).systemProperty("java.library.path", rootProject.file("core_engine/target/desktop/release").absolutePath)
+    }
+}

@@ -521,10 +521,32 @@ impl AudioTap {
 
 static AUDIO_TAP: std::sync::Mutex<Option<AudioTap>> = std::sync::Mutex::new(None);
 
+/// Until when (ms since the epoch) someone is reading the tap: the audio lab asks every frame while
+/// it is open. Past this the callback copies nothing, so a closed lab costs the audio thread one
+/// atomic read per buffer and no lock.
+static TAP_WANTED_UNTIL_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How long a read keeps the tap filling: a couple of seconds of frames the lab may skip.
+const TAP_KEEP_MS: u64 = 2_000;
+
+fn epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Called from the audio callback: copies the buffer into the ring while someone reads it. Never
+/// waits (a reader holding the lock costs this buffer, not a glitch) and never allocates: the ring
+/// is made by [engine_tap], on the reader's thread.
 pub fn tap_push(interleaved: &[f32], channels: usize, sample_rate: u32) {
+    if epoch_ms() > TAP_WANTED_UNTIL_MS.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     if let Ok(mut guard) = AUDIO_TAP.try_lock() {
-        let tap = guard.get_or_insert_with(|| AudioTap::new(TAP_CAPACITY));
-        tap.push(interleaved, channels, sample_rate);
+        if let Some(tap) = guard.as_mut() {
+            tap.push(interleaved, channels, sample_rate);
+        }
     }
 }
 
@@ -536,11 +558,12 @@ pub fn tap_reset() {
     }
 }
 
+/// The last [n] samples that reached the device, mono, and their rate. Asking keeps the tap filling
+/// for [TAP_KEEP_MS]; the first ask makes the ring (and answers silence, there being nothing yet).
 pub fn engine_tap(n: usize) -> (u32, Vec<f32>) {
-    if let Ok(guard) = AUDIO_TAP.lock() {
-        if let Some(tap) = guard.as_ref() {
-            return tap.latest(n);
-        }
+    TAP_WANTED_UNTIL_MS.store(epoch_ms() + TAP_KEEP_MS, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut guard) = AUDIO_TAP.lock() {
+        return guard.get_or_insert_with(|| AudioTap::new(TAP_CAPACITY)).latest(n);
     }
     (0, vec![0.0; n])
 }
@@ -574,5 +597,18 @@ mod tests {
         let (rate, empty) = tap.latest(4);
         assert_eq!(rate, 0);
         assert_eq!(empty, vec![0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_callback_copies_only_while_someone_reads() {
+        // Nobody has asked: the callback leaves no ring behind and copies nothing.
+        TAP_WANTED_UNTIL_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+        tap_push(&[0.5, 0.5], 2, 48_000);
+        assert!(AUDIO_TAP.lock().unwrap().as_ref().is_none_or(|t| t.total_written == 0));
+        // The lab asks: from then on the buffers land, the latest last.
+        let (_, first) = engine_tap(2);
+        assert_eq!(first, vec![0.0, 0.0]);
+        tap_push(&[0.25, 0.25, 0.75, 0.75], 2, 48_000);
+        assert_eq!(engine_tap(2), (48_000, vec![0.25, 0.75]));
     }
 }
