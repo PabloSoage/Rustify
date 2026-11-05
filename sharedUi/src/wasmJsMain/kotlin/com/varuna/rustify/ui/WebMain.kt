@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
-private const val VERSION = "5.0.0"
+private const val VERSION = "5.6.4"
 
 /** The phone's app in a browser, the same [RustifyApp] the phone and the desktop draw (docs serie-4.x/28). */
 @OptIn(ExperimentalComposeUiApi::class)

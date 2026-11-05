@@ -23,7 +23,7 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Rustify
-        CFBundleShortVersionString: "5.0.0"
+        CFBundleShortVersionString: "5.6.4"
         CFBundleVersion: "1"
         UILaunchScreen: {}
         # Compose draws on its own: without this iOS holds it to 60 Hz on a ProMotion screen.

@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "rustify_login"
-version = "5.0.0"
+version = "5.6.4"
 dependencies = [
  "tao",
  "wry",
