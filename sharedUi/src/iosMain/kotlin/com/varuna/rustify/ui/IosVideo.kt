@@ -9,16 +9,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
-import com.varuna.rustify.bridge.NativeEngine
-import com.varuna.rustify.bridge.RustifyJson
-import com.varuna.rustify.platform.Log
 import com.varuna.rustify.player.LocalPlayer
 import kotlin.math.abs
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.serialization.Serializable
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.AVFoundation.AVPlayer
@@ -37,18 +33,6 @@ import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSURL
 import platform.UIKit.UIColor
 import platform.UIKit.UIView
-
-/** What `resolveInnertubeVideo` answers (`youtube::innertube::InnertubeVideo`), the field used here. */
-@Serializable
-private data class ResolvedVideo(val url: String = "")
-
-/** The video and its sound in one stream, which AVPlayer reads as it is: there is no second URL. */
-internal suspend fun resolveVideoFromCore(youtubeId: String): Pair<String, String?>? {
-    val answer = NativeEngine.resolveInnertubeVideo(youtubeId)
-    val url = runCatching { RustifyJson.decodeFromString(ResolvedVideo.serializer(), answer).url }.getOrDefault("")
-    if (url.isEmpty()) Log.w(TAG, "no video for $youtubeId: ${answer.take(200)}")
-    return url.takeIf { it.isNotEmpty() }?.let { it to null }
-}
 
 @OptIn(ExperimentalForeignApi::class)
 private class VideoView(player: AVPlayer, gravity: String?) : UIView(frame = CGRectZero.readValue()) {
@@ -119,6 +103,5 @@ internal fun IosPlayerVideo(url: String) {
     VideoSurface(player, AVLayerVideoGravityResizeAspect)
 }
 
-private const val TAG = "IosVideo"
 private const val FOLLOW_WITHIN_MS = 1_000.0
 private const val FOLLOW_EVERY_MS = 500L

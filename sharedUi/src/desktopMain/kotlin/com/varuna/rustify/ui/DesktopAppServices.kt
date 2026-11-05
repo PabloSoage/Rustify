@@ -71,13 +71,14 @@ class DesktopAppServices(
 
     // Video and Canvas need a video player on the desktop (docs serie-4.x/27 §video): [can] says no
     // and the track screen does not offer them.
-    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? = null
+    override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? =
+        com.varuna.rustify.bridge.resolveVideoFromCore(youtubeId)
 
     @Composable
-    override fun CanvasVideo(url: String, fitWidth: Boolean) = Unit
+    override fun CanvasVideo(url: String, fitWidth: Boolean) = DesktopVideo.Canvas(url, fitWidth)
 
     @Composable
-    override fun PlayerVideo(video: Pair<String, String?>) = Unit
+    override fun PlayerVideo(video: Pair<String, String?>) = DesktopVideo.Player(video.first)
 
     // The autonomous DJ is the shared controller, as on the phone.
     @Composable
@@ -144,6 +145,8 @@ class DesktopAppServices(
         AppServices.Feature.DOWNLOADS, AppServices.Feature.BPM -> true
         // By the DJ's model; with none running it fails and says so.
         AppServices.Feature.TRANSLATION -> true
+        // Looked for each time: installing ffmpeg needs no restart.
+        AppServices.Feature.VIDEO -> DesktopVideo.available()
         else -> false
     }
 

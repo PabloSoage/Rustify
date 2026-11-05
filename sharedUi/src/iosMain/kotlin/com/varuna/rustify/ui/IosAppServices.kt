@@ -107,7 +107,7 @@ class IosAppServices(
     override fun translationTarget(): String = IosLocale.languageCode
 
     override suspend fun resolveVideo(youtubeId: String, maxQuality: Boolean): Pair<String, String?>? =
-        resolveVideoFromCore(youtubeId)
+        com.varuna.rustify.bridge.resolveVideoFromCore(youtubeId)
 
     @Composable
     override fun CanvasVideo(url: String, fitWidth: Boolean) = IosCanvasVideo(url, fitWidth)
