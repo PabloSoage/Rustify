@@ -415,4 +415,7 @@ expect object NativeEngine {
 
     /** `{"sampleRate":44100,"samples":[...]}` — latest [n] mono samples from audio output. */
     fun engineTapNative(n: Int): String
+
+    /** Decodes an audio file at [srcPath] to a standard 16-bit PCM WAV at [dstPath]. */
+    suspend fun decodeToWav(srcPath: String, dstPath: String): Boolean
 }

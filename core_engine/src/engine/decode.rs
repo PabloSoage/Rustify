@@ -199,6 +199,49 @@ impl Decoder {
     }
 }
 
+/// Decodes an audio file into a standard 16-bit PCM WAV file.
+pub fn decode_to_wav<E: crate::env::Env + 'static>(src_path: &str, dst_path: &str) -> Result<(), EngineError> {
+    let (source, hint) = super::source::open::<E>(src_path)?;
+    let mut decoder = Decoder::open(source, hint.as_deref())?;
+    let sample_rate = decoder.sample_rate();
+    let channels = decoder.channels() as u16;
+
+    let mut all_samples: Vec<i16> = Vec::new();
+    while let Ok(Some(block)) = decoder.next_block() {
+        for s in block.samples {
+            let clamped = s.clamp(-1.0, 1.0);
+            all_samples.push((clamped * 32_767.0) as i16);
+        }
+    }
+
+    if all_samples.is_empty() {
+        return Err(EngineError::Unsupported("empty audio".into()));
+    }
+
+    let data_len = (all_samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data_len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&sample_rate.to_le_bytes());
+    let byte_rate = sample_rate * channels as u32 * 2;
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    let block_align = channels * 2;
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in all_samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+
+    std::fs::write(dst_path, out).map_err(|e| EngineError::Open(e.to_string()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -270,5 +313,22 @@ pub(crate) mod tests {
             .err()
             .expect("refused");
         assert!(matches!(err, EngineError::Unsupported(_)), "{err:?}");
+    }
+
+    #[test]
+    fn decode_to_wav_writes_playable_pcm_wav() {
+        let tmp = std::env::temp_dir();
+        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let src = tmp.join(format!("input_{id}.wav"));
+        let dst = tmp.join(format!("output_{id}.wav"));
+        std::fs::write(&src, wav(44_100, 2, 0.5, 440.0)).unwrap();
+        decode_to_wav::<crate::env::mock::MockEnv>(src.to_str().unwrap(), dst.to_str().unwrap()).unwrap();
+        assert!(dst.is_file());
+        let mut d = open(std::fs::read(&dst).unwrap());
+        assert_eq!(d.sample_rate(), 44_100);
+        assert_eq!(d.channels(), 2);
+        assert!(!drain(&mut d).is_empty());
+        let _ = std::fs::remove_file(src);
+        let _ = std::fs::remove_file(dst);
     }
 }

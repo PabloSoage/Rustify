@@ -1019,4 +1019,9 @@ actual object NativeEngine {
 
     /** Releases the compiled engine (frees its memory when the web player closes). */
     external fun adblockClearNative()
+
+    private external fun decodeToWavNative(srcPath: String, dstPath: String): Boolean
+
+    actual suspend fun decodeToWav(srcPath: String, dstPath: String): Boolean =
+        io { decodeToWavNative(srcPath, dstPath) }
 }

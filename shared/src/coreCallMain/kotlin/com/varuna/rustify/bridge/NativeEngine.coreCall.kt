@@ -586,4 +586,12 @@ actual object NativeEngine {
             null
         }
     }
+
+    actual suspend fun decodeToWav(srcPath: String, dstPath: String): Boolean {
+        val res = io("decodeToWav") {
+            put("src", srcPath)
+            put("dst", dstPath)
+        }
+        return res.contains("\"success\":true")
+    }
 }

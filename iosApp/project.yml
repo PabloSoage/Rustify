@@ -44,6 +44,8 @@ targets:
         # The Travel screen's route starts where you are.
         NSLocationWhenInUseUsageDescription: Rustify starts the trip's route where you are, to fit the playlist to the drive.
         NSLocalNetworkUsageDescription: Rustify plays from your own music server on this network when you set one up.
+        NSMicrophoneUsageDescription: Rustify uses the microphone for DJ voice commands.
+        NSSpeechRecognitionUsageDescription: Rustify uses speech recognition to understand DJ voice commands.
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:
       base:
@@ -51,7 +53,7 @@ targets:
         FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         # The framework is static and carries the Rust core inside it (cinterop's staticLibraries);
         # these are what that core links against.
-        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -framework CoreLocation -framework AuthenticationServices -lc++"
+        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -framework CoreLocation -framework AuthenticationServices -framework Speech -lc++"
         ENABLE_BITCODE: NO
         # Compose publishes no iosX64 (sharedUi/build.gradle.kts): only arm64, also in the simulator.
         ARCHS: arm64

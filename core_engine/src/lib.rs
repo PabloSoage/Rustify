@@ -3360,6 +3360,35 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_engineTapNati
     })
 }
 
+#[cfg(feature = "engine")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_decodeToWavNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    src: JString<'local>,
+    dst: JString<'local>,
+) -> jboolean {
+    let mut ok = false;
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let src_s = src.mutf8_chars(env)?.to_string();
+        let dst_s = dst.mutf8_chars(env)?.to_string();
+        ok = engine::decode::decode_to_wav::<env::android::AndroidEnv>(&src_s, &dst_s).is_ok();
+        Ok(())
+    });
+    if ok { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(not(feature = "engine"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_decodeToWavNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _src: JString<'local>,
+    _dst: JString<'local>,
+) -> jboolean {
+    JNI_FALSE
+}
+
 
 // =============================================================================
 // SYSTEM MEDIA CONTROLS (docs `25` T2.2) — the desktop JVM app only

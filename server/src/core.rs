@@ -28,6 +28,7 @@ pub const RESERVED: &[&str] = &[
     "closeCastListener",
     "bpmAnalyze",
     "registerLocalFile",
+    "decodeToWav",
 ];
 
 /// The methods that read a file and write nothing, which may reach the music the server offers.
@@ -197,6 +198,7 @@ mod tests {
             "openCastListener",
             "bpmAnalyze",
             "registerLocalFile",
+            "decodeToWav",
         ] {
             assert!(vet(method, "{}".into(), "/srv/cache").is_err());
         }

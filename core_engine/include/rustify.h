@@ -81,6 +81,7 @@ extern "C" {
  *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
  *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}  engineTap {n}
+ *   decodeToWav {src, dst}
  *   secretGet {key}  secretSet {key, value}  secretRemove {key}
  *   dspInfo {}  dspBench {n, iterations}  dspMatBench {n, iterations}
  *   dspAnalyze {samples, sampleRate, bands, kernel}  dspTonal {samples, sampleRate, reset}

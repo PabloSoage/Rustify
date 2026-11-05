@@ -4,6 +4,7 @@ package com.varuna.rustify.ui
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import com.varuna.rustify.audio.IosAudioSources
 import com.varuna.rustify.bridge.DownloadTask
@@ -17,6 +18,7 @@ import com.varuna.rustify.dj.DjListener
 import com.varuna.rustify.dj.DjProvider
 import com.varuna.rustify.dj.DjVoiceOutput
 import com.varuna.rustify.dj.HeuristicDjProvider
+import com.varuna.rustify.dj.IosDjListener
 import com.varuna.rustify.dj.IosDjVoice
 import com.varuna.rustify.engine.IosPlayerBackend
 import com.varuna.rustify.engine.StreamResolver
@@ -144,7 +146,7 @@ class IosAppServices(
     override suspend fun warmUpLocalDj() = Unit
 
     @Composable
-    override fun rememberDjListener(): DjListener = NoMicrophone
+    override fun rememberDjListener(): DjListener = remember { IosDjListener() }
 
     @Composable
     override fun LocalDjSettings() {

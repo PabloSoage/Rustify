@@ -278,6 +278,7 @@ pub const METHODS: &[&str] = &[
     "dspMatBench",
     "dspAnalyze",
     "dspTonal",
+    "decodeToWav",
 ];
 
 pub(crate) fn dispatch(method: &str, args: &Value) -> String {
@@ -1266,6 +1267,19 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             };
             serde_json::json!(values).to_string()
         }
+        "decodeToWav" => {
+            let src = text(args, "src");
+            let dst = text(args, "dst");
+            #[cfg(feature = "engine")]
+            {
+                operation(crate::engine::decode::decode_to_wav::<env::android::AndroidEnv>(&src, &dst))
+            }
+            #[cfg(not(feature = "engine"))]
+            {
+                let _ = (src, dst);
+                operation::<(), _>(Err("this build has no audio engine"))
+            }
+        }
 
         _ => unknown(method),
     }
@@ -1530,5 +1544,11 @@ mod tests {
         let tonal_arg = format!(r#"{{"samples":{samples_json},"sampleRate":44100,"reset":true}}"#);
         let tonal_res: Value = serde_json::from_str(&call("dspTonal", &tonal_arg)).unwrap();
         assert!(!tonal_res.as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_to_wav_works_via_ffi() {
+        let res: Value = serde_json::from_str(&call("decodeToWav", r#"{"src":"nonexistent.mp3","dst":"out.wav"}"#)).unwrap();
+        assert_eq!(res["success"], false);
     }
 }
