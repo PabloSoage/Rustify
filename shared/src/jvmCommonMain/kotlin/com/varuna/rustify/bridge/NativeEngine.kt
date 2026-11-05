@@ -1013,6 +1013,9 @@ actual object NativeEngine {
     /** `[{"id","name","ns"}]` — nanoseconds per 64×k by k×16 matrix product, k = [n] / 2. */
     actual external fun dspMatBenchNative(n: Int, iterations: Int): String
 
+    /** `{"sampleRate":44100,"samples":[...]}` — latest [n] mono samples from audio output. */
+    actual external fun engineTapNative(n: Int): String
+
     /** Releases the compiled engine (frees its memory when the web player closes). */
     external fun adblockClearNative()
 }

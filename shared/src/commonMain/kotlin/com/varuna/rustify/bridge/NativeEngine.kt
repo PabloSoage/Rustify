@@ -411,4 +411,7 @@ expect object NativeEngine {
 
     /** `[{"id","name","ns"}]` — nanoseconds per 64×k by k×16 matrix product, k = [n] / 2. */
     fun dspMatBenchNative(n: Int, iterations: Int): String
+
+    /** `{"sampleRate":44100,"samples":[...]}` — latest [n] mono samples from audio output. */
+    fun engineTapNative(n: Int): String
 }

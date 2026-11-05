@@ -3309,6 +3309,36 @@ pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_stopNative
     })
 }
 
+/// JNI Bridge: latest mono audio samples (`{"sampleRate":44100,"samples":[...]}`).
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_engineTapNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    n: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let (sample_rate, samples) = engine::output::engine_tap((n.max(0)) as usize);
+        serde_json::to_string(&serde_json::json!({
+            "sampleRate": sample_rate,
+            "samples": samples,
+        }))
+        .unwrap_or_else(|_| "{\"sampleRate\":0,\"samples\":[]}".to_string())
+    })
+}
+
+#[cfg(not(feature = "desktop-audio"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_engineTapNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _n: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        "{\"sampleRate\":0,\"samples\":[]}".to_string()
+    })
+}
+
 
 // =============================================================================
 // SYSTEM MEDIA CONTROLS (docs `25` T2.2) — the desktop JVM app only

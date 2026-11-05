@@ -65,9 +65,11 @@ class IosAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO, AppServices.Feature.BPM, AppServices.Feature.TRANSLATION -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO, AppServices.Feature.BPM, AppServices.Feature.TRANSLATION, AppServices.Feature.AUDIO_LAB -> true
         else -> false
     }
+
+    override val audioLab: AudioLabTap = EngineAudioLabTap()
 
     private val bpm by lazy { com.varuna.rustify.bridge.EngineBpm(platform.filesDir) }
 

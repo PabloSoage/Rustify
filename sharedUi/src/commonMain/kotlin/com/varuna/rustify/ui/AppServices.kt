@@ -19,6 +19,9 @@ interface AppServices {
     fun can(feature: Feature): Boolean
 
     // Tempo, measured from the audio (Android decodes a window of the track with MediaCodec).
+    /** Audio tap for the audio lab screen (live PCM samples and rate); null where unavailable. */
+    val audioLab: AudioLabTap? get() = null
+
     /** Downloads from any URL with their qualities listed; null where there is no yt-dlp to ask. */
     val customDownloads: com.varuna.rustify.audio.CustomDownloads? get() = null
 
@@ -147,3 +150,14 @@ sealed class LyricsTranslation {
 }
 
 val LocalAppServices = staticCompositionLocalOf<AppServices> { error("no AppServices provided") }
+
+/**
+ * Seam providing live audio samples and sample rate for the Audio Lab screen.
+ * On Android, backed by AudioTap/AudioOffload.
+ * On Desktop and iOS, backed by [EngineAudioLabTap].
+ */
+interface AudioLabTap {
+    val sampleRate: Int
+    fun latestSamples(n: Int): FloatArray
+    fun onVisibilityChanged(visible: Boolean) {}
+}

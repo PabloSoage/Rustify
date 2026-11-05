@@ -26,6 +26,20 @@ class AndroidAppServices(context: Context) : AppServices {
 
     override fun can(feature: AppServices.Feature): Boolean = true
 
+    override val audioLab: com.varuna.rustify.ui.AudioLabTap = object : com.varuna.rustify.ui.AudioLabTap {
+        override val sampleRate: Int
+            get() = com.varuna.rustify.player.AudioTap.sampleRate
+
+        override fun latestSamples(n: Int): FloatArray =
+            com.varuna.rustify.player.AudioTap.latest(n)
+
+        override fun onVisibilityChanged(visible: Boolean) {
+            com.varuna.rustify.player.AudioOffload.labOpen = visible
+            com.varuna.rustify.player.AudioTap.listening = visible
+            AudioPlayerService.getInstance(app).applyAudioOffload()
+        }
+    }
+
     override val customDownloads: com.varuna.rustify.audio.CustomDownloads = com.varuna.rustify.audio.AndroidCustomDownloads(app)
 
     override val travel: com.varuna.rustify.travel.TravelPlatform = com.varuna.rustify.travel.AndroidTravelPlatform(app)

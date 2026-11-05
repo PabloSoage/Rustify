@@ -53,6 +53,8 @@ class DesktopAppServices(
     @Composable
     override fun inJam(): Boolean = inJam.invoke()
 
+    override val audioLab: AudioLabTap = EngineAudioLabTap()
+
     override val audioSettings = com.varuna.rustify.player.DesktopAudioSettings(platform.prefs())
 
     // Only with the OAuth client the build was given (generateDriveClient); without it, no Drive section.

@@ -102,6 +102,10 @@ fn text(args: &Value, key: &str) -> String {
     }
 }
 
+fn opt_text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args[key].as_str()
+}
+
 fn int(args: &Value, key: &str, default: i64) -> i64 {
     args[key].as_i64().unwrap_or(default)
 }
@@ -268,6 +272,7 @@ pub const METHODS: &[&str] = &[
     "enginePoll",
     "engineStop",
     "engineOutputDevice",
+    "engineTap",
     "secretGet",
     "secretSet",
     "secretRemove",
@@ -1165,7 +1170,7 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
         },
 
         // The audio engine (RustAudioEngine*Native on the desktop JVM). Needs `desktop-audio`.
-        "engineStart" | "engineSend" | "enginePoll" | "engineStop" | "engineOutputDevice" => {
+        "engineStart" | "engineSend" | "enginePoll" | "engineStop" | "engineOutputDevice" | "engineTap" => {
             engine_call(method, args)
         }
         // The system's credential store (SecretStore *Native on the desktop JVM). Needs `secure-store`.
@@ -1299,6 +1304,15 @@ fn engine_call(method: &str, args: &Value) -> String {
         // outputDeviceNative — the output's name as a JSON string, or `null`.
         "engineOutputDevice" => serde_json::to_string(&engine::output::default_device_name())
             .unwrap_or_else(|_| "null".to_string()),
+        "engineTap" => {
+            let n = int(args, "n", 0).max(0) as usize;
+            let (sample_rate, samples) = engine::output::engine_tap(n);
+            serde_json::json!({
+                "sampleRate": sample_rate,
+                "samples": samples,
+            })
+            .to_string()
+        }
         _ => {
             let taken = crate::AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner()).take();
             drop(taken);
@@ -1308,7 +1322,10 @@ fn engine_call(method: &str, args: &Value) -> String {
 }
 
 #[cfg(not(feature = "desktop-audio"))]
-fn engine_call(_method: &str, _args: &Value) -> String {
+fn engine_call(method: &str, _args: &Value) -> String {
+    if method == "engineTap" {
+        return "{\"sampleRate\":0,\"samples\":[]}".to_string();
+    }
     serialize_result::<(), _>(Err(
         "this build has no audio engine (feature desktop-audio)".to_string(),
     ))
@@ -1466,6 +1483,13 @@ mod tests {
     #[test]
     fn too_little_audio_has_no_tempo_as_over_jni() {
         assert_eq!(call("tempoOf", r#"{"samples":[0.0,0.5,-0.5],"sampleRate":44100}"#), "null");
+    }
+
+    #[test]
+    fn engine_tap_dispatch_returns_sample_rate_and_samples() {
+        let res: Value = serde_json::from_str(&call("engineTap", r#"{"n":16}"#)).unwrap();
+        assert!(res["sampleRate"].as_u64().is_some());
+        assert_eq!(res["samples"].as_array().unwrap().len(), 16);
     }
 
     #[test]

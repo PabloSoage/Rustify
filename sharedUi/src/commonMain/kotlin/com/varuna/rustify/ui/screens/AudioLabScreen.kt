@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.varuna.rustify.bridge.NativeEngine
-import com.varuna.rustify.ui.AudioLabBridge
 import com.varuna.rustify.ui.SpectrogramImage
 import com.varuna.rustify.ui.resources.*
 import kotlinx.coroutines.Dispatchers
@@ -137,16 +136,22 @@ fun AudioLabScreen(onBack: () -> Unit) {
     var keyIndex by remember { mutableIntStateOf(-1) }
     var keyR by remember { mutableFloatStateOf(0f) }
     var chroma by remember { mutableStateOf(FloatArray(12)) }
+    val audioLab = com.varuna.rustify.ui.LocalAppServices.current.audioLab
+    if (audioLab == null) {
+        onBack()
+        return
+    }
+
     var melMode by remember { mutableStateOf(false) }
     // Mel columns arrive 16 at a time (one matrix product); they are drawn one per frame from here.
     val melQueue = remember { ArrayDeque<FloatArray>() }
     val melgram = remember { SpectrogramImage(HISTORY, MEL) }
     var matRows by remember { mutableStateOf<List<Triple<String, String, Long>>>(emptyList()) }
 
-    DisposableEffect(Unit) {
-        AudioLabBridge.onVisibilityChanged(true)
+    DisposableEffect(audioLab) {
+        audioLab.onVisibilityChanged(true)
         onDispose {
-            AudioLabBridge.onVisibilityChanged(false)
+            audioLab.onVisibilityChanged(false)
         }
     }
 
@@ -156,10 +161,10 @@ fun AudioLabScreen(onBack: () -> Unit) {
         val melCol = IntArray(MEL)
         var resetTonal = true
         while (isActive) {
-            val rate = AudioLabBridge.sampleRate()
+            val rate = audioLab.sampleRate
             if (rate > 0) {
-                val samples = AudioLabBridge.latestSamples(fftSize)
-                val tonalSamples = AudioLabBridge.latestSamples(TONAL_FFT)
+                val samples = audioLab.latestSamples(fftSize)
+                val tonalSamples = audioLab.latestSamples(TONAL_FFT)
                 val (dspOut, us, tonal) = withContext(Dispatchers.Default) {
                     val mark = kotlin.time.TimeSource.Monotonic.markNow()
                     val r = NativeEngine.dspAnalyzeNative(samples, rate, BANDS, kernel)
@@ -267,14 +272,14 @@ fun AudioLabScreen(onBack: () -> Unit) {
                         )
                     }
                 }
-                val currentRate = AudioLabBridge.sampleRate()
+                val currentRate = audioLab.sampleRate
                 Text(
                     stringResource(Res.string.audio_lab_frame, frameUs, if (currentRate > 0) currentRate else 0),
                     color = green, fontSize = 12.sp
                 )
             }
 
-            if (AudioLabBridge.sampleRate() == 0) {
+            if (audioLab.sampleRate == 0) {
                 Text(stringResource(Res.string.audio_lab_play_something), color = Color.Gray, fontSize = 13.sp)
             }
 

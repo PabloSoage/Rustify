@@ -568,6 +568,10 @@ actual object NativeEngine {
         put("iterations", iterations)
     }
 
+    actual fun engineTapNative(n: Int): String = now("engineTap") {
+        put("n", n)
+    }
+
     private fun parseFloats(raw: String): FloatArray? {
         if (raw.isEmpty() || raw == "null") return null
         return try {

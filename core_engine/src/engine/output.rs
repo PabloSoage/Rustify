@@ -139,6 +139,7 @@ impl AudioOutput for NullOutput {
                     let mut buf = vec![0f32; chunk];
                     while running.load(Ordering::Acquire) {
                         consumer.fill(&mut buf);
+                        tap_push(&buf, format.channels, format.sample_rate);
                         match pace {
                             Pace::Instant => std::thread::sleep(Duration::from_micros(200)),
                             Pace::RealTime { .. } => std::thread::sleep(period),
@@ -155,6 +156,7 @@ impl AudioOutput for NullOutput {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+        tap_reset();
     }
 
     fn current_format(&self) -> Option<Format> {
@@ -274,6 +276,8 @@ mod cpal_output {
         // Grown once to the largest buffer the device asks for, then reused: no allocation per
         // callback after the first few.
         let mut scratch: Vec<f32> = Vec::new();
+        let tap_channels = config.channels as usize;
+        let tap_sample_rate = config.sample_rate.0;
         device
             .build_output_stream(
                 config,
@@ -287,6 +291,7 @@ mod cpal_output {
                         Ok(mut c) => c.fill(buf),
                         Err(_) => buf.fill(0.0),
                     }
+                    tap_push(buf, tap_channels, tap_sample_rate);
                     for (out, x) in data.iter_mut().zip(buf.iter()) {
                         *out = T::from_sample(*x);
                     }
@@ -431,6 +436,7 @@ mod cpal_output {
             if let Some(thread) = self.thread.take() {
                 let _ = thread.join();
             }
+            tap_reset();
         }
 
         fn current_format(&self) -> Option<Format> {
@@ -446,5 +452,127 @@ mod cpal_output {
         fn drop(&mut self) {
             self.stop();
         }
+    }
+}
+
+
+// =============================================================================
+// TAP — live copy of what reaches the device, for the audio lab
+// =============================================================================
+
+pub const TAP_CAPACITY: usize = 16_384;
+
+pub struct AudioTap {
+    sample_rate: u32,
+    ring: Vec<f32>,
+    write_pos: usize,
+    total_written: usize,
+}
+
+impl AudioTap {
+    pub fn new(capacity: usize) -> Self {
+        AudioTap {
+            sample_rate: 0,
+            ring: vec![0.0; capacity.max(1)],
+            write_pos: 0,
+            total_written: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.sample_rate = 0;
+        self.ring.fill(0.0);
+        self.write_pos = 0;
+        self.total_written = 0;
+    }
+
+    pub fn push(&mut self, interleaved: &[f32], channels: usize, sample_rate: u32) {
+        if channels == 0 || interleaved.is_empty() {
+            return;
+        }
+        self.sample_rate = sample_rate;
+        for frame in interleaved.chunks_exact(channels) {
+            let sum: f32 = frame.iter().sum();
+            self.ring[self.write_pos] = sum / (channels as f32);
+            self.write_pos = (self.write_pos + 1) % self.ring.len();
+            self.total_written = self.total_written.saturating_add(1);
+        }
+    }
+
+    pub fn latest(&self, n: usize) -> (u32, Vec<f32>) {
+        let rate = self.sample_rate;
+        if n == 0 {
+            return (rate, Vec::new());
+        }
+        let cap = self.ring.len();
+        let count = n.min(cap).min(self.total_written);
+        let mut out = vec![0.0; n];
+        if count == 0 {
+            return (rate, out);
+        }
+        let start_out = n - count;
+        let start_idx = (self.write_pos + cap - (count % cap)) % cap;
+        for i in 0..count {
+            out[start_out + i] = self.ring[(start_idx + i) % cap];
+        }
+        (rate, out)
+    }
+}
+
+static AUDIO_TAP: std::sync::Mutex<Option<AudioTap>> = std::sync::Mutex::new(None);
+
+pub fn tap_push(interleaved: &[f32], channels: usize, sample_rate: u32) {
+    if let Ok(mut guard) = AUDIO_TAP.try_lock() {
+        let tap = guard.get_or_insert_with(|| AudioTap::new(TAP_CAPACITY));
+        tap.push(interleaved, channels, sample_rate);
+    }
+}
+
+pub fn tap_reset() {
+    if let Ok(mut guard) = AUDIO_TAP.lock() {
+        if let Some(tap) = guard.as_mut() {
+            tap.reset();
+        }
+    }
+}
+
+pub fn engine_tap(n: usize) -> (u32, Vec<f32>) {
+    if let Ok(guard) = AUDIO_TAP.lock() {
+        if let Some(tap) = guard.as_ref() {
+            return tap.latest(n);
+        }
+    }
+    (0, vec![0.0; n])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_tap_returns_latest_in_order() {
+        let mut tap = AudioTap::new(8);
+        tap.push(&[1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0], 2, 48000);
+        let (rate, samples) = tap.latest(4);
+        assert_eq!(rate, 48000);
+        assert_eq!(samples, vec![1.0, 2.0, 3.0, 4.0]);
+
+        tap.push(&[5.0, 6.0, 7.0, 8.0, 9.0, 10.0], 1, 48000);
+        let (rate, samples) = tap.latest(4);
+        assert_eq!(rate, 48000);
+        assert_eq!(samples, vec![7.0, 8.0, 9.0, 10.0]);
+
+        let (rate, all) = tap.latest(8);
+        assert_eq!(rate, 48000);
+        assert_eq!(all, vec![3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+
+        let (rate, padded) = tap.latest(10);
+        assert_eq!(rate, 48000);
+        assert_eq!(padded, vec![0.0, 0.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+
+        tap.reset();
+        let (rate, empty) = tap.latest(4);
+        assert_eq!(rate, 0);
+        assert_eq!(empty, vec![0.0, 0.0, 0.0, 0.0]);
     }
 }

@@ -287,7 +287,7 @@ fun AdvancedLinks(
         buildList {
             add(stringResource(Res.string.home_metrics) to onMetrics)
             add(stringResource(Res.string.settings_edit_matches) to onMatchEditor)
-            if (services.can(com.varuna.rustify.ui.AppServices.Feature.AUDIO_LAB)) {
+            if (services.audioLab != null && services.can(com.varuna.rustify.ui.AppServices.Feature.AUDIO_LAB)) {
                 add(stringResource(Res.string.audio_lab_title) to onAudioLab)
             }
             val chat = services.chatModel()

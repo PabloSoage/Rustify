@@ -143,6 +143,10 @@ class IosAppShell(private val onLanguage: (String) -> Unit) : AppShell {
 
     @Composable
     override fun PlatformScreen(screen: Screen, host: ShellHost) {
+        if (screen is Screen.AudioLab) {
+            com.varuna.rustify.ui.screens.AudioLabScreen(onBack = host.back)
+            return
+        }
         Column(
             Modifier.fillMaxSize().background(Background).statusBarsPadding().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

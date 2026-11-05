@@ -80,7 +80,7 @@ extern "C" {
  *   startLocalServer {}  registerLocalStream {request}  forgetLocalStream {handle}
  *   streamCacheSize {cacheRoot}  clearStreamCache {cacheRoot}
  *   openCastListener {bindTo, device}  closeCastListener {}  castUrlFor {handle}  castSession {}
- *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}
+ *   engineStart {}  engineSend {command}  enginePoll {timeoutMs}  engineStop {}  engineOutputDevice {}  engineTap {n}
  *   secretGet {key}  secretSet {key, value}  secretRemove {key}
  *   dspInfo {}  dspBench {n, iterations}  dspMatBench {n, iterations}
  *   dspAnalyze {samples, sampleRate, bands, kernel}  dspTonal {samples, sampleRate, reset}
