@@ -112,8 +112,14 @@ final class WalkthroughTests: XCTestCase {
         guard tap("Pause") else { return }
         gone("own-server-paused", "Pause")
 
-        // Further down the menu than the screen reaches.
-        guard tap("More options"), scrollTo(element("Download track")) else { return }
+        // The menu first, tapped again when the simulator drops the tap (seen in CI: the results
+        // scrolled under scrollTo with no menu open). Then further down it than the screen reaches.
+        guard tap("More options") else { return }
+        if !element("Add to queue").waitForExistence(timeout: 5) {
+            record("menu-tap-again")
+            guard tap("More options") else { return }
+        }
+        guard scrollTo(element("Download track")) else { return }
         element("Download track").tap()
         step("own-server-downloaded", shows: "Track downloaded", timeout: 60)
     }
