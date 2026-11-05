@@ -884,7 +884,7 @@
     <string name="audio_lab_title">オーディオラボ</string>
     <string name="audio_lab_offload_note">この画面を開いている間は、アプリが音を読めるようにオーディオチップでの再生を一時停止します。離れると元に戻ります。</string>
     <string name="audio_lab_cpu">プロセッサ</string>
-    <string name="audio_lab_no_arm">ARM プロセッサではないため、汎用パスを使います。</string>
+    <string name="audio_lab_no_arm">このプロセッサ向けの手書きカーネルはここにはないため、汎用パスを使います。</string>
     <string name="audio_lab_auto">自動: %1$s</string>
     <string name="audio_lab_auto_measured">自動は、最新のものではなく、このプロセッサで計測して最速だったパスです。</string>
     <string name="audio_lab_frame">1 フレーム %1$.0f µs · %2$d Hz</string>

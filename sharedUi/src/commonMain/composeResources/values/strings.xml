@@ -887,7 +887,7 @@
     <string name="audio_lab_title">Audio lab</string>
     <string name="audio_lab_offload_note">While this screen is open, playback through the audio chip is paused so the app can read the sound; it comes back when you leave.</string>
     <string name="audio_lab_cpu">Processor</string>
-    <string name="audio_lab_no_arm">Not an ARM processor: the portable path is used.</string>
+    <string name="audio_lab_no_arm">No hand-written kernels for this processor here: the portable path is used.</string>
     <string name="audio_lab_auto">Auto: %1$s</string>
     <string name="audio_lab_auto_measured">Auto is the path measured fastest on this processor, not the newest one.</string>
     <string name="audio_lab_frame">%1$.0f µs per frame · %2$d Hz</string>

@@ -230,7 +230,10 @@ fun AudioLabScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(stringResource(Res.string.audio_lab_offload_note), color = Color.Gray, fontSize = 12.sp)
+            // Only the phone hands its audio to the chip (offload), which the lab has to stop to hear it.
+            if (com.varuna.rustify.ui.LocalAppPlatform.current.kind == com.varuna.rustify.ui.AppPlatform.Kind.ANDROID) {
+                Text(stringResource(Res.string.audio_lab_offload_note), color = Color.Gray, fontSize = 12.sp)
+            }
 
             // CPU and path.
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1E1E1E)).padding(12.dp)) {

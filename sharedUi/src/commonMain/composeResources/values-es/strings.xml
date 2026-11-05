@@ -881,7 +881,7 @@
     <string name="audio_lab_title">Laboratorio de audio</string>
     <string name="audio_lab_offload_note">Mientras estás en esta pantalla se pausa la reproducción por el chip de audio para que la app pueda leer el sonido; vuelve al salir.</string>
     <string name="audio_lab_cpu">Procesador</string>
-    <string name="audio_lab_no_arm">No es un procesador ARM: se usa la ruta portable.</string>
+    <string name="audio_lab_no_arm">Aquí no hay núcleos escritos a mano para este procesador: se usa la ruta portable.</string>
     <string name="audio_lab_auto">Auto: %1$s</string>
     <string name="audio_lab_auto_measured">Auto es la ruta que resultó más rápida al medirla en este procesador, no la más moderna.</string>
     <string name="audio_lab_frame">%1$.0f µs por fotograma · %2$d Hz</string>
