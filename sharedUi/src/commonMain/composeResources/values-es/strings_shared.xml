@@ -87,15 +87,14 @@
     <string name="server_link_desc">Da a tu propio rustify-server (la interfaz web de tu NAS u ordenador) la sesión de Spotify de esta app, para que se abra con tu cuenta. No se cambia nada en la cuenta.</string>
     <string name="server_link_no_session">Inicia sesión en Spotify en esta app primero.</string>
     <string name="server_link_address">Dirección del servidor (https://…, o http:// en tu red)</string>
-    <string name="server_link_token">El token de acceso del servidor</string>
     <string name="server_link_button">Vincular servidor</string>
     <string name="server_link_ok">Vinculado: la interfaz web del servidor ya tiene tu cuenta de Spotify.</string>
     <string name="server_link_insecure">No por http sin cifrar a una dirección fuera de tu red: la sesión viajaría a la vista. Usa https.</string>
     <string name="server_link_bad_address">Eso no es la dirección de un servidor.</string>
-    <string name="server_link_wrong_token">El servidor no aceptó ese token de acceso.</string>
+    <string name="server_link_wrong_token">El servidor no aceptó ese nombre y esa contraseña.</string>
     <string name="server_link_refused">El servidor no pudo entrar en Spotify: %1$s</string>
     <string name="server_link_failed">No se pudo llegar al servidor: %1$s</string>
-    <string name="web_sign_in_from_app">Lo fácil: en Rustify del móvil o del ordenador, abre Ajustes → Integraciones → Tu servidor Rustify y pon esta dirección (%1$s) y el token de acceso del servidor. Tu sesión de Spotify llega aquí sin copiar nada.</string>
+    <string name="web_sign_in_from_app">O desde la app: en Rustify del móvil o del ordenador, abre Ajustes → Integraciones → Tu servidor Rustify y pon esta dirección (%1$s) con el nombre y la contraseña de este servidor. Tu sesión de Spotify llega aquí sin copiar nada.</string>
     <string name="web_sign_in_check_again">Ya lo vinculé: comprobar</string>
     <string name="web_sign_in_or_paste">O pega la cookie a mano:</string>
     <string name="web_sign_in_window">Iniciar sesión con Spotify</string>
@@ -103,4 +102,6 @@
     <string name="web_sign_in_waiting">Termina de iniciar sesión en la ventana de Spotify…</string>
     <string name="web_sign_in_window_failed">La ventana de Spotify no se pudo abrir aquí. Usa una de las otras formas de abajo.</string>
     <string name="web_sign_in_other_ways">Otras formas de iniciar sesión</string>
+    <string name="server_link_user">Nombre de la cuenta del servidor</string>
+    <string name="server_link_password">Su contraseña</string>
 </resources>

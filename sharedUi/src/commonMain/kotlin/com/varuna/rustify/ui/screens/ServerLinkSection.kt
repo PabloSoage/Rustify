@@ -35,8 +35,9 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * "Link my Rustify server": gives the person's own rustify-server this app's Spotify session, so the
- * web interface it serves opens with the account (docs serie-4.x/28 §5 bis). The address is kept;
- * the server's access token is not — it is asked each time, and only the server keeps it.
+ * web interface it serves opens with the account (docs serie-4.x/28 §5 bis). The address and the
+ * server account's name are kept; its password is not — it is asked each time, and only the server
+ * keeps it (hashed).
  */
 @Composable
 fun ServerLinkSection(spotifyRepository: SpotifyRepository?) {
@@ -44,7 +45,8 @@ fun ServerLinkSection(spotifyRepository: SpotifyRepository?) {
     val prefs = remember { platform.prefs() }
     val scope = rememberCoroutineScope()
     var address by remember { mutableStateOf(prefs.getString(KEY_ADDRESS).orEmpty()) }
-    var token by remember { mutableStateOf("") }
+    var user by remember { mutableStateOf(prefs.getString(KEY_USER).orEmpty()) }
+    var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var outcome by remember { mutableStateOf<ServerLink.Outcome?>(null) }
     val cookie = spotifyRepository?.linkableCookie()
@@ -73,8 +75,13 @@ fun ServerLinkSection(spotifyRepository: SpotifyRepository?) {
                 singleLine = true, modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = token, onValueChange = { token = it },
-                label = { Text(stringResource(Res.string.server_link_token)) },
+                value = user, onValueChange = { user = it },
+                label = { Text(stringResource(Res.string.server_link_user)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = password, onValueChange = { password = it },
+                label = { Text(stringResource(Res.string.server_link_password)) },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -84,13 +91,14 @@ fun ServerLinkSection(spotifyRepository: SpotifyRepository?) {
                     busy = true
                     outcome = null
                     prefs.putString(KEY_ADDRESS, address.trim())
+                    prefs.putString(KEY_USER, user.trim())
                     scope.launch {
-                        outcome = ServerLink.link(address, token, cookie)
-                        if (outcome == ServerLink.Outcome.Linked) token = ""
+                        outcome = ServerLink.link(address, user, password, cookie)
+                        if (outcome == ServerLink.Outcome.Linked) password = ""
                         busy = false
                     }
                 },
-                enabled = !busy && address.isNotBlank() && token.isNotBlank(),
+                enabled = !busy && address.isNotBlank() && user.isNotBlank() && password.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFF1DB954), strokeWidth = 2.dp)
@@ -113,3 +121,4 @@ fun ServerLinkSection(spotifyRepository: SpotifyRepository?) {
 }
 
 private const val KEY_ADDRESS = "server_link_address"
+private const val KEY_USER = "server_link_user"

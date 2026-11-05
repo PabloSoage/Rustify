@@ -5,7 +5,7 @@
 # the matching runner. The base is the runners' own Ubuntu, so the binaries' glibc is there.
 #
 #   docker run -d -p 8484:8484 -v rustify:/data ghcr.io/pablosoage/rustify-server
-#   docker logs <container>     # the access token, the first time
+#   then open it from the home network: the first visit creates the account (name and password)
 
 FROM ubuntu:24.04
 ARG TARGETARCH

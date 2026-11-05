@@ -2,7 +2,7 @@
 #
 #   sudo cp rustify-server /usr/local/bin/ && sudo cp -r web /usr/local/share/rustify-server-web
 #   sudo cp rustify-server.service /etc/systemd/system/ && sudo systemctl enable --now rustify-server
-#   journalctl -u rustify-server     # the access token, the first time
+#   then open it from the home network: the first visit creates the account (name and password)
 
 [Unit]
 Description=Rustify server

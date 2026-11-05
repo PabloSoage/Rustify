@@ -87,15 +87,14 @@
     <string name="server_link_desc">このアプリの Spotify セッションを自分の rustify-server（NAS やパソコンの Web 版）に渡し、アカウントで開けるようにします。アカウントは変更されません。</string>
     <string name="server_link_no_session">先にこのアプリで Spotify にログインしてください。</string>
     <string name="server_link_address">サーバーのアドレス（https://…、またはネットワーク内の http://）</string>
-    <string name="server_link_token">サーバーのアクセストークン</string>
     <string name="server_link_button">サーバーと連携</string>
     <string name="server_link_ok">連携しました。サーバーの Web 版で Spotify アカウントが使えます。</string>
     <string name="server_link_insecure">ネットワーク外のアドレスへ暗号化なしの http では送れません。セッションが丸見えになります。https を使ってください。</string>
     <string name="server_link_bad_address">サーバーのアドレスではありません。</string>
-    <string name="server_link_wrong_token">サーバーがそのアクセストークンを受け付けませんでした。</string>
+    <string name="server_link_wrong_token">サーバーがその名前とパスワードを受け付けませんでした。</string>
     <string name="server_link_refused">サーバーが Spotify にログインできませんでした: %1$s</string>
     <string name="server_link_failed">サーバーに接続できませんでした: %1$s</string>
-    <string name="web_sign_in_from_app">簡単な方法: スマホかパソコンの Rustify で「設定」→「連携」→「自分の Rustify サーバー」を開き、このアドレス（%1$s）とサーバーのアクセストークンを入力します。Spotify のセッションが何もコピーせずにここへ届きます。</string>
+    <string name="web_sign_in_from_app">アプリからも: スマホかパソコンの Rustify で「設定」→「連携」→「自分の Rustify サーバー」を開き、このアドレス（%1$s）とこのサーバーの名前とパスワードを入力します。Spotify のセッションが何もコピーせずにここへ届きます。</string>
     <string name="web_sign_in_check_again">連携しました: もう一度確認</string>
     <string name="web_sign_in_or_paste">または Cookie を手で貼り付け:</string>
     <string name="web_sign_in_window">Spotify でログイン</string>
@@ -103,4 +102,6 @@
     <string name="web_sign_in_waiting">Spotify のウィンドウでログインを完了してください…</string>
     <string name="web_sign_in_window_failed">ここでは Spotify のウィンドウを開けませんでした。下のほかの方法を使ってください。</string>
     <string name="web_sign_in_other_ways">ほかのログイン方法</string>
+    <string name="server_link_user">サーバーのアカウント名</string>
+    <string name="server_link_password">パスワード</string>
 </resources>

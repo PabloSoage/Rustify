@@ -35,12 +35,12 @@ class ServerLinkTest {
         for (bad in listOf("", "ftp://x", "http://x/path", "http://user@x", "http://x?a=b")) assertNull(ServerLink.normalise(bad), bad)
     }
 
-    /** /login takes the token for a session cookie, as server/src/auth.rs; /api/call/loginSpotify needs it. */
+    /** /login takes the account for a session cookie, as server/src/auth.rs; /api/call/loginSpotify needs it. */
     private fun fakeServer(spDcSeen: MutableList<String>): String {
         val s = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         s.createContext("/login") { ex ->
             val body = ex.requestBody.readBytes().decodeToString()
-            if (body == "token=the-token") {
+            if (body == "user=pablo&password=hells+bells") {
                 ex.responseHeaders.add("Set-Cookie", "rustify_session=s3ss10n; HttpOnly; SameSite=Strict; Path=/")
                 ex.responseHeaders.add("Location", "/")
                 ex.sendResponseHeaders(303, -1)
@@ -72,11 +72,11 @@ class ServerLinkTest {
     fun theSessionReachesTheServersCoreWithTheTokensSession(): Unit = runBlocking {
         val seen = mutableListOf<String>()
         val base = fakeServer(seen)
-        assertEquals(ServerLink.Outcome.Linked, ServerLink.link(base, " the-token ", "good-cookie"))
+        assertEquals(ServerLink.Outcome.Linked, ServerLink.link(base, " pablo ", "hells bells", "good-cookie"))
         assertEquals(listOf("""{"spDc":"good-cookie"}"""), seen)
-        assertEquals(ServerLink.Outcome.WrongToken, ServerLink.link(base, "other", "good-cookie"))
-        assertEquals(ServerLink.Outcome.Refused("invalid sp_dc"), ServerLink.link(base, "the-token", "stale"))
-        assertEquals(ServerLink.Outcome.Insecure, ServerLink.link("http://8.8.8.8", "the-token", "good-cookie"))
+        assertEquals(ServerLink.Outcome.WrongToken, ServerLink.link(base, "pablo", "other", "good-cookie"))
+        assertEquals(ServerLink.Outcome.Refused("invalid sp_dc"), ServerLink.link(base, "pablo", "hells bells", "stale"))
+        assertEquals(ServerLink.Outcome.Insecure, ServerLink.link("http://8.8.8.8", "pablo", "hells bells", "good-cookie"))
         assertEquals(2, seen.size, "nothing sent to an address it may not go to, or with a wrong token")
     }
 }

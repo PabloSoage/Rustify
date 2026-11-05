@@ -35,15 +35,22 @@ struct Args {
     /// Where to listen. Anything but loopback opens a door to the network (docs 28 §5).
     #[arg(long, env = "RUSTIFY_BIND", default_value = "127.0.0.1:8484")]
     bind: SocketAddr,
-    /// Session, history, settings and caches. Default: $XDG_DATA_HOME/rustify-server.
+    /// Session, history, settings and caches. Default: %LOCALAPPDATA%\rustify-server on Windows,
+    /// ~/Library/Application Support/rustify-server on macOS, $XDG_DATA_HOME/rustify-server elsewhere.
     #[arg(long, env = "RUSTIFY_DATA_DIR")]
     data_dir: Option<PathBuf>,
     /// The web interface (the wasm build of :sharedUi). Without it the API still answers.
     #[arg(long, env = "RUSTIFY_WEB_ROOT")]
     web_root: Option<PathBuf>,
-    /// The access token. Default: the one kept in the data directory, made on first start.
+    /// A token accepted in place of the account's name and password, for scripts and for a server
+    /// whose first visit can only come from outside the home network. None by default (auth.rs).
     #[arg(long, env = "RUSTIFY_TOKEN", hide_env_values = true)]
     token: Option<String>,
+    /// Ask for the account's password at this machine too. Without it a page opened here through a
+    /// loopback name is let in, as the data directory is readable here anyway (auth::opened_here);
+    /// set it on a machine other people log in to.
+    #[arg(long, env = "RUSTIFY_PASSWORD_ON_THIS_MACHINE")]
+    password_on_this_machine: bool,
     /// Mark the session cookie Secure: set it when the browser reaches this through HTTPS.
     #[arg(long, env = "RUSTIFY_SECURE_COOKIES")]
     secure_cookies: bool,
@@ -72,9 +79,12 @@ pub struct App(Arc<Inner>);
 
 pub struct Inner {
     pub core: core::Core,
-    pub token: String,
+    pub token: Option<String>,
+    pub account: auth::Account,
     pub sessions: auth::Sessions,
     pub secure_cookies: bool,
+    /// A page opened at this machine needs no password (`--password-on-this-machine` turns it off).
+    pub trust_this_machine: bool,
     /// The port of the core's stream server on 127.0.0.1, when it started.
     pub stream_port: Option<u16>,
     /// The stream cache's folder, the only one its methods may be pointed at.
@@ -93,7 +103,19 @@ impl std::ops::Deref for App {
     }
 }
 
+/// Where a user's data goes on each system. Windows has no `HOME`: before this the server kept
+/// everything in a folder under wherever it was started from.
 fn default_data_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Some(dir) = std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("APPDATA")) {
+            return PathBuf::from(dir).join("rustify-server");
+        }
+    }
+    if cfg!(target_os = "macos") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join("Library/Application Support/rustify-server");
+        }
+    }
     if let Some(dir) = std::env::var_os("XDG_DATA_HOME") {
         return PathBuf::from(dir).join("rustify-server");
     }
@@ -121,10 +143,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::create_dir_all(dir)?;
     }
 
-    let (token, made) = auth::load_or_create_token(&data, args.token.clone())?;
-    if made {
-        // Said once, on the start that made it; afterwards it is in the data directory.
-        tracing::warn!("access token (also in {}): {token}", data.join("access-token").display());
+    if !args.bind.ip().is_loopback() {
+        tracing::info!("the first visit from the home network creates the account (name and password)");
     }
 
     let core = core::Core::new(args.parallel_calls);
@@ -159,9 +179,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = App(Arc::new(Inner {
         core,
-        token,
-        sessions: auth::Sessions::default(),
+        token: args.token.clone().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()),
+        account: auth::Account::load(&data),
+        sessions: auth::Sessions::load(&data),
         secure_cookies: args.secure_cookies,
+        trust_this_machine: !args.password_on_this_machine,
         stream_port,
         stream_cache: stream_cache.to_string_lossy().into_owned(),
         http: reqwest::Client::builder()
@@ -206,7 +228,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     tracing::info!("rustify-server {} on http://{}", env!("CARGO_PKG_VERSION"), args.bind);
-    axum::serve(listener, router).with_graceful_shutdown(shutdown()).await?;
+    // The peer's address, for auth.rs: this machine, the home network, or beyond.
+    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(shutdown())
+        .await?;
     Ok(())
 }
 

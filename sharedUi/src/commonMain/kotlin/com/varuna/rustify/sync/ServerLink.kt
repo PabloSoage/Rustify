@@ -22,7 +22,7 @@ import kotlinx.serialization.json.put
 /**
  * Hands this app's Spotify session to the person's own rustify-server (docs serie-4.x/28 §5 bis), so
  * the web interface it serves has the account without pasting the cookie by hand: the server's
- * access token buys a session (`/login`, as the browser does), and with it the server's core logs in
+ * account (its name and password) buys a session (`/login`, as the browser does), and with it the server's core logs in
  * with this app's `sp_dc` (`/api/call/loginSpotify`). Nothing is written to the account.
  *
  * The cookie is the account, so it goes only where it cannot be read on the way: https anywhere, or
@@ -34,7 +34,7 @@ object ServerLink {
         /** The address is not one the cookie may travel to in clear. */
         data object Insecure : Outcome
         data object BadAddress : Outcome
-        /** The server did not take the access token. */
+        /** The server did not take the account's name and password. */
         data object WrongToken : Outcome
         /** The server answered, and its core could not log in (the reason is the core's). */
         data class Refused(val reason: String) : Outcome
@@ -87,11 +87,14 @@ object ServerLink {
         }
     }
 
-    suspend fun link(address: String, token: String, spDc: String): Outcome {
+    suspend fun link(address: String, user: String, password: String, spDc: String): Outcome {
         val base = normalise(address) ?: return Outcome.BadAddress
         if (!mayCarryCookie(base)) return Outcome.Insecure
         return try {
-            val login = http.submitForm("$base/login", parameters { append("token", token.trim()) })
+            val login = http.submitForm("$base/login", parameters {
+                append("user", user.trim())
+                append("password", password)
+            })
             val session = login.headers.getAll(HttpHeaders.SetCookie).orEmpty()
                 .map { it.substringBefore(';') }
                 .firstOrNull { it.startsWith("$SESSION_COOKIE=") && it.length > SESSION_COOKIE.length + 1 }
