@@ -176,6 +176,7 @@ pub const METHODS: &[&str] = &[
     "readTags",
     "readCover",
     "writeTags",
+    "bpmAnalyze",
     "tempoOf",
     "autoEqSearch",
     "autoEqProfile",
@@ -600,6 +601,12 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
             Err(e) => serialize_result::<(), _>(Err(e)),
             Ok(tags) => serialize_result(audio::tags::write(&text(args, "path"), &tags).map(|_| crate::ok_result())),
         },
+        // bpmAnalyzeNative — `path` is a file or URL; answers a `tempo::Estimate`, or `null`.
+        #[cfg(feature = "engine")]
+        "bpmAnalyze" => serialize_result(crate::engine::bpm::analyze::<env::android::AndroidEnv>(&text(args, "path"))),
+        #[cfg(not(feature = "engine"))]
+        "bpmAnalyze" => serialize_result::<Option<tempo::Estimate>, _>(Err("this build has no audio engine (feature engine)".to_string())),
+
         // tempoOfNative — `samples` is mono PCM (-1..1) as a JSON array; a `tempo::Estimate`, or
         // `null` with under 6 s of audio. CPU only.
         "tempoOf" => {
@@ -1297,6 +1304,7 @@ mod tests {
             "getSpotifyHashes",
             "findLocalMatch",
             "arrangeReleases",
+            "bpmAnalyze",
             "tempoOf",
             "autoEqBands",
             "getAlternativeTrack",

@@ -89,6 +89,9 @@ expect object NativeEngine {
     suspend fun lastFmSubmit(credentialsJson: String, listenJson: String): String
     suspend fun lastFmNowPlaying(credentialsJson: String, listenJson: String): String
 
+    /** The tempo of an audio file or stream at [path], as JSON `{bpm, confidence}` or `null`. Off the caller's thread. */
+    suspend fun bpmAnalyze(path: String): String
+
     /** The tempo of mono PCM, as JSON `{bpm, confidence}` or `null`. CPU-bound, so off the caller's thread. */
     suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String
 

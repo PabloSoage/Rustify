@@ -26,6 +26,7 @@ pub const RESERVED: &[&str] = &[
     "writeTags",
     "openCastListener",
     "closeCastListener",
+    "bpmAnalyze",
 ];
 
 /// Checks a browser's call before the core sees it. The stream cache's methods take the folder to
@@ -142,6 +143,7 @@ mod tests {
             "readCover",
             "writeTags",
             "openCastListener",
+            "bpmAnalyze",
         ] {
             assert!(vet(method, "{}".into(), "/srv/cache").is_err());
         }

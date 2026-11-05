@@ -127,6 +127,11 @@ actual object NativeEngine {
     actual suspend fun lastFmSubmit(credentialsJson: String, listenJson: String): String = io { lastFmSubmitNative(credentialsJson, listenJson) }
     actual suspend fun lastFmNowPlaying(credentialsJson: String, listenJson: String): String = io { lastFmNowPlayingNative(credentialsJson, listenJson) }
 
+    private external fun bpmAnalyzeNative(path: String): String
+
+    /** The tempo of an audio file or stream at [path], as JSON `{bpm, confidence}` or `null`. Off the main thread. */
+    actual suspend fun bpmAnalyze(path: String): String = io { bpmAnalyzeNative(path) }
+
     private external fun tempoOfNative(samples: FloatArray, sampleRate: Int): String
 
     /** The tempo of mono PCM, as JSON `{bpm, confidence}` or `null`. CPU-bound, so off the main thread. */

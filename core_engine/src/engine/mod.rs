@@ -22,6 +22,7 @@
 // `Effect::Play` into a `Load` (and the track after it into a `Preload`, for gapless) — the same
 // split Android has between `PlayerQueue` and ExoPlayer.
 
+pub mod bpm;
 pub mod decode;
 pub mod effects;
 pub mod output;

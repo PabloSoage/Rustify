@@ -38,7 +38,7 @@ extern "C" {
  *   listenBrainzSubmit {token, listen}  listenBrainzPlayingNow {token, listen}  listenBrainzValidate {token}
  *   lastFmLogin {apiKey, secret, user, password}
  *   lastFmSubmit {credentials, listen}  lastFmNowPlaying {credentials, listen}
- *   readReplayGain {path}  readEmbeddedLyrics {path}  tempoOf {samples, sampleRate}
+ *   readReplayGain {path}  readEmbeddedLyrics {path}  bpmAnalyze {path}  tempoOf {samples, sampleRate}
  *   readTags {path}  readCover {path}  writeTags {path, tags}
  *   autoEqSearch {query}   autoEqProfile {path}  autoEqBands {peqText, n}
  *   subsonicPing {config}  subsonicFind {config, title, artists, durationMs}

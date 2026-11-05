@@ -590,6 +590,32 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_tempoOfNative
     })
 }
 
+/// JNI Bridge: the tempo of an audio file or stream at `path`, as a JSON `tempo::Estimate`, or `null`.
+#[cfg(feature = "engine")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_bpmAnalyzeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(engine::bpm::analyze::<env::android::AndroidEnv>(&path))
+    })
+}
+
+#[cfg(not(feature = "engine"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_bpmAnalyzeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serialize_result::<Option<tempo::Estimate>, String>(Err("BPM analysis requires engine feature".into()))
+    })
+}
+
 /// JNI Bridge: check a Subsonic server and its credentials; answers its name and version.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_subsonicPingNative<'local>(

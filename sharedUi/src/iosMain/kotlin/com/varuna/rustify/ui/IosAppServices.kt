@@ -56,7 +56,7 @@ private class IosAudioSettings(platform: AppPlatform) : AudioSettings(platform.p
 /**
  * [AppServices] on iOS. Lyrics, the DJ and the audio settings are the shared ones; the DJ speaks with
  * the system's voice, and with no model on the phone its "local" mode is the heuristic. What is not
- * here yet ([can] says so, and the screens with it): tempo and translation. Downloads stop if
+ * here yet ([can] says so, and the screens with it): translation. Downloads stop if
  * the system suspends the app, which only keeps playing audio in the background.
  */
 class IosAppServices(
@@ -65,13 +65,15 @@ class IosAppServices(
     onVoice: (speaking: Boolean) -> Unit,
 ) : AppServices {
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
-        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO -> true
+        AppServices.Feature.DJ, AppServices.Feature.DJ_VOICE, AppServices.Feature.DOWNLOADS, AppServices.Feature.VIDEO, AppServices.Feature.BPM -> true
         else -> false
     }
 
-    override fun bpmCached(trackId: String): Float? = null
-    override fun bpmScale(trackId: String, factor: Float): Float? = null
-    override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = null
+    private val bpm by lazy { com.varuna.rustify.bridge.EngineBpm(platform.filesDir) }
+
+    override fun bpmCached(trackId: String): Float? = bpm.cached(trackId)
+    override fun bpmScale(trackId: String, factor: Float): Float? = bpm.scale(trackId, factor)
+    override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = bpm.analyze(trackId)
 
     // The player's sources, so the file is the recording that plays. Made here, on the main queue.
     private val downloader = EngineDownloads(

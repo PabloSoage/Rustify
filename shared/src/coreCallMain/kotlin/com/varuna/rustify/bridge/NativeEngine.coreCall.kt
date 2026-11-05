@@ -118,6 +118,8 @@ actual object NativeEngine {
      * The samples cross as a JSON array. A NaN or an infinity has no JSON form and would make the
      * whole argument object unreadable, so it is sent as silence.
      */
+    actual suspend fun bpmAnalyze(path: String): String = io("bpmAnalyze") { put("path", path) }
+
     actual suspend fun tempoOf(samples: FloatArray, sampleRate: Int): String = withContext(Dispatchers.Default) {
         now("tempoOf") {
             put("samples", JsonArray(samples.map { JsonPrimitive(if (it.isFinite()) it else 0f) }))

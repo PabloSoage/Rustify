@@ -141,15 +141,17 @@ class DesktopAppServices(
     override fun can(feature: AppServices.Feature): Boolean = when (feature) {
         AppServices.Feature.DJ -> true
         AppServices.Feature.DJ_VOICE -> voice.isAvailable
-        AppServices.Feature.DOWNLOADS -> true
+        AppServices.Feature.DOWNLOADS, AppServices.Feature.BPM -> true
         // By the DJ's model; with none running it fails and says so.
         AppServices.Feature.TRANSLATION -> true
         else -> false
     }
 
-    override fun bpmCached(trackId: String): Float? = null
-    override fun bpmScale(trackId: String, factor: Float): Float? = null
-    override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = null
+    private val bpm by lazy { com.varuna.rustify.bridge.EngineBpm(platform.filesDir) }
+
+    override fun bpmCached(trackId: String): Float? = bpm.cached(trackId)
+    override fun bpmScale(trackId: String, factor: Float): Float? = bpm.scale(trackId, factor)
+    override suspend fun bpmAnalyze(trackId: String, durationMs: Long): Float? = bpm.analyze(trackId)
 
     override val downloads: StateFlow<List<DownloadTask>> get() = downloader.downloads
     override val activeDownloadCount: StateFlow<Int> get() = downloader.activeDownloadCount
