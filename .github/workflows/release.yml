@@ -1,0 +1,364 @@
+name: release
+
+# Every platform's packages from one tag, gathered in a **draft** GitHub release to read and publish
+# by hand (docs serie-4.x/25 §6 and 28 §6). Nothing here publishes anything by itself:
+#
+# - the release is created as a draft (or, if the tag already has one, its files are replaced);
+# - the Docker image is pushed only when the repository variable PUBLISH_DOCKER is "true";
+# - the APKs are built here only when the signing key is a secret (ANDROID_KEYSTORE_B64 and
+#   friends); otherwise attach the ones built at home with `gh release upload <tag> *.apk`.
+#
+# Run it from a tag push (v*) or by hand with the tag to build.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # Drive's sign-in on the desktop, iOS and the web (generateDriveClient reads these). Without them
+  # those builds ship with no Drive, as 5.0.0's APKs did.
+  DRIVE_APPAUTH_CLIENT_ID: ${{ secrets.DRIVE_APPAUTH_CLIENT_ID }}
+  DRIVE_APPAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_APPAUTH_CLIENT_SECRET }}
+
+jobs:
+  # Windows: .msi, setup .exe, portable .zip. Linux: .deb, .rpm, .AppImage, portable .tar.gz.
+  # macOS: .dmg for Apple Silicon and for Intel. Each is jpackage on its own host.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, name: linux-aarch64 }
+          - { os: windows-latest, name: windows-x86_64 }
+          - { os: macos-latest, name: macos-arm64 }
+          - { os: macos-15-intel, name: macos-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core_engine -> target/desktop
+            desktopApp/login -> ../build/login-target
+          key: release-desktop
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - if: runner.os == 'Linux'
+        # The sign-in window (desktopApp/login) builds against the system's webview: WebKitGTK 4.1.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config rpm libwebkit2gtk-4.1-dev libgtk-3-dev
+      # bash on every runner: PowerShell splits `-Prustify.desktop=true` at the dot.
+      - shell: bash
+        run: ./gradlew -Prustify.desktop=true :desktopApp:createDistributable :desktopApp:packageDistributionForCurrentOS --no-daemon
+      - name: Collect the packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          name="${{ matrix.name }}"
+          bin=desktopApp/build/compose/binaries/main
+          out=release-out
+          mkdir -p "$out"
+          case "$name" in
+            windows-*)
+              cp "$bin"/msi/*.msi "$out/Rustify-$ver-$name.msi"
+              cp "$bin"/exe/*.exe "$out/Rustify-$ver-$name-setup.exe"
+              # The marker that keeps settings and data in the folder itself (AppDirs.portable).
+              touch "$bin/app/Rustify/portable"
+              (cd "$bin/app" && 7z a -tzip "../../../../../../$out/Rustify-$ver-$name-portable.zip" Rustify > /dev/null)
+              ;;
+            linux-*)
+              cp "$bin"/deb/*.deb "$out/rustify-$ver-$name.deb"
+              cp "$bin"/rpm/*.rpm "$out/rustify-$ver-$name.rpm"
+              arch="$(uname -m)"
+              curl -fsSL -o appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage"
+              chmod +x appimagetool
+              # No FUSE on the runners: the tool unpacks itself instead of mounting.
+              PATH="$PWD:$PATH" APPIMAGE_EXTRACT_AND_RUN=1 tools/desktop/make-appimage.sh
+              cp "desktopApp/build/appimage/Rustify-$arch.AppImage" "$out/Rustify-$ver-$name.AppImage"
+              touch "$bin/app/Rustify/portable"
+              tar -C "$bin/app" -czf "$out/rustify-$ver-$name-portable.tar.gz" Rustify
+              ;;
+            macos-*)
+              cp "$bin"/dmg/*.dmg "$out/Rustify-$ver-$name.dmg"
+              ;;
+          esac
+          ls -l "$out"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-desktop-${{ matrix.name }}
+          path: release-out/*
+          if-no-files-found: error
+
+  # Unsigned .ipa for AltStore/SideStore, which sign it with the user's own Apple ID (docs 25 §6).
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core_engine -> target/ios-build/iosArm64
+            core_engine -> target/ios-build/iosSimulatorArm64
+          key: release-ios
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      # One link at a time: this runner has 7 GB, and the Gradle started by Xcode reads this file too.
+      - run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.workers.max=1' >> ~/.gradle/gradle.properties
+      - run: tools/ios/build-core.sh
+      - run: brew install xcodegen
+      - working-directory: iosApp
+        run: xcodegen generate
+      - working-directory: iosApp
+        run: |
+          set -euo pipefail
+          xcodebuild -project Rustify.xcodeproj -target Rustify -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload ../release-out
+          cp -R build/Release-iphoneos/Rustify.app Payload/
+          zip -qr "../release-out/Rustify-${TAG#v}-ios-unsigned.ipa" Payload
+          ls -l ../release-out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-ios
+          path: release-out/*
+          if-no-files-found: error
+
+  # The interface in a browser, which goes inside every server package and the image.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew -Prustify.web=true :sharedUi:wasmJsBrowserDistribution --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-root
+          path: sharedUi/build/dist/wasmJs/productionExecutable/
+          if-no-files-found: error
+
+  # rustify-server (docs 28): a tarball per architecture, and the binary for the Docker image.
+  server:
+    needs: web
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, arch: x86_64, docker: amd64, target: '' }
+          - { os: ubuntu-24.04-arm, arch: aarch64, docker: arm64, target: '' }
+          - { os: ubuntu-latest, arch: armv7, docker: arm, target: armv7-unknown-linux-gnueabihf }
+    runs-on: ${{ matrix.os }}
+    # armv7 is cross-compiled with the core's C code (QuickJS) in it: new, so it may not hold yet.
+    continue-on-error: ${{ matrix.arch == 'armv7' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo install cross --locked
+            cross build --release --target "${{ matrix.target }}"
+            echo "BIN=server/target/${{ matrix.target }}/release/rustify-server" >> "$GITHUB_ENV"
+          else
+            cargo build --release
+            echo "BIN=server/target/release/rustify-server" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-root
+          path: web-root
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="rustify-server-${TAG#v}-linux-${{ matrix.arch }}"
+          mkdir -p "$name/web" release-out "docker-bin/${{ matrix.docker }}"
+          cp "$BIN" "$name/"
+          cp -r web-root/. "$name/web/"
+          cp server/rustify-server.service "$name/"
+          tar -czf "release-out/$name.tar.gz" "$name"
+          cp "$BIN" "docker-bin/${{ matrix.docker }}/rustify-server"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-server-${{ matrix.arch }}
+          path: release-out/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docker-bin-${{ matrix.docker }}
+          path: docker-bin/
+          if-no-files-found: error
+
+  # Multi-architecture image from the binaries above, only when PUBLISH_DOCKER is "true".
+  docker:
+    needs: server
+    if: ${{ !cancelled() && vars.PUBLISH_DOCKER == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: docker-bin-*
+          path: server/dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-root
+          path: server/dist/web
+      - name: Platforms that were built
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p server/dist/web
+          chmod +x server/dist/*/rustify-server
+          platforms=""
+          [ -f server/dist/amd64/rustify-server ] && platforms="$platforms,linux/amd64"
+          [ -f server/dist/arm64/rustify-server ] && platforms="$platforms,linux/arm64"
+          [ -f server/dist/arm/rustify-server ] && platforms="$platforms,linux/arm/v7"
+          echo "PLATFORMS=${platforms#,}" >> "$GITHUB_ENV"
+          owner="${{ github.repository_owner }}"
+          echo "IMAGE=ghcr.io/${owner,,}/rustify-server" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: server
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.TAG }}
+            ${{ env.IMAGE }}:latest
+
+  # One APK per ABI (arm64-v8a, armeabi-v7a, x86_64), never a universal one, with the baseline
+  # profiles the release build always carries. Only with the signing key in secrets.
+  android:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - if: env.HAS_KEY != 'true'
+        run: echo "::notice::No ANDROID_KEYSTORE_B64 secret, so no APKs here; attach the ones built at home."
+      - if: env.HAS_KEY == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.HAS_KEY == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - if: env.HAS_KEY == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - if: env.HAS_KEY == 'true'
+        uses: gradle/actions/setup-gradle@v5
+      - if: env.HAS_KEY == 'true'
+        name: Build the signed APKs
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          DEFAULT_WEB_CLIENT_ID: ${{ secrets.DEFAULT_WEB_CLIENT_ID }}
+          DRIVE_APPAUTH_CLIENT_ID: ${{ secrets.DRIVE_APPAUTH_CLIENT_ID }}
+          DRIVE_APPAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_APPAUTH_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          cargo install cargo-ndk --locked
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          {
+            echo "default_web_client_id=$DEFAULT_WEB_CLIENT_ID"
+            echo "drive_appauth_client_id=$DRIVE_APPAUTH_CLIENT_ID"
+            echo "drive_appauth_client_secret=$DRIVE_APPAUTH_CLIENT_SECRET"
+          } > local.properties
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          mkdir -p release-out
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "app/build/outputs/apk/release/app-$abi-release.apk" "release-out/Rustify-${TAG#v}-android-$abi.apk"
+          done
+          rm -f "$RUNNER_TEMP/release.jks"
+          ls -l release-out
+      - if: env.HAS_KEY == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: release-out/*
+          if-no-files-found: error
+
+  # Whatever was built, in a draft release for the tag. A platform that failed is simply missing
+  # from it, which the draft's file list makes obvious before anyone publishes.
+  release:
+    needs: [desktop, ios, server, android]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: out
+          merge-multiple: true
+      - name: Draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -l out
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" out/* --draft --verify-tag --title "Rustify $TAG" -R "$GITHUB_REPOSITORY" \
+              --notes "Draft made by the release workflow. If the APKs are not listed, attach the ones built at home before publishing."
+          fi

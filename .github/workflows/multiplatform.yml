@@ -1,0 +1,197 @@
+name: multiplatform
+
+# The desktop and iOS builds (docs 24/25). Separate from ci.yml on purpose: the APK's checks stay
+# exactly what they were, and a red here says "the ports" rather than "the app".
+
+on:
+  push:
+    branches: [main, multiplatform]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The core with the features the APK does not build: the engine, its device output, the C ABI.
+  core-features:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core_engine
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core_engine
+          key: features
+      # cpal's ALSA backend links libasound; keyring's Secret Service backend links libdbus.
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: cargo test --all-targets --features mock-env,engine,c-api,media-controls,secure-store
+      - run: cargo clippy --all-targets --features mock-env,desktop-audio,c-api,media-controls,secure-store -- -D warnings
+
+  # rustify-server (docs serie-4.x/28): the core behind an HTTP API, for a NAS or a headless server.
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          key: server
+      - run: cargo test
+      - run: cargo clippy --all-targets -- -D warnings
+      # No lock file is checked in yet: this is the one CI resolved, to commit after a look.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustify-server-Cargo.lock
+          path: server/Cargo.lock
+
+  # The shared Kotlin module's own tests, on the desktop JVM target.
+  shared:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      # The desktop tests call the real core (the audio lab's tap, the places, local search): the one
+      # :desktopApp builds, so Rust and what its features link against, as in the desktop job.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core_engine -> target/desktop
+          key: desktop
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      # :sharedUi too: its desktop tests pin how the shared strings read (StringsTest).
+      - run: ./gradlew -Prustify.desktop=true :shared:desktopTest :sharedUi:desktopTest --no-daemon
+
+  # The interface in a browser (docs 28): what rustify-server serves as its web root.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew -Prustify.web=true :sharedUi:wasmJsBrowserDistribution --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustify-web
+          path: sharedUi/build/dist/wasmJs/productionExecutable/
+          if-no-files-found: error
+
+  # One package per host, as jpackage requires. Uploaded so a build can be tried without building.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and macOS both in x86_64 and arm64: ubuntu-24.04-arm for aarch64 Linux (docs 25 §6,
+        # T2.7), macos-15-intel for the Intel Macs beside macos-latest's Apple Silicon.
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core_engine -> target/desktop
+            desktopApp/login -> ../build/login-target
+          key: desktop
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - if: runner.os == 'Linux'
+        # The sign-in window (desktopApp/login) builds against the system's webview: WebKitGTK 4.1.
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config rpm libwebkit2gtk-4.1-dev libgtk-3-dev
+      # bash on every runner: PowerShell splits `-Prustify.desktop=true` at the dot.
+      - shell: bash
+        run: ./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustify-desktop-${{ runner.os }}-${{ runner.arch }}
+          path: desktopApp/build/compose/binaries/main/
+          if-no-files-found: error
+
+  # The core as an iOS static library, the Kotlin framework linked against it, and the app itself
+  # built unsigned into an .ipa for AltStore/SideStore (docs 25 §6, T4.4) — which is also what
+  # compiles the Swift.
+  ios:
+    runs-on: macos-latest
+    # A link prints nothing while it runs, so a hang looks like progress; without this it lasts 6 hours.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core_engine -> target/ios-build/iosArm64
+            core_engine -> target/ios-build/iosSimulatorArm64
+          key: ios
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      # One link at a time: this runner has 7 GB, and the Gradle started by Xcode reads this file too.
+      - run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.workers.max=1' >> ~/.gradle/gradle.properties
+      - run: tools/ios/build-core.sh
+      # The device's link is left to the .ipa below, in Release: on this runner each one takes minutes.
+      - run: ./gradlew :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon
+      - run: brew install xcodegen
+      # The app itself, up in a simulator, with what it drew: nothing else here runs the interface.
+      - run: tools/ios/simulator-check.sh build/ios-check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: rustify-ios-simulator-check
+          path: build/ios-check
+      # The common tests again, this time compiled by Kotlin/Native and run on the simulator: the same
+      # code the iOS app runs, not the JVM's reading of it. Whatever the app did above: neither result
+      # should hide the other.
+      - run: ./gradlew :shared:iosSimulatorArm64Test :sharedUi:iosSimulatorArm64Test --no-daemon
+        if: ${{ !cancelled() }}
+      # A test task that found nothing to run is as green as one that passed: these say how many did.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: rustify-ios-test-results
+          path: '*/build/test-results/iosSimulatorArm64Test/*.xml'
+          if-no-files-found: error
+      # Unsigned: an .ipa from this is installed by AltStore/SideStore, which sign it with the user's
+      # own Apple ID. The pre-build script in project.yml builds the Kotlin framework for Release.
+      # Not when a working branch is run by hand to see the app up: it is the job's slowest step, and
+      # any Mac, Intel too, can build it.
+      - if: github.event_name != 'workflow_dispatch'
+        working-directory: iosApp
+        run: |
+          xcodebuild -project Rustify.xcodeproj -target Rustify -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Rustify.app Payload/
+          zip -qr Rustify-unsigned.ipa Payload
+          ls -l Rustify-unsigned.ipa
+      - if: github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rustify-ios-unsigned
+          path: iosApp/Rustify-unsigned.ipa
+          if-no-files-found: error

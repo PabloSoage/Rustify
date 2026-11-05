@@ -1,15 +1,18 @@
 # Rustify 🎵🦀
 
-**Rustify** is an Android music player that uses your Spotify library as the catalogue and a backend
-of your own choosing for the audio, over a native **Rust core** wired in through JNI.
+**Rustify** is a music player that uses your Spotify library as the catalogue and a backend of your
+own choosing for the audio, over a native **Rust core**. It started on Android and now runs, as the
+same app, on **Android, Windows, Linux, macOS, iOS and the web** (served by `rustify-server` from
+your own computer or NAS).
 
 It is a personal project, released as betas. Local music, YouTube Music and search work without any
 account; your own Spotify session brings in your library and Home, plus whatever the audio backend
-you pick asks for. It keeps everything it knows about you on your own device.
+you pick asks for. It keeps everything it knows about you on your own devices, and Google Drive (your
+own, private app folder) can keep them in sync.
 
-> **Current:** app `5.0.0b` · core `5.0.0` · `minSdk 29` · `targetSdk 36`
+> **Current:** app `5.6.4b` · core `5.6.4` · Android `minSdk 29` · `targetSdk 36` · iOS 16+
 >
-> The Rust core is built from the same commit as the app and carries the same version number.
+> The Rust core is built from the same commit as every app and carries the same version number.
 
 ---
 
@@ -34,9 +37,82 @@ lab's SME kernels and Gemini Nano need the real hardware.
 | <img src="assets/screenshots/nano-chat-photo.webp" width="180" alt="A photo of a cover → the album, then play it"> | <img src="assets/screenshots/nano-panel.webp" width="180" alt="Gemini Nano for the DJ"> |
 | A cover photo → the album → "play it" | Gemini Nano for the DJ |
 
+### Other platforms
+
+The same app, from the same shared interface (Compose Multiplatform), on iOS, macOS, Windows and
+Linux, and in a browser through `rustify-server`.
+
+| iOS | | |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/platforms/ios-search.webp" width="200" alt="iOS: search, playing"> | <img src="assets/screenshots/platforms/ios-dj.webp" width="200" alt="iOS: the DJ"> | <img src="assets/screenshots/platforms/ios-settings.webp" width="200" alt="iOS: settings"> |
+
+| macOS | |
+|:---:|:---:|
+| <img src="assets/screenshots/platforms/macos-home.webp" width="380" alt="macOS: Home, in Spanish"> | <img src="assets/screenshots/platforms/macos-local-music.webp" width="380" alt="macOS: local music"> |
+
+| Windows | Linux |
+|:---:|:---:|
+| <img src="assets/screenshots/platforms/windows-artist.webp" width="380" alt="Windows: an artist"> | <img src="assets/screenshots/platforms/linux-library.webp" width="380" alt="Linux: the library, playing"> |
+
+| Web (`rustify-server`) |
+|:---:|
+| <img src="assets/screenshots/platforms/web-search.webp" width="560" alt="Web: search"> |
+
+---
+
+## 📦 Installing
+
+Every release on [GitHub Releases](../../releases) carries all of these. They are betas, and the
+desktop and iOS builds are **not signed** with a paid certificate, so the system asks once.
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| **Android** 10+ | `Rustify-<version>-android-arm64-v8a.apk` (most phones), `-armeabi-v7a` (older 32-bit), `-x86_64` (emulators) | Allow installing from your browser or file manager. Updates install over the previous version, and the app can update itself. |
+| **Windows** 10/11 x64 | `-windows-x86_64.msi` or `-setup.exe`, or `-portable.zip` | SmartScreen: *More info → Run anyway*. The portable build keeps its data next to itself. |
+| **Linux** x64 / arm64 | `.deb`, `.rpm`, `.AppImage` or `-portable.tar.gz` | The Spotify sign-in window uses WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian/Ubuntu); without it, paste the cookie instead. |
+| **macOS** Apple Silicon / Intel | `-macos-arm64.dmg` / `-macos-x86_64.dmg` | Gatekeeper: right-click the app → *Open* the first time (or `xattr -dr com.apple.quarantine /Applications/Rustify.app`). |
+| **iOS** 16+ | `-ios-unsigned.ipa` | Install with [AltStore](https://altstore.io) or [SideStore](https://sidestore.io), which sign it with your own Apple ID. |
+| **Web** | `rustify-server-<version>-linux-<arch>.tar.gz` (x86_64, aarch64, armv7) | See below. |
+
+### The web interface (`rustify-server`)
+
+`rustify-server` is the core behind an HTTP API, with the same app as a web page in front of it: for
+a NAS, a home server, or any computer you want to reach from the browser of another device.
+
+```bash
+rustify-server                                   # http://127.0.0.1:8484, this machine only
+rustify-server --bind 0.0.0.0:8484 --music-dir /srv/music --download-dir /srv/downloads
+```
+
+- **No token to copy.** On the machine the server runs on, the page opens as it is. From any other
+  device, the first visit from your home network creates an account (a name and a password); after
+  that each browser asks once and remembers it for a year.
+- **Spotify in one click** when the server has a screen: it opens Spotify's own sign-in window, as
+  the desktop app does. On a server without one, send the session from the phone or desktop app
+  (*Settings → Integrations → Your Rustify server*) or paste the `sp_dc` cookie.
+- **Google Drive** sync works in the browser too, with the same sign-in as the desktop.
+- Beyond your own network, put it behind HTTPS (`--secure-cookies`). `server/rustify-server.service`
+  is a systemd unit, and `server/Dockerfile` builds an image.
+
 ---
 
 ## ✨ Key Features
+
+### 🖥️ One App, Six Platforms
+- **The same app everywhere** — One interface, written once in Compose Multiplatform (`:sharedUi`),
+  draws the phone, the tablet-style desktop window, the iPhone and the web page; one Rust core
+  answers all of them. A feature a platform cannot have says so instead of vanishing.
+- **Desktop** — The core's own audio engine (Symphonia + cpal) with the phone's effects, Spotify's
+  sign-in in the system's own webview, local music, downloads, a tray icon, `rustify://` links, the
+  DJ with voice, and a **local model** for the DJ, chat and translation (Ollama, LM Studio,
+  llama-server, or its own with CUDA, Vulkan or Metal).
+- **iOS** — Background audio, the lock screen and Control Center, the session in the Keychain, and
+  folders you pick kept across launches.
+- **Web** — The whole app in the browser from your own `rustify-server`: playback, video, lyrics,
+  Jam, downloads to the server's folder, and Google Drive sync.
+- **Sync between them** — Google Drive keeps your playlists, favourites, matches, history and
+  *pick up where you left off* the same on every device. A device that was offline for days merges
+  in; nothing is overwritten.
 
 ### 🎧 Playback & Audio
 - **Spotify to audio** — Your liked tracks, playlists and albums come from Spotify; the Rust resolver
@@ -157,8 +233,9 @@ lab's SME kernels and Gemini Nano need the real hardware.
   restore it here or on another phone. **It never contains a password or a session** — there is a
   list of what is deliberately left out, and a test that checks the file does not carry it.
 - **Google Drive backup/sync** — Bidirectional sync of matches, local playlists/favourites, the YTM
-  library and metrics through the private `appDataFolder`. Merge is set-union + last-write-wins +
-  metrics dedupe.
+  library, metrics and *pick up where you left off*, through the private `appDataFolder`, on every
+  platform. Merge is set-union + last-write-wins by date + metrics dedupe; removing a place leaves a
+  dated tombstone so it does not come back from another device.
 - **Local playlists** — Create, rename and manage playlists of local and YTM tracks, with mosaic
   covers from the first tracks.
 - **State persistence** — Versioned schema with migrations, atomic temp-and-rename writes, debounced
@@ -177,7 +254,8 @@ lab's SME kernels and Gemini Nano need the real hardware.
 
 ### 🔄 Updates
 - **In-app updater** — Checks GitHub Releases on demand or at startup, shows the changelog for every
-  version you missed, downloads the build matching your device, and lets you pick the installer.
+  version you missed, downloads the build matching your device (the APK for your ABI, or the desktop
+  package for your system and architecture), and lets you pick the installer.
 
 ### 📱 Outside the App
 - **Home-screen widget, Quick Settings tile and launcher shortcuts.**
@@ -201,9 +279,10 @@ lab's SME kernels and Gemini Nano need the real hardware.
   each: on a Snapdragon 8 Elite Gen 5, SME computes the key's matrix product 9× faster than NEON.
 - **In-app log capture** — Real-time `logcat` with colour-coded levels, tag/level filtering,
   autoscroll and export. Persisted to `filesDir`, so it survives a crash.
-- **Tests** — 310 in the Rust engine (301 unit, 9 end-to-end; clippy-clean and enforced in CI) and 110
-  in Kotlin, run by
-  `scripts/test.ps1` and measured by `scripts/coverage.ps1`.
+- **Tests** — About 470 in the Rust engine (unit and end-to-end; clippy-clean and enforced in CI), 20
+  in `rustify-server`, and about 475 in Kotlin across the app, the shared code and the shared
+  interface — the common ones run on the JVM and on iOS too. `scripts/test.ps1` runs the engine and
+  the app; CI runs every platform's.
 - **Baseline profiles** — Faster startup via Jetpack ProfileInstaller.
 - **Internationalization** — English, Spanish and Japanese.
 
@@ -214,11 +293,20 @@ lab's SME kernels and Gemini Nano need the real hardware.
 Rustify is a Kotlin app over a Rust engine, and the split is deliberate: everything that is a
 *decision* — what a link means, which audio matches which track, what "previous" does, whether a
 failure is worth retrying — lives in the core, in one place, testable without a phone. Kotlin keeps
-what is genuinely Android.
+what is genuinely each platform's.
 
-The 3.x series exists to make that true. The engine no longer assumes it is running on Android, which
-is what a Windows or iOS port would need, and it is the reason the engine went from four tests to
-257.
+The 3.x series made the engine stop assuming it runs on Android; the 5.x series used that to bring
+the same app to Windows, Linux, macOS, iOS and the web:
+
+| Piece | What it is |
+| --- | --- |
+| `core_engine/` | The Rust core. JNI for Android and the desktop; a C ABI (`include/rustify.h`, one JSON dispatcher) for iOS and the server, answering exactly what the JNI bridge answers. |
+| `shared/` | Kotlin Multiplatform: models, the bridge to the core (`NativeEngine`, an `expect object`), the queue player for the platforms that use the core's audio engine. |
+| `sharedUi/` | Compose Multiplatform: the screens and `RustifyApp`, the root every platform draws. What only one platform can do goes behind four seams — `PlayerController`, `AppPlatform`, `AppServices`, `AppShell`. |
+| `app/` | Android: Media3, Android Auto, widgets, the DSP offload, Gemini Nano. |
+| `desktopApp/` | Windows, Linux and macOS: a JVM app with jpackage installers, and `login/`, the Spotify sign-in window over the system webview (wry + tao). |
+| `iosApp/` | The iOS host (XcodeGen), embedding the shared interface as a framework. |
+| `server/` | `rustify-server`: the core behind an HTTP API (axum), the web build of `sharedUi` (Kotlin/Wasm) as static files, and the sessions in front of both. |
 
 ### 1. The Core Engine (Rust 🦀)
 
@@ -243,6 +331,8 @@ is what a Windows or iOS port would need, and it is the reason the engine went f
 | `errors.rs` | What kind of failure it was: `auth`, `rateLimited`, `transient`, `permanent`. |
 | `adblock_engine.rs` | Brave's adblock-rust, parsing EasyList / uBO syntax for the in-app web player. |
 | `lib.rs` | The JNI bridge — every Rust capability exposed to Kotlin over a JSON contract. |
+| `ffi.rs` | The same capabilities over a C ABI, for iOS and `rustify-server`. |
+| `engine/` | The audio engine for the platforms without Media3: decoding (Symphonia), output (cpal), and the effects. |
 
 Five things the core is built on, each of them the answer to a bug that shipped:
 
@@ -276,7 +366,7 @@ Five things the core is built on, each of them the answer to a bug that shipped:
 - **Google Drive sync** — Browser-based OAuth (PKCE, AppAuth) with the `drive.appdata` scope, over
   OkHttp and REST v3.
 
-### 3. Casting, and the one open door
+### 3. Casting, and the doors that are opened on purpose
 
 Casting is the only feature that binds anything to a real network interface, and four independent
 things hold it together: nothing is open until a cast session starts; the bind is to **one interface
@@ -287,6 +377,11 @@ it closes on stop, on failure, and when the switch goes off.
 Two honest limits: the phone is the source, so if it sleeps or leaves the wifi the music stops — this
 is not Spotify Connect — and networks that isolate clients from one another (hotels, cafés) make it
 impossible.
+
+`rustify-server` is the second door, and exists to be reached: loopback by default, a session in
+front of everything, and every core method that takes a path or opens a port refused from the
+browser. A page opened at the server's own machine needs nothing (the connection, the `Host` and the
+browser all have to say so); anything else needs the account.
 
 ### 4. What deliberately stays in Kotlin
 
@@ -301,32 +396,70 @@ with no problem.
 ## 🛠️ Building the Project
 
 ### Prerequisites
-- **Android Studio** (Koala or newer recommended).
-- **Android NDK** — required to compile the JNI bindings.
-- **Rust toolchain** via `rustup`:
+- **JDK 21** and the **Rust toolchain** (`rustup`), for everything.
+- **Android**: Android Studio (or the SDK), the **NDK**, and `cargo-ndk`:
   ```bash
   rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-  ```
-- **cargo-ndk**:
-  ```bash
   cargo install cargo-ndk
   ```
+- **Linux desktop**: `libasound2-dev libdbus-1-dev pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev`
+  (and `rpm` to make the `.rpm`).
+- **iOS**: a Mac with Xcode, `brew install xcodegen`, and the iOS Rust targets
+  (`aarch64-apple-ios`, `aarch64-apple-ios-sim`).
 
-### Compilation
-`build.gradle.kts` invokes `cargo-ndk` to compile the Rust core before packaging the APK.
+The desktop and the web are opt-in Gradle properties, so an Android build never configures them. In
+PowerShell, quote them (`"-Prustify.desktop=true"`).
+
+### Android
+`build.gradle.kts` invokes `cargo-ndk` to compile the Rust core before packaging the APKs (one per
+ABI).
 
 ```bash
-./gradlew assembleDebug     # debug
-./gradlew assembleRelease   # release
+./gradlew assembleDebug        # debug
+./gradlew assembleBenchmark    # release build (R8) under the debug key, installs beside the real app
+./gradlew assembleRelease      # release
+```
+
+Google Drive needs an OAuth client of your own: `drive_appauth_client_id` and
+`drive_appauth_client_secret` in `local.properties` (or `DRIVE_APPAUTH_CLIENT_ID` /
+`DRIVE_APPAUTH_CLIENT_SECRET` in the environment). Without them, the build simply has no Drive.
+
+### Windows, Linux, macOS
+
+```bash
+./gradlew -Prustify.desktop=true :desktopApp:run                              # run it
+./gradlew -Prustify.desktop=true :desktopApp:packageDistributionForCurrentOS  # .msi/.exe, .deb/.rpm/AppImage or .dmg
+```
+
+The build compiles the core (`desktop-audio`) and the sign-in window for the host it runs on;
+jpackage cannot cross-build, so each format is made on its own system.
+
+### iOS
+
+```bash
+tools/ios/build-core.sh     # the core as a static library, once per core change
+cd iosApp && xcodegen generate && open Rustify.xcodeproj
+```
+
+Xcode builds the Kotlin side itself (the shared interface as a framework) in a pre-build step.
+
+### Web and `rustify-server`
+
+```bash
+./gradlew -Prustify.web=true :sharedUi:wasmJsBrowserDistribution
+cd server && cargo build --release
+RUSTIFY_WEB_ROOT=../sharedUi/build/dist/wasmJs/productionExecutable target/release/rustify-server
 ```
 
 ### Tests
 
 ```powershell
-pwsh scripts/test.ps1              # both suites
+pwsh scripts/test.ps1              # engine and app
 pwsh scripts/test.ps1 -Rust        # engine only
 pwsh scripts/test.ps1 -Kotlin      # app only
 pwsh scripts/coverage.ps1          # engine coverage
+./gradlew "-Prustify.desktop=true" :sharedUi:desktopTest   # shared interface, against the real core
+cd server; cargo test              # rustify-server
 ```
 
 Worth knowing: `assembleRelease` does not build the test sources, and the Gradle build never invokes
@@ -355,14 +488,23 @@ adb install-multiple app/build/outputs/apk/release/app-x86_64-release.apk app/bu
 
 ## 🤝 Contributing
 
-Contributions are welcome — open an Issue or a Pull Request. Two things worth knowing before you
+Contributions are welcome — open an Issue or a Pull Request. A few things worth knowing before you
 start:
 
-- Changes to the Rust core must compile for `aarch64`, `armv7` and `x86_64`, and both suites should pass
-  (`pwsh scripts/test.ps1`).
-- Several contracts are deliberately stated in two languages — track ids, error kinds, the Deezer
-  stripe scheme — and each is pinned by tests covering the same cases on both sides. If you change
-  one half, change the test on the other.
+- Changes to the Rust core must compile for Android's three ABIs and the desktop, and the suites
+  should pass (`pwsh scripts/test.ps1`, plus `:sharedUi:desktopTest` for the shared interface).
+  CI builds and tests every platform, iOS included; `cargo clippy -- -D warnings` is enforced.
+- **A screen is written once**, in `sharedUi/`. Nothing Android, JVM or `org.json` in `commonMain`;
+  what only one platform can do goes behind one of the four seams, and a platform that lacks a
+  feature says so (`can(...)`) rather than showing a button that does nothing.
+- **A new core capability is four places**: the JNI function, its `ffi::dispatch` arm (with
+  `METHODS` and `rustify.h`), the `expect` member in `NativeEngine`, and its C-ABI `actual`. A method
+  that takes a path must also be refused from the browser in `server/` (`core::vet`).
+- Several contracts are deliberately stated in two languages — track ids, error kinds, the wire
+  models, the Deezer stripe scheme — and each is pinned by tests covering the same cases on both
+  sides. If you change one half, change the test on the other.
+- Strings live in `composeResources` for English, Spanish and Japanese; placeholders are positional
+  (`%1$s`).
 
 ---
 

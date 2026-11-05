@@ -17,6 +17,16 @@ pub mod addon;
 pub mod audio;
 pub mod autoeq;
 pub mod dsp;
+#[cfg(feature = "engine")]
+pub mod engine;
+#[cfg(feature = "c-api")]
+pub mod ffi;
+#[cfg(feature = "media-controls")]
+pub mod media_controls;
+#[cfg(feature = "window-style")]
+pub mod window_style;
+#[cfg(feature = "secure-store")]
+pub mod secrets;
 pub mod tempo;
 pub mod tonal;
 pub mod calendar;
@@ -294,6 +304,51 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readEmbeddedL
     })
 }
 
+/// JNI Bridge: the tags and duration of a local file, for the desktop's local scan. Answers a
+/// `LocalTags`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readTagsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::tags::read(&path))
+    })
+}
+
+/// JNI Bridge: the embedded cover of a local file as `{"mimeType":…,"data":<base64>}`, or `null`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_readCoverNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(audio::tags::read_cover(&path))
+    })
+}
+
+/// JNI Bridge: writes a `TagsToWrite` (JSON) into the file at `path`, for a download.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_writeTagsNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    tags_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        let raw = tags_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<audio::tags::TagsToWrite>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(tags) => serialize_result(audio::tags::write(&path, &tags).map(|_| ok_result())),
+        }
+    })
+}
+
 /// JNI Bridge: queue one listen for ListenBrainz and send the queue. Answers a `scrobble::Report`.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_listenBrainzSubmitNative<'local>(
@@ -535,6 +590,32 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_tempoOfNative
     })
 }
 
+/// JNI Bridge: the tempo of an audio file or stream at `path`, as a JSON `tempo::Estimate`, or `null`.
+#[cfg(feature = "engine")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_bpmAnalyzeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path = path.mutf8_chars(env)?.to_string();
+        serialize_result(engine::bpm::analyze::<env::android::AndroidEnv>(&path))
+    })
+}
+
+#[cfg(not(feature = "engine"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_bpmAnalyzeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _path: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serialize_result::<Option<tempo::Estimate>, String>(Err("BPM analysis requires engine feature".into()))
+    })
+}
+
 /// JNI Bridge: check a Subsonic server and its credentials; answers its name and version.
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_subsonicPingNative<'local>(
@@ -710,6 +791,56 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_forgetTrackPl
             success: true,
             error: None,
         }))
+    })
+}
+
+/// JNI Bridge: this device's places — contexts and long tracks, with their removals — as they
+/// travel in the backup (`player::places`).
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesExportNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let block = get_runtime().block_on(player::places::export::<env::android::AndroidEnv>());
+        serde_json::to_string(&block).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+/// JNI Bridge: two backups' places as one, newest per place. A block that does not parse is none.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesMergeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    a: JString<'local>,
+    b: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let a = a.mutf8_chars(env)?.to_string();
+        let b = b.mutf8_chars(env)?.to_string();
+        let merged = player::places::merge(
+            serde_json::from_str(&a).unwrap_or_default(),
+            serde_json::from_str(&b).unwrap_or_default(),
+        );
+        serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_string())
+    })
+}
+
+/// JNI Bridge: takes in a backup's places, in this device's ids; answers what it did.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_placesApplyNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    block: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let block = block.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<player::places::Block>(&block) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(block) => serialize_result(
+                get_runtime().block_on(player::places::apply::<env::android::AndroidEnv>(block)),
+            ),
+        }
     })
 }
 
@@ -1088,91 +1219,94 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocal
         let raw = request_json.mutf8_chars(env)?.to_string();
         match serde_json::from_str::<RegisterStreamRequest>(&raw) {
             Err(_) => r#"{"status":"refused","reason":"bad request"}"#.to_string(),
-            Ok(request) if request.mode == "proxy" => {
-                let answer = match server::register_proxy::<env::android::AndroidEnv>(
-                    &request.upstream_url,
-                    &request.deezer_sng_id,
-                    if request.mime.is_empty() {
-                        None
-                    } else {
-                        Some(request.mime)
-                    },
-                    if request.ttl_ms > 0 {
-                        Some(request.ttl_ms)
-                    } else {
-                        None
-                    },
-                    // Where a copy lands as it plays. Absent when the user has storing off, which
-                    // is the same switch that governs everything else the server does.
-                    if request.cache_root.is_empty() || request.cache_key.is_empty() {
-                        None
-                    } else {
-                        Some((request.cache_root.as_str(), request.cache_key.as_str()))
-                    },
-                ) {
-                    Some(url) => RegisterStreamAnswer {
-                        status: "ready",
-                        url: Some(url),
-                        reason: None,
-                    },
-                    // The server is not up, or the request was not something to proxy. Either way
-                    // the caller falls back to playing it the way it did before.
-                    None => RegisterStreamAnswer {
-                        status: "notCached",
-                        url: None,
-                        reason: None,
-                    },
-                };
-                serde_json::to_string(&answer)
-                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
-            }
-            Ok(request) => {
-                let cache_root = request.cache_root;
-                let registration = server::Registration {
-                    upstream_url: request.upstream_url,
-                    cache_key: request.cache_key,
-                    mime: if request.mime.is_empty() {
-                        None
-                    } else {
-                        Some(request.mime)
-                    },
-                    deezer_sng_id: if request.deezer_sng_id.is_empty() {
-                        None
-                    } else {
-                        Some(request.deezer_sng_id)
-                    },
-                    ttl_ms: if request.ttl_ms > 0 {
-                        Some(request.ttl_ms)
-                    } else {
-                        None
-                    },
-                };
-
-                let answer =
-                    match server::register::<env::android::AndroidEnv>(registration, &cache_root) {
-                        server::Registered::Ready(url) => RegisterStreamAnswer {
-                            status: "ready",
-                            url: Some(url),
-                            reason: None,
-                        },
-                        server::Registered::NotCached => RegisterStreamAnswer {
-                            status: "notCached",
-                            url: None,
-                            reason: None,
-                        },
-                        server::Registered::Refused(reason) => RegisterStreamAnswer {
-                            status: "refused",
-                            url: None,
-                            reason: Some(reason),
-                        },
-                    };
-                // The fallback is `notCached` and not an error object: whatever went wrong here,
-                // the caller's correct move is to play the upstream URL.
-                serde_json::to_string(&answer)
-                    .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
-            }
+            Ok(request) => register_local_stream(request),
         }
     })
+}
+
+/// The answer to a request that parsed, for `registerLocalStreamNative` and the C ABI's
+/// `registerLocalStream` alike.
+fn register_local_stream(request: RegisterStreamRequest) -> String {
+    if request.mode == "proxy" {
+        let answer = match server::register_proxy::<env::android::AndroidEnv>(
+            &request.upstream_url,
+            &request.deezer_sng_id,
+            if request.mime.is_empty() {
+                None
+            } else {
+                Some(request.mime)
+            },
+            if request.ttl_ms > 0 {
+                Some(request.ttl_ms)
+            } else {
+                None
+            },
+            // Where a copy lands as it plays. Absent when the user has storing off, which is the
+            // same switch that governs everything else the server does.
+            if request.cache_root.is_empty() || request.cache_key.is_empty() {
+                None
+            } else {
+                Some((request.cache_root.as_str(), request.cache_key.as_str()))
+            },
+        ) {
+            Some(url) => RegisterStreamAnswer {
+                status: "ready",
+                url: Some(url),
+                reason: None,
+            },
+            // The server is not up, or the request was not something to proxy. Either way the
+            // caller falls back to playing it the way it did before.
+            None => RegisterStreamAnswer {
+                status: "notCached",
+                url: None,
+                reason: None,
+            },
+        };
+        return serde_json::to_string(&answer)
+            .unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string());
+    }
+
+    let cache_root = request.cache_root;
+    let registration = server::Registration {
+        upstream_url: request.upstream_url,
+        cache_key: request.cache_key,
+        mime: if request.mime.is_empty() {
+            None
+        } else {
+            Some(request.mime)
+        },
+        deezer_sng_id: if request.deezer_sng_id.is_empty() {
+            None
+        } else {
+            Some(request.deezer_sng_id)
+        },
+        ttl_ms: if request.ttl_ms > 0 {
+            Some(request.ttl_ms)
+        } else {
+            None
+        },
+    };
+
+    let answer = match server::register::<env::android::AndroidEnv>(registration, &cache_root) {
+        server::Registered::Ready(url) => RegisterStreamAnswer {
+            status: "ready",
+            url: Some(url),
+            reason: None,
+        },
+        server::Registered::NotCached => RegisterStreamAnswer {
+            status: "notCached",
+            url: None,
+            reason: None,
+        },
+        server::Registered::Refused(reason) => RegisterStreamAnswer {
+            status: "refused",
+            url: None,
+            reason: Some(reason),
+        },
+    };
+    // The fallback is `notCached` and not an error object: whatever went wrong here, the caller's
+    // correct move is to play the upstream URL.
+    serde_json::to_string(&answer).unwrap_or_else(|_| r#"{"status":"notCached"}"#.to_string())
 }
 
 /// JNI Bridge: how many bytes the stream cache is using. For the Settings screen.
@@ -1252,6 +1386,19 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_getAlternativ
         let s_id = mutf8.to_string();
 
         youtube::server::get_alternative_track(&s_id).unwrap_or_default()
+    })
+}
+
+/// JNI Bridge: a YouTube video with its sound, for the desktop's player. See `youtube::innertube`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_resolveInnertubeVideoNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    video_id: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let video = video_id.mutf8_chars(env)?.to_string();
+        serialize_result(get_runtime().block_on(youtube::innertube::resolve_video::<env::android::AndroidEnv>(&video)))
     })
 }
 
@@ -2209,22 +2356,28 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_warmupSpotify
     _class: JClass<'local>,
 ) {
     let _ = jni_bridge!(env_unowned, |env| {
-        get_runtime().spawn(async {
-            <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup started...");
-            // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
-            // type parameter, so nothing has to be cloned out of the lock to make the call.
-            match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
-                Ok(new_hashes) => {
-                    let client = spotify::client::get_spotify_client();
-                    client.update_gql_hashes(new_hashes);
-                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup completed successfully.");
-                }
-                Err(e) => {
-                    <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));
-                }
-            }
-        });
+        warmup_spotify_hashes();
         "".to_string()
+    });
+}
+
+/// Starts the GQL hash scrape on the runtime and returns at once. `warmupSpotifyHashesNative` and
+/// the C ABI's `warmupSpotifyHashes`.
+fn warmup_spotify_hashes() {
+    get_runtime().spawn(async {
+        <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup started...");
+        // No longer borrows the client's HTTP handle first: the scraper takes the platform as a
+        // type parameter, so nothing has to be cloned out of the lock to make the call.
+        match spotify::client::scrape_gql_hashes::<env::android::AndroidEnv>().await {
+            Ok(new_hashes) => {
+                let client = spotify::client::get_spotify_client();
+                client.update_gql_hashes(new_hashes);
+                <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", "Background hash warmup completed successfully.");
+            }
+            Err(e) => {
+                <env::android::AndroidEnv as env::Env>::log(env::LogLevel::Info, "Spotify", &format!("Background hash warmup failed: {}", e));
+            }
+        }
     });
 }
 
@@ -2783,6 +2936,27 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_closeCastList
 /// Pure and in-memory.
 ///
 /// @return `{"url":"http://192.168.1.34:41234/stream/<handle>?t=<token>"}` or `{}`
+/// JNI Bridge: registers an existing local file so the local streaming server can serve it.
+///
+/// Returns `{"handle":"<hex>"}` or `{"handle":null}`.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_registerLocalFileNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    mime: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let path_str = path.mutf8_chars(env)?.to_string();
+        let mime_str = mime.mutf8_chars(env)?.to_string();
+        let mime_opt = if mime_str.is_empty() { None } else { Some(mime_str) };
+        match server::register_file::<env::android::AndroidEnv>(&path_str, mime_opt) {
+            Some(handle) => serde_json::json!({ "handle": handle }).to_string(),
+            None => serde_json::json!({ "handle": null }).to_string(),
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_castUrlForNative<'local>(
     mut env_unowned: EnvUnowned<'local>,
@@ -2968,7 +3142,7 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspBenchNativ
 }
 
 /// The lab's key and mel analysis, kept between calls (one lab screen at a time).
-static TONAL: std::sync::Mutex<Option<tonal::Tonal>> = std::sync::Mutex::new(None);
+pub(crate) static TONAL: std::sync::Mutex<Option<tonal::Tonal>> = std::sync::Mutex::new(None);
 
 /// JNI Bridge: push one frame into the key and mel analysis. Answers `[columns, key, r, chroma×12,
 /// columns×52 mel dB]`: `columns` is 0, or 16 when this frame completed a batch (one matrix product);
@@ -3034,4 +3208,360 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_dspMatBenchNa
             .collect();
         serde_json::Value::Array(rows).to_string()
     })
+}
+
+
+// =============================================================================
+// DESKTOP AUDIO ENGINE (docs `24` §2) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.engine.RustAudioEngine` in the shared module's desktop source set. Same JSON
+// contract as every other bridge: commands in as `engine::Command`, events out as `engine::Event`.
+// Nothing here blocks on the network: `send` queues, and the player thread does the work.
+
+#[cfg(feature = "desktop-audio")]
+static AUDIO_ENGINE: std::sync::Mutex<Option<std::sync::Arc<engine::Engine>>> =
+    std::sync::Mutex::new(None);
+
+/// The running engine, without holding the slot's lock — `poll` waits, and a command sent meanwhile
+/// must not wait behind it.
+#[cfg(feature = "desktop-audio")]
+fn audio_engine() -> Option<std::sync::Arc<engine::Engine>> {
+    AUDIO_ENGINE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// JNI Bridge: opens the engine over the default output device. Idempotent.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_startNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let mut slot = AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        let started = if slot.is_some() {
+            Ok(())
+        } else {
+            engine::Engine::start::<env::android::AndroidEnv>(Box::new(
+                engine::output::CpalOutput::new(),
+            ))
+            .map(|started| *slot = Some(std::sync::Arc::new(started)))
+        };
+        serialize_result(started.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: queues one `engine::Command` (JSON). Answers at once.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_sendNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    command_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = command_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<engine::Command>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(command) => match audio_engine() {
+                Some(engine) if engine.send(command) => {
+                    serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }))
+                }
+                _ => serialize_result::<(), _>(Err("the audio engine is not running".to_string())),
+            },
+        }
+    })
+}
+
+/// JNI Bridge: the next `engine::Event` as JSON, or `null` after `timeout_ms` with none. Blocks for
+/// up to that long — an IO thread's call, never the UI's.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_pollNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    timeout_ms: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let timeout = std::time::Duration::from_millis(timeout_ms.max(0) as u64);
+        match audio_engine().and_then(|engine| engine.poll(timeout)) {
+            Some(event) => serde_json::to_string(&event).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: the name of the output the engine plays through, as a JSON string, or `null`.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_outputDeviceNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        serde_json::to_string(&engine::output::default_device_name())
+            .unwrap_or_else(|_| "null".to_string())
+    })
+}
+
+/// JNI Bridge: stops the engine and releases the device.
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_RustAudioEngine_stopNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let taken = AUDIO_ENGINE.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(taken);
+        serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: latest mono audio samples (`{"sampleRate":44100,"samples":[...]}`).
+#[cfg(feature = "desktop-audio")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_engineTapNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    n: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let (sample_rate, samples) = engine::output::engine_tap((n.max(0)) as usize);
+        serde_json::to_string(&serde_json::json!({
+            "sampleRate": sample_rate,
+            "samples": samples,
+        }))
+        .unwrap_or_else(|_| "{\"sampleRate\":0,\"samples\":[]}".to_string())
+    })
+}
+
+#[cfg(not(feature = "desktop-audio"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_engineTapNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _n: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        "{\"sampleRate\":0,\"samples\":[]}".to_string()
+    })
+}
+
+#[cfg(feature = "engine")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_decodeToWavNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    src: JString<'local>,
+    dst: JString<'local>,
+) -> jboolean {
+    let mut ok = false;
+    let _ = env_unowned.with_env(|env| -> jni::errors::Result<()> {
+        let src_s = src.mutf8_chars(env)?.to_string();
+        let dst_s = dst.mutf8_chars(env)?.to_string();
+        ok = engine::decode::decode_to_wav::<env::android::AndroidEnv>(&src_s, &dst_s).is_ok();
+        Ok(())
+    });
+    if ok { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(not(feature = "engine"))]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_decodeToWavNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    _src: JString<'local>,
+    _dst: JString<'local>,
+) -> jboolean {
+    JNI_FALSE
+}
+
+
+// =============================================================================
+// SYSTEM MEDIA CONTROLS (docs `25` T2.2) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.engine.SystemMediaControls`. Updates in as `media_controls::Update`, the
+// system's requests out as `media_controls::Request`, polled like the engine's events.
+
+#[cfg(feature = "media-controls")]
+static MEDIA_CONTROLS: std::sync::Mutex<Option<std::sync::Arc<media_controls::Controls>>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(feature = "media-controls")]
+fn media_controls() -> Option<std::sync::Arc<media_controls::Controls>> {
+    MEDIA_CONTROLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// JNI Bridge: registers with the system's media controls. `hwnd` is the window handle on Windows
+/// (0 elsewhere). Idempotent.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_startNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    display_name: JString<'local>,
+    hwnd: jlong,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let name = display_name.mutf8_chars(env)?.to_string();
+        let mut slot = MEDIA_CONTROLS.lock().unwrap_or_else(|e| e.into_inner());
+        let started = if slot.is_some() {
+            Ok(())
+        } else {
+            let handle = if hwnd != 0 { Some(hwnd as usize) } else { None };
+            media_controls::Controls::start(&name, handle)
+                .map(|controls| *slot = Some(std::sync::Arc::new(controls)))
+        };
+        serialize_result(started.map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: one `media_controls::Update` (JSON). Queues it and answers at once.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_updateNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    update_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let raw = update_json.mutf8_chars(env)?.to_string();
+        match serde_json::from_str::<media_controls::Update>(&raw) {
+            Err(e) => serialize_result::<(), _>(Err(e)),
+            Ok(update) => match media_controls() {
+                Some(controls) if controls.update(update) => {
+                    serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+                        success: true,
+                        error: None,
+                    }))
+                }
+                _ => serialize_result::<(), _>(Err("media controls are not running".to_string())),
+            },
+        }
+    })
+}
+
+/// JNI Bridge: the next `media_controls::Request` as JSON, or `null` after `timeout_ms`.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_pollNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    timeout_ms: jint,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let timeout = std::time::Duration::from_millis(timeout_ms.max(0) as u64);
+        match media_controls().and_then(|controls| controls.poll(timeout)) {
+            Some(request) => serde_json::to_string(&request).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        }
+    })
+}
+
+/// JNI Bridge: unregisters from the system's media controls.
+#[cfg(feature = "media-controls")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_SystemMediaControls_stopNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |_env| {
+        let taken = MEDIA_CONTROLS.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(taken);
+        serialize_result::<_, String>(Ok(spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+
+// =============================================================================
+// SECRETS (docs `25` T2.3) — the desktop JVM app only
+// =============================================================================
+//
+// `com.varuna.rustify.platform.SecretStore`. Each answers the usual JSON: the value as a JSON string
+// (or `null`), or `{"success":false,…}` when there is no credential store to use.
+
+/// JNI Bridge: the secret under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_getNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::get(&key))
+    })
+}
+
+/// JNI Bridge: stores `value` under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_setNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+    value: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        let value = value.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::set(&key, &value).map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+/// JNI Bridge: removes the secret under `key`.
+#[cfg(feature = "secure-store")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_platform_SecretStore_removeNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let key = key.mutf8_chars(env)?.to_string();
+        serialize_result(secrets::remove(&key).map(|_| spotify::models::OperationResult {
+            success: true,
+            error: None,
+        }))
+    })
+}
+
+
+/// JNI Bridge: paints the desktop window's frame in the app's colours (a dark title bar on
+/// Windows; nothing elsewhere). `hwnd` is the window's native handle. Answers whether it took.
+#[cfg(feature = "window-style")]
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_engine_WindowStyle_darkFrameNative<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    hwnd: jlong,
+) -> jni::sys::jboolean {
+    window_style::dark_frame(hwnd as isize)
 }

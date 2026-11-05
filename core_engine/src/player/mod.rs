@@ -22,6 +22,7 @@
 // is the only part Windows and iOS would agree on anyway.
 
 pub mod bookmark;
+pub mod places;
 pub mod session;
 
 use serde::{Deserialize, Serialize};

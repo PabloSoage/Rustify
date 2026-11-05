@@ -37,7 +37,16 @@ pub enum Kernel {
 impl Kernel {
     pub fn name(self) -> &'static str {
         match self {
-            Kernel::Baseline => "armv8.0 NEON (compiler)",
+            Kernel::Baseline => {
+                #[cfg(any(rustify_arm_kernels, target_arch = "aarch64"))]
+                {
+                    "armv8.0 NEON (compiler)"
+                }
+                #[cfg(not(any(rustify_arm_kernels, target_arch = "aarch64")))]
+                {
+                    "Scalar (compiler)"
+                }
+            }
             Kernel::V82 => "armv8.2 (compiler)",
             Kernel::Sve2 => "armv9 SVE2 (compiler)",
             Kernel::NeonHand => "armv8.0 NEON (hand)",
@@ -61,7 +70,7 @@ impl Kernel {
     pub fn available() -> Vec<Kernel> {
         #[allow(unused_mut)] // pushed to on aarch64 only
         let mut v = vec![Kernel::Baseline];
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         {
             v.push(Kernel::NeonHand);
             if std::arch::is_aarch64_feature_detected!("fp16")
@@ -89,7 +98,7 @@ impl Kernel {
 }
 
 /// SME, read from the kernel's HWCAP2 bits: `is_aarch64_feature_detected!("sme")` is not stable yet.
-#[cfg(target_arch = "aarch64")]
+#[cfg(rustify_arm_kernels)]
 pub(crate) fn has_sme() -> bool {
     extern "C" {
         fn getauxval(kind: std::os::raw::c_ulong) -> std::os::raw::c_ulong;
@@ -100,7 +109,7 @@ pub(crate) fn has_sme() -> bool {
     unsafe { getauxval(AT_HWCAP2) & HWCAP2_SME != 0 }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(rustify_arm_kernels)]
 extern "C" {
     fn rf_fft_neon(re: *mut f32, im: *mut f32, n: usize, twr: *const f32, twi: *const f32);
     fn rf_fft_sve2(re: *mut f32, im: *mut f32, n: usize, twr: *const f32, twi: *const f32);
@@ -113,7 +122,7 @@ extern "C" {
 pub fn cpu_features() -> Vec<&'static str> {
     #[allow(unused_mut)]
     let mut out = Vec::new();
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(rustify_arm_kernels)]
     {
         macro_rules! probe {
             ($($f:tt),*) => { $( if std::arch::is_aarch64_feature_detected!($f) { out.push($f); } )* };
@@ -128,7 +137,7 @@ pub fn cpu_features() -> Vec<&'static str> {
 
 /// Vector lengths in bits: SVE's and the SME unit's (streaming), when the CPU has them.
 pub fn vector_lengths() -> (Option<usize>, Option<usize>) {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(rustify_arm_kernels)]
     {
         let sve = std::arch::is_aarch64_feature_detected!("sve")
             // SAFETY: only called when the CPU has SVE.
@@ -137,7 +146,7 @@ pub fn vector_lengths() -> (Option<usize>, Option<usize>) {
         let sme = has_sme().then(|| unsafe { rf_sme_svl_bytes() } * 8);
         (sve, sme)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(rustify_arm_kernels))]
     (None, None)
 }
 
@@ -160,32 +169,32 @@ pub fn analyse(kernel: Kernel, samples: &[f32], sample_rate: u32, bands: usize) 
 /// Runs the FFT stages with `kernel` over data already windowed and in bit-reversed order.
 fn run_fft(kernel: Kernel, re: &mut [f32], im: &mut [f32], t: &Tables) {
     match kernel {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: `analyse` only lets through kernels `available()` saw the features for.
         Kernel::V82 => unsafe { fft_v82(re, im, &t.twr, &t.twi) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above.
         Kernel::Sve2 => unsafe { fft_sve2(re, im, &t.twr, &t.twi) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: the C kernels read and write exactly `n` floats of each array and `n - 1` twiddles.
         Kernel::NeonHand => unsafe { rf_fft_neon(re.as_mut_ptr(), im.as_mut_ptr(), re.len(), t.twr.as_ptr(), t.twi.as_ptr()) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above, and the CPU has SVE2.
         Kernel::Sve2Hand => unsafe { rf_fft_sve2(re.as_mut_ptr(), im.as_mut_ptr(), re.len(), t.twr.as_ptr(), t.twi.as_ptr()) },
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(rustify_arm_kernels)]
         // SAFETY: as above, and the CPU has SME.
         Kernel::Ssve => unsafe { rf_fft_ssve(re.as_mut_ptr(), im.as_mut_ptr(), re.len(), t.twr.as_ptr(), t.twi.as_ptr()) },
         _ => fft_in_place(re, im, &t.twr, &t.twi),
     }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(rustify_arm_kernels)]
 #[target_feature(enable = "fp16,dotprod,rdm")]
 unsafe fn fft_v82(re: &mut [f32], im: &mut [f32], twr: &[f32], twi: &[f32]) {
     fft_in_place(re, im, twr, twi)
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(rustify_arm_kernels)]
 #[target_feature(enable = "sve2")]
 unsafe fn fft_sve2(re: &mut [f32], im: &mut [f32], twr: &[f32], twi: &[f32]) {
     fft_in_place(re, im, twr, twi)

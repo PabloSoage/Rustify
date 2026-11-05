@@ -70,17 +70,20 @@ object DjVoice {
 
     private fun applyVoiceConfig(context: Context) {
         val t = tts ?: return
-        val langCode = DjSettings.voiceLanguage(context)
+        val langCode = DjSettings.voiceLanguage(settings(context))
         val locale = if (langCode.isNotBlank()) Locale.forLanguageTag(langCode) else Locale.getDefault()
         runCatching { t.language = locale }
         // Specific native voice chosen in Settings (if still installed); otherwise the language default.
-        val voiceName = DjSettings.voiceNativeName(context)
+        val voiceName = DjSettings.voiceNativeName(settings(context))
         if (voiceName.isNotBlank()) {
             runCatching { t.voices?.firstOrNull { it.name == voiceName }?.let { t.voice = it } }
         }
         t.setPitch(1.15f)        // slightly higher pitch = more cheerful
         t.setSpeechRate(1.03f)
     }
+
+    /** What [DjSettings] reads, the same `rustify_settings` the context's preferences hold. */
+    private fun settings(context: Context): com.varuna.rustify.ui.AppPlatform = com.varuna.rustify.ui.AndroidAppPlatform(context)
 
     /** Reapplies language/voice/tone after they change in Settings. */
     fun refreshConfig(context: Context) { if (ready) applyVoiceConfig(context) }
@@ -128,9 +131,9 @@ object DjVoice {
 
     /** Speaks [text] with the selected engine (native / pollinations / openai); falls back to native on failure. */
     fun speak(context: Context, text: String, force: Boolean = false) {
-        if ((!DjSettings.voiceEnabled(context) && !force) || text.isBlank()) return
+        if ((!DjSettings.voiceEnabled(settings(context)) && !force) || text.isBlank()) return
         appCtx = context.applicationContext as android.app.Application
-        when (DjSettings.ttsEngine(context)) {
+        when (DjSettings.ttsEngine(settings(context))) {
             "pollinations" -> CoroutineScope(Dispatchers.IO).launch {
                 val ok = runCatching { speakPollinations(context, text) }.getOrDefault(false)
                 if (!ok) withContext(Dispatchers.Main) { ensureAndSpeak(context, text) }
@@ -144,7 +147,7 @@ object DjVoice {
                 if (!ok) withContext(Dispatchers.Main) { ensureAndSpeak(context, text) }
             }
             "openai" -> {
-                val cloud = DjSettings.voiceCloudUrl(context)
+                val cloud = DjSettings.voiceCloudUrl(settings(context))
                 if (cloud.isNotBlank()) CoroutineScope(Dispatchers.IO).launch {
                     val ok = runCatching { speakCloud(context, cloud, text) }.getOrDefault(false)
                     if (!ok) withContext(Dispatchers.Main) { ensureAndSpeak(context, text) }
@@ -161,7 +164,7 @@ object DjVoice {
      * (or if it fails); it may be null.
      */
     fun preview(context: Context, onDone: (() -> Unit)? = null) {
-        val phrase = DjPhrases.previewPhrase(DjSettings.voiceLanguage(context))
+        val phrase = DjPhrases.previewPhrase(DjSettings.voiceLanguage(settings(context)))
         previewOnDone = onDone
         speak(context, phrase, force = true)
     }
@@ -191,8 +194,8 @@ object DjVoice {
     }
 
     private suspend fun speakCloud(context: Context, endpoint: String, text: String): Boolean = withContext(Dispatchers.IO) {
-        val key = DjSettings.voiceCloudKey(context)
-        val voice = DjSettings.voiceCloudVoice(context)
+        val key = DjSettings.voiceCloudKey(settings(context))
+        val voice = DjSettings.voiceCloudVoice(settings(context))
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 8000; readTimeout = 15000
@@ -221,7 +224,7 @@ object DjVoice {
      * `GET https://text.pollinations.ai/{text}?model=openai-audio&voice={voice}` → MP3.
      */
     private suspend fun speakPollinations(context: Context, text: String): Boolean = withContext(Dispatchers.IO) {
-        val voice = DjSettings.voiceCloudVoice(context).ifBlank { "alloy" }
+        val voice = DjSettings.voiceCloudVoice(settings(context)).ifBlank { "alloy" }
         val tmp = File(context.cacheDir, "dj_voice.mp3")
         // readTimeout capped at 12s: a short TTS phrase is generated within a few seconds, so if no
         // valid audio has arrived by 12s a hung voice falls back quickly to the native TTS instead of
@@ -275,7 +278,7 @@ object DjVoice {
 
     /** `tl` code (base language) for Google Translate: the voice language, or the system one. */
     private fun googleTtsLang(context: Context): String {
-        val lang = DjSettings.voiceLanguage(context)
+        val lang = DjSettings.voiceLanguage(settings(context))
         val base = lang.ifBlank { Locale.getDefault().language }
         return base.substringBefore('-').lowercase().ifBlank { "en" }
     }
@@ -389,7 +392,7 @@ object DjVoice {
 
     private suspend fun speakEdge(context: Context, text: String): Boolean =
         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            val voice = DjSettings.voiceCloudVoice(context).takeIf { it.contains("Neural") } ?: DjSettings.EDGE_DEFAULT_VOICE
+            val voice = DjSettings.voiceCloudVoice(settings(context)).takeIf { it.contains("Neural") } ?: DjSettings.EDGE_DEFAULT_VOICE
             val locale = voice.split("-").let { if (it.size >= 2) "${it[0]}-${it[1]}" else "en-US" }
             val audio = java.io.ByteArrayOutputStream()
             val done = java.util.concurrent.atomic.AtomicBoolean(false)

@@ -16,19 +16,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-enum class DownloadStatus {
-    QUEUED, RESOLVING, DOWNLOADING, COMPLETE, ERROR
-}
-
-data class DownloadTask(
-    val id: String,
-    val title: String,
-    val artist: String,
-    val status: DownloadStatus,
-    val progress: Int = 0,
-    val errorMessage: String? = null
-)
-
 object DownloadManager {
     private val _downloads = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloads: StateFlow<List<DownloadTask>> = _downloads.asStateFlow()
@@ -127,7 +114,7 @@ object DownloadManager {
                 album = null
             )
 
-            val res = com.varuna.rustify.audio.AudioSourceRegistry.downloadChain(context)
+            val res = com.varuna.rustify.audio.AudioSourceRegistry.downloadChain()
                 .downloadTo(track, tempFile) { progress ->
                     if (scope.isActive) {
                         scope.launch {

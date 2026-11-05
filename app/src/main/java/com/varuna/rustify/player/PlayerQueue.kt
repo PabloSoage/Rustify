@@ -172,7 +172,7 @@ object PlayerQueue {
     /** "Previous" that always goes back a song, for those who turned off the restart (4.9). */
     val PREVIOUS_TRACK: JSONObject get() = PREVIOUS.put("always", true)
 
-    private const val KEY_PREVIOUS_ALWAYS = "previous_always_goes_back"
+    private const val KEY_PREVIOUS_ALWAYS = AudioSettings.KEY_PREVIOUS_ALWAYS
 
     fun previousAlwaysGoesBack(context: android.content.Context): Boolean =
         context.getSharedPreferences("rustify_settings", android.content.Context.MODE_PRIVATE).getBoolean(KEY_PREVIOUS_ALWAYS, false)

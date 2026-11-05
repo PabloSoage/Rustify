@@ -1,0 +1,97 @@
+package com.varuna.rustify.bridge
+
+import com.varuna.rustify.ui.AppPlatform
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.metrics.ListeningTracker
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.util.countryNameInEnglish
+import com.varuna.rustify.util.defaultLanguageTag
+import kotlinx.coroutines.Dispatchers
+import com.varuna.rustify.platform.IO
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
+
+/**
+ * Home without a Spotify account (4.7). It used to be one card asking to connect, and nothing else.
+ *
+ * Built from what needs no account: your own listening history (albums you played lately) and
+ * Spotify's public catalogue, which the anonymous token reads — the charts (Top 50 for the world and
+ * for your country) and Spotify's own mood playlists. Same [BrowseSection] shape as the personal
+ * Home, so the screen draws them the same way.
+ *
+ * Kept for the process: the charts change weekly, and Home is drawn often. Kept with the language its
+ * titles were written in, too: Settings changes the language without ending the process, and Home
+ * kept "Played lately" under a Spanish interface until the app was restarted.
+ */
+object PublicHome {
+    @Volatile private var cached: Pair<String, List<BrowseSection>>? = null
+
+    suspend fun sections(platform: AppPlatform, repo: SpotifyRepository, refresh: Boolean = false): List<BrowseSection> =
+        withContext(Dispatchers.IO) {
+            val language = defaultLanguageTag()
+            if (!refresh) cached?.takeIf { it.first == language }?.let { return@withContext it.second }
+            val built = coroutineScope {
+                val recent = async { recentAlbums(platform) }
+                val charts = async { charts(platform, repo) }
+                val moods = async { moods(platform, repo) }
+                listOfNotNull(recent.await(), charts.await(), moods.await())
+            }
+            if (built.isNotEmpty()) cached = language to built
+            built
+        }
+
+    /** Albums of the songs you played lately, newest first, one per album. Spotify ones only. */
+    private suspend fun recentAlbums(platform: AppPlatform): BrowseSection? = runCatching {
+        val now = currentTimeMillis()
+        val plays = ListeningTracker.stats(platform, now - 90L * 86_400_000L, now).recent
+        val albums = plays
+            .filter { TrackRef.parse(it.trackId)?.spotifyId != null && it.albumId.isNotBlank() }
+            .distinctBy { it.albumId }
+            .take(10)
+            .map { e ->
+                BrowseSectionItem.AlbumItem(
+                    SimpleAlbum(
+                        id = e.albumId,
+                        name = e.albumName,
+                        images = listOfNotNull(e.imageUrl.takeIf { it.isNotBlank() }?.let { SpotifyImage(it) }),
+                        artists = e.artistNames.zip(e.artistIds) { n, id -> SimpleArtist(id = id, name = n) }
+                    )
+                )
+            }
+        if (albums.isEmpty()) null
+        else BrowseSection(id = "public-recent", title = appString(Res.string.home_recent_albums), items = albums)
+    }.getOrNull()
+
+    /** Spotify's own playlist for [query], if there is one: the editorial ones are owned by "spotify". */
+    private suspend fun editorial(repo: SpotifyRepository, query: String): SimplePlaylist? = runCatching {
+        repo.searchPlaylists(query, limit = 10).items.firstOrNull { it.owner?.id == "spotify" }
+    }.getOrNull()
+
+    private suspend fun charts(platform: AppPlatform, repo: SpotifyRepository): BrowseSection? = coroutineScope {
+        // The country's name in English is what the chart playlists are called ("Top 50 - Spain").
+        // Spotify's own short names where they differ from the English country name. The system's
+        // country, not the default locale's: a language picked in Settings has none.
+        val code = platform.systemCountry
+        val country = when (code) {
+            "US" -> "USA"
+            "GB" -> "UK"
+            else -> runCatching { countryNameInEnglish(code) }
+                .getOrNull()?.takeIf { it.isNotBlank() }
+        }
+        val queries = listOfNotNull("Top 50 Global", country?.let { "Top 50 $it" }, "Viral 50 Global", country?.let { "Viral 50 $it" })
+        val found = queries.map { q -> async { editorial(repo, q) } }.awaitAll().filterNotNull().distinctBy { it.id }
+        if (found.isEmpty()) null
+        else BrowseSection(id = "public-charts", title = appString(Res.string.home_charts), items = found.map { BrowseSectionItem.PlaylistItem(it) })
+    }
+
+    private suspend fun moods(platform: AppPlatform, repo: SpotifyRepository): BrowseSection? = coroutineScope {
+        val queries = listOf("chill", "focus", "workout", "party", "sleep", "happy")
+        val found = queries.map { q -> async { editorial(repo, q) } }.awaitAll().filterNotNull().distinctBy { it.id }
+        if (found.isEmpty()) null
+        else BrowseSection(id = "public-moods", title = appString(Res.string.home_moods), items = found.map { BrowseSectionItem.PlaylistItem(it) })
+    }
+}

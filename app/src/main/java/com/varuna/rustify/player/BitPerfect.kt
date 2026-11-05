@@ -62,7 +62,7 @@ object BitPerfect {
 
     fun spoiler(context: Context): Spoiler? = spoiler(
         EqualizerController.isEnabled(context), AutoEqController.isActive(), TransitionFade.seconds(context),
-        !PlaybackSpeed.isDefault(context), SkipSilence.enabled(context), StereoTools.settings.active
+        !PlaybackSpeed.isDefault(com.varuna.rustify.ui.AndroidAppPlatform(context).prefs()), SkipSilence.enabled(context), StereoTools.settings.active
     )
 
     /** The offer for exactly this PCM: same rate, same encoding, same channels. Anything else is a conversion. */

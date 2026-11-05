@@ -1,0 +1,805 @@
+
+package com.varuna.rustify.ui.components
+
+import com.varuna.rustify.ui.formatFixedUs
+import com.varuna.rustify.ui.toast
+import com.varuna.rustify.bridge.TrackRef
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SimplePlaylist
+import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.largest
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TrackOptionsMenuBottomSheet(
+    track: FullTrack,
+    spotifyRepo: SpotifyRepository,
+    onDismiss: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onGoToQueue: () -> Unit,
+    onGoToAlbum: (String, String, List<SpotifyImage>) -> Unit,
+    onGoToArtist: (String) -> Unit,
+    onGoToRadio: (() -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    var showPlaylistSelector by remember { mutableStateOf(false) }
+    var showLyricsOffsetDialog by remember { mutableStateOf(false) }
+    var showCredits by remember { mutableStateOf(false) }
+    // Local playlist selector + creation dialog.
+    var showLocalPlaylistSelector by remember { mutableStateOf(false) }
+    var showCreateLocalPlaylistDialog by remember { mutableStateOf(false) }
+    var newLocalPlaylistName by remember { mutableStateOf("") }
+    var playlists by remember { mutableStateOf<List<SimplePlaylist>>(emptyList()) }
+    var isLoadingPlaylists by remember { mutableStateOf(false) }
+    /** Playlist currently being written to, or null. Drives the row spinner and locks the list. */
+    var addingToPlaylistId by remember { mutableStateOf<String?>(null) }
+
+    val prefs = platform.prefs("rustify_settings")
+    val downloadUriStr = prefs.getString("download_directory")
+    
+    val services = com.varuna.rustify.ui.LocalAppServices.current
+    val requestNotificationPermission = com.varuna.rustify.ui.rememberNotificationPermissionRequest()
+
+    if (showCredits) {
+        TrackCreditsDialog(
+            trackId = TrackRef.parse(track.id)?.spotifyId.orEmpty(),
+            spotifyRepo = spotifyRepo,
+            onArtistClick = { id -> showCredits = false; onGoToArtist(id); onDismiss() },
+            onDismiss = { showCredits = false }
+        )
+    }
+
+    // Per-track lyrics sync offset (±), persisted in LyricsOffsetStore.
+    if (showLyricsOffsetDialog) {
+        val tid = track.id ?: ""
+        var offsetMs by remember(tid) { mutableLongStateOf(com.varuna.rustify.bridge.LyricsOffsetStore.get(platform.filesDir, tid)) }
+        fun apply(newMs: Long) {
+            offsetMs = newMs.coerceIn(-10_000L, 10_000L)
+            com.varuna.rustify.bridge.LyricsOffsetStore.set(platform.filesDir, tid, offsetMs)
+        }
+        AlertDialog(
+            onDismissRequest = { showLyricsOffsetDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text(stringResource(Res.string.lyrics_offset_title), color = Color.White) },
+            text = {
+                Column {
+                    Text(stringResource(Res.string.lyrics_offset_hint), color = Color.Gray, fontSize = 13.sp)
+                    Spacer(Modifier.height(18.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(onClick = { apply(offsetMs - 500) }) { Text("-0.5s", color = Color.White) }
+                        TextButton(onClick = { apply(offsetMs - 100) }) { Text("-0.1s", color = Color.White) }
+                        Text(
+                            "${formatFixedUs((offsetMs / 1000f).toDouble(), 1, signed = true)} s",
+                            color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        TextButton(onClick = { apply(offsetMs + 100) }) { Text("+0.1s", color = Color.White) }
+                        TextButton(onClick = { apply(offsetMs + 500) }) { Text("+0.5s", color = Color.White) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLyricsOffsetDialog = false }) {
+                    Text(stringResource(Res.string.lyrics_offset_done), color = Color(0xFF1DB954))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { apply(0L) }) {
+                    Text(stringResource(Res.string.lyrics_offset_reset), color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    // Local playlist selector (for "local:" tracks) + creation dialog.
+    val localPlaylistAddedMsg = stringResource(Res.string.local_playlist_added)
+    val localPlaylistAlreadyMsg = stringResource(Res.string.local_playlist_already_added)
+    if (showLocalPlaylistSelector) {
+        AlertDialog(
+            onDismissRequest = { showLocalPlaylistSelector = false },
+            title = { Text(stringResource(Res.string.local_playlist_selector_title)) },
+            text = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showLocalPlaylistSelector = false
+                                showCreateLocalPlaylistDialog = true
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1DB954))
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(Res.string.local_playlist_create), color = Color.White)
+                    }
+                    HorizontalDivider(color = Color.DarkGray)
+                    if (spotifyRepo.localPlaylists.isEmpty()) {
+                        Text(
+                            stringResource(Res.string.playlist_not_found),
+                            color = Color.Gray,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    } else {
+                        spotifyRepo.localPlaylists.forEach { pl ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val tid = track.id
+                                        val already = tid != null && tid in pl.trackIds
+                                        if (tid != null) spotifyRepo.addToLocalPlaylist(pl.id, tid)
+                                        platform.toast(if (already) localPlaylistAlreadyMsg else localPlaylistAddedMsg)
+                                        showLocalPlaylistSelector = false
+                                        onDismiss()
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pl.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(8.dp))
+                                Text("${pl.trackIds.size}", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLocalPlaylistSelector = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            }
+        )
+    }
+    if (showCreateLocalPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" },
+            title = { Text(stringResource(Res.string.local_playlist_create)) },
+            text = {
+                OutlinedTextField(
+                    value = newLocalPlaylistName,
+                    onValueChange = { newLocalPlaylistName = it },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(Res.string.local_playlist_name_hint)) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newLocalPlaylistName.isNotBlank()) {
+                        val pl = spotifyRepo.createLocalPlaylist(newLocalPlaylistName.trim())
+                        track.id?.let { spotifyRepo.addToLocalPlaylist(pl.id, it) }
+                        platform.toast(localPlaylistAddedMsg)
+                    }
+                    showCreateLocalPlaylistDialog = false
+                    newLocalPlaylistName = ""
+                    onDismiss()
+                }) { Text(stringResource(Res.string.local_playlist_create_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateLocalPlaylistDialog = false; newLocalPlaylistName = "" }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showPlaylistSelector) {
+        // Nested Playlist Selection Bottom Sheet
+        ModalBottomSheet(
+            onDismissRequest = { showPlaylistSelector = false },
+            containerColor = Color(0xFF1E1E1E),
+            contentColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = stringResource(Res.string.track_menu_add_playlist),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                if (isLoadingPlaylists) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF1DB954))
+                    }
+                } else if (playlists.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(Res.string.playlist_none_owned),
+                            color = Color.Gray,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
+                        items(playlists) { playlist ->
+                            val addedMessage = stringResource(Res.string.added_to_playlist, playlist.name)
+                            val busy = addingToPlaylistId != null
+                            val thisOne = addingToPlaylistId == playlist.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    // Locked while a request is in flight. Without this the row still
+                                    // looked idle for as long as the call took, so it read as "the
+                                    // button does nothing" and invited a second tap — which is a
+                                    // second write, on an endpoint that answers 429 when pushed.
+                                    .clickable(enabled = !busy) {
+                                        val trackId = track.id ?: return@clickable
+                                        addingToPlaylistId = playlist.id
+                                        coroutineScope.launch {
+                                            val res = spotifyRepo.addTracksToPlaylist(playlist.id, listOf(trackId))
+                                            addingToPlaylistId = null
+                                            if (res.success) {
+                                                platform.toast(addedMessage)
+                                                showPlaylistSelector = false
+                                                onDismiss()
+                                            } else {
+                                                // Stay open on failure: closing the sheet threw the
+                                                // error away along with any chance of retrying.
+                                                platform.toast(addFailureMessage(res.error), long = true)
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val imgUrl = playlist.images.minByOrNull { it.width ?: 999 }?.url
+                                Surface(
+                                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
+                                    color = Color.DarkGray
+                                ) {
+                                    if (!imgUrl.isNullOrEmpty()) {
+                                        AsyncImage(
+                                            model = imgUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = playlist.name,
+                                    color = if (busy && !thisOne) Color.Gray else Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (thisOne) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFF1DB954)
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = Color.DarkGray)
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Main Track Options Sheet
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            containerColor = Color(0xFF1E1E1E),
+            contentColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                // Header: Track Artwork, Title, Artist
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val trackImageUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                    Surface(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                        color = Color.DarkGray
+                    ) {
+                        if (!trackImageUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = trackImageUrl,
+                                contentDescription = track.name,
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = track.name,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track.artists.joinToString(", ") { it.name },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.LightGray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.DarkGray)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Menu items
+                val queueAddedMsg = stringResource(Res.string.added_to_queue)
+                MenuOptionItem(
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    label = stringResource(Res.string.track_menu_add_queue),
+                    onClick = {
+                        onAddToQueue()
+                        platform.toast(queueAddedMsg)
+                    }
+                )
+
+                val isLocalTrack = TrackRef.isLocal(track.id)
+                val isYtmTrack = TrackRef.isYtm(track.id)
+
+                // Local favorite (only for "local:" tracks).
+                if (isLocalTrack) {
+                    val tid = track.id ?: ""
+                    var isFav by remember { mutableStateOf(spotifyRepo.isLocalFavorite(tid)) }
+                    MenuOptionItem(
+                        icon = if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        label = stringResource(if (isFav) Res.string.track_menu_unfavorite else Res.string.track_menu_favorite),
+                        iconColor = if (isFav) Color(0xFF1DB954) else Color.White,
+                        onClick = {
+                            spotifyRepo.toggleLocalFavorite(tid)
+                            isFav = !isFav
+                        }
+                    )
+
+                    // Tempo (5.x): measured on demand, then remembered (BpmAnalyzer).
+                    var bpm by remember(tid) { mutableStateOf(services.bpmCached(tid)) }
+                    var analysing by remember(tid) { mutableStateOf(false) }
+                    var showBpmFix by remember(tid) { mutableStateOf(false) }
+                    // "120.5" whatever the language. Both places check bpm for null first, but a
+                    // delegated var is not smart cast.
+                    fun bpmText(): String = bpm?.let { formatFixedUs(it.toDouble(), 1) }.orEmpty()
+                    if (showBpmFix && bpm != null) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showBpmFix = false },
+                            title = { Text(stringResource(Res.string.track_menu_bpm, bpmText())) },
+                            text = { Text(stringResource(Res.string.track_menu_bpm_fix)) },
+                            confirmButton = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    bpm = services.bpmScale(tid, 2f); showBpmFix = false
+                                }) { Text("×2") }
+                            },
+                            dismissButton = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    bpm = services.bpmScale(tid, 0.5f); showBpmFix = false
+                                }) { Text("÷2") }
+                            }
+                        )
+                    }
+                    val noBeat = stringResource(Res.string.track_menu_bpm_none)
+                    // Measured by the platform (AppServices.bpmAnalyze); where it cannot, the item
+                    // says so instead of answering "no beat" for every song.
+                    val canBpm = services.can(com.varuna.rustify.ui.AppServices.Feature.BPM)
+                    MenuOptionItem(
+                        icon = Icons.Default.GraphicEq,
+                        label = when {
+                            analysing -> stringResource(Res.string.track_menu_bpm_analysing)
+                            bpm != null -> stringResource(Res.string.track_menu_bpm, bpmText())
+                            else -> stringResource(Res.string.track_menu_bpm_analyse)
+                        },
+                        enabled = canBpm,
+                        onClick = {
+                            if (bpm != null) { showBpmFix = true; return@MenuOptionItem }
+                            if (analysing) return@MenuOptionItem
+                            analysing = true
+                            coroutineScope.launch {
+                                bpm = services.bpmAnalyze(tid, track.durationMs.toLong())
+                                analysing = false
+                                if (bpm == null) platform.toast(noBeat)
+                            }
+                        }
+                    )
+                }
+
+                MenuOptionItem(
+                    icon = Icons.Default.Add,
+                    label = stringResource(Res.string.track_menu_add_playlist),
+                    onClick = {
+                        if (isLocalTrack || isYtmTrack) {
+                            showLocalPlaylistSelector = true
+                        } else {
+                            showPlaylistSelector = true
+                            isLoadingPlaylists = true
+                            coroutineScope.launch {
+                                try {
+                                    // Saved playlists include everything you follow, and Spotify
+                                    // refuses a write to a playlist that is not yours — after a long
+                                    // wait and with an error that says nothing useful. Offering only
+                                    // the ones you own turns an unexplained failure into a choice
+                                    // that was never there. (Playlists someone else owns and shares
+                                    // with you as a collaborator are excluded too: the flag that
+                                    // would identify them is not in the list payload, and fetching
+                                    // it per playlist is exactly the request storm that earns a 429.)
+                                    val me = runCatching { spotifyRepo.getMe().id }.getOrNull()
+                                    playlists = spotifyRepo.getSavedPlaylists(limit = 50).items
+                                        .filter { me == null || it.owner?.id == me }
+                                } catch (e: Exception) {
+                                    // Say what actually went wrong. Swallowing it left the sheet
+                                    // sitting empty on a rate limit or an expired session, which
+                                    // reads as "the button does nothing".
+                                    platform.toast(Res.string.playlists_load_failed, e.message ?: "", long = true)
+                                } finally {
+                                    isLoadingPlaylists = false
+                                }
+                            }
+                        }
+                    }
+                )
+
+                if (onRemoveFromPlaylist != null) {
+                    MenuOptionItem(
+                        icon = Icons.Default.RemoveCircleOutline,
+                        label = stringResource(Res.string.track_menu_remove_playlist),
+                        iconColor = Color(0xFFCC2200),
+                        labelColor = Color(0xFFCC2200),
+                        onClick = onRemoveFromPlaylist
+                    )
+                }
+
+                MenuOptionItem(
+                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                    label = stringResource(Res.string.track_menu_go_queue),
+                    onClick = onGoToQueue
+                )
+
+                // Manual lyrics sync adjustment (for slightly out-of-sync songs).
+                MenuOptionItem(
+                    icon = Icons.Default.Schedule,
+                    label = stringResource(Res.string.track_menu_lyrics_offset),
+                    onClick = { showLyricsOffsetDialog = true }
+                )
+
+                val album = track.album
+                if (album != null && !isYtmTrack) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Album,
+                        label = stringResource(Res.string.track_menu_go_album),
+                        onClick = {
+                            onGoToAlbum(album.id, album.name, album.images)
+                        }
+                    )
+                }
+
+                if (track.artists.isNotEmpty() && !isYtmTrack) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Person,
+                        label = stringResource(Res.string.track_options_view_artist),
+                        onClick = {
+                            onGoToArtist(track.artists.first().id)
+                        }
+                    )
+                }
+
+                // Credits (4.6): Spotify's own, public — no account needed.
+                val creditsTrackId = TrackRef.parse(track.id)?.spotifyId
+                if (creditsTrackId != null) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Info,
+                        label = stringResource(Res.string.track_menu_credits),
+                        onClick = { showCredits = true }
+                    )
+                }
+
+                if (onGoToRadio != null && !isLocalTrack && !isYtmTrack) {
+                    MenuOptionItem(
+                        icon = Icons.Default.Radio,
+                        label = stringResource(Res.string.track_menu_go_radio),
+                        onClick = {
+                            onGoToRadio()
+                            onDismiss()
+                        }
+                    )
+                }
+
+                if (!isLocalTrack) {
+                    if (isYtmTrack) {
+                        // Share YTM link
+                        MenuOptionItem(
+                            icon = Icons.Default.Share,
+                            label = stringResource(Res.string.track_menu_share),
+                            onClick = {
+                                val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
+                                com.varuna.rustify.util.ShareUtils.shareYtmLink(platform, "https://music.youtube.com/watch?v=$videoId")
+                                onDismiss()
+                            }
+                        )
+                        // Share as Rustify Link (only if toggle is on)
+                        val prefs = platform.prefs("rustify_settings")
+                        if (prefs.getBoolean("share_as_rustify_link", false)) {
+                            MenuOptionItem(
+                                icon = Icons.Default.Share,
+                                label = stringResource(Res.string.track_menu_share_rustify),
+                                onClick = {
+                                    val videoId = TrackRef.youtubeVideoIdOf(track.id) ?: ""
+                                    com.varuna.rustify.util.ShareUtils.shareRustifyUrl(
+                                        platform,
+                                        url = "https://music.youtube.com/watch?v=$videoId",
+                                        title = track.name,
+                                        subtitle = track.artists.joinToString(", ") { it.name },
+                                        imageUrl = track.album?.images?.largest()?.url
+                                    )
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    } else {
+                    MenuOptionItem(
+                        icon = Icons.Default.Share,
+                        label = stringResource(Res.string.track_menu_share),
+                        onClick = {
+                            val id = track.id
+                            if (id.isNullOrBlank()) {
+                                platform.toast(Res.string.share_no_link)
+                                onDismiss()
+                                return@MenuOptionItem
+                            }
+                            // Robust share: adds FLAG_ACTIVITY_NEW_TASK and catches any exception.
+                            com.varuna.rustify.util.ShareUtils.shareSpotifyLink(platform, "track", id)
+                            onDismiss()
+                        }
+                    )
+
+                    // Extra "Share as Rustify" button shown only when the toggle is on.
+                    val prefs = platform.prefs("rustify_settings")
+                    if (prefs.getBoolean("share_as_rustify_link", false)) {
+                        MenuOptionItem(
+                            icon = Icons.Default.Share,
+                            label = stringResource(Res.string.track_menu_share_rustify),
+                            onClick = {
+                                val id = track.id
+                                if (id.isNullOrBlank()) {
+                                    platform.toast(Res.string.share_no_link)
+                                    onDismiss()
+                                    return@MenuOptionItem
+                                }
+                                com.varuna.rustify.util.ShareUtils.shareRustifyLink(
+                                    platform, "track", id,
+                                    title = track.name,
+                                    subtitle = track.artists.joinToString(", ") { it.name },
+                                    imageUrl = track.album?.images?.largest()?.url
+                                )
+                                onDismiss()
+                            }
+                        )
+                    }
+                    }
+                }
+
+                // YouTube Music tracks are downloadable too: their "ytm:" id already carries the video
+                // id, so the yt-dlp chain resolves them without going through the Spotify resolver.
+                if (!isLocalTrack && downloadUriStr != null) {
+                    val downloadingStr = stringResource(Res.string.track_menu_getting_url)
+                    
+                    MenuOptionItem(
+                        icon = Icons.Default.Download,
+                        label = stringResource(Res.string.track_menu_download),
+                        enabled = services.can(com.varuna.rustify.ui.AppServices.Feature.DOWNLOADS),
+                        onClick = {
+                            requestNotificationPermission()
+                            
+                            val trackId = track.id ?: return@MenuOptionItem
+                            val trackName = track.name
+                            val trackArtist = track.artists.joinToString(", ") { it.name }
+                            
+                            services.enqueueDownload(
+                                trackId = trackId,
+                                trackName = trackName,
+                                trackArtist = trackArtist,
+                                downloadUriStr = downloadUriStr,
+                                track = track
+                            )
+                            
+                            platform.toast(downloadingStr)
+                            onDismiss()
+                        }
+                    )
+                }
+
+                // Blocklist (`23` §2): never from the radio, stepped over in the queue.
+                if (!track.id.isNullOrBlank()) {
+                    val blocked by com.varuna.rustify.player.Blocklist.lists.collectAsState()
+                    androidx.compose.runtime.LaunchedEffect(Unit) { com.varuna.rustify.player.Blocklist.current(platform.prefs()) }
+                    val songBlocked = blocked.blocksTrack(track.id)
+                    MenuOptionItem(
+                        icon = Icons.Default.Block,
+                        label = stringResource(if (songBlocked) Res.string.track_menu_unblock_song else Res.string.track_menu_block_song),
+                        iconColor = if (songBlocked) Color.White else Color(0xFFCC2200),
+                        onClick = { com.varuna.rustify.player.Blocklist.toggleTrack(platform.prefs(), track) }
+                    )
+                    track.artists.filter { it.id.isNotBlank() }.forEach { artist ->
+                        val artistBlocked = blocked.blocksArtist(artist.id)
+                        MenuOptionItem(
+                            icon = Icons.Default.Block,
+                            label = stringResource(
+                                if (artistBlocked) Res.string.track_menu_unblock_artist else Res.string.track_menu_block_artist,
+                                artist.name
+                            ),
+                            iconColor = if (artistBlocked) Color.White else Color(0xFFCC2200),
+                            onClick = { com.varuna.rustify.player.Blocklist.toggleArtist(platform.prefs(), artist.id, artist.name) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuOptionItem(
+    icon: ImageVector,
+    label: String,
+    iconColor: Color = Color.White,
+    labelColor: Color = Color.White,
+    /** False where this platform cannot do it: shown dimmed, saying so, and not clickable. */
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 14.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) iconColor else Color.Gray,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        if (enabled) {
+            Text(
+                text = label,
+                color = labelColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            Column {
+                Text(text = label, color = Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(Res.string.feature_not_on_platform), color = Color.Gray, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/**
+ * Turns a failed write into something a toast can actually convey.
+ *
+ * The engine reports `API error 429:{"error":{"status":429,…}}` — a status code welded to a JSON
+ * body. A short toast cut that off at the status, which is the one part that means nothing to
+ * anyone reading it, so the whole message was "429". Each case that a person can act on gets its
+ * own sentence; anything unrecognised keeps the raw text, trimmed to what will fit.
+ *
+ * "What will fit" is the limit, not the information. A GraphQL refusal arrives as a JSON envelope
+ * whose useful part — which variable is missing, which member of the union came back — sits past
+ * anything a toast can hold, so the untrimmed text goes to the log (Settings → Logs) every time.
+ */
+private suspend fun addFailureMessage(error: String?): String {
+    val raw = error.orEmpty()
+    com.varuna.rustify.platform.Log.e("TrackOptionsMenu", "add to playlist failed: $raw")
+    return when {
+        // A GraphQL error names the problem inside the envelope. Show the message field rather than
+        // the wrapper, which is all a toast has room for otherwise.
+        raw.contains("\"message\"") -> {
+            val msg = Regex("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                .find(raw)?.groupValues?.get(1)?.take(140)
+            com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, msg ?: raw.take(140))
+        }
+        // The mutation names its own refusal in the payload. Show it verbatim rather than folding it
+        // into "not writable": the useful cases (not yours, gone, already there) differ only there.
+        raw.contains("addToPlaylist") -> com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, raw.take(140))
+        raw.contains("429") -> com.varuna.rustify.ui.appString(Res.string.error_rate_limited)
+        raw.contains("403") -> com.varuna.rustify.ui.appString(Res.string.error_playlist_not_writable)
+        raw.contains("401") || raw.contains("expired", ignoreCase = true) ->
+            com.varuna.rustify.ui.appString(Res.string.error_session_expired)
+        else -> com.varuna.rustify.ui.appString(Res.string.playlist_add_failed, raw.take(140).ifBlank { "?" })
+    }
+}

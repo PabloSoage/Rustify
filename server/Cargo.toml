@@ -1,0 +1,39 @@
+[package]
+name = "rustify_server"
+# Follows the app's version, like the core's (one number for one release).
+version = "5.6.4"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Rustify for a NAS or a headless server: the core behind an HTTP API, and the web interface"
+publish = false
+
+[[bin]]
+name = "rustify-server"
+path = "src/main.rs"
+
+[dependencies]
+# The core, through the same JSON dispatcher iOS uses (`ffi::rustify_call`), so the web answers what
+# every other platform answers. Its own package rather than a feature of the core: the APK's build
+# never sees axum, and the core's lock file stays what it was.
+core_engine = { path = "../core_engine", features = ["c-api"] }
+
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "time", "process", "io-util"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br", "set-header", "trace"] }
+# /api/stream, to the core's own server on 127.0.0.1, and /api/fetch, what a page cannot ask for itself.
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls-webpki-roots"] }
+url = "2"
+tower = { version = "0.5", features = ["util"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+getrandom = "0.2"
+base64 = "0.22"
+# The account's password, hashed (auth.rs).
+argon2 = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = "symbols"

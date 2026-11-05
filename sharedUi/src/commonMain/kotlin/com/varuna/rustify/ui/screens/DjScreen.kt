@@ -1,0 +1,422 @@
+package com.varuna.rustify.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.dj.DjAutoController
+import com.varuna.rustify.dj.DjEngine
+import com.varuna.rustify.dj.DjMode
+import com.varuna.rustify.dj.DjSettings
+import com.varuna.rustify.player.LocalPlayer
+import com.varuna.rustify.ui.LocalAppPlatform
+import com.varuna.rustify.ui.LocalAppServices
+import com.varuna.rustify.ui.resources.*
+import kotlinx.coroutines.launch
+
+/**
+ * AI DJ screen. A text field for the natural-language request, a "Start DJ" (automix) button;
+ * it shows the DJ's intro line and enqueues/plays the result.
+ *
+ * It does not modify the player: it uses the [onPlayTracks] (loadPlaylist) and [onEnqueueTracks]
+ * (enqueueAll) lambdas that the caller wires to the player's public methods.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DjScreen(
+    spotifyRepo: SpotifyRepository,
+    nowPlaying: FullTrack?,
+    queue: List<FullTrack>,
+    onPlayTracks: (List<FullTrack>) -> Unit,
+    onEnqueueTracks: (List<FullTrack>) -> Unit,
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val platform = LocalAppPlatform.current
+    val services = LocalAppServices.current
+    val player = LocalPlayer.current
+    val scope = rememberCoroutineScope()
+    val green = Color(0xFF1DB954)
+
+    var request by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var intro by remember { mutableStateOf<String?>(null) }
+    var resultTracks by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    val mode = remember { DjSettings.mode(platform) }
+    val modeLabel = when (mode) {
+        DjMode.HEURISTIC -> stringResource(Res.string.dj_mode_heuristic)
+        DjMode.API -> stringResource(Res.string.dj_mode_api)
+        DjMode.LOCAL -> stringResource(
+            if (platform.kind == com.varuna.rustify.ui.AppPlatform.Kind.DESKTOP) Res.string.dj_mode_local_desktop else Res.string.dj_mode_local
+        )
+    }
+    val emptyResultMsg = stringResource(Res.string.dj_no_results)
+
+    // Your three most played artists of the last 30 days, for "more like …" shortcuts.
+    var topArtists by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        // On-device DJ: load the model while the user is still choosing, so the first answer is
+        // not the slow one (Gemini Nano: 12.5 s cold vs 6.9 s warm, measured on a POCO F8 Ultra).
+        if (mode == DjMode.LOCAL) services.warmUpLocalDj()
+        val now = com.varuna.rustify.platform.currentTimeMillis()
+        topArtists = runCatching {
+            com.varuna.rustify.metrics.ListeningTracker.stats(platform, now - 30L * 86_400_000L, now)
+                .topArtists.map { it.name }.filter { it.isNotBlank() }.take(3)
+        }.getOrDefault(emptyList())
+    }
+
+    fun startDj() {
+        if (isLoading) return
+        isLoading = true
+        intro = null
+        errorMsg = null
+        resultTracks = emptyList()
+        scope.launch {
+            runCatching {
+                val engine = DjEngine(platform, spotifyRepo) { services.localDjProvider() }
+                engine.run(request = request, nowPlaying = nowPlaying, queue = queue)
+            }.onSuccess { res ->
+                intro = res.intro
+                resultTracks = res.tracks
+                if (res.tracks.isNotEmpty()) {
+                    onPlayTracks(res.tracks)
+                    services.djVoice.speak(res.intro)  // speak the intro (respects the voice toggle)
+                } else {
+                    errorMsg = emptyResultMsg
+                }
+            }.onFailure { e ->
+                errorMsg = e.message ?: emptyResultMsg
+            }
+            isLoading = false
+        }
+    }
+
+    // ── Autonomous DJ (Livi) with voice ──────────────────────────────────────────────
+    val autoState by DjAutoController.state.collectAsState()
+    val speech = services.rememberDjListener()
+    val micUnavailableMsg = stringResource(Res.string.dj_mic_unavailable)
+    val voiceLang = DjSettings.voiceLanguage(platform)
+
+    // The user's liked songs; if not yet cached, they are fetched from the API.
+    val favoritesProvider: suspend () -> List<FullTrack> = {
+        spotifyRepo.likedTracks.toList().ifEmpty {
+            runCatching { spotifyRepo.getSavedTracks(limit = 50).items }.getOrDefault(emptyList())
+        }
+    }
+
+    fun listen() {
+        speech.listen(
+            languageTag = voiceLang,
+            onResult = { text ->
+                request = text
+                val lower = text.lowercase()
+                val wantsNext = listOf("siguiente", "cambia", "next", "change", "otro").any { lower.contains(it) }
+                if (DjAutoController.isActive && wantsNext) DjAutoController.next() else startDj()
+            },
+            onError = {
+                platform.toast(micUnavailableMsg)
+            }
+        )
+    }
+
+    // The listener asks for the microphone first where the platform needs it (Android's RECORD_AUDIO).
+    fun onMicClick() {
+        if (!speech.isAvailable()) {
+            platform.toast(micUnavailableMsg)
+            return
+        }
+        listen()
+    }
+
+    DisposableEffect(Unit) { onDispose { speech.stop() } }
+
+    Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+                title = { Text(stringResource(Res.string.dj_title), color = Color.White, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+            )
+        },
+        containerColor = Color(0xFF121212)
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(Modifier.height(8.dp))
+            // Compact chip for the current mode (tap to change it in Settings).
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.clickable { onOpenSettings() }
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(Res.string.dj_current_mode, modeLabel), color = green, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(Res.string.dj_change_in_settings), color = Color.Gray, fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(stringResource(Res.string.dj_subtitle), color = Color.Gray, fontSize = 13.sp)
+
+            Spacer(Modifier.height(16.dp))
+            // ── Card: ask the DJ (request + mic + actions) ────────────────────────────────────
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = request,
+                        onValueChange = { request = it },
+                        label = { Text(stringResource(Res.string.dj_request_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(onClick = { onMicClick() }) {
+                                Icon(Icons.Default.Mic, contentDescription = stringResource(Res.string.dj_mic), tint = green)
+                            }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF121212),
+                            unfocusedContainerColor = Color(0xFF121212),
+                            focusedLabelColor = green,
+                            focusedIndicatorColor = green
+                        )
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    // One tap instead of typing (4.7). The request sent is the English keyword the
+                    // heuristic knows whatever the UI language; the label is translated.
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val moods = listOf(
+                            "chill" to Res.string.dj_chip_chill, "focus" to Res.string.dj_chip_focus,
+                            "party" to Res.string.dj_chip_party, "workout" to Res.string.dj_chip_workout,
+                            "happy" to Res.string.dj_chip_happy, "sad" to Res.string.dj_chip_sad
+                        )
+                        moods.forEach { (query, label) ->
+                            androidx.compose.material3.AssistChip(
+                                onClick = { request = query; startDj() },
+                                label = { Text(stringResource(label), color = Color.White) },
+                                enabled = !isLoading
+                            )
+                        }
+                        topArtists.forEach { name ->
+                            androidx.compose.material3.AssistChip(
+                                onClick = { request = "more like $name"; startDj() },
+                                label = { Text(stringResource(Res.string.dj_chip_more_like, name), color = Color.White, maxLines = 1) },
+                                enabled = !isLoading
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { startDj() },
+                            enabled = !isLoading,
+                            colors = ButtonDefaults.buttonColors(containerColor = green),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(Res.string.dj_start), color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { if (resultTracks.isNotEmpty()) onEnqueueTracks(resultTracks) },
+                            enabled = !isLoading && resultTracks.isNotEmpty(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(Res.string.dj_enqueue), color = Color.White)
+                        }
+                    }
+                    if (isLoading) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = green, modifier = Modifier.size(26.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            // ── Autonomous DJ ("Livi"): one tap announces a mood (voice) and enqueues a block ──
+            if (autoState == null) {
+                OutlinedButton(
+                    onClick = { DjAutoController.start(platform, player, services.djVoice, spotifyRepo, favoritesProvider) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null, tint = green)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(Res.string.dj_auto_start), color = Color.White)
+                }
+            } else {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF14261A)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        if (autoState!!.preparing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(color = green, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(stringResource(Res.string.dj_auto_preparing), color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+                        } else {
+                            Text(stringResource(Res.string.dj_auto_now, autoState!!.moodLabel), color = green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { DjAutoController.next() },
+                                enabled = !autoState!!.preparing,
+                                colors = ButtonDefaults.buttonColors(containerColor = green),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.Black)
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(Res.string.dj_auto_next), color = Color.Black)
+                            }
+                            OutlinedButton(onClick = { DjAutoController.stop() }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(Res.string.dj_auto_stop), color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── DJ intro ──
+            intro?.let { line ->
+                Spacer(Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎧", fontSize = 22.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(stringResource(Res.string.dj_intro_label), color = green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(3.dp))
+                            Text(line, color = Color.White, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+
+            errorMsg?.let { msg ->
+                Spacer(Modifier.height(12.dp))
+                Text(msg, color = Color(0xFFE57373), fontSize = 14.sp)
+            }
+
+            // ── Result: the generated queue, with the currently playing track highlighted ──
+            if (resultTracks.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(Res.string.dj_queue_built, resultTracks.size),
+                    color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(vertical = 6.dp)) {
+                        resultTracks.take(50).forEachIndexed { i, t ->
+                            val isNow = nowPlaying?.id != null && t.id == nowPlaying.id
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isNow) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = green, modifier = Modifier.size(20.dp).width(28.dp))
+                                } else {
+                                    Text((i + 1).toString().padStart(2, '0'), color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                                }
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(t.name, color = if (isNow) green else Color.White, fontSize = 14.sp, maxLines = 1, fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal)
+                                    Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}

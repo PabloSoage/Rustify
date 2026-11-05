@@ -323,6 +323,23 @@ pub fn register_proxy<E: Env>(
     Some(server.stream_url(&handles::register::<E>(entry)))
 }
 
+/// Registers an already-existing local file to be served over loopback and LAN.
+///
+/// Refuses to register if the file does not exist on disk or if the local server is not running.
+pub fn register_file<E: Env>(path: &str, mime: Option<String>) -> Option<String> {
+    let _server = current()?;
+    let p = std::path::Path::new(path);
+    if !p.is_file() {
+        return None;
+    }
+    let entry = StreamEntry {
+        served: Served::File(path.to_string()),
+        mime,
+        expires_at_ms: Some(E::now_ms() + DEFAULT_TTL_MS),
+    };
+    Some(handles::register::<E>(entry))
+}
+
 // =============================================================================
 // ROUTING
 // =============================================================================

@@ -23,7 +23,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "5.0.0b"
+        versionName = "5.6.4b"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -146,6 +146,11 @@ kotlin {
 }
 
 dependencies {
+    // Models, pure logic and NativeEngine, shared with the desktop app and iOS (docs 24/25). Same
+    // packages as before the move, so no import in the app changed.
+    implementation(project(":shared"))
+    // The interface, shared with the desktop (docs serie-4.x/26).
+    implementation(project(":sharedUi"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -156,6 +161,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     // Home-screen widget (4.9).
     implementation(libs.androidx.glance.appwidget)
     // Glance alone would bring WorkManager 2.7.1, which crashes the minified build (see the catalog).

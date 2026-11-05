@@ -1,0 +1,383 @@
+package com.varuna.rustify.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import org.jetbrains.compose.resources.stringResource
+import com.varuna.rustify.ui.resources.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.MatchStore
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.UserAlternatives
+import com.varuna.rustify.player.PlayerController
+import kotlinx.coroutines.Dispatchers
+import com.varuna.rustify.platform.IO
+import kotlinx.coroutines.launch
+
+/**
+ * YouTube match editor — a readable list instead of a raw text editor:
+ *  - song name + artists + current match (id + "user/auto"),
+ *  - play the current match, edit (opens the alternatives search), or delete,
+ *  - add a match manually (search for the song, then its match).
+ *
+ * Reuses [YouTubeMappingDialog] (the alternatives search from TrackScreen) to edit/add.
+ * All changes go through [MatchStore], which rewrites the JSON and reloads the map in Rust.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MatchEditorScreen(
+    spotifyRepo: SpotifyRepository,
+    audioPlayerService: PlayerController,
+    onBack: () -> Unit,
+) {
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val green = Color(0xFF1DB954)
+
+    // Loaded in a `LaunchedEffect` rather than in the `remember` initialiser: reading it is disk
+    // I/O, and a `remember` initialiser runs on the thread that composes, which is the main one.
+    val editorScope = rememberCoroutineScope()
+    var mappings by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    val names = remember { mutableStateMapOf<String, FullTrack?>() }
+    var editTrack by remember { mutableStateOf<FullTrack?>(null) }  // opens the alternatives dialog
+    var showAdd by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableIntStateOf(0) }  // 0 = all, 1 = user-chosen, 2 = automatic
+
+    // Feedback for the play button: which row is still resolving. Cleared as soon as the player
+    // reports that track (or reports an error), so the spinner can't get stuck.
+    val playerState by audioPlayerService.state.collectAsState()
+    var startingId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(
+        playerState.currentTrack?.id, playerState.isPlaying,
+        playerState.isBuffering, playerState.isError
+    ) {
+        val id = startingId ?: return@LaunchedEffect
+        if (playerState.isError || (playerState.currentTrack?.id == id && !playerState.isBuffering)) {
+            startingId = null
+        }
+    }
+
+
+    LaunchedEffect(Unit) { mappings = MatchStore.readAll(platform.filesDir).toList() }
+
+    // Which matches are user-chosen, for filtering. Recomputed only when the list changes.
+    val userSet = remember(mappings) {
+        mappings.mapNotNull { (tid, _) -> tid.takeIf { UserAlternatives.isUserSet(platform.filesDir, it) } }.toSet()
+    }
+    // Preload the names of all matches in the background so title search covers the whole list,
+    // not just visible rows. Best-effort; the map fills in progressively.
+    LaunchedEffect(mappings) {
+        for ((tid, _) in mappings) {
+            if (!names.containsKey(tid)) names[tid] = runCatching { spotifyRepo.getTrack(tid) }.getOrNull()
+        }
+    }
+
+    // Filtered list: by user-chosen/automatic and by text (title / artist / id).
+    val filtered = mappings.filter { (tid, ytId) ->
+        val passFilter = when (filter) { 1 -> tid in userSet; 2 -> tid !in userSet; else -> true }
+        if (!passFilter) return@filter false
+        if (query.isBlank()) return@filter true
+        val q = query.trim().lowercase()
+        val ft = names[tid]
+        (ft?.name?.lowercase()?.contains(q) == true) ||
+            (ft?.artists?.any { it.name.lowercase().contains(q) } == true) ||
+            tid.lowercase().contains(q) || ytId.lowercase().contains(q)
+    }
+
+    Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+                title = { Text(stringResource(Res.string.match_editor_title), color = Color.White, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+            )
+        },
+        containerColor = Color(0xFF121212)
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)
+        ) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { showAdd = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = green, contentColor = Color.Black),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(Res.string.match_editor_add), fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.match_editor_search_hint)) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF1E1E1E), unfocusedContainerColor = Color(0xFF1E1E1E),
+                        focusedLabelColor = green, focusedIndicatorColor = green
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Todos", 1 to "Elegidos", 2 to "Automáticos").forEach { (f, label) ->
+                        FilterChip(
+                            selected = filter == f,
+                            onClick = { filter = f },
+                            label = { Text(label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color(0xFF2A2A2A), selectedContainerColor = green,
+                                labelColor = Color.White, selectedLabelColor = Color.Black
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("${filtered.size} / ${mappings.size} matches", color = Color.Gray, fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+            }
+
+            items(filtered, key = { it.first }) { (tid, ytId) ->
+                LaunchedEffect(tid) {
+                    if (!names.containsKey(tid)) {
+                        names[tid] = runCatching { spotifyRepo.getTrack(tid) }.getOrNull()
+                    }
+                }
+                val ft = names[tid]
+                val isUser = UserAlternatives.isUserSet(platform.filesDir, tid)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = ft?.album?.images?.firstOrNull()?.url,
+                        contentDescription = null,
+                        modifier = Modifier.size(46.dp).background(Color(0xFF222222), RoundedCornerShape(6.dp))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(ft?.name ?: tid, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            ft?.artists?.joinToString(", ") { it.name } ?: "…",
+                            color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "YT: $ytId · " + if (isUser) "elegido" else "auto",
+                            color = if (isUser) green else Color(0xFF888888), fontSize = 11.sp, maxLines = 1
+                        )
+                    }
+                    // Play the current match. Resolving goes to the network, so show a spinner while
+                    // it does — without it the button looked like it had done nothing.
+                    val isStarting = startingId == tid
+                    val isNowPlaying = playerState.currentTrack?.id == tid && playerState.isPlaying
+                    if (isStarting) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                color = green, strokeWidth = 2.dp, modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            startingId = tid
+                            // `ft` may still be loading; the shell carries the id, which is all a
+                            // hinted resolution needs. Same fallback the edit button already uses.
+                            val previewTrack = ft ?: FullTrack(
+                                id = tid, name = tid, externalUri = "", explicit = false,
+                                durationMs = 0, isrc = "", artists = emptyList(), album = null
+                            )
+                            runCatching { audioPlayerService.playPreview(previewTrack, ytId) }
+                        }) {
+                            Icon(
+                                if (isNowPlaying) Icons.AutoMirrored.Filled.VolumeUp
+                                else Icons.Default.PlayArrow,
+                                contentDescription = stringResource(Res.string.match_play),
+                                tint = green
+                            )
+                        }
+                    }
+                    // Edit (search for / change the alternative).
+                    IconButton(onClick = {
+                        editTrack = ft ?: FullTrack(
+                            id = tid, name = tid, externalUri = "", explicit = false,
+                            durationMs = 0, isrc = "", artists = emptyList(), album = null
+                        )
+                    }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
+                    }
+                    // Delete.
+                    IconButton(onClick = { editorScope.launch { MatchStore.remove(platform.filesDir, audioPlayerService, tid); mappings = MatchStore.readAll(platform.filesDir).toList() } }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFCC3333))
+                    }
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                item {
+                    Text(
+                        if (mappings.isEmpty()) "No hay matches guardados. Usa “Añadir” o el botón de alternativas de una canción."
+                        else "Ningún match coincide con el filtro/búsqueda.",
+                        color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    // Alternatives dialog (edit the match for a specific song).
+    editTrack?.let { t ->
+        YouTubeMappingDialog(
+            track = t,
+            audioPlayerService = audioPlayerService,
+            onDismiss = { editTrack = null },
+            onMappingSelected = { yt ->
+                editorScope.launch {
+                    t.id?.let { MatchStore.put(platform.filesDir, audioPlayerService, it, yt) }
+                    mappings = MatchStore.readAll(platform.filesDir).toList()
+                }
+                editTrack = null
+            }
+        )
+    }
+
+    // Add manually: first search for the song, then open the match search.
+    if (showAdd) {
+        SongPickerDialog(
+            spotifyRepo = spotifyRepo,
+            onDismiss = { showAdd = false },
+            onPick = { track -> showAdd = false; editTrack = track }
+        )
+    }
+}
+
+/** Spotify song search for the "add match manually" flow. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SongPickerDialog(
+    spotifyRepo: SpotifyRepository,
+    onDismiss: () -> Unit,
+    onPick: (FullTrack) -> Unit,
+) {
+    val green = Color(0xFF1DB954)
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<FullTrack>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+
+    fun search() {
+        if (query.isBlank()) return
+        searching = true
+        scope.launch(Dispatchers.IO) {
+            val r = runCatching { spotifyRepo.searchTracks(query, limit = 20).items }.getOrDefault(emptyList())
+            results = r; searching = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1E1E),
+        title = { Text(stringResource(Res.string.match_editor_find_song), color = Color.White) },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.match_editor_name_hint)) },
+                    singleLine = true
+                )
+                Button(
+                    onClick = { search() },
+                    colors = ButtonDefaults.buttonColors(containerColor = green, contentColor = Color.Black),
+                    modifier = Modifier.padding(top = 8.dp).align(Alignment.End)
+                ) { Text(stringResource(Res.string.common_search)) }
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(Modifier.weight(1f, fill = false)) {
+                    items(results) { t ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { onPick(t) }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = t.album?.images?.firstOrNull()?.url,
+                                contentDescription = null,
+                                modifier = Modifier.size(42.dp).background(Color(0xFF222222), RoundedCornerShape(6.dp))
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(t.name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(t.artists.joinToString(", ") { it.name }, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    if (searching) item { Text(stringResource(Res.string.common_searching), color = Color.Gray, modifier = Modifier.padding(8.dp)) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.settings_close), color = green) } }
+    )
+}

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cancel">キャンセル</string>
+    <string name="ok">OK</string>
+    <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
+    <string name="share_copied">クリップボードにコピーしました</string>
+    <string name="share_image_copied">画像をクリップボードにコピーしました</string>
+    <!-- A feature this platform does not have yet (docs serie-4.x/27), said rather than hidden. -->
+    <string name="feature_not_on_platform">このバージョンではまだ利用できません</string>
+    <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
+    <string name="desktop_sign_in_help">スマホと同じくブラウザのセッションでログインします。open.spotify.com にログインし、sp_dc クッキーの値を貼り付けてください。このコンピューターにだけ保存されます。</string>
+    <string name="desktop_sign_in_cookie">sp_dc クッキー</string>
+    <string name="desktop_sign_in_waiting">Spotify のウィンドウでログイン中…</string>
+    <string name="desktop_sign_in_waiting_help">スマホと同じようにそこでログインしてください。Spotify がログインを受け付けると、ウィンドウは自動で閉じます。</string>
+    <string name="desktop_sign_in_paste_instead">代わりにクッキーを貼り付ける</string>
+    <string name="desktop_sign_in_open_window">Spotify のウィンドウでログイン</string>
+    <string name="desktop_sign_in_window_failed">Spotify のウィンドウを開けませんでした: %1$s</string>
+    <string name="desktop_screen_not_here">この画面はまだデスクトップにありません。今後のバージョンでスマホと同じものが入ります。</string>
+    <string name="desktop_settings_not_here">このカテゴリのほかの設定はまだデスクトップにありません。対応する機能と一緒に追加されます。</string>
+    <!-- The desktop's window, tray, links and update check (DesktopSettingsSections, DesktopTray, DesktopLinks). -->
+    <string name="desktop_window_section">ウィンドウ</string>
+    <string name="desktop_close_to_tray">ウィンドウを閉じても再生を続ける</string>
+    <string name="desktop_close_to_tray_desc">Rustify はシステムトレイに残ります。トレイのメニューの「終了」で閉じます。</string>
+    <string name="desktop_close_to_tray_unavailable">このデスクトップにはシステムトレイがないため、ウィンドウを閉じると Rustify は終了します。</string>
+    <string name="desktop_logs_desc">起動してから Rustify が書き出した記録です。閉じるまでメモリに保持されます。</string>
+    <string name="desktop_update_package">このコンピューター用: %1$s</string>
+    <string name="desktop_link_not_understood">Rustify はそのリンクを開けません</string>
+    <string name="tray_show">Rustify を表示</string>
+    <string name="tray_quit">終了</string>
+    <!-- The DJ's voice on a computer with no speech command (desktop). -->
+    <string name="settings_dj_voice_none">このコンピューターには音声合成エンジンが見つからないため、DJ は話しません。Linux では speech-dispatcher（spd-say）または espeak-ng をインストールしてください。</string>
+    <!-- The DJ's local mode on the desktop: a model server on this computer. -->
+    <string name="dj_mode_local_desktop">ローカルモデル（このコンピューター）</string>
+    <string name="settings_dj_mode_desc_desktop">ヒューリスティックはオフラインで動作します。外部 AI は再生履歴を OpenAI 互換のエンドポイントに送信します（任意）。ローカルモデルはこのコンピューターで動く言語モデル（Ollama、LM Studio、llama.cpp）に問い合わせ、GPU があれば GPU で実行します。データはコンピューターの外に出ません。</string>
+    <string name="settings_dj_local_detecting">このコンピューターでモデルサーバーを探しています…</string>
+    <string name="settings_dj_local_none">このコンピューターで動いているモデルサーバー（Ollama、LM Studio、llama.cpp の llama-server）はありません。起動するまで DJ はヒューリスティックを使います。</string>
+    <string name="settings_dj_local_found">このコンピューターで見つかりました：%1$s</string>
+    <string name="settings_dj_local_source">モデルサーバー</string>
+    <string name="settings_dj_local_auto">自動：最初に見つかったもの</string>
+    <string name="settings_dj_local_at">%1$s（%2$s）</string>
+    <string name="settings_dj_local_not_running">%1$s（停止中）</string>
+    <string name="settings_dj_local_model">モデル</string>
+    <string name="settings_dj_local_no_models">このサーバーにはまだモデルがありません。先にモデルをダウンロードまたは読み込んでください。</string>
+    <string name="settings_dj_local_rescan">再検索</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">Rustify 内蔵：llama.cpp とここにダウンロードしたモデル</string>
+    <string name="settings_dj_local_managed_desc">Ollama や LM Studio がなくても、Rustify はこのコンピューター用の llama.cpp サーバー（可能なら CUDA、Vulkan、Metal、なければ CPU 版）と小さなモデルをダウンロードし、アプリを開いている間だけ 127.0.0.1 で実行できます。</string>
+    <string name="settings_dj_local_model_size">%1$s · 約 %2$s</string>
+    <string name="settings_dj_local_on_disk">ダウンロード済み</string>
+    <string name="settings_dj_local_downloading_what">%1$s をダウンロード中… %2$s</string>
+    <string name="settings_dj_local_unpacking">%1$s を展開中…</string>
+    <string name="settings_dj_local_starting">%1$s を起動中…</string>
+    <string name="settings_dj_local_running">%1$s で実行中（%2$s）</string>
+    <string name="settings_dj_local_failed">うまくいきませんでした：%1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s（%2$s）はこのコンピューターにあります。</string>
+    <string name="settings_dj_local_get">ダウンロードして起動</string>
+    <string name="settings_dj_local_start">起動</string>
+    <string name="settings_dj_local_stop">停止</string>
+    <string name="settings_dj_local_delete">モデルを削除</string>
+    <!-- デスクトップでの DJ のモデルとのチャット（DesktopChatModel 上の NanoChatScreen）。 -->
+    <string name="chat_title_desktop">DJ のモデルとチャット</string>
+    <string name="chat_empty_desktop">何でも質問できます。曲の再生・キューへの追加・検索、ミックスの作成、一時停止やスキップも頼めます。DJ が使うモデルと話します：このコンピューターのモデルサーバー（Ollama、LM Studio、llama.cpp、または Rustify 内蔵）、または設定で DJ に外部 AI を選んでいればその AI です。ローカルモデルなら会話はこのコンピューターから出ません。再生や検索を頼んだときは、アプリの通常の検索と同じくその検索だけが送信されます。</string>
+    <string name="chat_no_model">話せるモデルがありません：このコンピューターで動いているモデルがありません。Ollama、LM Studio、llama-server を起動するか、下で Rustify 内蔵のものを入手してください。または設定で DJ に外部 AI を選んでください。</string>
+    <string name="chat_no_service">DJ に設定したサービスに問い合わせます。DJ の設定で外部 AI (API) を選んでください。</string>
+    <string name="chat_no_model_short">動いているモデルなし</string>
+    <string name="chat_no_images">ここでは写真は使えません：モデルにはテキストだけで問い合わせます。モデルサーバーが画像を読めるのはビジョンモデルのときだけで、動いているモデルがそうとは限らないためです。</string>
+    <string name="chat_no_token_count">各回答には時間を表示しますが、トークン/秒の速度は表示しません：書いたトークン数を返さないモデルサーバーもあるためです。</string>
+    <string name="chat_stats_times">最初の語 %1$s 秒 · 合計 %2$s 秒</string>
+    <!-- デスクトップの歌詞翻訳（DJ のモデル）が失敗した理由。「翻訳できませんでした: 」の後に入ります。 -->
+    <string name="lyrics_translate_no_model">このコンピューターで動いている言語モデルがなく、DJ も外部 AI を使っていません</string>
+    <string name="lyrics_translate_not_json">モデルが求めた形式の行で答えませんでした</string>
+    <string name="lyrics_translate_wrong_count">%2$s 行に対してモデルが %1$s 行を返しました</string>
+    <string name="travel_pick_origin_first">この端末では現在地を取得できません。先に「出発地」を選び、場所を検索するか地図を長押ししてください。</string>
+    <string name="drive_kind_mappings">YouTube の対応</string>
+    <string name="drive_kind_user_alternatives">自分で選んだ対応</string>
+    <string name="drive_kind_local_playlists">ローカルのプレイリスト</string>
+    <string name="drive_kind_local_favorites">ローカルのお気に入り</string>
+    <string name="drive_kind_ytm_favorites">YT Music: お気に入り</string>
+    <string name="drive_kind_ytm_playlists">YT Music: プレイリスト</string>
+    <string name="drive_kind_ytm_albums">YT Music: アルバム</string>
+    <string name="drive_kind_ytm_artists">YT Music: アーティスト</string>
+    <string name="drive_kind_metrics">再生の記録</string>
+    <string name="drive_kind_places">前回の続き</string>
+    <string name="web_downloads_on_server">ダウンロードはサーバーのダウンロード用フォルダーに保存され、どのブラウザーから開いてもその音楽に加わります。</string>
+    <string name="web_downloads_no_folder">サーバーにダウンロード用フォルダーがありません。ブラウザーからダウンロードするには --download-dir を付けて起動してください。</string>
+    <string name="server_link_title">自分の Rustify サーバー</string>
+    <string name="server_link_desc">このアプリの Spotify セッションを自分の rustify-server（NAS やパソコンの Web 版）に渡し、アカウントで開けるようにします。アカウントは変更されません。</string>
+    <string name="server_link_no_session">先にこのアプリで Spotify にログインしてください。</string>
+    <string name="server_link_address">サーバーのアドレス（https://…、またはネットワーク内の http://）</string>
+    <string name="server_link_button">サーバーと連携</string>
+    <string name="server_link_ok">連携しました。サーバーの Web 版で Spotify アカウントが使えます。</string>
+    <string name="server_link_insecure">ネットワーク外のアドレスへ暗号化なしの http では送れません。セッションが丸見えになります。https を使ってください。</string>
+    <string name="server_link_bad_address">サーバーのアドレスではありません。</string>
+    <string name="server_link_wrong_token">サーバーがその名前とパスワードを受け付けませんでした。</string>
+    <string name="server_link_refused">サーバーが Spotify にログインできませんでした: %1$s</string>
+    <string name="server_link_failed">サーバーに接続できませんでした: %1$s</string>
+    <string name="web_sign_in_from_app">アプリからも: スマホかパソコンの Rustify で「設定」→「連携」→「自分の Rustify サーバー」を開き、このアドレス（%1$s）とこのサーバーの名前とパスワードを入力します。Spotify のセッションが何もコピーせずにここへ届きます。</string>
+    <string name="web_sign_in_check_again">連携しました: もう一度確認</string>
+    <string name="web_sign_in_or_paste">または Cookie を手で貼り付け:</string>
+    <string name="web_sign_in_window">Spotify でログイン</string>
+    <string name="web_sign_in_window_hint">アプリと同じように、このパソコンのウィンドウで Spotify のログインが開きます。</string>
+    <string name="web_sign_in_waiting">Spotify のウィンドウでログインを完了してください…</string>
+    <string name="web_sign_in_window_failed">ここでは Spotify のウィンドウを開けませんでした。下のほかの方法を使ってください。</string>
+    <string name="web_sign_in_other_ways">ほかのログイン方法</string>
+    <string name="server_link_user">サーバーのアカウント名</string>
+    <string name="server_link_password">パスワード</string>
+</resources>

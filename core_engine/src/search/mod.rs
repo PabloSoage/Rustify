@@ -31,10 +31,41 @@
 /// Spanish or French keyboard produces. A dependency that handles every script correctly would be
 /// carrying a table for scripts where the fold is the identity anyway.
 pub fn fold(input: &str) -> String {
+    fold_with(input, false)
+}
+
+/// [`fold`] with the punctuation *inside* a run of text removed rather than read as a gap, so
+/// `AC/DC` is also `acdc` and `rock&roll` is `rockroll`. Whitespace still separates words. Only the
+/// field side uses it ([`Haystack::new`]), as an extra spelling to be found by: someone types the
+/// band the way they say it.
+fn fold_compact(input: &str) -> String {
+    fold_with(input, true)
+}
+
+/// Whether the dot at `chars[at]` sits inside initials: one letter or digit on each side, each
+/// standing alone (`T.N.T.`, `R.E.M.`, `a.k.a.`). Those letters are one word; read as gaps they
+/// were single-letter words, and `t.n.t` found every song with a `t` and an `n` anywhere in it.
+/// `vol.2` and `St. Vincent` are not initials and keep their gap.
+fn is_initials_dot(chars: &[char], at: usize) -> bool {
+    let alone = |i: usize| {
+        chars[i].is_alphanumeric()
+            && (i == 0 || !chars[i - 1].is_alphanumeric())
+            && chars.get(i + 1).is_none_or(|c| !c.is_alphanumeric())
+    };
+    at > 0 && at + 1 < chars.len() && alone(at - 1) && alone(at + 1)
+}
+
+fn fold_with(input: &str, punctuation_joins: bool) -> String {
+    let chars: Vec<char> = input.chars().collect();
     let mut out = String::with_capacity(input.len());
     let mut pending_space = false;
-    for ch in input.chars() {
-        match fold_char(ch) {
+    for (i, &ch) in chars.iter().enumerate() {
+        let folded = match fold_char(ch) {
+            Folded::Gap if ch == '.' && is_initials_dot(&chars, i) => Folded::Join,
+            Folded::Gap if punctuation_joins && !ch.is_whitespace() => Folded::Join,
+            other => other,
+        };
+        match folded {
             // Punctuation and whitespace both become "a gap", so `rock&roll`, `rock & roll` and
             // `rock, roll` all tokenize the same. Held rather than pushed, so trailing gaps and runs
             // never reach the output.
@@ -314,6 +345,14 @@ impl Haystack {
         for field in fields {
             folded.push(fold(field));
         }
+        // Then each field without its inner punctuation (`AC/DC` as `acdc`), below the real ones
+        // for the same reason as the romanisations: another way in, not a better match.
+        for field in fields {
+            let compact = fold_compact(field);
+            if !compact.is_empty() && !folded.contains(&compact) {
+                folded.push(compact);
+            }
+        }
         // Then the romanisations of anything containing kana, appended so they rank *below* the
         // real fields — a romaji hit is a way of finding the thing, not a better match than its
         // actual title.
@@ -550,6 +589,30 @@ mod tests {
         assert_eq!(fold("Don't Stop"), "dont stop");
         assert!(matches(&tokens("dont stop"), &hay(&["Don't Stop"])));
         assert!(matches(&tokens("rock roll"), &hay(&["Rock & Roll"])));
+    }
+
+    #[test]
+    fn initials_are_one_word_with_their_dots_or_without() {
+        assert_eq!(fold("T.N.T."), "tnt");
+        assert_eq!(fold("R.E.M."), "rem");
+        assert_eq!(fold("vol.2"), "vol 2");
+        assert_eq!(fold("St. Vincent"), "st vincent");
+        let tnt = hay(&["T.N.T.", "AC/DC", "High Voltage"]);
+        assert!(matches(&tokens("t.n.t"), &tnt));
+        assert!(matches(&tokens("tnt"), &tnt));
+        // What the owner saw: three one-letter words matched anything with a `t` and an `n`.
+        assert!(!matches(&tokens("t.n.t"), &hay(&["Thunderstruck", "AC/DC", "The Razors Edge"])));
+    }
+
+    #[test]
+    fn a_band_is_found_the_way_it_is_said() {
+        let acdc = hay(&["Hells Bells", "AC/DC", "Back in Black"]);
+        assert!(matches(&tokens("acdc"), &acdc));
+        assert!(matches(&tokens("ac/dc"), &acdc));
+        assert!(matches(&tokens("ac dc"), &acdc));
+        assert!(matches(&tokens("acdc hells"), &acdc));
+        // The spelling without punctuation ranks below the real one.
+        assert!(score(&tokens("ac dc"), &acdc) > score(&tokens("acdc"), &acdc));
     }
 
     #[test]

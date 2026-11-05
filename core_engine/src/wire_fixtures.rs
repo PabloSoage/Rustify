@@ -495,6 +495,23 @@ fn all_fixtures() -> Vec<String> {
         },
     ));
 
+    // ─── A local file's tags (the desktop's scan) ───
+    check(golden(
+        "LocalTags",
+        &crate::audio::tags::LocalTags {
+            title: Some("Jóga".to_string()),
+            artists: vec!["Björk".to_string()],
+            album: Some("Homogenic".to_string()),
+            album_artist: Some("Björk & Guests".to_string()),
+            track_number: Some(3),
+            disc_number: Some(1),
+            duration_ms: 305_000,
+            isrc: Some("GBAYE9700120".to_string()),
+            year: Some(1997),
+            has_cover: true,
+        },
+    ));
+
     problems
 }
 

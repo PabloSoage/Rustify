@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cancel">Cancelar</string>
+    <string name="ok">Aceptar</string>
+    <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
+    <string name="share_copied">Copiado al portapapeles</string>
+    <string name="share_image_copied">Imagen copiada al portapapeles</string>
+    <!-- A feature this platform does not have yet (docs serie-4.x/27), said rather than hidden. -->
+    <string name="feature_not_on_platform">Aún no disponible en esta versión</string>
+    <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
+    <string name="desktop_sign_in_help">Rustify entra con la sesión del navegador, como en el móvil: abre open.spotify.com con tu sesión, copia el valor de la cookie sp_dc y pégalo aquí. Se queda en este ordenador.</string>
+    <string name="desktop_sign_in_cookie">Cookie sp_dc</string>
+    <string name="desktop_sign_in_waiting">Iniciando sesión en la ventana de Spotify…</string>
+    <string name="desktop_sign_in_waiting_help">Entra allí como en el móvil. La ventana se cierra sola cuando Spotify te deja pasar.</string>
+    <string name="desktop_sign_in_paste_instead">Pegar la cookie en su lugar</string>
+    <string name="desktop_sign_in_open_window">Entrar en una ventana de Spotify</string>
+    <string name="desktop_sign_in_window_failed">No se abrió la ventana de Spotify: %1$s</string>
+    <string name="desktop_screen_not_here">Esta pantalla aún no está en escritorio. Llegará en una versión próxima, igual que en el móvil.</string>
+    <string name="desktop_settings_not_here">El resto de esta categoría aún no está en escritorio: llega con las funciones que configura.</string>
+    <!-- The desktop's window, tray, links and update check (DesktopSettingsSections, DesktopTray, DesktopLinks). -->
+    <string name="desktop_window_section">Ventana</string>
+    <string name="desktop_close_to_tray">Seguir sonando al cerrar la ventana</string>
+    <string name="desktop_close_to_tray_desc">Rustify se queda en la bandeja del sistema; «Salir» en su menú lo cierra.</string>
+    <string name="desktop_close_to_tray_unavailable">Este escritorio no tiene bandeja del sistema, así que cerrar la ventana cierra Rustify.</string>
+    <string name="desktop_logs_desc">Lo que Rustify ha escrito desde que arrancó; se guarda en memoria hasta que se cierra.</string>
+    <string name="desktop_update_package">Para este ordenador: %1$s</string>
+    <string name="desktop_link_not_understood">Rustify no sabe abrir ese enlace</string>
+    <string name="tray_show">Mostrar Rustify</string>
+    <string name="tray_quit">Salir</string>
+    <!-- The DJ's voice on a computer with no speech command (desktop). -->
+    <string name="settings_dj_voice_none">No se ha encontrado ningún motor de voz en este ordenador, así que el DJ no habla. En Linux, instala speech-dispatcher (spd-say) o espeak-ng.</string>
+    <!-- The DJ's local mode on the desktop: a model server on this computer. -->
+    <string name="dj_mode_local_desktop">Modelo local (este ordenador)</string>
+    <string name="settings_dj_mode_desc_desktop">La heurística funciona sin conexión. La IA externa envía tu contexto de escucha a un endpoint compatible con OpenAI (opcional). El modelo local pregunta a un modelo de lenguaje que se ejecuta en este ordenador (Ollama, LM Studio o llama.cpp), en su tarjeta gráfica si la tiene: nada sale del ordenador.</string>
+    <string name="settings_dj_local_detecting">Buscando un servidor de modelos en este ordenador…</string>
+    <string name="settings_dj_local_none">No hay ningún servidor de modelos en marcha en este ordenador (Ollama, LM Studio o llama-server de llama.cpp). Mientras no lo haya, el DJ usa la heurística.</string>
+    <string name="settings_dj_local_found">Encontrado en este ordenador: %1$s</string>
+    <string name="settings_dj_local_source">Servidor de modelos</string>
+    <string name="settings_dj_local_auto">Automático: el primero que esté en marcha</string>
+    <string name="settings_dj_local_at">%1$s en %2$s</string>
+    <string name="settings_dj_local_not_running">%1$s (no está en marcha)</string>
+    <string name="settings_dj_local_model">Modelo</string>
+    <string name="settings_dj_local_no_models">Este servidor aún no tiene ningún modelo: descarga o carga uno en él primero.</string>
+    <string name="settings_dj_local_rescan">Buscar de nuevo</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">El de Rustify: llama.cpp con un modelo descargado aquí</string>
+    <string name="settings_dj_local_managed_desc">Sin Ollama ni LM Studio, Rustify puede descargar el servidor de llama.cpp para este ordenador (con CUDA, Vulkan o Metal si puede; si no, para la CPU) y un modelo pequeño, y ejecutarlo solo en 127.0.0.1 mientras la app está abierta.</string>
+    <string name="settings_dj_local_model_size">%1$s · unos %2$s</string>
+    <string name="settings_dj_local_on_disk">descargado</string>
+    <string name="settings_dj_local_downloading_what">Descargando %1$s… %2$s</string>
+    <string name="settings_dj_local_unpacking">Descomprimiendo %1$s…</string>
+    <string name="settings_dj_local_starting">Arrancando %1$s…</string>
+    <string name="settings_dj_local_running">En marcha en %1$s (%2$s)</string>
+    <string name="settings_dj_local_failed">No ha funcionado: %1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s (%2$s) está en este ordenador.</string>
+    <string name="settings_dj_local_get">Descargar y arrancar</string>
+    <string name="settings_dj_local_start">Arrancar</string>
+    <string name="settings_dj_local_stop">Parar</string>
+    <string name="settings_dj_local_delete">Borrar el modelo</string>
+    <!-- El chat con el modelo del DJ en el escritorio (NanoChatScreen sobre DesktopChatModel). -->
+    <string name="chat_title_desktop">Chat con el modelo del DJ</string>
+    <string name="chat_empty_desktop">Pregunta lo que quieras, o pídele que ponga, añada a la cola o busque música, que haga una mezcla, que pause o que salte. Es el modelo al que pregunta el DJ: un servidor de modelos en este ordenador (Ollama, LM Studio, llama.cpp o el de Rustify), o la IA externa elegida para el DJ en Ajustes cuando usa una. Con un modelo local la conversación no sale de este ordenador; cuando pone o busca algo, solo sale esa búsqueda, como cualquier búsqueda de la app.</string>
+    <string name="chat_no_model">No hay ningún modelo con el que hablar: no hay ninguno en marcha en este ordenador. Arranca Ollama, LM Studio o llama-server, o descarga el de Rustify aquí debajo; o elige IA externa para el DJ en Ajustes.</string>
+    <string name="chat_no_service">Pregunta al servicio configurado para el DJ. Elige «IA externa (API)» en los ajustes del DJ.</string>
+    <string name="chat_no_model_short">ningún modelo en marcha</string>
+    <string name="chat_no_images">Aquí no hay fotos: al modelo se le pregunta solo con texto, porque un servidor de modelos solo lee imágenes con un modelo de visión, y el que está en marcha puede no serlo.</string>
+    <string name="chat_no_token_count">Cada respuesta muestra sus tiempos pero no su velocidad en tokens por segundo: no todos los servidores de modelos dicen cuántos tokens han escrito.</string>
+    <string name="chat_stats_times">primera palabra %1$s s · total %2$s s</string>
+    <!-- Por qué falló la traducción de letras del escritorio (con el modelo del DJ); tras «No se pudo traducir: ». -->
+    <string name="lyrics_translate_no_model">no hay ningún modelo de lenguaje en marcha en este ordenador, y el DJ no usa IA externa</string>
+    <string name="lyrics_translate_not_json">el modelo no ha respondido con las líneas pedidas</string>
+    <string name="lyrics_translate_wrong_count">el modelo ha devuelto %1$s líneas de %2$s</string>
+    <string name="travel_pick_origin_first">Este dispositivo no tiene ubicación: elige primero Origen y luego busca un lugar o mantén pulsado el mapa.</string>
+    <string name="drive_kind_mappings">Coincidencias de YouTube</string>
+    <string name="drive_kind_user_alternatives">Coincidencias elegidas</string>
+    <string name="drive_kind_local_playlists">Listas locales</string>
+    <string name="drive_kind_local_favorites">Favoritos locales</string>
+    <string name="drive_kind_ytm_favorites">YT Music: favoritos</string>
+    <string name="drive_kind_ytm_playlists">YT Music: listas</string>
+    <string name="drive_kind_ytm_albums">YT Music: álbumes</string>
+    <string name="drive_kind_ytm_artists">YT Music: artistas</string>
+    <string name="drive_kind_metrics">Eventos de escucha</string>
+    <string name="drive_kind_places">Donde lo dejaste</string>
+    <string name="web_downloads_on_server">Las descargas se guardan en el servidor, en su carpeta de descargas, y pasan a su música para cualquier navegador que lo abra.</string>
+    <string name="web_downloads_no_folder">El servidor no tiene carpeta de descargas. Arráncalo con --download-dir para descargar desde el navegador.</string>
+    <string name="server_link_title">Tu servidor Rustify</string>
+    <string name="server_link_desc">Da a tu propio rustify-server (la interfaz web de tu NAS u ordenador) la sesión de Spotify de esta app, para que se abra con tu cuenta. No se cambia nada en la cuenta.</string>
+    <string name="server_link_no_session">Inicia sesión en Spotify en esta app primero.</string>
+    <string name="server_link_address">Dirección del servidor (https://…, o http:// en tu red)</string>
+    <string name="server_link_button">Vincular servidor</string>
+    <string name="server_link_ok">Vinculado: la interfaz web del servidor ya tiene tu cuenta de Spotify.</string>
+    <string name="server_link_insecure">No por http sin cifrar a una dirección fuera de tu red: la sesión viajaría a la vista. Usa https.</string>
+    <string name="server_link_bad_address">Eso no es la dirección de un servidor.</string>
+    <string name="server_link_wrong_token">El servidor no aceptó ese nombre y esa contraseña.</string>
+    <string name="server_link_refused">El servidor no pudo entrar en Spotify: %1$s</string>
+    <string name="server_link_failed">No se pudo llegar al servidor: %1$s</string>
+    <string name="web_sign_in_from_app">O desde la app: en Rustify del móvil o del ordenador, abre Ajustes → Integraciones → Tu servidor Rustify y pon esta dirección (%1$s) con el nombre y la contraseña de este servidor. Tu sesión de Spotify llega aquí sin copiar nada.</string>
+    <string name="web_sign_in_check_again">Ya lo vinculé: comprobar</string>
+    <string name="web_sign_in_or_paste">O pega la cookie a mano:</string>
+    <string name="web_sign_in_window">Iniciar sesión con Spotify</string>
+    <string name="web_sign_in_window_hint">Se abre el inicio de sesión de Spotify en una ventana de este ordenador, como en la app.</string>
+    <string name="web_sign_in_waiting">Termina de iniciar sesión en la ventana de Spotify…</string>
+    <string name="web_sign_in_window_failed">La ventana de Spotify no se pudo abrir aquí. Usa una de las otras formas de abajo.</string>
+    <string name="web_sign_in_other_ways">Otras formas de iniciar sesión</string>
+    <string name="server_link_user">Nombre de la cuenta del servidor</string>
+    <string name="server_link_password">Su contraseña</string>
+</resources>

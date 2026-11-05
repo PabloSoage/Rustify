@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings the shared interface needs that Android took from the platform (android.R.string). -->
+<resources>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <!-- The desktop's share: no share sheet, the text or image goes to the clipboard. -->
+    <string name="share_copied">Copied to the clipboard</string>
+    <string name="share_image_copied">Image copied to the clipboard</string>
+    <!-- A feature this platform does not have yet (docs serie-4.x/27), said rather than hidden. -->
+    <string name="feature_not_on_platform">Not available in this version yet</string>
+    <!-- The desktop's shell (AppShell): sign-in and the screens it does not have yet. -->
+    <string name="desktop_sign_in_help">Rustify signs in with your browser session, as on the phone: open open.spotify.com signed in, copy the value of the sp_dc cookie and paste it here. It stays on this computer.</string>
+    <string name="desktop_sign_in_cookie">sp_dc cookie</string>
+    <!-- The sign-in window (desktopApp/login), and the pasted cookie as its fallback. -->
+    <string name="desktop_sign_in_waiting">Signing in in the Spotify window…</string>
+    <string name="desktop_sign_in_waiting_help">Sign in there as you would on the phone. The window closes by itself once Spotify lets you in.</string>
+    <string name="desktop_sign_in_paste_instead">Paste the cookie instead</string>
+    <string name="desktop_sign_in_open_window">Sign in in a Spotify window</string>
+    <string name="desktop_sign_in_window_failed">The Spotify window did not open: %1$s</string>
+    <string name="desktop_screen_not_here">This screen is not on the desktop yet. It is coming in a later version, the same as on the phone.</string>
+    <string name="desktop_settings_not_here">The rest of this category is not on the desktop yet: it comes with the features it configures.</string>
+    <!-- The desktop's window, tray, links and update check (DesktopSettingsSections, DesktopTray, DesktopLinks). -->
+    <string name="desktop_window_section">Window</string>
+    <string name="desktop_close_to_tray">Keep playing when the window is closed</string>
+    <string name="desktop_close_to_tray_desc">Rustify stays in the system tray; Quit in its menu closes it.</string>
+    <string name="desktop_close_to_tray_unavailable">This desktop has no system tray, so closing the window quits Rustify.</string>
+    <string name="desktop_logs_desc">What Rustify has written since it started, kept in memory until it closes.</string>
+    <string name="desktop_update_package">For this computer: %1$s</string>
+    <string name="desktop_link_not_understood">Rustify cannot open that link</string>
+    <string name="tray_show">Show Rustify</string>
+    <string name="tray_quit">Quit</string>
+    <!-- The DJ's voice on a computer with no speech command (desktop). -->
+    <string name="settings_dj_voice_none">No speech engine was found on this computer, so the DJ stays silent. On Linux, install speech-dispatcher (spd-say) or espeak-ng.</string>
+    <!-- The DJ's local mode on the desktop: a model server on this computer. -->
+    <string name="dj_mode_local_desktop">Local model (this computer)</string>
+    <string name="settings_dj_mode_desc_desktop">Heuristic works offline. External AI sends your listening context to an OpenAI-compatible endpoint (opt-in). Local model asks a language model running on this computer (Ollama, LM Studio or llama.cpp), on its graphics card where it has one: nothing leaves the computer.</string>
+    <string name="settings_dj_local_detecting">Looking for a model server on this computer…</string>
+    <string name="settings_dj_local_none">No model server is running on this computer (Ollama, LM Studio or llama.cpp's llama-server). Until one is, the DJ uses the heuristic.</string>
+    <string name="settings_dj_local_found">Found on this computer: %1$s</string>
+    <string name="settings_dj_local_source">Model server</string>
+    <string name="settings_dj_local_auto">Automatic: the first one running</string>
+    <string name="settings_dj_local_at">%1$s at %2$s</string>
+    <string name="settings_dj_local_not_running">%1$s (not running)</string>
+    <string name="settings_dj_local_model">Model</string>
+    <string name="settings_dj_local_no_models">This server has no model yet: pull or load one in it first.</string>
+    <string name="settings_dj_local_rescan">Look again</string>
+    <!-- The DJ's local mode on the desktop: the model server Rustify downloads and runs itself. -->
+    <string name="settings_dj_local_managed">Rustify's own: llama.cpp with a model downloaded here</string>
+    <string name="settings_dj_local_managed_desc">Without Ollama or LM Studio, Rustify can download llama.cpp's server for this computer (with CUDA, Vulkan or Metal where it can, else for the CPU) and one small model, and run it only on 127.0.0.1 while the app is open.</string>
+    <string name="settings_dj_local_model_size">%1$s · about %2$s</string>
+    <string name="settings_dj_local_on_disk">downloaded</string>
+    <string name="settings_dj_local_downloading_what">Downloading %1$s… %2$s</string>
+    <string name="settings_dj_local_unpacking">Unpacking %1$s…</string>
+    <string name="settings_dj_local_starting">Starting %1$s…</string>
+    <string name="settings_dj_local_running">Running at %1$s (%2$s)</string>
+    <string name="settings_dj_local_failed">It did not work: %1$s</string>
+    <string name="settings_dj_local_installed">llama.cpp %1$s (%2$s) is on this computer.</string>
+    <string name="settings_dj_local_get">Download and start</string>
+    <string name="settings_dj_local_start">Start</string>
+    <string name="settings_dj_local_stop">Stop</string>
+    <string name="settings_dj_local_delete">Delete the model</string>
+    <!-- The chat with the DJ's model on the desktop (NanoChatScreen over DesktopChatModel). -->
+    <string name="chat_title_desktop">Chat with the DJ's model</string>
+    <string name="chat_empty_desktop">Ask anything, or ask it to play, queue or find music, start a mix, pause or skip. It is the model the DJ asks: a model server on this computer (Ollama, LM Studio, llama.cpp or Rustify's own), or the external AI chosen for the DJ in Settings when it uses one. With a local model the conversation stays on this computer; when it plays or finds something, only that search goes out, like any search in the app.</string>
+    <string name="chat_no_model">No model to chat with: none is running on this computer. Start Ollama, LM Studio or llama-server, or get Rustify's own below; or choose External AI for the DJ in Settings.</string>
+    <string name="chat_no_service">Asks the service set for the DJ. Choose “External AI (API)” in the DJ’s settings.</string>
+    <string name="chat_no_model_short">no model running</string>
+    <string name="chat_no_images">No photos here: the model is asked in text only, since a model server reads images only with a vision model, and the one running may not be.</string>
+    <string name="chat_no_token_count">Each answer shows its times but not its speed in tokens per second: not every model server says how many tokens it wrote.</string>
+    <string name="chat_stats_times">first word %1$s s · total %2$s s</string>
+    <!-- Why the desktop's lyrics translation (by the DJ's model) failed; after "Could not translate: ". -->
+    <string name="lyrics_translate_no_model">no language model is running on this computer, and the DJ uses no external AI</string>
+    <string name="lyrics_translate_not_json">the model did not answer with the lines asked for</string>
+    <string name="lyrics_translate_wrong_count">the model gave back %1$s lines for %2$s</string>
+    <string name="travel_pick_origin_first">This device has no location: pick Origin first, then search a place or long-press the map.</string>
+    <string name="drive_kind_mappings">YouTube matches</string>
+    <string name="drive_kind_user_alternatives">Matches you chose</string>
+    <string name="drive_kind_local_playlists">Local playlists</string>
+    <string name="drive_kind_local_favorites">Local favourites</string>
+    <string name="drive_kind_ytm_favorites">YT Music: favourites</string>
+    <string name="drive_kind_ytm_playlists">YT Music: playlists</string>
+    <string name="drive_kind_ytm_albums">YT Music: albums</string>
+    <string name="drive_kind_ytm_artists">YT Music: artists</string>
+    <string name="drive_kind_metrics">Listening events</string>
+    <string name="drive_kind_places">Where you left off</string>
+    <string name="web_downloads_on_server">Downloads are saved on the server, in its downloads folder, and join its music for every browser that opens it.</string>
+    <string name="web_downloads_no_folder">The server has no folder for downloads. Start it with --download-dir to download from the browser.</string>
+    <string name="server_link_title">Your Rustify server</string>
+    <string name="server_link_desc">Give your own rustify-server (the web interface on your NAS or computer) this app\'s Spotify session, so it opens with your account. Nothing is changed in the account.</string>
+    <string name="server_link_no_session">Sign in to Spotify in this app first.</string>
+    <string name="server_link_address">Server address (https://…, or http:// on your network)</string>
+    <string name="server_link_button">Link server</string>
+    <string name="server_link_ok">Linked: the server\'s web interface now has your Spotify account.</string>
+    <string name="server_link_insecure">Not over plain http to an address outside your network: the session would travel in clear. Use https.</string>
+    <string name="server_link_bad_address">That is not a server address.</string>
+    <string name="server_link_wrong_token">The server did not take that name and password.</string>
+    <string name="server_link_refused">The server could not sign in to Spotify: %1$s</string>
+    <string name="server_link_failed">Could not reach the server: %1$s</string>
+    <string name="web_sign_in_from_app">Or from the app: in Rustify on your phone or computer, open Settings → Integrations → Your Rustify server, and enter this address (%1$s) with this server\'s name and password. Your Spotify session comes here without copying anything.</string>
+    <string name="web_sign_in_check_again">I linked it: check again</string>
+    <string name="web_sign_in_or_paste">Or paste the cookie by hand:</string>
+    <string name="web_sign_in_window">Sign in with Spotify</string>
+    <string name="web_sign_in_window_hint">Spotify's own sign-in opens in a window on this computer, like in the app.</string>
+    <string name="web_sign_in_waiting">Finish signing in in the Spotify window…</string>
+    <string name="web_sign_in_window_failed">The Spotify window could not open here. Use one of the other ways below.</string>
+    <string name="web_sign_in_other_ways">Other ways to sign in</string>
+    <string name="server_link_user">The server's account name</string>
+    <string name="server_link_password">Its password</string>
+</resources>

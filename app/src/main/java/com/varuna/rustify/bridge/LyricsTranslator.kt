@@ -8,6 +8,7 @@ import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
+import com.varuna.rustify.ui.LyricsTranslation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -24,18 +25,8 @@ import kotlin.coroutines.resumeWithException
  * left. Kept in memory per track and language for the session.
  */
 object LyricsTranslator {
-
-    sealed class Outcome {
-        data class Translated(val from: String, val lines: List<String>) : Outcome()
-        /**
-         * Nothing to translate: already in the target language, a language ML Kit cannot translate,
-         * romanised text (`ja-Latn`: romaji is not what the Japanese model reads) or `und`.
-         */
-        data class NotNeeded(val language: String) : Outcome()
-        data class Failed(val reason: String) : Outcome()
-        /** Progress only: the language's model is being downloaded first (~30 MB, once). */
-        data class Downloading(val language: String) : Outcome()
-    }
+    // What a translation comes to is the shared [LyricsTranslation], so the track screen reads it on
+    // every platform.
 
     /**
      * The language a script gives away, before asking ML Kit (4.7.1). Over a whole song the
@@ -64,7 +55,7 @@ object LyricsTranslator {
         }
     }
 
-    private val cache = ConcurrentHashMap<String, Outcome>()
+    private val cache = ConcurrentHashMap<String, LyricsTranslation>()
 
     /** The app's language as an ML Kit code, English when it is not one ML Kit knows. */
     fun targetLanguage(): String =
@@ -107,10 +98,10 @@ object LyricsTranslator {
         key: String,
         lines: List<String>,
         target: String = targetLanguage(),
-        onProgress: (Outcome) -> Unit = {},
-    ): Outcome {
+        onProgress: (LyricsTranslation) -> Unit = {},
+    ): LyricsTranslation {
         cache["$key|$target"]?.let { return it }
-        if (lines.none { it.isNotBlank() }) return Outcome.NotNeeded("und")
+        if (lines.none { it.isNotBlank() }) return LyricsTranslation.NotNeeded("und")
         val outcome = runCatching {
             // Han without kana reads as Chinese line by line; in a song with kana it is Japanese.
             val songScript = scriptLanguage(lines.joinToString("\n"))
@@ -130,7 +121,7 @@ object LyricsTranslator {
             val plan = plan(languages, target) { TranslateLanguage.fromLanguageTag(it) != null }
             val source = plan.source
             if (source == null) {
-                Outcome.NotNeeded(plan.dominant)
+                LyricsTranslation.NotNeeded(plan.dominant)
             } else {
                 val out = MutableList(lines.size) { "" }
                 val wanted = plan.lines.sorted().filter { lines[it].isNotBlank() }
@@ -141,7 +132,7 @@ object LyricsTranslator {
                     for (i in wanted) done[lines[i]]?.let { t ->
                         out[i] = t.takeUnless { it.equals(lines[i], ignoreCase = true) }.orEmpty()
                     }
-                    onProgress(Outcome.Translated(source, out.toList()))
+                    onProgress(LyricsTranslation.Translated(source, out.toList()))
                 }
 
                 // With the whole song in view first (LyricsInContext), then ML Kit for whatever is
@@ -160,7 +151,7 @@ object LyricsTranslator {
                         val models = RemoteModelManager.getInstance()
                         listOf(source, target).filter { it != TranslateLanguage.ENGLISH }
                             .firstOrNull { !models.isModelDownloaded(TranslateRemoteModel.Builder(it).build()).await() }
-                            ?.let { onProgress(Outcome.Downloading(it)) }
+                            ?.let { onProgress(LyricsTranslation.Downloading(it)) }
                         translator.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
                         // Line by line, and shown as it goes: on a slow phone a line takes a couple
                         // of seconds, so waiting for the whole song meant minutes of a spinner.
@@ -173,10 +164,10 @@ object LyricsTranslator {
                     }
                 }
                 publish()
-                Outcome.Translated(source, out)
+                LyricsTranslation.Translated(source, out)
             }
-        }.getOrElse { Outcome.Failed(it.message ?: it.javaClass.simpleName) }
-        if (outcome !is Outcome.Failed) cache["$key|$target"] = outcome
+        }.getOrElse { LyricsTranslation.Failed(it.message ?: it.javaClass.simpleName) }
+        if (outcome !is LyricsTranslation.Failed) cache["$key|$target"] = outcome
         return outcome
     }
 

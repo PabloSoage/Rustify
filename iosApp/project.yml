@@ -1,0 +1,97 @@
+# Rustify for iOS — an XcodeGen description rather than a checked-in .xcodeproj, which is a generated
+# file nobody can review. On a Mac with Xcode:
+#
+#   brew install xcodegen
+#   ../tools/ios/build-core.sh          # the core as a static library (once per core change)
+#   xcodegen generate                   # writes Rustify.xcodeproj next to this file
+#   open Rustify.xcodeproj
+#
+# The Kotlin side (RustifyKit.framework, from :sharedUi, with :shared in it) is built by Xcode itself through the
+# pre-build script below — Kotlin's standard embedAndSignAppleFrameworkForXcode task.
+name: Rustify
+options:
+  bundleIdPrefix: com.varuna
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Rustify:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Rustify
+        CFBundleShortVersionString: "5.6.4"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        # Compose draws on its own: without this iOS holds it to 60 Hz on a ProMotion screen.
+        CADisableMinimumFrameDurationOnPhone: true
+        # The links the app opens (rustify://track/…), as on the phone and the desktop.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.varuna.rustify
+            CFBundleURLSchemes: [rustify]
+        # The app's Documents, where downloads go, show in Files and in the Finder; music dropped there
+        # joins local music.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # Keeps playing with the screen off or the app in the background.
+        UIBackgroundModes: [audio]
+        # The user's own server, as often as not plain http on the LAN (Subsonic, as on the phone).
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        # The Travel screen's route starts where you are.
+        NSLocationWhenInUseUsageDescription: Rustify starts the trip's route where you are, to fit the playlist to the drive.
+        NSLocalNetworkUsageDescription: Rustify plays from your own music server on this network when you set one up.
+        NSMicrophoneUsageDescription: Rustify uses the microphone for DJ voice commands.
+        NSSpeechRecognitionUsageDescription: Rustify uses speech recognition to understand DJ voice commands.
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.varuna.rustify
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        # The framework is static and carries the Rust core inside it (cinterop's staticLibraries);
+        # these are what that core links against.
+        OTHER_LDFLAGS: "$(inherited) -framework RustifyKit -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework Security -framework SystemConfiguration -framework CoreLocation -framework AuthenticationServices -framework Speech -lc++"
+        ENABLE_BITCODE: NO
+        # Compose publishes no iosX64 (sharedUi/build.gradle.kts): only arm64, also in the simulator.
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
+        # Swift 5 mode: Swift 6's strict concurrency would reject the Kotlin callbacks this app takes
+        # on the main queue without annotations Kotlin/Native does not emit.
+        SWIFT_VERSION: "5.0"
+        # Gradle reads and writes the whole repository from the pre-build script; Xcode's sandbox for
+        # user scripts would refuse it (Kotlin's own Xcode guide says to turn it off).
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # Sideloaded (AltStore/SideStore) with a free or paid Apple ID; set your team in Xcode.
+        CODE_SIGN_STYLE: Automatic
+    preBuildScripts:
+      - name: Build RustifyKit (Kotlin)
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :sharedUi:embedAndSignAppleFrameworkForXcode
+  # Runs where the app runs, an Apple Silicon simulator: tools/ios/simulator-check.sh.
+  RustifyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: Rustify
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.varuna.rustify.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
+        SWIFT_VERSION: "5.0"
+schemes:
+  Rustify:
+    build:
+      targets:
+        Rustify: all
+    test:
+      targets:
+        - RustifyUITests

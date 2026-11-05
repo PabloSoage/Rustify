@@ -364,6 +364,27 @@ class SpotifyModelsContractTest {
         )
     }
 
+    // ─── A local file's tags (the desktop's scan) ─────────────────────────────────────────────────
+
+    @Test
+    fun `a local file carries the tags the scan and the matcher use`() {
+        assertEquals(
+            LocalTags(
+                title = "Jóga",
+                artists = listOf("Björk"),
+                album = "Homogenic",
+                albumArtist = "Björk & Guests",
+                trackNumber = 3,
+                discNumber = 1,
+                durationMs = 305_000,
+                isrc = "GBAYE9700120",
+                year = 1997,
+                hasCover = true
+            ),
+            fixture<LocalTags>("LocalTags")
+        )
+    }
+
     // ─── Listening history (4.0) ─────────────────────────────────────────────────────────────────
 
     private val play = com.varuna.rustify.metrics.PlayEvent(
@@ -499,7 +520,7 @@ class SpotifyModelsContractTest {
             "NormalizedSearchResults", "LoginResult", "OperationResult", "FailedOperation",
             "YtmArtistRef", "YtmTrack", "YtmAlbumSlim", "YtmAlbum", "YtmArtist", "YtmPlaylist",
             "YtmSearchResults", "PlayEvent", "PlayImportReport", "PlayStats", "InnertubeAudio", "SpotifyLyrics",
-            "TrackCredits", "ArtistAbout"
+            "TrackCredits", "ArtistAbout", "LocalTags"
         )
         val written = fixtures.listFiles { f -> f.extension == "json" }
             ?.map { it.nameWithoutExtension }

@@ -1,0 +1,715 @@
+package com.varuna.rustify.ui.screens
+
+import com.varuna.rustify.ui.toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.bridge.FullAlbum
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.ui.components.EntityOptionsMenuBottomSheet
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
+import com.varuna.rustify.ui.components.TrackRowItem
+import com.varuna.rustify.util.bouncingMarquee
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AlbumScreen(
+    albumId: String,
+    albumName: String,
+    albumImages: List<SpotifyImage>,
+    spotifyRepo: SpotifyRepository,
+    onBackClick: () -> Unit,
+    onTrackClick: (List<FullTrack>, Int) -> Unit,
+    onAddToQueue: (FullTrack) -> Unit,
+    onGoToQueue: () -> Unit,
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onGoToRadio: ((String, String) -> Unit)? = null,
+    onShufflePlay: (List<FullTrack>) -> Unit = {},
+    currentTrackId: String?
+) {
+    var albumDetails by remember { mutableStateOf<FullAlbum?>(null) }
+    // Seed from the in-memory cache so returning from the miniplayer does not trigger a reload.
+    var tracks by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] ?: emptyList()) }
+
+    // Find in this album, as in a playlist: ids are positions, so playing a result plays the album
+    // from that song, and the index has its own name per screen.
+    var findQuery by remember(albumId) { mutableStateOf("") }
+    val findIndex = remember(albumId) { "${com.varuna.rustify.util.LocalSearch.ALBUM}:${kotlin.uuid.Uuid.random()}" }
+    val indexedTracks = remember(tracks) {
+        tracks.withIndex().toList().also { all ->
+            com.varuna.rustify.util.LocalSearch.index(
+                findIndex, all, { it.index.toString() },
+                { (_, t) -> listOf(t.name) + t.artists.map { a -> a.name } }
+            )
+        }
+    }
+    val shownTracks = remember(indexedTracks, findQuery) {
+        com.varuna.rustify.util.LocalSearch.filter(findIndex, indexedTracks, findQuery) { it.index.toString() }
+    }
+    androidx.compose.runtime.DisposableEffect(albumId) {
+        onDispose { com.varuna.rustify.util.LocalSearch.forget(findIndex) }
+    }
+
+    // Which of these have been heard through — point I. Keyed on the track that is playing as well
+    // as on the list, because a track finishing while this screen is open is written by the player
+    // service and nothing else here would notice.
+    // A row with no id gets a positional stand-in rather than being dropped: dropping it would
+    // shift every tick after it onto the wrong song, and a stand-in is simply never marked.
+    val listened = com.varuna.rustify.bridge.rememberListened(
+        contextId = "album:$albumId",
+        trackIds = tracks.mapIndexed { position, t -> t.id?.takeIf { it.isNotBlank() } ?: "#$position" },
+        refreshKey = currentTrackId
+    )
+    var selectedTrackForMenu by remember { mutableStateOf<FullTrack?>(null) }
+    var showEntityMenu by remember { mutableStateOf(false) }
+    var isLoading by remember(albumId) { mutableStateOf(SpotifyRepository.albumTracksCache[albumId] == null && !albumId.startsWith("local_album:")) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Pagination state
+    var offset by remember { mutableIntStateOf(0) }
+    var hasMore by remember { mutableStateOf(true) }
+    var isLoadingMore by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+
+    LaunchedEffect(albumId) {
+        if (tracks.isEmpty()) isLoading = true   // when the cache is already populated, skip the spinner
+        errorMessage = null
+        try {
+            // Support local albums (navigated from LibraryLocalMusic)
+            if (albumId.startsWith("local_album:")) {
+                var localTracks = SpotifyRepository.localAlbumTracks[albumId]
+                if (localTracks.isNullOrEmpty()) {
+                    localTracks = spotifyRepo.localTracks.filter { it.album?.name == albumName }
+                    SpotifyRepository.localAlbumTracks[albumId] = localTracks
+                }
+                val coverUri = localTracks.firstOrNull()?.externalUri
+                val images = if (coverUri.isNullOrBlank()) emptyList() else listOf(SpotifyImage(coverUri, null, null))
+                albumDetails = FullAlbum(
+                    id = albumId,
+                    name = albumName,
+                    externalUri = "",
+                    releaseDate = null,
+                    releaseDatePrecision = null,
+                    images = images,
+                    artists = localTracks.firstOrNull()?.artists ?: emptyList(),
+                    albumType = "album",
+                    totalTracks = localTracks.size,
+                    recordLabel = null,
+                    genres = emptyList()
+                )
+                tracks = localTracks
+                hasMore = false
+                offset = localTracks.size
+            } else {
+                if (albumDetails == null) albumDetails = spotifyRepo.getAlbum(albumId)
+                // If the tracks came from the cache, skip re-downloading to avoid a spinner and scroll reset.
+                if (tracks.isEmpty()) {
+                    val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
+                    tracks = response.items
+                    hasMore = response.hasMore
+                    offset = tracks.size
+                    SpotifyRepository.albumTracksCache[albumId] = tracks
+                }
+                // The rest of a long album is fetched now rather than waiting to be scrolled into
+                // view. Paging by scroll is right for drawing rows and wrong for everything else on
+                // this screen: Play, Shuffle and the ✓ marks all read this list, and on a 142-track
+                // album they were reading the 50 that happened to be on screen. Playing "the album"
+                // and getting a third of it is the same bug as adding a third of it to a playlist,
+                // minus the part where you notice.
+                //
+                // It costs nothing for an ordinary album — the count already matches, no request —
+                // and it holds `isLoadingMore` for its whole run so the scroll loader below sees a
+                // load in progress and stays out of the way.
+                //
+                // The test is the album's own track count rather than `hasMore`, because `hasMore`
+                // only knows about pages this screen fetched. Coming back to an album seeded from
+                // `albumTracksCache` fetches nothing, so `hasMore` would still say `true` for an
+                // album that is complete — and, worse, say nothing at all about a cached list that
+                // was left short the first time round.
+                val expected = albumDetails?.totalTracks ?: 0
+                // `expected == 0` means Spotify did not say, in which case fetching is the only way
+                // to find out — the one thing not to do is assume completeness because a count was
+                // missing.
+                val complete = expected > 0 && tracks.size >= expected
+                if (!complete) {
+                    // The first page is on screen, so the screen is no longer "loading" in the sense
+                    // the spinner means. What is left runs behind the rows the user is already
+                    // reading, marked by the small bottom spinner instead.
+                    isLoading = false
+                    isLoadingMore = true
+                    try {
+                        val full = spotifyRepo.getAllAlbumTracks(albumId)
+                        if (full.size > tracks.size) {
+                            tracks = full
+                            SpotifyRepository.albumTracksCache[albumId] = full
+                        }
+                        offset = tracks.size
+                        hasMore = tracks.size < expected
+                    } catch (_: Exception) {
+                        // Whatever arrived stays; the scroll loader can still pick up the rest.
+                    } finally {
+                        isLoadingMore = false
+                    }
+                } else {
+                    hasMore = false
+                    offset = tracks.size
+                }
+            }
+
+        } catch (e: Exception) {
+            errorMessage = e.message ?: "Failed to load details"
+        } finally {
+            isLoading = false
+        }
+    }
+
+    val primaryImageUrl = albumImages.maxByOrNull { it.width ?: 0 }?.url
+        ?: albumDetails?.images?.maxByOrNull { it.width ?: 0 }?.url
+
+    val spotifyGreen = Color(0xFF1DB954)
+    val darkBackground = Color(0xFF121212)
+    val gradientColor = Color(0xFF2E2E2E)
+
+    Scaffold(
+        containerColor = darkBackground,
+        modifier = modifier.fillMaxSize()
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = innerPadding.calculateBottomPadding())
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(340.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(gradientColor, darkBackground)
+                        )
+                    )
+            )
+
+            if (isLoading && tracks.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(), 
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = spotifyGreen)
+                }
+            } else if (errorMessage != null && tracks.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = stringResource(Res.string.common_something_wrong), 
+                        style = MaterialTheme.typography.titleLarge, 
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage ?: "Unknown error", 
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                try {
+                                    if (albumId.startsWith("local_album:")) {
+                                        var localTracks = SpotifyRepository.localAlbumTracks[albumId]
+                                        if (localTracks.isNullOrEmpty()) {
+                                            localTracks = spotifyRepo.localTracks.filter { it.album?.name == albumName }
+                                            SpotifyRepository.localAlbumTracks[albumId] = localTracks
+                                        }
+                                        albumDetails = FullAlbum(
+                                            id = albumId,
+                                            name = albumName,
+                                            externalUri = "",
+                                            releaseDate = null,
+                                            releaseDatePrecision = null,
+                                            images = emptyList(),
+                                            artists = localTracks.firstOrNull()?.artists ?: emptyList(),
+                                            albumType = "album",
+                                            totalTracks = localTracks.size,
+                                            recordLabel = null,
+                                            genres = emptyList()
+                                        )
+                                        tracks = localTracks
+                                        hasMore = false
+                                        offset = localTracks.size
+                                    } else {
+                                        albumDetails = spotifyRepo.getAlbum(albumId)
+                                        val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = 0)
+                                        tracks = response.items
+                                        hasMore = response.hasMore
+                                        offset = tracks.size
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = e.message
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen)
+                    ) {
+                        Text(stringResource(Res.string.general_retry), color = Color.White)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 80.dp, bottom = 32.dp)
+                ) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(200.dp)
+                                    .shadow(16.dp, RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(12.dp)),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                if (!primaryImageUrl.isNullOrEmpty()) {
+                                    AsyncImage(
+                                        model = primaryImageUrl,
+                                        contentDescription = "Cover Art",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.DarkGray),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = albumName.take(1).uppercase(),
+                                            style = MaterialTheme.typography.headlineLarge,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        when (albumDetails?.albumType?.lowercase()) {
+                                            "single" -> Res.string.album_type_single
+                                            "ep" -> Res.string.album_type_ep
+                                            "compilation" -> Res.string.album_type_compilation
+                                            else -> Res.string.album_type_album
+                                        }
+                                    ).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.2.sp
+                                    ),
+                                    color = spotifyGreen
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    // From the loaded album when the link that opened it carried no name (4.7).
+                                    text = albumName.ifBlank { albumDetails?.name.orEmpty() },
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.ExtraBold
+                                    ),
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    modifier = Modifier.bouncingMarquee()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                val descriptionText = stringResource(Res.string.album_by, albumDetails?.artists?.joinToString(", ") { it.name } ?: stringResource(Res.string.common_unknown_artist))
+                                Text(
+                                    text = descriptionText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.LightGray,
+                                    maxLines = 1,
+                                    modifier = Modifier.bouncingMarquee()
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val subtitleText = albumDetails?.releaseDate?.take(4) ?: ""
+                                    if (subtitleText.isNotEmpty()) {
+                                        Text(
+                                            text = subtitleText,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = " • ",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                    Text(
+                                        text = (albumDetails?.totalTracks ?: tracks.size).let { n -> pluralStringResource(Res.plurals.track_count, n, n) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clickable {
+                                        if (tracks.isNotEmpty()) {
+                                            onTrackClick(tracks, 0)
+                                        }
+                                    },
+                                shape = CircleShape,
+                                color = spotifyGreen
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clickable {
+                                        if (tracks.isNotEmpty()) {
+                                            onShufflePlay(tracks)
+                                        }
+                                    },
+                                shape = CircleShape,
+                                color = spotifyGreen
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = stringResource(Res.string.cd_shuffle_play),
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (tracks.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(stringResource(Res.string.common_no_tracks), color = Color.Gray)
+                            }
+                        }
+                    } else {
+                        if (tracks.size > 1) {
+                            item(key = "find_in_album") {
+                                FindInPlaylistField(
+                                    query = findQuery,
+                                    onQueryChange = { findQuery = it },
+                                    searchedOf = if (hasMore) tracks.size else null,
+                                    hint = Res.string.album_find_hint
+                                )
+                            }
+                        }
+                        if (shownTracks.isEmpty() && findQuery.isNotBlank()) {
+                            item(key = "find_no_results") {
+                                Text(
+                                    stringResource(Res.string.album_find_none, findQuery),
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
+                                )
+                            }
+                        }
+                        // `index` stays the song's place in the whole album, as in a playlist.
+                        items(shownTracks, key = { (index, track) -> track.id ?: "local_${index}_${track.name.hashCode()}" }) { (index, track) ->
+                            // Request more data when we reach near the end of the list
+                            if (index >= tracks.size - 5 && !isLoadingMore && hasMore) {
+                                LaunchedEffect(index) {
+                                    isLoadingMore = true
+                                    try {
+                                        val response = spotifyRepo.getAlbumTracks(albumId, limit = 50, offset = offset)
+                                        if (response.items.isNotEmpty()) {
+                                            tracks = tracks + response.items
+                                            offset += response.items.size
+                                            hasMore = response.hasMore
+                                        } else {
+                                            hasMore = false
+                                        }
+                                    } catch (_: Exception) {
+                                        // Ignore pagination errors or show a toast
+                                    } finally {
+                                        isLoadingMore = false
+                                    }
+                                }
+                            }
+
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                positionalThreshold = { it * 0.4f }
+                            )
+
+                            LaunchedEffect(dismissState.currentValue) {
+                                if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                    onAddToQueue(track)
+                                    platform.toast(Res.string.added_to_queue)
+                                    dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                                }
+                            }
+                            val trackId = track.id ?: ""
+                            val isLiked = spotifyRepo.isTrackLiked(trackId)
+                            
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromEndToStart = false,
+                                backgroundContent = {
+                                    val color by androidx.compose.animation.animateColorAsState(
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) spotifyGreen else Color.Transparent,
+                                        animationSpec = androidx.compose.animation.core.tween(300),
+                                        label = "SwipeBackgroundColor"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(color)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                                contentDescription = "Add to Queue",
+                                                tint = Color.White
+                                            )
+                                        }
+                                    }
+                                },
+                                content = {
+                                    TrackRowItem(
+                                        index = index + 1,
+                                        track = track,
+                                        fallbackCoverUrl = primaryImageUrl,
+                                        onClick = { onTrackClick(tracks, index) },
+                                        isLiked = if (albumId.startsWith("local_album:")) false else isLiked,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        isListened = listened.getOrElse(index) { false },
+                                        onLikeToggle = if (albumId.startsWith("local_album:")) null else { {
+                                            coroutineScope.launch {
+                                                spotifyRepo.toggleLikeTrack(track)
+                                            }
+                                        } },
+                                        onMoreClick = { selectedTrackForMenu = track }
+                                    )
+                                }
+                            )
+                        }
+                        
+                        if (isLoadingMore) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = spotifyGreen, modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Custom floating top bar. Over a fade, not bare: scrolled, its icons sat straight on top of
+            // the rows below and were hard to tell apart from them (4.7).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(0xFF121212), Color(0xEB121212), Color.Transparent)
+                        )
+                    )
+                    .padding(top = 40.dp, start = 8.dp, end = 8.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBackClick) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    albumDetails?.let { album ->
+                        val saved = spotifyRepo.isAlbumSaved(album.id)
+                        IconButton(onClick = { coroutineScope.launch { spotifyRepo.toggleSaveAlbum(album) } }) {
+                            Icon(
+                                imageVector = if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Save album",
+                                tint = if (saved) Color(0xFF1DB954) else Color.White
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showEntityMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.cd_more_options), tint = Color.White)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showEntityMenu) {
+        EntityOptionsMenuBottomSheet(
+            entityType = "album",
+            entityId = albumId,
+            entityName = albumName,
+            primaryArtistId = albumDetails?.artists?.firstOrNull()?.id,
+            tracks = tracks,
+            onDismiss = { showEntityMenu = false },
+            onGoToArtist = onArtistClick,
+            // Only when there is more of the album than has been paged in. A local album is whole
+            // by construction, and so is a Spotify album whose last page has arrived.
+            loadAllTracks = if (!hasMore) null else {
+                { spotifyRepo.getAllAlbumTracks(albumId) }
+            }
+        )
+    }
+
+    if (selectedTrackForMenu != null) {
+        TrackOptionsMenuBottomSheet(
+            track = selectedTrackForMenu!!,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { selectedTrackForMenu = null },
+            onAddToQueue = {
+                onAddToQueue(selectedTrackForMenu!!)
+                selectedTrackForMenu = null
+            },
+            onGoToQueue = {
+                onGoToQueue()
+                selectedTrackForMenu = null
+            },
+            onGoToAlbum = { id, name, images ->
+                onAlbumClick(id, name, images)
+                selectedTrackForMenu = null
+            },
+            onGoToArtist = { id ->
+                onArtistClick(id)
+                selectedTrackForMenu = null
+            },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                val t = selectedTrackForMenu!!
+                cb(t.id ?: "", t.name)
+                selectedTrackForMenu = null
+            } },
+            onRemoveFromPlaylist = null
+        )
+    }
+}
+
+

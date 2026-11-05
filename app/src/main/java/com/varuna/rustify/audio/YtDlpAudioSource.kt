@@ -275,7 +275,7 @@ class YtDlpAudioSource(private val appContext: Context) : AudioSourceProvider {
     }
 
     companion object {
-        const val ID = "ytdlp"
+        const val ID = AudioSourceRegistry.YTDLP_ID
         private const val TAG = "YtDlpAudioSource"
 
         /**

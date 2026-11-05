@@ -1,0 +1,498 @@
+package com.varuna.rustify.ui.screens
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.bridge.BrowseSection
+import com.varuna.rustify.bridge.BrowseSectionItem
+import com.varuna.rustify.ui.components.PlaylistItemCard
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    browseSections: List<BrowseSection>?,
+    isRunning: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+    onItemClick: (BrowseSectionItem) -> Unit,
+    onSettingsClick: () -> Unit,
+    onDownloadsClick: () -> Unit,
+    onNewReleasesClick: () -> Unit,
+    onMetricsClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onDjClick: () -> Unit = {},
+    onTravelClick: () -> Unit = {},
+    onWebPlayerClick: () -> Unit = {},
+    /** What you were in the middle of, newest first. Empty is the normal state on a fresh install. */
+    continueListening: List<com.varuna.rustify.bridge.ListeningSession> = emptyList(),
+    /** The row being resumed, if any: refetching a long playlist is several round trips. */
+    resumingId: String? = null,
+    onResumeListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
+    onForgetListening: (com.varuna.rustify.bridge.ListeningSession) -> Unit = {},
+    /** No Spotify account connected: the sections' place offers to connect one. */
+    isSignedIn: Boolean = true,
+    /** The saved session was revoked, rather than never having existed. */
+    sessionExpired: Boolean = false,
+    onSignIn: () -> Unit = {},
+    /** What Home shows without an account: recent albums, charts, moods (see PublicHome). */
+    publicSections: List<BrowseSection> = emptyList()
+) {
+    val darkBackground = Color(0xFF121212)
+    val gradientColor = Color(0xFF2E2E2E)
+
+    Box(modifier = modifier.fillMaxSize().background(darkBackground)) {
+        // Aesthetic Top Gradient Background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(gradientColor, Color.Transparent)
+                    )
+                )
+        )
+
+        // Home always draws. It used to swap the whole screen for a spinner or an error, which took
+        // the menu (settings, downloads, metrics) and "continue listening" with it whenever Spotify
+        // could not be reached; the state of Spotify's sections is now one row among the others.
+        run {
+            val isLandscape = com.varuna.rustify.ui.isLandscape()
+            val bottomPadding = if (isLandscape) 16.dp else 100.dp
+
+            var menuOpen by remember { mutableStateOf(false) }
+            // Jam is reachable from the queue sheet too, but a guest joins before playing anything.
+            var showJam by remember { mutableStateOf(false) }
+            val services = com.varuna.rustify.ui.LocalAppServices.current
+            if (showJam) services.JamDialog(onDismiss = { showJam = false })
+            val activeDownloads by services.activeDownloadCount.collectAsState()
+
+            PullToRefreshBox(
+                isRefreshing = isRunning,
+                onRefresh = onRetry,
+                modifier = Modifier.fillMaxSize()
+            ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 16.dp, bottom = bottomPadding)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val currentHour = com.varuna.rustify.ui.currentHourOfDay()
+                        val greeting = when (currentHour) {
+                            in 5..11 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_morning)
+                            in 12..17 -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_afternoon)
+                            else -> org.jetbrains.compose.resources.stringResource(Res.string.home_greeting_evening)
+                        }
+                        Text(
+                            text = greeting,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+
+                        // Resolve menu labels outside the DropdownMenu, whose Popup may not
+                        // inherit the overridden LocalContext used for localization.
+                        val djLabel = stringResource(Res.string.home_dj)
+                        val travelLabel = stringResource(Res.string.home_travel)
+                        val newReleasesLabel = stringResource(Res.string.home_new_releases)
+                        val metricsLabel = stringResource(Res.string.home_metrics)
+                        val webPlayerLabel = stringResource(Res.string.web_player_title)
+                        val downloadsLabel = stringResource(Res.string.home_downloads)
+                        val settingsLabel = stringResource(Res.string.home_settings)
+                        val jamLabel = stringResource(Res.string.jam_title)
+
+                        // Hamburger icon opens a small context menu, with icons and labels
+                        // aligned via DropdownMenuItem's leadingIcon slot.
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                if (activeDownloads > 0) {
+                                    androidx.compose.material3.BadgedBox(
+                                        badge = {
+                                            androidx.compose.material3.Badge(containerColor = Color.Red) {
+                                                Text(activeDownloads.toString(), color = Color.White)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Menu, contentDescription = stringResource(Res.string.a11y_open_menu), tint = Color.White)
+                                    }
+                                } else {
+                                    Icon(Icons.Default.Menu, contentDescription = stringResource(Res.string.a11y_open_menu), tint = Color.White)
+                                }
+                            }
+
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = menuOpen,
+                                onDismissRequest = { menuOpen = false },
+                                containerColor = Color(0xFF1E1E1E)
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(djLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null, tint = Color(0xFF1DB954)) },
+                                    onClick = { menuOpen = false; onDjClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(travelLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Map, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onTravelClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(jamLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; showJam = true }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(newReleasesLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.NewReleases, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onNewReleasesClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(metricsLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.BarChart, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onMetricsClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(webPlayerLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Public, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onWebPlayerClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(downloadsLabel, color = Color.White) },
+                                    leadingIcon = {
+                                        if (activeDownloads > 0) {
+                                            androidx.compose.material3.BadgedBox(
+                                                badge = {
+                                                    androidx.compose.material3.Badge(containerColor = Color.Red) {
+                                                        Text(activeDownloads.toString(), color = Color.White)
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.FileDownload, contentDescription = null, tint = Color.White)
+                                            }
+                                        } else {
+                                            Icon(Icons.Default.FileDownload, contentDescription = null, tint = Color.White)
+                                        }
+                                    },
+                                    onClick = { menuOpen = false; onDownloadsClick() }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(settingsLabel, color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color.White) },
+                                    onClick = { menuOpen = false; onSettingsClick() }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // "Continue listening" — before the browse sections, because it is the only row
+                // that is about what *you* were doing rather than what Spotify suggests.
+                if (continueListening.isNotEmpty()) {
+                    item {
+                        ContinueListeningRow(
+                            sessions = continueListening,
+                            resumingId = resumingId,
+                            onResume = onResumeListening,
+                            onForget = onForgetListening
+                        )
+                    }
+                }
+
+                when {
+                    !isSignedIn -> item {
+                        SignInCard(sessionExpired = sessionExpired, onSignIn = onSignIn)
+                    }
+                    browseSections == null && isRunning -> item {
+                        Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color(0xFF1DB954))
+                        }
+                    }
+                    errorMessage != null -> item {
+                        // A notice, not the screen: what is cached below and everything above it
+                        // (the menu, settings, what you were in the middle of) stays usable.
+                        OfflineNotice(
+                            showingCached = browseSections != null,
+                            detail = errorMessage,
+                            onRetry = onRetry
+                        )
+                    }
+                }
+
+                if (!isSignedIn) {
+                    items(publicSections) { section ->
+                        BrowseSectionView(section = section, onItemClick = onItemClick)
+                    }
+                }
+
+                browseSections?.takeIf { isSignedIn }?.let { sections ->
+                    items(sections) { section ->
+                        BrowseSectionView(
+                            section = section,
+                            onItemClick = onItemClick
+                        )
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
+/** Where Spotify's sections go when no account is connected. Everything else on Home still works. */
+@Composable
+private fun SignInCard(sessionExpired: Boolean, onSignIn: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .padding(20.dp)
+    ) {
+        Text(
+            stringResource(if (sessionExpired) Res.string.spotify_session_expired else Res.string.spotify_sign_in_title),
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(Res.string.spotify_sign_in_body), color = Color.LightGray, fontSize = 13.sp)
+        Spacer(Modifier.height(14.dp))
+        Button(onClick = onSignIn, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))) {
+            Text(stringResource(Res.string.spotify_sign_in), color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun OfflineNotice(showingCached: Boolean, detail: String, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(Color(0xFF2A2A2A), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(if (showingCached) Res.string.home_offline_cached else Res.string.home_error_loading),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 2)
+        }
+        androidx.compose.material3.TextButton(onClick = onRetry) {
+            Text(stringResource(Res.string.general_retry), color = Color(0xFF1DB954))
+        }
+    }
+}
+
+@Composable
+fun BrowseSectionView(
+    section: BrowseSection,
+    onItemClick: (BrowseSectionItem) -> Unit
+) {
+    if (section.items.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = section.title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(section.items) { item ->
+                when (item) {
+                    is BrowseSectionItem.PlaylistItem -> PlaylistItemCard(
+                        title = item.playlist.name,
+                        subtitle = item.playlist.description,
+                        images = item.playlist.images,
+                        onClick = { onItemClick(item) }
+                    )
+                    is BrowseSectionItem.AlbumItem -> PlaylistItemCard(
+                        title = item.album.name,
+                        subtitle = item.album.artists.joinToString(", ") { it.name },
+                        images = item.album.images,
+                        onClick = { onItemClick(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The "continue listening" row.
+ *
+ * Everything it draws comes from the stored session — label, subtitle, artwork, progress — so it
+ * appears with the screen rather than a moment after it. That was the point of storing them: a row
+ * about what you were doing is worth nothing if it arrives once you have scrolled past.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ContinueListeningRow(
+    sessions: List<com.varuna.rustify.bridge.ListeningSession>,
+    onResume: (com.varuna.rustify.bridge.ListeningSession) -> Unit,
+    onForget: (com.varuna.rustify.bridge.ListeningSession) -> Unit,
+    /** Which row is being resumed. Nothing between the tap and the music is worse than a spinner. */
+    resumingId: String? = null
+) {
+    if (sessions.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = stringResource(Res.string.home_continue_listening),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(sessions, key = { it.id }) { session ->
+                Column(
+                    modifier = Modifier
+                        .width(140.dp)
+                        .combinedClickable(
+                            onClick = { onResume(session) },
+                            // Long-press to remove: a row about your own listening should be
+                            // dismissible without a menu, and a menu on a 140dp card is worse.
+                            onLongClick = { onForget(session) }
+                        )
+                ) {
+                    // Resuming refetches the whole context, and on a long playlist that is several
+                    // round trips. A spinner over the artwork is the difference between "it is
+                    // loading" and "the row did nothing", which is what it looked like without one.
+                    Box(
+                        modifier = Modifier.size(140.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = session.imageUrl.takeIf { it.isNotBlank() },
+                            contentDescription = session.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(140.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF2A2A2A))
+                        )
+                        if (resumingId == session.id) {
+                            Box(
+                                modifier = Modifier
+                                    .size(140.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0x99000000))
+                            )
+                            CircularProgressIndicator(
+                                color = Color(0xFF1DB954),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                    // The progress line is the whole reason this row is not just "recently played":
+                    // it says how far in you were.
+                    LinearProgressIndicator(
+                        progress = { session.progress },
+                        color = Color(0xFF1DB954),
+                        trackColor = Color(0xFF404040),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .height(3.dp)
+                    )
+                    Text(
+                        text = session.label,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    // The track, and where it sits — not the album's subtitle. The bar above is
+                    // progress through this track, and without naming it the bar reads as progress
+                    // through the album.
+                    if (session.positionLabel.isNotBlank()) {
+                        Text(
+                            text = session.positionLabel,
+                            color = Color(0xFF9E9E9E),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

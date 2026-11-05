@@ -1,0 +1,2121 @@
+package com.varuna.rustify.ui.screens
+
+import com.varuna.rustify.bridge.TrackRef
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import coil3.compose.AsyncImage
+import com.varuna.rustify.ui.resources.*
+import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.LyricsResult
+import com.varuna.rustify.bridge.NativeEngine
+import com.varuna.rustify.bridge.SpotifyImage
+import com.varuna.rustify.bridge.SpotifyRepository
+import com.varuna.rustify.bridge.effectiveCoverUrl
+import com.varuna.rustify.player.SavedQueues
+import com.varuna.rustify.player.PlayerController
+import com.varuna.rustify.ui.LocalAppServices
+import com.varuna.rustify.ui.LyricsTranslation
+import com.varuna.rustify.platform.currentTimeMillis
+import com.varuna.rustify.ui.appString
+import com.varuna.rustify.ui.formatMinSec
+import com.varuna.rustify.ui.formatMinSecUs
+import com.varuna.rustify.ui.formatTemplate
+import com.varuna.rustify.ui.formatTrimmed
+import com.varuna.rustify.ui.languageDisplayName
+import com.varuna.rustify.ui.toast
+import com.varuna.rustify.player.AudioPlayerState
+import com.varuna.rustify.ui.components.SpotifyLikeButton
+import com.varuna.rustify.ui.components.TrackOptionsMenuBottomSheet
+import com.varuna.rustify.util.bouncingMarquee
+import kotlinx.coroutines.Dispatchers
+import com.varuna.rustify.platform.IO
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+
+data class YouTubeTrack(
+    val id: String,
+    val title: String,
+    val author: String,
+    val durationSec: Int,
+    val thumbnailUrl: String
+) {
+    companion object {
+        fun fromJson(json: JsonObject): YouTubeTrack = YouTubeTrack(
+            id = json["id"].optString(),
+            title = json["title"].optString(),
+            author = json["author"].optString(),
+            durationSec = json["duration_sec"].optInt(),
+            thumbnailUrl = json["thumbnail_url"].optString()
+        )
+
+        /** What the core's `searchYouTube` answers; the tracks before the first that is not an object. */
+        fun listFromJsonArray(jsonStr: String): List<YouTubeTrack> {
+            val list = mutableListOf<YouTubeTrack>()
+            try {
+                val array = Json.parseToJsonElement(jsonStr) as JsonArray
+                for (element in array) {
+                    list.add(fromJson(element as JsonObject))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return list
+        }
+
+        // org.json's optString(key, "") and optInt(key, 0), which this read before: absent or null
+        // is the fallback, a string is read as a number, and a number or a boolean as its text.
+        private fun JsonElement?.optString(): String = when (this) {
+            null, JsonNull -> ""
+            is JsonPrimitive -> content
+            else -> toString()
+        }
+
+        private fun JsonElement?.optInt(): Int =
+            (this as? JsonPrimitive)?.let { it.intOrNull ?: it.doubleOrNull?.toInt() } ?: 0
+    }
+}
+
+@Composable
+fun YouTubeMappingDialog(
+    track: FullTrack,
+    audioPlayerService: PlayerController,
+    onDismiss: () -> Unit,
+    onMappingSelected: (String) -> Unit
+) {
+    var query by remember { mutableStateOf("${track.name} ${track.artists.joinToString(" ") { it.name }}") }
+    var results by remember { mutableStateOf<List<YouTubeTrack>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+    
+    var selectedTrackId by remember { mutableStateOf<String?>(null) }
+    var playingPreviewId by remember { mutableStateOf<String?>(null) }
+    
+    val coroutineScope = rememberCoroutineScope()
+    val playerState by audioPlayerService.state.collectAsState()
+    // Current match for this track, used to indicate and highlight the active option in the list.
+    val currentAltId = remember(track.id) {
+        runCatching { NativeEngine.getAlternativeTrackNative(track.id ?: "") }.getOrDefault("")
+    }
+    val isCurrentAndLocal = playerState.currentTrack?.id == track.id && playerState.isLocalSource
+
+    LaunchedEffect(Unit) {
+        isSearching = true
+        coroutineScope.launch(Dispatchers.IO) {
+            val json = NativeEngine.searchYouTube(query)
+            results = YouTubeTrack.listFromJsonArray(json)
+            isSearching = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.track_assign_youtube)) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                Text(
+                    when {
+                        isCurrentAndLocal -> "Match actual: archivo local"
+                        currentAltId.isNotBlank() -> "Match actual: YouTube ($currentAltId)"
+                        else -> "Match actual: automático"
+                    },
+                    color = Color(0xFF1DB954), fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.track_search_youtube)) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF1DB954),
+                        focusedLabelColor = Color(0xFF1DB954)
+                    )
+                )
+                Button(
+                    onClick = {
+                        isSearching = true
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val json = NativeEngine.searchYouTube(query)
+                            results = YouTubeTrack.listFromJsonArray(json)
+                            isSearching = false
+                        }
+                    },
+                    modifier = Modifier.padding(top = 8.dp).align(Alignment.End),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                ) {
+                    Text(stringResource(Res.string.common_search))
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                if (isSearching) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally), color = Color(0xFF1DB954))
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(results) { yt ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedTrackId = yt.id }
+                                    .background(
+                                        when {
+                                            selectedTrackId == yt.id -> Color.White.copy(alpha = 0.1f)
+                                            yt.id == currentAltId && currentAltId.isNotBlank() -> Color(0xFF1DB954).copy(alpha = 0.14f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = yt.thumbnailUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(60.dp, 45.dp).clip(RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        yt.title + (if (yt.id == currentAltId && currentAltId.isNotBlank()) "  · actual" else ""),
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 14.sp
+                                    )
+                                    Text(yt.author, fontSize = 12.sp, color = Color.Gray)
+                                }
+                                
+                                // Preview play button
+                                IconButton(onClick = {
+                                    // Previewing an alternative also selects it, so the confirm button
+                                    // becomes enabled. Otherwise a user who only taps preview (the natural
+                                    // way to try an alternative) leaves selectedTrackId null, leaving the
+                                    // confirm button disabled and seemingly unresponsive.
+                                    selectedTrackId = yt.id
+                                    if (playingPreviewId == yt.id) {
+                                        audioPlayerService.pause()
+                                        playingPreviewId = null
+                                    } else {
+                                        playingPreviewId = yt.id
+                                        audioPlayerService.playPreview(track, yt.id)
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = if (playingPreviewId == yt.id && playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = "Preview",
+                                        tint = Color(0xFF1DB954)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedTrackId?.let { onMappingSelected(it) } },
+                enabled = selectedTrackId != null
+            ) {
+                Text(stringResource(Res.string.common_confirm), color = Color(0xFF1DB954))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel)) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Suppress("UnusedMaterial3ScaffoldPaddingParameter")
+@Composable
+fun TrackScreen(
+    trackId: String,
+    spotifyRepo: SpotifyRepository,
+    audioPlayerService: PlayerController,
+    onBackClick: () -> Unit,
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onGoToRadio: ((String, String) -> Unit)? = null,
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
+    // Set by "Go to queue", which opens this screen *with* the queue sheet already showing.
+    openQueueOnOpen: Boolean = false
+) {
+    var trackDetails by remember { mutableStateOf<FullTrack?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var showMappingDialog by remember { mutableStateOf(false) }
+    var showQueueBottomSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (openQueueOnOpen) showQueueBottomSheet = true }
+
+    val playerState by audioPlayerService.state.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val services = LocalAppServices.current
+
+    val isCurrentTrack = playerState.currentTrack?.id == trackId
+    val trackToShow = if (isCurrentTrack) playerState.currentTrack else trackDetails
+
+    val isPlaying = playerState.isPlaying
+    val isBuffering = playerState.isBuffering
+    val isError = isCurrentTrack && playerState.isError
+    val bufferPercent = playerState.bufferPercent
+
+    val currentPosition = if (isCurrentTrack) playerState.positionMs else 0L
+    val totalDuration = if (isCurrentTrack) playerState.durationMs else (trackToShow?.durationMs?.toLong() ?: 0L)
+
+    val currentQueue = playerState.queue
+    val currentTrackIdx = currentQueue.indexOfFirst { it.id == (trackToShow?.id ?: trackId) }
+// "Previous" is never disabled: on the first track it rewinds, which is what the notification has
+// always done and what the core answers with (`Effect::SeekTo(0)`). Greying it out here was the UI
+// disagreeing with the engine about what the button does -- and the notification button proved which
+// of the two was right.
+    val hasPrevious = currentTrackIdx >= 0
+    val hasNext = currentTrackIdx != -1 && currentTrackIdx < currentQueue.size - 1
+
+    // An auth failure that survived the retry means the saved session is gone for good, and the raw
+    // engine text for it is a wall of JSON ("API error 401: {...expired access token}") that reads
+    // like the *link* expired. Resolved here because a string cannot be looked up inside the effect.
+    val sessionExpiredMsg = stringResource(Res.string.error_session_expired)
+
+    LaunchedEffect(trackId) {
+        if (!isCurrentTrack) {
+            isLoading = true
+            errorMessage = null
+            try {
+                trackDetails = spotifyRepo.getTrack(trackId)
+            } catch (e: Exception) {
+                errorMessage = when (com.varuna.rustify.util.classifyError(e)) {
+                    com.varuna.rustify.util.ErrorKind.AUTH -> sessionExpiredMsg
+                    else -> e.message ?: "Failed to load track"
+                }
+            } finally {
+                isLoading = false
+            }
+        } else {
+            isLoading = false
+        }
+    }
+
+    // Observe the lyrics the player preloaded.
+    val preloadedLyrics by audioPlayerService.preloadedLyrics.collectAsState()
+    var lyricsResult by remember(trackToShow?.id) { mutableStateOf<LyricsResult?>(null) }
+    var lyricsLoading by remember(trackToShow?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(trackToShow?.id) {
+        val track = trackToShow ?: return@LaunchedEffect
+        val trackId = track.id ?: return@LaunchedEffect
+
+        // First check if preloaded lyrics are already available for this track
+        val cached = preloadedLyrics
+        if (cached != null && audioPlayerService.preloadedLyricsTrackId == track.id) {
+            lyricsResult = cached
+            lyricsLoading = false
+            return@LaunchedEffect
+        }
+
+        lyricsLoading = true
+        lyricsResult = null
+        val artist = track.artists.firstOrNull()?.name ?: ""
+        val durationSec = track.durationMs / 1000
+        try {
+            lyricsResult = services.lyrics.getLyrics(
+                trackId = trackId,
+                artist = artist,
+                title = track.name,
+                durationSec = durationSec
+            )
+        } catch (_: Exception) {}
+        lyricsLoading = false
+    }
+
+    // React to preloaded lyrics arriving asynchronously (skip-to-next scenario)
+    LaunchedEffect(preloadedLyrics) {
+        val track = trackToShow ?: return@LaunchedEffect
+        val trackId = track.id ?: return@LaunchedEffect
+        if (preloadedLyrics != null && audioPlayerService.preloadedLyricsTrackId == trackId) {
+            lyricsResult = preloadedLyrics
+            lyricsLoading = false
+        }
+    }
+
+    val spotifyGreen = Color(0xFF1DB954)
+    val darkBackground = Color(0xFF121212)
+
+    val imgUrl = trackToShow?.effectiveCoverUrl()
+
+    // Canvas (full-screen video shown behind the cover art).
+    var canvasUrl by remember(trackId) { mutableStateOf<String?>(null) }
+    var mediaTab by rememberSaveable { mutableIntStateOf(0) } // 0=image, 1=canvas, 2=video
+    var videoUrl by remember(trackId) { mutableStateOf<Pair<String, String?>?>(null) }
+    val prefs = platform.prefs("RustifyPrefs")
+    val maxQuality = remember { prefs.getBoolean("high_quality_video", true) }
+    // 0 = nothing attempted, 1 = resolving, 2 = finished with no video. Without this the tab silently
+    // fell back to the cover art, so "this song has no video" and "something went wrong" looked
+    // identical — which is exactly the distinction needed to chase the reported crash.
+    var videoLookup by remember(trackId) { mutableIntStateOf(0) }
+    LaunchedEffect(mediaTab, trackId, maxQuality) {
+        if (mediaTab == 2 && videoUrl == null && !TrackRef.isLocal(trackId)) {
+            videoLookup = 1
+            // resolveYouTubeIdNative blocks on network inside Rust, so it must not run on the main
+            // thread (the canvas effect below already does this) — on the UI thread it freezes the
+            // frame and can take the app down with it.
+            val ytId = TrackRef.youtubeVideoIdOf(trackId)
+                ?: runCatching {
+                    kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        Regex("[A-Za-z0-9_-]{11}")
+                            .find(NativeEngine.resolveYouTubeId(trackId, ""))?.value
+                    }
+                }.getOrNull()
+            if (!ytId.isNullOrBlank()) {
+                videoUrl = runCatching {
+                    services.resolveVideo(ytId, maxQuality)
+                }.getOrNull()
+            }
+            videoLookup = if (videoUrl == null) 2 else 0
+        }
+    }
+    LaunchedEffect(trackId) {
+        canvasUrl = null
+        // Through the repository rather than the bridge: the canvas endpoint needs the user token,
+        // so it is one of the calls that stops working once the session ages out, and going direct
+        // meant no session refresh and no retry. Silence was the second half of the problem — a
+        // failure and "this song has no canvas" both ended as `null`, so a canvas tab that stopped
+        // appearing left nothing behind to look at.
+        canvasUrl = try {
+            spotifyRepo.getTrackCanvas(trackId)
+        } catch (e: Exception) {
+            if (com.varuna.rustify.util.classifyError(e) != com.varuna.rustify.util.ErrorKind.AUTH) {
+                com.varuna.rustify.platform.Log.w("TrackScreen", "canvas lookup failed for $trackId", e)
+            }
+            null
+        }
+    }
+    val screenWidthDp = com.varuna.rustify.ui.windowWidthDp()
+    val screenHeightDp = com.varuna.rustify.ui.windowHeightDp()
+    val isLandscape = com.varuna.rustify.ui.isLandscape()
+    // Cover sized to the screen (4.7.1). Fixed 180/280 dp suited a phone and left a tablet's player
+    // a stamp-sized cover over an empty half screen. Phones in portrait keep 280.
+    val coverSize = when {
+        isLandscape -> minOf(screenHeightDp - 140, (screenWidthDp * 0.42f).toInt()).coerceAtLeast(180).dp
+        // 0.38 of the height leaves the lyrics panel in view under the controls on a tablet.
+        screenWidthDp >= 600 -> minOf(screenWidthDp - 96, (screenHeightDp * 0.38f).toInt()).dp
+        else -> 280.dp
+    }
+
+    Scaffold(
+        containerColor = darkBackground,
+        modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            // The player's own arrow only exists once there is a track. iOS and the desktop have no
+            // system back, so without this one a track that does not load is the end of the road.
+            if (isLoading || errorMessage != null) {
+                IconButton(onClick = onBackClick, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding()) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
+                }
+            }
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = spotifyGreen)
+                }
+            } else if (errorMessage != null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = {
+                            coroutineScope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                try {
+                                    trackDetails = spotifyRepo.getTrack(trackId)
+                                } catch (e: Exception) {
+                                    errorMessage = e.message ?: "Failed to load track"
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        }) { Text(stringResource(Res.string.general_retry)) }
+                    }
+                }
+            } else {
+                trackToShow?.let { track ->
+                    val showCanvas = mediaTab == 1 && !canvasUrl.isNullOrEmpty()
+                    val showVideo = mediaTab == 2 && videoUrl != null
+                    val isVideoOrCanvas = showCanvas || showVideo
+                    var uiVisible by remember { mutableStateOf(true) }
+
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // ── Background layer ──
+                        if (showVideo) {
+                            services.PlayerVideo(videoUrl!!)
+                        } else if (showCanvas) {
+                            val canvasFitWidth = remember {
+                                platform.prefs("rustify_settings")
+                                    .getBoolean("canvas_fit_width", true)
+                            }
+                            services.CanvasVideo(url = canvasUrl!!, fitWidth = canvasFitWidth)
+                        } else if (!imgUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = imgUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .blur(80.dp),
+                                contentScale = ContentScale.Crop,
+                                alpha = 0.5f
+                            )
+                        }
+
+                        // Say what happened on the Video tab instead of quietly showing the cover.
+                        if (mediaTab == 2 && videoUrl == null && videoLookup != 0) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (videoLookup == 1) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        color = Color(0xFF1DB954),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = stringResource(Res.string.track_video_unavailable),
+                                        color = Color(0xFFB0B0B0),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Tap to show UI when hidden
+                        if (isVideoOrCanvas && !uiVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { uiVisible = true }
+                            )
+                        }
+
+                        // ── UI layer (fades in/out on tap) ──
+                        AnimatedVisibility(
+                            visible = uiVisible,
+                            enter = fadeIn(animationSpec = tween(250)),
+                            exit = fadeOut(animationSpec = tween(250)),
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                // Gradient / dark overlay
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            if (isVideoOrCanvas) {
+                                                Brush.verticalGradient(
+                                                    colors = listOf(Color(0xFF0A0A0A), Color.Transparent, Color.Transparent, Color(0xFF0A0A0A)),
+                                                    startY = 0f,
+                                                    endY = Float.POSITIVE_INFINITY
+                                                )
+                                            } else {
+                                                Brush.verticalGradient(
+                                                    colors = listOf(Color.Transparent, darkBackground.copy(alpha = 0.8f), darkBackground),
+                                                    startY = 0f,
+                                                    endY = 1500f
+                                                )
+                                            }
+                                        )
+                                )
+
+                                // Content
+                                if (isLandscape) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(top = 48.dp)
+                                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (!isVideoOrCanvas) {
+                                            TrackCoverSimple(
+                                                imgUrl = imgUrl,
+                                                contentDescription = track.name,
+                                                size = coverSize
+                                            )
+                                            Spacer(modifier = Modifier.width(24.dp))
+                                        } else {
+                                            // Tappable placeholder — preserves layout, tap to hide UI
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(coverSize)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) { uiVisible = false }
+                                            )
+                                            Spacer(modifier = Modifier.width(24.dp))
+                                        }
+
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .verticalScroll(rememberScrollState()),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            TrackScreenControls(
+                                                track = track,
+                                                lyricsResult = lyricsResult,
+                                                onLyricsChanged = { lyricsResult = it },
+                                                lyricsLoading = lyricsLoading,
+                                                isBuffering = isBuffering,
+                                                isPlaying = isPlaying,
+                                                bufferPercent = bufferPercent,
+                                                hasPrevious = hasPrevious,
+                                                hasNext = hasNext,
+                                                isCurrentTrack = isCurrentTrack,
+                                                currentPosition = currentPosition,
+                                                totalDuration = totalDuration,
+                                                playerState = playerState,
+                                                audioPlayerService = audioPlayerService,
+                                                spotifyRepo = spotifyRepo,
+                                                onShowMappingDialog = { showMappingDialog = true },
+                                                onShowQueue = { showQueueBottomSheet = true },
+                                                onAlbumClick = onAlbumClick,
+                                                onArtistClick = onArtistClick,
+                                                coroutineScope = coroutineScope,
+                                                ytmRepo = ytmRepo,
+                                                isError = isError
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            // Below the two-row top bar (buttons, then the tabs).
+                                            .padding(top = 120.dp)
+                                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        if (!isVideoOrCanvas) {
+                                            TrackCoverSimple(
+                                                imgUrl = imgUrl,
+                                                contentDescription = track.name,
+                                                size = coverSize
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        } else {
+                                            // Tappable placeholder — preserves layout, tap to hide UI
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(coverSize)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) { uiVisible = false }
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        }
+
+                                        TrackScreenControls(
+                                            track = track,
+                                            lyricsResult = lyricsResult,
+                                            onLyricsChanged = { lyricsResult = it },
+                                            lyricsLoading = lyricsLoading,
+                                            isBuffering = isBuffering,
+                                            isPlaying = isPlaying,
+                                            bufferPercent = bufferPercent,
+                                            hasPrevious = hasPrevious,
+                                            hasNext = hasNext,
+                                            isCurrentTrack = isCurrentTrack,
+                                            currentPosition = currentPosition,
+                                            totalDuration = totalDuration,
+                                            playerState = playerState,
+                                            audioPlayerService = audioPlayerService,
+                                            spotifyRepo = spotifyRepo,
+                                            onShowMappingDialog = { showMappingDialog = true },
+                                            onShowQueue = { showQueueBottomSheet = true },
+                                            onAlbumClick = onAlbumClick,
+                                            onArtistClick = onArtistClick,
+                                            coroutineScope = coroutineScope,
+                                            ytmRepo = ytmRepo,
+                                            isError = isError
+                                        )
+                                    }
+                                }
+
+                                // ── Top bar (back + canvas tabs + menu) ──
+                                // Image | Canvas | Video tab selector
+                                val mediaTabs = buildList {
+                                    add(0 to stringResource(Res.string.track_tab_image))
+                                    // Where the platform plays no video (the desktop, docs serie-4.x/27), only the image.
+                                    val video = services.can(com.varuna.rustify.ui.AppServices.Feature.VIDEO)
+                                    if (video && !canvasUrl.isNullOrEmpty()) add(1 to stringResource(Res.string.track_tab_canvas))
+                                    if (video && !TrackRef.isLocal(trackId)) add(2 to stringResource(Res.string.track_tab_video))
+                                }
+                                val tabSelector: @Composable () -> Unit = {
+                                    if (mediaTabs.size > 1) {
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(Color.White.copy(alpha = 0.10f))
+                                                .padding(2.dp)
+                                        ) {
+                                            mediaTabs.forEach { (mode, label) ->
+                                                val selected = mediaTab == mode
+                                                Text(
+                                                    text = label,
+                                                    color = if (selected) Color.Black else Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(18.dp))
+                                                        .background(if (selected) spotifyGreen else Color.Transparent)
+                                                        .clickable { mediaTab = mode }
+                                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // In portrait the eight controls did not fit one row and came out tiny, so
+                                // the tabs get a row of their own, centred under the buttons (5.0.1).
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (isLandscape) 8.dp else 40.dp, start = 8.dp, end = 8.dp)
+                                        .align(Alignment.TopCenter),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(onClick = onBackClick) {
+                                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.settings_back), tint = Color.White)
+                                        }
+                                        if (isLandscape) tabSelector() else Spacer(Modifier.weight(1f))
+                                        AbRepeatButton(audioPlayerService)
+                                        SpeedButton(audioPlayerService)
+                                        SleepTimerButton(audioPlayerService)
+                                        trackToShow.let {
+                                            IconButton(onClick = { showOptionsMenu = true }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+                                            }
+                                        }
+                                    }
+                                    if (!isLandscape) tabSelector()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showMappingDialog) {
+        trackToShow?.let { track ->
+            val alternativeChangedMsg = stringResource(Res.string.track_alternative_changed)
+            YouTubeMappingDialog(
+                track = track,
+                audioPlayerService = audioPlayerService,
+                onDismiss = { showMappingDialog = false },
+                onMappingSelected = { ytId ->
+                    showMappingDialog = false
+                    track.id?.let { tid ->
+                        audioPlayerService.chooseRecording(tid, ytId)
+                        platform.toast(alternativeChangedMsg)
+                        
+                        val inQueue = playerState.queue.any { it.id == tid }
+                        if (isCurrentTrack) {
+                            audioPlayerService.retryCurrentTrack(ytId, fallbackTrackId = tid)
+                        } else if (inQueue) {
+                            audioPlayerService.playSpecificTrackInQueue(tid, ytId)
+                        } else {
+                            audioPlayerService.loadAndPlay(track)
+                            audioPlayerService.retryCurrentTrack(ytId)
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    if (showQueueBottomSheet) {
+        QueueBottomSheet(
+            playerState = playerState,
+            audioPlayerService = audioPlayerService,
+            onDismiss = { showQueueBottomSheet = false }
+        )
+    }
+
+    if (showOptionsMenu && trackToShow != null) {
+        TrackOptionsMenuBottomSheet(
+            track = trackToShow,
+            spotifyRepo = spotifyRepo,
+            onDismiss = { showOptionsMenu = false },
+            onAddToQueue = {
+                audioPlayerService.enqueue(trackToShow)
+                showOptionsMenu = false
+            },
+            onGoToQueue = {
+                showOptionsMenu = false
+                showQueueBottomSheet = true
+            },
+            onGoToAlbum = { id, name, images ->
+                showOptionsMenu = false
+                onAlbumClick(id, name, images)
+            },
+            onGoToArtist = { id ->
+                showOptionsMenu = false
+                onArtistClick(id)
+            },
+            onGoToRadio = onGoToRadio?.let { cb -> {
+                showOptionsMenu = false
+                cb(trackToShow.id ?: "", trackToShow.name)
+            } }
+        )
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QueueBottomSheet(
+    playerState: AudioPlayerState,
+    audioPlayerService: PlayerController,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1E1E),
+        contentColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            // Saved queues (4.10): save this one under a name, or switch to another.
+            val savedQueues by audioPlayerService.savedQueues.collectAsState()
+            val activeQueue by audioPlayerService.activeSavedQueue.collectAsState()
+            var showSaveQueue by remember { mutableStateOf(false) }
+            var showSavedQueues by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { audioPlayerService.refreshSavedQueues() }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(Res.string.queue_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    activeQueue?.let { Text(it, color = Color(0xFF1DB954), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+                IconButton(onClick = { showSaveQueue = true }, enabled = playerState.queue.isNotEmpty()) {
+                    Icon(Icons.Default.Save, contentDescription = stringResource(Res.string.queue_save_as), tint = Color.White)
+                }
+                IconButton(onClick = { showSavedQueues = true }) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(Res.string.queue_saved), tint = Color.White)
+                }
+                // Jam (`23` §4): green while in one.
+                var showJam by remember { mutableStateOf(false) }
+                IconButton(onClick = { showJam = true }) {
+                    Icon(
+                        Icons.Default.Groups,
+                        contentDescription = stringResource(Res.string.jam_title),
+                        tint = if (LocalAppServices.current.inJam()) Color(0xFF1DB954) else Color.White
+                    )
+                }
+                if (showJam) LocalAppServices.current.JamDialog(onDismiss = { showJam = false })
+            }
+            if (showSaveQueue) {
+                val defaultPrefix = stringResource(Res.string.queue_default_name)
+                var name by remember { mutableStateOf(activeQueue.orEmpty()) }
+                AlertDialog(
+                    onDismissRequest = { showSaveQueue = false },
+                    title = { Text(stringResource(Res.string.queue_save_as)) },
+                    text = {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            singleLine = true,
+                            placeholder = { Text(SavedQueues.defaultName(savedQueues, defaultPrefix)) }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            audioPlayerService.saveQueueAs(name, defaultPrefix)
+                            showSaveQueue = false
+                        }) { Text(stringResource(Res.string.queue_save)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSaveQueue = false }) { Text(stringResource(Res.string.cancel)) }
+                    }
+                )
+            }
+            if (showSavedQueues) {
+                AlertDialog(
+                    onDismissRequest = { showSavedQueues = false },
+                    title = { Text(stringResource(Res.string.queue_saved)) },
+                    text = {
+                        if (savedQueues.isEmpty()) {
+                            Text(stringResource(Res.string.queue_saved_empty), color = Color.Gray)
+                        } else {
+                            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                                items(savedQueues.size, key = { savedQueues[it].name }) { i ->
+                                    val q = savedQueues[i]
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                audioPlayerService.switchToSavedQueue(q.name)
+                                                showSavedQueues = false
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                q.name,
+                                                color = if (q.name == activeQueue) Color(0xFF1DB954) else Color.White,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                pluralStringResource(Res.plurals.track_count, q.tracks.size, q.tracks.size),
+                                                color = Color.Gray, fontSize = 12.sp
+                                            )
+                                        }
+                                        IconButton(onClick = { audioPlayerService.deleteSavedQueue(q.name) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.queue_saved_delete), tint = Color.Gray)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showSavedQueues = false }) { Text(stringResource(Res.string.ok)) }
+                    }
+                )
+            }
+
+            // Current Track Section
+            Text(
+                text = stringResource(Res.string.queue_now_playing),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            playerState.currentTrack?.let { current ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val imgUrl = current.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                    Surface(
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(4.dp)),
+                        color = Color.DarkGray
+                    ) {
+                        if (!imgUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = imgUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(current.name, fontWeight = FontWeight.SemiBold, color = Color(0xFF1DB954), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(current.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Next Up Section
+            Text(
+                text = stringResource(Res.string.queue_next_up),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            val queue = playerState.queue
+            // Real position, not the first id match — a repeated song would otherwise make "Next Up"
+            // list tracks that already played.
+            val currentIdx = audioPlayerService.currentQueuePosition(playerState)
+            val nextUpTracks = if (currentIdx != -1) queue.drop(currentIdx + 1) else queue
+            val nextUpStartIndex = if (currentIdx != -1) currentIdx + 1 else 0
+
+            if (nextUpTracks.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(stringResource(Res.string.queue_empty), color = Color.Gray)
+                }
+            } else {
+                // Drag-to-reorder (4.7), on sh.calvin.reorderable. The hand-written version lived in
+                // each row's pointerInput: when the edge auto-scroll carried the dragged row out of the
+                // viewport the LazyColumn disposed it, the gesture was cancelled without committing,
+                // and the list jumped back to an order the queue never had; dragging the first visible
+                // row also moved the list's scroll anchor. The library keeps the dragged item alive,
+                // scrolls at the edges and animates the others out of the way.
+                //
+                // Rows are keyed by track id plus which copy of it this is, so a song queued twice
+                // still has two distinct keys, and re-seeding after a drop gives every row the key it
+                // already had — nothing animates back. The move is committed once, on drop.
+                fun keyed(tracks: List<FullTrack>): List<Pair<String, FullTrack>> {
+                    val seen = HashMap<String, Int>()
+                    return tracks.mapIndexed { i, t ->
+                        val id = t.id ?: "#$i"
+                        val n = (seen[id] ?: 0) + 1
+                        seen[id] = n
+                        "$id@$n" to t
+                    }
+                }
+                var localOrder by remember { mutableStateOf(keyed(nextUpTracks)) }
+                var draggingKey by remember { mutableStateOf<String?>(null) }
+                var dragStartIndex by remember { mutableIntStateOf(-1) }
+                LaunchedEffect(nextUpTracks) { if (draggingKey == null) localOrder = keyed(nextUpTracks) }
+
+                val queueListState = rememberLazyListState()
+                val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+                val reorderState = rememberReorderableLazyListState(queueListState) { from, to ->
+                    localOrder = localOrder.toMutableList().apply { add(to.index, removeAt(from.index)) }
+                }
+
+                LazyColumn(
+                    state = queueListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    itemsIndexed(localOrder, key = { _, item -> item.first }) { idx, item ->
+                        val rowKey = item.first
+                        val track = item.second
+                        val originalIndex = nextUpStartIndex + idx
+
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            positionalThreshold = { it * 0.4f }
+                        )
+
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                                if (originalIndex in queue.indices) {
+                                    audioPlayerService.removeFromQueue(originalIndex)
+                                }
+                                dismissState.snapTo(SwipeToDismissBoxValue.Settled)
+                            }
+                        }
+
+                        ReorderableItem(reorderState, key = rowKey) { isDragging ->
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromStartToEnd = !isDragging,
+                                enableDismissFromEndToStart = !isDragging,
+                                backgroundContent = {
+                                    val direction = dismissState.dismissDirection
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color(0xFFCC2200))
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color.White
+                                        )
+                                    }
+                                },
+                                content = {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(if (isDragging) Color(0xFF2A2A2A) else Color(0xFF1E1E1E))
+                                            .clickable {
+                                                track.id?.let { id ->
+                                                    // Pass the row's real position so tapping a repeated
+                                                    // song plays that copy, not the first occurrence.
+                                                    audioPlayerService.playSpecificTrackInQueue(
+                                                        id, queueIndex = originalIndex
+                                                    )
+                                                }
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DragHandle,
+                                            contentDescription = "Drag to reorder",
+                                            tint = if (isDragging) Color(0xFF1DB954) else Color.Gray,
+                                            modifier = Modifier
+                                                .padding(end = 12.dp)
+                                                .draggableHandle(
+                                                    onDragStarted = {
+                                                        draggingKey = rowKey
+                                                        dragStartIndex = localOrder.indexOfFirst { it.first == rowKey }
+                                                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                    },
+                                                    onDragStopped = {
+                                                        val from = dragStartIndex
+                                                        val to = localOrder.indexOfFirst { it.first == rowKey }
+                                                        draggingKey = null
+                                                        dragStartIndex = -1
+                                                        if (from >= 0 && to >= 0 && from != to) {
+                                                            audioPlayerService.moveQueueItem(nextUpStartIndex + from, nextUpStartIndex + to)
+                                                        }
+                                                    }
+                                                )
+                                        )
+
+                                        val imgUrl = track.album?.images?.minByOrNull { it.width ?: 999 }?.url
+                                        Surface(
+                                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
+                                            color = Color.DarkGray
+                                        ) {
+                                            if (!imgUrl.isNullOrEmpty()) {
+                                                AsyncImage(
+                                                    model = imgUrl,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(track.name, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(track.artists.joinToString(", ") { it.name }, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TrackScreenControls(
+    track: FullTrack,
+    lyricsResult: LyricsResult?,
+    lyricsLoading: Boolean,
+    isBuffering: Boolean,
+    isPlaying: Boolean,
+    bufferPercent: Int,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    isCurrentTrack: Boolean,
+    currentPosition: Long,
+    totalDuration: Long,
+    playerState: AudioPlayerState,
+    audioPlayerService: PlayerController,
+    spotifyRepo: SpotifyRepository,
+    onShowMappingDialog: () -> Unit,
+    onShowQueue: () -> Unit,
+    onAlbumClick: (String, String, List<SpotifyImage>) -> Unit,
+    onArtistClick: (String) -> Unit,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    ytmRepo: com.varuna.rustify.bridge.YtMusicRepository? = null,
+    onLyricsChanged: (LyricsResult?) -> Unit = {},
+    isError: Boolean = isCurrentTrack && playerState.isError,
+) {
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
+    val lyricsListState = rememberLazyListState()
+
+    // Per-track manual sync adjustment (the menu dialog persists it and bumps `version`).
+    val lyricsDir = com.varuna.rustify.ui.LocalAppPlatform.current.filesDir
+    val lyricsOffsetVersion by com.varuna.rustify.bridge.LyricsOffsetStore.version.collectAsState()
+    val lyricOffsetMs = remember(track.id, lyricsOffsetVersion) {
+        com.varuna.rustify.bridge.LyricsOffsetStore.get(lyricsDir, track.id ?: "")
+    }
+
+    // Auto-scroll to the current lyric line, applying the offset (a positive value advances the lyrics).
+    LaunchedEffect(currentPosition, showLyrics, lyricOffsetMs) {
+        if (!showLyrics) return@LaunchedEffect
+        val synced = lyricsResult?.synced ?: return@LaunchedEffect
+        if (synced.isEmpty()) return@LaunchedEffect
+        val idx = synced.indexOfLast { it.timeMs <= currentPosition + lyricOffsetMs }.coerceAtLeast(0)
+        try {
+            lyricsListState.animateScrollToItem(idx)
+        } catch (_: Exception) {}
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (isBuffering) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .height(2.dp),
+                color = Color(0xFF1DB954),
+                trackColor = Color.Transparent
+            )
+        } else {
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+            // Title and Like button
+            val isYtm = TrackRef.isYtm(track.id)
+            Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.name,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().bouncingMarquee()
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = track.artists.joinToString(", ") { it.name },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isYtm) Color.White else Color(0xFF1DB954),
+                    modifier = Modifier.fillMaxWidth().bouncingMarquee().run {
+                        if (!isYtm) clickable {
+                            if (track.artists.isNotEmpty()) {
+                                onArtistClick(track.artists.first().id)
+                            }
+                        } else this
+                    }
+                )
+            }
+
+            // Like / YTM Favorite Button
+            if (isYtm) {
+                val vid = TrackRef.youtubeVideoIdOf(track.id) ?: ""
+                val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+                val effectiveYtmRepo = ytmRepo ?: remember(platform) {
+                    com.varuna.rustify.bridge.YtMusicRepository(platform.filesDir)
+                }
+                var ytmFav by remember(vid) { mutableStateOf(effectiveYtmRepo.isFavorite(vid)) }
+                SpotifyLikeButton(
+                    isLiked = ytmFav,
+                    onClick = {
+                        effectiveYtmRepo.toggleFavorite(com.varuna.rustify.bridge.YtmTrack(
+                            videoId = vid, title = track.name,
+                            artists = track.artists.map { com.varuna.rustify.bridge.YtmArtistRef(it.id, it.name) },
+                            albumId = null, durationSec = track.durationMs / 1000,
+                            thumbnailUrl = track.album?.images?.firstOrNull()?.url ?: ""
+                        ))
+                        ytmFav = !ytmFav
+                    }
+                )
+            } else {
+            val isLiked = track.id?.let { spotifyRepo.isTrackLiked(it) } ?: false
+            SpotifyLikeButton(
+                isLiked = isLiked,
+                onClick = {
+                    coroutineScope.launch {
+                        spotifyRepo.toggleLikeTrack(track)
+                    }
+                }
+            )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Album Link — skip for YTM tracks (synthetic album)
+        if (!isYtm) {
+        Text(
+            text = track.album?.name ?: "",
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.LightGray,
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth().bouncingMarquee().clickable {
+                track.album?.let {
+                    onAlbumClick(it.id, it.name, it.images)
+                }
+            }.align(Alignment.Start)
+        )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+
+        // Premium Seek Slider
+        var sliderPosition by remember { mutableStateOf<Float?>(null) }
+        val displayPosition = sliderPosition ?: currentPosition.toFloat()
+
+        Slider(
+            value = displayPosition.coerceIn(0f, totalDuration.toFloat().coerceAtLeast(1f)),
+            onValueChange = { sliderPosition = it },
+            onValueChangeFinished = {
+                sliderPosition?.let {
+                    if (isCurrentTrack) {
+                        audioPlayerService.seekTo(it.toLong())
+                    }
+                }
+                sliderPosition = null
+            },
+            valueRange = 0f..totalDuration.toFloat().coerceAtLeast(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color(0xFF1DB954),
+                inactiveTrackColor = Color.Gray.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            val formatTime = { millis: Long ->
+                val totalSecs = millis / 1000
+                val minutes = totalSecs / 60
+                val seconds = totalSecs % 60
+                formatMinSecUs(minutes, seconds)
+            }
+            Text(formatTime(displayPosition.toLong()), color = Color.LightGray, fontSize = 12.sp)
+            Text(formatTime(totalDuration), color = Color.LightGray, fontSize = 12.sp)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Playback Controls Row
+        // Compact on a narrow phone (4.7): seven 48 dp buttons and the 72 dp play button do not fit
+        // in 360 dp, and the last ones in each group were squeezed to a fraction of their size.
+        val compactControls = com.varuna.rustify.ui.windowWidthDp() < 400
+        val ctlMod = if (compactControls) Modifier.size(42.dp) else Modifier
+        val playSize = if (compactControls) 64.dp else 72.dp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        ) {
+            // Left Group
+            Row(
+                modifier = Modifier.weight(1f), 
+                horizontalArrangement = Arrangement.SpaceEvenly, 
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+            // Alternative source picker (YouTube mapping)
+            val isLocal = TrackRef.isLocal(track.id)
+            if (!isLocal) {
+                IconButton(onClick = onShowMappingDialog, modifier = ctlMod) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CallSplit,
+                        contentDescription = stringResource(Res.string.track_menu_view_youtube),
+                        // Green when the current track is playing from a local file (local match).
+                        tint = if (isCurrentTrack && playerState.isLocalSource) Color(0xFF1DB954) else Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.size(48.dp))
+            }
+
+            // DJ: only shown during an autonomous DJ session; tap to change the mood from playback.
+            val djServices = LocalAppServices.current
+            if (djServices.djActive()) {
+                IconButton(onClick = { djServices.djNext() }, modifier = ctlMod) {
+                    Icon(
+                        imageVector = Icons.Default.Radio,
+                        contentDescription = "DJ",
+                        tint = Color(0xFF1DB954),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
+            // Shuffle / Repeat Mode Button
+            IconButton(onClick = { audioPlayerService.cyclePlaybackMode() }, modifier = ctlMod) {
+                val icon = if (playerState.isRepeat) Icons.Default.Repeat else Icons.Default.Shuffle
+                val tint = if (playerState.isShuffle || playerState.isRepeat) Color(0xFF1DB954) else Color.White
+                Icon(
+                    imageVector = icon,
+                    contentDescription = "Playback Mode",
+                    tint = tint,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            // Previous button
+            IconButton(
+                modifier = ctlMod,
+                onClick = { audioPlayerService.skipToPrevious() },
+                enabled = hasPrevious
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipPrevious,
+                    contentDescription = "Previous",
+                    tint = if (hasPrevious) Color.White else Color.Gray,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            } // End Left Group
+
+            // Play/Pause button with buffering indicator
+            Box(
+                modifier = Modifier.size(playSize),
+                contentAlignment = Alignment.Center
+            ) {
+                // Background circle
+                Surface(
+                    modifier = Modifier
+                        .size(playSize)
+                        .clickable {
+                            if (isCurrentTrack) {
+                                audioPlayerService.togglePlayPause()
+                            } else {
+                                val id = track.id
+                                val inQueue = playerState.queue.any { it.id == id }
+                                if (inQueue && id != null) {
+                                    audioPlayerService.playSpecificTrackInQueue(id)
+                                } else {
+                                    audioPlayerService.loadAndPlay(track)
+                                }
+                            }
+                        },
+                    shape = CircleShape,
+                    color = if (isBuffering) Color(0xFF1DB954).copy(alpha = 0.4f) else Color(0xFF1DB954)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = Color.White,
+                                strokeWidth = 3.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.Black,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Buffer progress arc drawn OVER the circle
+                if (isBuffering && bufferPercent in 1..99) {
+                    Canvas(modifier = Modifier.size(80.dp)) {
+                        val strokeWidth = 4.dp.toPx()
+                        val sweepAngle = (bufferPercent / 100f) * 360f
+                        drawArc(
+                            color = Color.White.copy(alpha = 0.9f),
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            style = Stroke(
+                                width = strokeWidth,
+                                cap = StrokeCap.Round
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Right Group
+            Row(
+                modifier = Modifier.weight(1f), 
+                horizontalArrangement = Arrangement.SpaceEvenly, 
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+            // Next button
+            IconButton(
+                modifier = ctlMod,
+                onClick = { audioPlayerService.skipToNext() },
+                enabled = hasNext
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Next",
+                    tint = if (hasNext) Color.White else Color.Gray,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            // Queue Button
+            IconButton(onClick = onShowQueue, modifier = ctlMod) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                    contentDescription = "View Queue",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            // Lyrics Button (Far Right)
+            IconButton(onClick = { showLyrics = !showLyrics }, modifier = ctlMod) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Subject,
+                    contentDescription = "Lyrics",
+                    tint = if (showLyrics) Color(0xFF1DB954) else Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            } // End Right Group
+        }
+        
+        // Error banner: shown directly below playback controls so it never covers the slider, times, or buttons.
+        if (isError) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFCC2200).copy(alpha = 0.85f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = playerState.errorMessage.ifBlank { stringResource(Res.string.track_menu_url_not_found) },
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = {
+                    val showId = track.id
+                    val inQueue = playerState.queue.any { it.id == showId }
+                    if (inQueue && showId != null) {
+                        audioPlayerService.playSpecificTrackInQueue(showId)
+                    } else {
+                        audioPlayerService.retryCurrentTrack(fallbackTrackId = track.id)
+                    }
+                }) {
+                    Text(stringResource(Res.string.general_retry), color = Color.White, fontSize = 12.sp)
+                }
+            }
+        }
+
+        // Lyrics Panel
+        if (showLyrics) {
+            Spacer(modifier = Modifier.height(16.dp))
+            LyricsProviderSwitcher(track = track, current = lyricsResult, onChange = onLyricsChanged) {
+                LyricsView(
+                    lyricsResult = lyricsResult,
+                    isLoading = lyricsLoading,
+                    currentPositionMs = currentPosition,
+                    offsetMs = lyricOffsetMs,
+                    listState = lyricsListState,
+                    // The provider is part of the key: another provider's lines are other lines to translate.
+                    trackKey = track.id?.let { "$it|${lyricsResult?.providerId}" }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Lyrics from another provider by swiping sideways (5.0.1). Reported: some songs showed another
+ * song's lyrics, and nothing said where they came from or offered another source.
+ *
+ * One dot per enabled provider (the file's own first, for a local track), white for the one shown,
+ * grey for the rest, with its name beside them. A swipe or a tap on a dot asks that provider alone;
+ * when it has the song, it is remembered for this track ([com.varuna.rustify.bridge.LyricsChain.choose]) and opens with
+ * it next time. When it has nothing, it says so and the lines shown stay.
+ */
+@Composable
+private fun LyricsProviderSwitcher(
+    track: FullTrack,
+    current: LyricsResult?,
+    onChange: (LyricsResult?) -> Unit,
+    content: @Composable () -> Unit
+) {
+    val lyrics = LocalAppServices.current.lyrics
+    val trackId = track.id
+    val providers = remember(trackId) { trackId?.let { lyrics.providersFor(it) }.orEmpty() }
+    if (trackId == null || providers.size < 2) {
+        content()
+        return
+    }
+    val scope = rememberCoroutineScope()
+    var asking by remember(trackId) { mutableStateOf<String?>(null) }
+    var nothingFrom by remember(trackId) { mutableStateOf<String?>(null) }
+    val shown = current?.providerId
+    val index = providers.indexOf(shown).coerceAtLeast(0)
+    val names = com.varuna.rustify.bridge.lyricsProviderNames()
+    fun nameOf(id: String): String = names[id] ?: id
+    fun open(target: Int) {
+        val id = providers.getOrNull(target.mod(providers.size)) ?: return
+        if (id == shown || asking != null) return
+        asking = id
+        nothingFrom = null
+        scope.launch {
+            val r = lyrics.fetchFrom(
+                trackId, id, track.artists.firstOrNull()?.name ?: "", track.name, track.durationMs / 1000
+            )
+            asking = null
+            if (r != null) {
+                lyrics.choose(trackId, id)
+                onChange(r)
+            } else {
+                nothingFrom = id
+            }
+        }
+    }
+    Column(
+        modifier = Modifier.pointerInput(trackId, shown) {
+            var dragged = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { dragged = 0f },
+                onHorizontalDrag = { _, dx -> dragged += dx },
+                onDragEnd = {
+                    if (dragged < -120f) open(index + 1) else if (dragged > 120f) open(index - 1)
+                }
+            )
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            providers.forEachIndexed { i, id ->
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (i == index) 8.dp else 7.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (i == index) Color.White else Color.Gray.copy(alpha = 0.6f))
+                        .clickable { open(i) }
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = when {
+                    asking != null -> stringResource(Res.string.lyrics_provider_asking, nameOf(asking!!))
+                    nothingFrom != null -> stringResource(Res.string.lyrics_provider_nothing, nameOf(nothingFrom!!))
+                    else -> nameOf(providers[index])
+                },
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+fun LyricsView(
+    lyricsResult: LyricsResult?,
+    isLoading: Boolean,
+    currentPositionMs: Long,
+    offsetMs: Long = 0L,
+    listState: LazyListState,
+    /** Identifies the track for the translation cache. */
+    trackKey: String? = null
+) {
+    val spotifyGreen = Color(0xFF1DB954)
+    // Translation (4.7): off until asked for, then one line under each line. See AppServices.translateLyrics.
+    val services = LocalAppServices.current
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    var translateOn by remember(trackKey) { mutableStateOf(false) }
+    var translation by remember(trackKey) { mutableStateOf<LyricsTranslation?>(null) }
+    var partialTranslation by remember(trackKey) { mutableStateOf<LyricsTranslation?>(null) }
+    val sourceLines = remember(lyricsResult) {
+        lyricsResult?.synced?.takeIf { it.isNotEmpty() }?.map { it.text }
+            ?: lyricsResult?.plain?.lines()
+            ?: emptyList()
+    }
+    LaunchedEffect(translateOn, sourceLines) {
+        if (translateOn && translation == null && sourceLines.isNotEmpty()) {
+            translation = services.translateLyrics(
+                trackKey ?: sourceLines.hashCode().toString(), sourceLines,
+                onProgress = { partial -> partialTranslation = partial }
+            )
+        }
+    }
+    val translated = ((translation ?: partialTranslation) as? LyricsTranslation.Translated)?.lines?.takeIf { translateOn }
+    // Say why nothing appeared (4.7.1): the icon only turning grey read as "the button does nothing".
+    LaunchedEffect(translation, partialTranslation, translateOn) {
+        if (!translateOn) return@LaunchedEffect
+        fun name(code: String) = languageDisplayName(code.substringBefore('-'))
+        val msg = when (val o = translation ?: partialTranslation) {
+            is LyricsTranslation.Downloading ->
+                appString(Res.string.lyrics_translate_downloading, name(o.language))
+            is LyricsTranslation.NotNeeded -> when {
+                o.language == "und" -> appString(Res.string.lyrics_translate_unknown)
+                o.language.endsWith("-Latn") -> appString(Res.string.lyrics_translate_romanised, name(o.language))
+                o.language == services.translationTarget() ->
+                    appString(Res.string.lyrics_translate_same)
+                else -> appString(Res.string.lyrics_translate_unsupported, name(o.language))
+            }
+            is LyricsTranslation.Failed ->
+                if (o.reason == LyricsTranslation.UNAVAILABLE) appString(Res.string.feature_not_on_platform)
+                else appString(Res.string.lyrics_translate_failed, o.reason)
+            else -> null
+        }
+        msg?.let { platform.toast(it, long = true) }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 200.dp, max = 350.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        when {
+            isLoading -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = spotifyGreen, modifier = Modifier.size(32.dp))
+                }
+            }
+            lyricsResult == null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(Res.string.lyrics_not_found),
+                        color = Color.Gray,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            lyricsResult.synced.isNotEmpty() -> {
+                val synced = lyricsResult.synced
+                val currentIdx = synced.indexOfLast { it.timeMs <= currentPositionMs + offsetMs }.coerceAtLeast(0)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    // Clear of the translate button in the top corner, on both sides to stay centred:
+                    // a long active line ran under it.
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    itemsIndexed(synced) { index, line ->
+                        val isActive = index == currentIdx
+                        Text(
+                            text = line.text.ifBlank { "♪" },
+                            color = if (isActive) Color.White else Color.Gray.copy(alpha = 0.5f),
+                            fontSize = if (isActive) 18.sp else 15.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = if (isActive) 8.dp else 4.dp, bottom = if (translated != null) 0.dp else if (isActive) 8.dp else 4.dp)
+                        )
+                        translated?.getOrNull(index)?.takeIf { it.isNotBlank() }?.let { t ->
+                            Text(
+                                text = t,
+                                color = if (isActive) spotifyGreen else Color.Gray.copy(alpha = 0.45f),
+                                fontSize = 13.sp,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = if (isActive) 8.dp else 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            lyricsResult.plain != null -> {
+                val scrollState = rememberScrollState()
+                Text(
+                    text = if (translated != null) {
+                        lyricsResult.plain.orEmpty().lines().mapIndexed { i, l ->
+                            val t = translated.getOrNull(i).orEmpty()
+                            if (t.isBlank()) l else "$l\n($t)"
+                        }.joinToString("\n")
+                    } else lyricsResult.plain.orEmpty(),
+                    color = Color.LightGray,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 28.dp)
+                )
+            }
+            else -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(Res.string.lyrics_not_found),
+                        color = Color.Gray,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+        if (sourceLines.isNotEmpty() && !isLoading) {
+            val notNeeded = translation is LyricsTranslation.NotNeeded
+            val failed = translation is LyricsTranslation.Failed
+            IconButton(
+                onClick = { translateOn = !translateOn; if (failed) translation = null },
+                modifier = Modifier.align(Alignment.TopEnd).size(32.dp)
+            ) {
+                if (translateOn && translation == null) CircularProgressIndicator(color = spotifyGreen, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                else Icon(
+                    Icons.Default.Translate,
+                    contentDescription = stringResource(Res.string.lyrics_translate),
+                    tint = when {
+                        translateOn && translated != null -> spotifyGreen
+                        translateOn && (notNeeded || failed) -> Color.Gray
+                        else -> Color.White.copy(alpha = 0.7f)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Cover art with an optional canvas badge in the top-right corner.
+ * When the track has a canvas, a small pill styled like the Spotify
+ * canvas badge appears — tap it to toggle the full-screen canvas on/off.
+ */
+@Composable
+fun TrackCoverSimple(
+    imgUrl: String?,
+    contentDescription: String,
+    size: androidx.compose.ui.unit.Dp
+) {
+    Surface(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(8.dp)),
+        color = Color.DarkGray
+    ) {
+        if (!imgUrl.isNullOrEmpty()) {
+            AsyncImage(
+                model = imgUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+/**
+ * The sleep timer (4.4): a moon in the track screen's header, a menu of durations, and the minutes
+ * left beside it while one runs. The fading and pausing live in [PlayerController.setSleepTimer].
+ */
+@Composable
+private fun SleepTimerButton(audioPlayerService: PlayerController) {
+    val endsAt by audioPlayerService.sleepTimer.collectAsState()
+    val songsLeft by audioPlayerService.sleepTracks.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    // Ticks the label down once a minute is enough; it reads the flow's deadline each time.
+    var now by remember { mutableStateOf(currentTimeMillis()) }
+    LaunchedEffect(endsAt) {
+        while (endsAt != null) {
+            now = currentTimeMillis()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+    Box {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val active = endsAt != null
+            val left = endsAt?.takeIf { it > 0 }?.let { ((it - now) / 60_000 + 1).coerceAtLeast(1) }
+            if (left != null) Text("${left}m", color = Color(0xFF1DB954), fontSize = 12.sp)
+            else if (songsLeft > 1) Text("${songsLeft}♪", color = Color(0xFF1DB954), fontSize = 12.sp)
+            IconButton(onClick = { open = true }) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.Bedtime,
+                    contentDescription = stringResource(Res.string.sleep_timer),
+                    tint = if (active) Color(0xFF1DB954) else Color.White
+                )
+            }
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            val options = listOf(15, 30, 45, 60).map { m -> stringResource(Res.string.sleep_timer_minutes, m) to m } +
+                listOf(stringResource(Res.string.sleep_timer_track_end) to PlayerController.SLEEP_MINUTES_TRACK_END)
+            val songOptions = listOf(2, 3, 5)
+            options.forEach { (label, minutes) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, color = Color.White) },
+                    onClick = { audioPlayerService.setSleepTimer(minutes); open = false }
+                )
+            }
+            songOptions.forEach { songs ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.sleep_timer_songs, songs), color = Color.White) },
+                    onClick = { audioPlayerService.setSleepAfterTracks(songs); open = false }
+                )
+            }
+            if (endsAt != null) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.sleep_timer_off), color = Color(0xFFE57373)) },
+                    onClick = { audioPlayerService.setSleepTimer(0); open = false }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A-B repeat (4.10): "A-B" in grey, "A…" once A is marked, "A-B" in green while it loops. The
+ * cycling lives in [com.varuna.rustify.player.AbRepeat]; the loop in the service.
+ */
+@Composable
+private fun AbRepeatButton(audioPlayerService: PlayerController) {
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val ab by audioPlayerService.abRepeat.collectAsState()
+    // A repeat icon with the loop's state beside it: "A-B" alone read as left/right channels (5.0.1).
+    val badge = when {
+        ab.isLooping -> "A-B"
+        ab.a != null -> "A"
+        else -> null
+    }
+    val description = stringResource(
+        when {
+            ab.isLooping -> Res.string.ab_repeat_clear
+            ab.a != null -> Res.string.ab_repeat_set_b
+            else -> Res.string.ab_repeat_set_a
+        }
+    )
+    val markedA = stringResource(Res.string.ab_repeat_marked_a)
+    val looping = stringResource(Res.string.ab_repeat_looping)
+    val cleared = stringResource(Res.string.ab_repeat_cleared)
+    fun mmss(ms: Long) = formatMinSec(ms / 60_000, (ms / 1000) % 60)
+    IconButton(
+        onClick = {
+            audioPlayerService.pressAbRepeat()
+            // Say what the press did: the jump back to A when the loop starts is the loop working,
+            // and without a word it looked like the song stumbling.
+            val now = audioPlayerService.abRepeat.value
+            val text = when {
+                now.isLooping -> formatTemplate(looping, mmss(now.a ?: 0), mmss(now.b ?: 0))
+                now.a != null -> formatTemplate(markedA, mmss(now.a ?: 0))
+                else -> cleared
+            }
+            platform.toast(text)
+        },
+        modifier = Modifier.semantics { contentDescription = description }
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Repeat,
+                contentDescription = null,
+                tint = if (ab.a != null) Color(0xFF1DB954) else Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+            if (badge != null) {
+                Text(badge, color = Color(0xFF1DB954), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/**
+ * Speed and pitch (4.9): a gauge beside the sleep timer, showing the speed when it is not 1×. The
+ * values live in [com.varuna.rustify.player.PlaybackSpeed]; applying them is the service's.
+ */
+@Composable
+private fun SpeedButton(audioPlayerService: PlayerController) {
+    val platform = com.varuna.rustify.ui.LocalAppPlatform.current
+    val ps = com.varuna.rustify.player.PlaybackSpeed
+    var open by remember { mutableStateOf(false) }
+    var speed by remember { mutableStateOf(ps.speed(platform.prefs())) }
+    var semitones by remember { mutableStateOf(ps.semitones(platform.prefs())) }
+    fun apply() {
+        ps.set(platform.prefs(), speed, semitones)
+        audioPlayerService.applyPlaybackSpeed()
+    }
+    val changed = !ps.isDefault(speed, semitones)
+    // Where the player has no speed (the desktop's engine, until it does), the button stays and says
+    // so, as the screen does for what this platform lacks, instead of saving a speed nothing applies.
+    val supported = audioPlayerService.can(com.varuna.rustify.player.PlayerFeature.SPEED)
+    val notHere = stringResource(Res.string.feature_not_on_platform)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (supported && ps.snap(speed) != 1f) Text("${formatSpeed(ps.snap(speed))}×", color = Color(0xFF1DB954), fontSize = 12.sp)
+        IconButton(onClick = { if (supported) open = true else platform.toast(notHere) }) {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = stringResource(Res.string.playback_speed),
+                tint = when {
+                    !supported -> Color.White.copy(alpha = 0.35f)
+                    changed -> Color(0xFF1DB954)
+                    else -> Color.White
+                }
+            )
+        }
+    }
+    if (open) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { open = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text(stringResource(Res.string.playback_speed), color = Color.White) },
+            text = {
+                Column {
+                    Text(stringResource(Res.string.playback_speed_value, formatSpeed(ps.snap(speed))), color = Color.White)
+                    androidx.compose.material3.Slider(
+                        value = speed,
+                        onValueChange = { speed = ps.snap(it) },
+                        onValueChangeFinished = { apply() },
+                        valueRange = ps.MIN_SPEED..ps.MAX_SPEED,
+                        steps = ((ps.MAX_SPEED - ps.MIN_SPEED) / ps.SPEED_STEP).toInt() - 1
+                    )
+                    Text(
+                        stringResource(Res.string.playback_pitch_value, if (semitones > 0) "+$semitones" else "$semitones"),
+                        color = Color.White
+                    )
+                    androidx.compose.material3.Slider(
+                        value = semitones.toFloat(),
+                        onValueChange = { semitones = it.toInt() },
+                        onValueChangeFinished = { apply() },
+                        valueRange = -ps.MAX_SEMITONES.toFloat()..ps.MAX_SEMITONES.toFloat(),
+                        steps = ps.MAX_SEMITONES * 2 - 1
+                    )
+                    Text(stringResource(Res.string.playback_speed_desc), color = Color.Gray, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { open = false }) {
+                    Text(stringResource(Res.string.settings_close), color = Color(0xFF1DB954))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = changed,
+                    onClick = { speed = 1f; semitones = 0; apply() }
+                ) { Text(stringResource(Res.string.playback_speed_reset)) }
+            }
+        )
+    }
+}
+
+/** 1.25 → "1.25", 1.5 → "1.5", 2 → "2". */
+private fun formatSpeed(speed: Float): String =
+    formatTrimmed(speed.toDouble(), 2)

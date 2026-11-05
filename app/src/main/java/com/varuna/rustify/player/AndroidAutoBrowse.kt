@@ -63,7 +63,7 @@ object AndroidAutoBrowse {
 
             // ── Local ──
             parentId == "cat_local" -> localSections(context)
-            parentId == "local_favs" -> repo.localTracks.filter { it.id != null && repo.isLocalFavorite(it.id) }.map { trackNode(it) }
+            parentId == "local_favs" -> repo.localTracks.filter { t -> t.id.let { id -> id != null && repo.isLocalFavorite(id) } }.map { trackNode(it) }
             parentId == "local_tracks" -> repo.localTracks.map { trackNode(it) }
             parentId == "local_playlists" -> repo.localPlaylists.map {
                 Node("localfolder:${it.id}", it.name, "", true, null, repo.localPlaylistTracks(it.id).firstOrNull()?.album?.images?.firstOrNull()?.url)
@@ -108,7 +108,7 @@ object AndroidAutoBrowse {
             when {
                 parentId == "sec_recent" -> {
                     val now = System.currentTimeMillis()
-                    com.varuna.rustify.metrics.ListeningTracker.stats(context, now - 30L * 86_400_000L, now).recent
+                    com.varuna.rustify.metrics.ListeningTracker.stats(com.varuna.rustify.ui.AndroidAppPlatform(context), now - 30L * 86_400_000L, now).recent
                         .distinctBy { it.trackId }
                         .take(50)
                         .map { e ->

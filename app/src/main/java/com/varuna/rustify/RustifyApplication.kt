@@ -1,0 +1,28 @@
+// app/src/main/java/com/varuna/rustify/RustifyApplication.kt
+
+package com.varuna.rustify
+
+import android.app.Application
+import android.content.Context
+import com.varuna.rustify.ui.AndroidAppPlatform
+import com.varuna.rustify.ui.newRustifyImageLoader
+
+/**
+ * The process's `Application`, here only so Coil asks it for the image loader. The first caller of
+ * `SingletonImageLoader.get` is not always the activity — the widget loads covers for playback
+ * started from Bluetooth or Android Auto with no interface open — and a loader set from the
+ * activity came too late then: the default one, without the disk cache, had already been made.
+ */
+class RustifyApplication : Application(), coil3.SingletonImageLoader.Factory {
+    override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader = rustifyImageLoader(context)
+}
+
+/**
+ * Coil's loader with a persistent disk cache. Its size is configurable in Settings (pref
+ * cache_max_mb, default 500 MB) and takes effect on app restart. Coil 3 ignores the servers' cache
+ * headers by default, as respectCacheHeaders(false) did in 2.
+ */
+fun rustifyImageLoader(context: Context): coil3.ImageLoader {
+    val platform = AndroidAppPlatform(context)
+    return newRustifyImageLoader(context, platform.cacheDir, platform.prefs())
+}

@@ -1,0 +1,41 @@
+package com.varuna.rustify.player
+
+import com.varuna.rustify.platform.KeyValueStore
+import kotlin.random.Random
+
+/**
+ * Shuffle by album (4.10): the albums come in random order, each one played through in its own
+ * order. For a library of albums meant to be heard whole — a live record, a concept album — song
+ * shuffle scatters exactly what makes them worth hearing.
+ *
+ * Kotlin, like the song shuffle it sits next to: the order is Rustify's own (the hand-queued block
+ * keeps its place), and the core's reducer deliberately holds no random source.
+ * Pure, so it is tested on the JVM; [AudioPlayerService] decides when it applies.
+ */
+object AlbumShuffle {
+    /**
+     * [tracks] rearranged by album. A track's album is [albumOf]; tracks without one are an album of
+     * their own each. Within an album the order of [tracks] is kept; [firstAlbum], when given, goes
+     * first — what is left of the album the current song belongs to.
+     */
+    fun <T> arrange(
+        tracks: List<T>,
+        albumOf: (T) -> String?,
+        firstAlbum: String? = null,
+        random: Random = Random.Default,
+    ): List<T> {
+        val groups = LinkedHashMap<String, MutableList<T>>()
+        tracks.forEachIndexed { i, t ->
+            // A track with no album must not be lumped with the others that have none.
+            val key = albumOf(t)?.takeIf { it.isNotBlank() } ?: "\u0000single:$i"
+            groups.getOrPut(key) { mutableListOf() }.add(t)
+        }
+        val first = firstAlbum?.takeIf { it.isNotBlank() }?.let { groups.remove(it) }.orEmpty()
+        return first + groups.values.shuffled(random).flatten()
+    }
+
+    private const val KEY = "shuffle_by_album"
+
+    fun enabled(prefs: KeyValueStore): Boolean = prefs.getBoolean(KEY, false)
+    fun setEnabled(prefs: KeyValueStore, on: Boolean) = prefs.putBoolean(KEY, on)
+}
