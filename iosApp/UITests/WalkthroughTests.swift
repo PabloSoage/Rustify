@@ -110,7 +110,9 @@ final class WalkthroughTests: XCTestCase {
         guard tap("Pause") else { return }
         gone("own-server-paused", "Pause")
 
-        guard tap("More options"), tap("Download track") else { return }
+        // Further down the menu than the screen reaches.
+        guard tap("More options"), scrollTo(element("Download track")) else { return }
+        element("Download track").tap()
         step("own-server-downloaded", shows: "Track downloaded", timeout: 60)
     }
 
