@@ -25,6 +25,10 @@ permissions:
 
 env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # Drive's sign-in on the desktop, iOS and the web (generateDriveClient reads these). Without them
+  # those builds ship with no Drive, as 5.0.0's APKs did.
+  DRIVE_APPAUTH_CLIENT_ID: ${{ secrets.DRIVE_APPAUTH_CLIENT_ID }}
+  DRIVE_APPAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_APPAUTH_CLIENT_SECRET }}
 
 jobs:
   # Windows: .msi, setup .exe, portable .zip. Linux: .deb, .rpm, .AppImage, portable .tar.gz.
