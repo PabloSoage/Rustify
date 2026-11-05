@@ -107,6 +107,10 @@ kotlin {
         }
     }
 }
-tasks.withType<Test>().configureEach {
-    systemProperty("rustify.coreLibDir", rootProject.file("core_engine/target/desktop/release").absolutePath)
+// The desktop's core for the tests that call it, as in :sharedUi: on java.library.path for the test JVM only.
+if (rootProject.findProject(":desktopApp") != null) {
+    tasks.matching { it.name == "desktopTest" }.configureEach {
+        dependsOn(":desktopApp:buildRustCoreDesktop")
+        (this as Test).systemProperty("java.library.path", rootProject.file("core_engine/target/desktop/release").absolutePath)
+    }
 }

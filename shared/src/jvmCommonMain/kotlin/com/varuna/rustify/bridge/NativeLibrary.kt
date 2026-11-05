@@ -14,17 +14,7 @@ package com.varuna.rustify.bridge
  */
 object NativeLibrary {
     @Volatile
-    private var loader: () -> Unit = {
-        val coreLibDir = System.getProperty("rustify.coreLibDir")
-        val candidate = coreLibDir?.takeIf { it.isNotBlank() }?.let {
-            java.io.File(it, System.mapLibraryName("core_engine"))
-        }
-        if (candidate != null && candidate.isFile) {
-            System.load(candidate.absolutePath)
-        } else {
-            System.loadLibrary("core_engine")
-        }
-    }
+    private var loader: () -> Unit = { System.loadLibrary("core_engine") }
 
     @Volatile
     private var loaded = false
