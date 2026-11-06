@@ -157,6 +157,13 @@ windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation
 [target.'cfg(target_os = "ios")'.dependencies]
 rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
 
+# --- 32-bit ARM Linux (rustify-server for armv7) ---
+# The same switch once more: no pre-generated bindings for armv7-unknown-linux-gnueabihf (seen in
+# the 5.6.4 release: "couldn't find file src/bindings/armv7-unknown-linux-gnueabihf.rs"). The
+# release builds it with Ubuntu's gcc-arm-linux-gnueabihf and libclang-dev.
+[target.'cfg(all(target_os = "linux", target_arch = "arm"))'.dependencies]
+rquickjs-sys = { version = "0.9.0", features = ["bindgen"] }
+
 
 # --- Optimizations for Android NDK (Reduces .so file size) ---
 [profile.release]

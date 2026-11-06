@@ -195,8 +195,13 @@ jobs:
           set -euo pipefail
           cd server
           if [ -n "${{ matrix.target }}" ]; then
-            cargo install cross --locked
-            cross build --release --target "${{ matrix.target }}"
+            # Ubuntu's own cross toolchain, plus libclang for QuickJS's bindings (core_engine's
+            # Cargo.toml says why): the same build reproduces in WSL, which cross's image did not.
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq gcc-arm-linux-gnueabihf libc6-dev-armhf-cross libclang-dev
+            export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+            export CC_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc
+            cargo build --release --target "${{ matrix.target }}"
             echo "BIN=server/target/${{ matrix.target }}/release/rustify-server" >> "$GITHUB_ENV"
           else
             cargo build --release
