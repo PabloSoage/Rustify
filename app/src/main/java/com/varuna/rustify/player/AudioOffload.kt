@@ -7,16 +7,27 @@ import android.content.Context
  * of several minutes, instead of waking every few milliseconds to decode in software. The biggest
  * battery saving there is for listening with the screen off.
  *
- * On by default; media3 only offloads when the device says it can, for an audio-only track, and
- * releases the wake lock while it sleeps. Two things in the app need the CPU awake and so turn it
- * off while they are on: the system equaliser (an effect on the session) and the fade between songs
- * (a loop that sets the volume every 50 ms near each end).
+ * **Off by default since 5.7** (it was on from 4.7.1). On the POCO F8 Ultra with Android 17 it
+ * skipped to the next song before the end, with no pause or call to set it off, and a seek sometimes
+ * played an earlier part of the song than the one asked for; with offload off neither happened
+ * (owner, 2026-11-09, docs `serie-4.x/31` §2). [PositionSanity] and [PlaybackRecovery] did not catch
+ * it, which fits the player's clock running on while the DSP had stopped: the end then looks like a
+ * real one. Not reproduced yet with a log, so it is switched off rather than patched blind: a
+ * session without offload costs battery, a song cut in half costs the song. Whoever turned it on
+ * keeps it on (the stored choice wins); nobody else gets it.
+ *
+ * media3 only offloads when the device says it can, for an audio-only track, and releases the wake
+ * lock while it sleeps. Several things in the app need the CPU awake and so turn it off while they
+ * are on ([Blocker]).
  */
 object AudioOffload {
     const val KEY_ENABLED = "audio_offload_enabled"
 
+    /** What a phone that never touched the switch gets. See the class comment for why it is off. */
+    const val DEFAULT_ENABLED = false
+
     fun isEnabled(context: Context): Boolean =
-        context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
+        context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, DEFAULT_ENABLED)
 
     fun setEnabled(context: Context, on: Boolean) {
         context.getSharedPreferences("rustify_settings", Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, on).apply()

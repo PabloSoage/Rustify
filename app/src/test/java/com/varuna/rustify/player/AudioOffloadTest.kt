@@ -6,7 +6,18 @@ import org.junit.Test
 
 class AudioOffloadTest {
     @Test
-    fun onByDefaultWithNothingThatNeedsTheCpu() {
+    fun offUnlessTheUserTurnsItOn() {
+        // 5.7: it cut songs short on the F8 Ultra with Android 17 (docs serie-4.x/31 §2). A phone
+        // that never touched the switch must get SWITCHED_OFF, not offload.
+        assertEquals(false, AudioOffload.DEFAULT_ENABLED)
+        assertEquals(
+            AudioOffload.Blocker.SWITCHED_OFF,
+            AudioOffload.blocker(enabled = AudioOffload.DEFAULT_ENABLED, equalizerOn = false, fadeSeconds = 0)
+        )
+    }
+
+    @Test
+    fun usedWhenTurnedOnWithNothingThatNeedsTheCpu() {
         assertNull(AudioOffload.blocker(enabled = true, equalizerOn = false, fadeSeconds = 0))
     }
 

@@ -767,7 +767,7 @@
     <string name="settings_fade_seconds">曲間のフェード: %1$d 秒</string>
     <string name="settings_fade_desc">曲の終わりをフェードアウトし、次の曲をフェードインします。1曲ずつ再生するため、重ねずにフェードします。</string>
     <string name="settings_offload">オーディオチップで再生（省電力）</string>
-    <string name="settings_offload_desc">画面オフ時は端末のオーディオDSPが音楽をデコードし、プロセッサは数分間スリープします。対応端末のみ。音の違いはありません。</string>
+    <string name="settings_offload_desc">画面オフ時は端末のオーディオDSPが音楽をデコードし、プロセッサは数分間スリープします。対応端末のみ。一部の端末で曲が途中で終わったり、シーク位置がずれたりするため、既定ではオフです。</string>
     <string name="settings_offload_blocked_eq">イコライザーがオンの間は使われません（イコライザーにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_fade">曲間フェードがオンの間は使われません（フェードにはプロセッサが必要です）。</string>
     <string name="settings_offload_blocked_speed">速度やピッチを変えている間は使われません（変更にはプロセッサが必要です）。</string>

@@ -764,7 +764,7 @@
     <string name="settings_fade_seconds">Fundido entre canciones: %1$d s</string>
     <string name="settings_fade_desc">El final de una canción se apaga y la siguiente entra poco a poco. Rustify reproduce una canción cada vez, así que se funden en lugar de solaparse.</string>
     <string name="settings_offload">Reproducir con el chip de audio (ahorra batería)</string>
-    <string name="settings_offload_desc">Con la pantalla apagada, el DSP de audio del móvil decodifica la música y el procesador duerme minutos seguidos. Solo en móviles compatibles; no se nota al oírla.</string>
+    <string name="settings_offload_desc">Con la pantalla apagada, el DSP de audio del móvil decodifica la música y el procesador duerme minutos seguidos. Solo en móviles compatibles. Desactivado por defecto: en algunos móviles corta canciones o avanza a otro punto.</string>
     <string name="settings_offload_blocked_eq">No se usa mientras el ecualizador esté activo: el ecualizador necesita el procesador.</string>
     <string name="settings_offload_blocked_fade">No se usa mientras haya fundido entre canciones: el fundido necesita el procesador.</string>
     <string name="settings_offload_blocked_speed">No se usa mientras la velocidad o el tono estén cambiados: cambiarlos necesita el procesador.</string>
