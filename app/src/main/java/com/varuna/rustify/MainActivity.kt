@@ -244,6 +244,11 @@ internal suspend fun resolveMapsRedirect(startUrl: String): com.varuna.rustify.t
 }
 
 class MainActivity : ComponentActivity() {
+    private companion object {
+        /** The one start-up request for local network access has been made (see onCreate). */
+        const val KEY_LAN_ASKED_ON_START = "local_network_asked_on_start"
+    }
+
     private var initialDeepLink: String? = null
     private var pendingLocalNetworkRequest: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
@@ -471,6 +476,22 @@ class MainActivity : ComponentActivity() {
                 }
                 onDispose {
                     com.varuna.rustify.ui.AndroidAppPlatform.localNetworkPermissionRequester = null
+                }
+            }
+            // Updating to the target-37 build with casting or a Subsonic server already switched on:
+            // nobody flips the switch again, so the request in those sections never runs, and the
+            // server just stops answering (a TCP timeout, nothing saying why). Asked here once, and
+            // only for those users; everyone else is asked when they switch the feature on.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val store = com.varuna.rustify.platform.SharedPreferencesStore(prefs)
+                val usesLan = com.varuna.rustify.cast.CastSession.isEnabled(store) ||
+                    com.varuna.rustify.audio.AudioBackendSettings.isEnabled(store, com.varuna.rustify.audio.SubsonicAudioSource.ID)
+                if (usesLan && !prefs.getBoolean(KEY_LAN_ASKED_ON_START, false) &&
+                    com.varuna.rustify.platform.LocalNetworkAccess.needed() &&
+                    !com.varuna.rustify.platform.LocalNetworkAccess.granted(applicationContext)
+                ) {
+                    prefs.edit().putBoolean(KEY_LAN_ASKED_ON_START, true).apply()
+                    com.varuna.rustify.ui.AndroidAppPlatform.localNetworkPermissionRequester?.invoke()
                 }
             }
 

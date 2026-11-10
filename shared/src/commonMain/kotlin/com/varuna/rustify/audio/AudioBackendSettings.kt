@@ -189,6 +189,10 @@ object AudioBackendSettings {
         }
     }
 
+    /** Whether [id] is switched on in the stored stream order (false when nothing is stored). */
+    fun isEnabled(prefs: KeyValueStore, id: String): Boolean =
+        prefs.getString(KEY_STREAM)?.let { entriesIn(it) }?.any { it.id == id && it.enabled } == true
+
     /** The entries stored in [raw] that have an id, or null when [raw] is not a JSON array. */
     private fun entriesIn(raw: String): List<BackendEntry>? {
         val arr = parseJsonArray(raw) ?: return null
