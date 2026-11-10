@@ -27,7 +27,7 @@ extern "C" {
  *   initCacheDir {dir}                 initSpotifyCacheDir {dir}          setLanguage {lang}
  *   parseLink {text}                   wrapLink {url, host}               unwrapLink {url, knownHosts}
  *   searchIndex {name, items}          searchQuery {name, query, limit}   searchForget {name}
- *   indexLocalTracks {items}           findLocalMatch {track}
+ *   indexLocalTracks {items}           findLocalMatch {track}             lyricsMatch {wanted, found}
  *   playerReduce {state, action}       arrangeReleases {entries, nowMs}
  *   recordListening {session}          listContinueListening {}           forgetListening {id}
  *   recordTrackPlace {trackId, positionMs, durationMs}  trackPlace {trackId}  forgetTrackPlace {trackId}

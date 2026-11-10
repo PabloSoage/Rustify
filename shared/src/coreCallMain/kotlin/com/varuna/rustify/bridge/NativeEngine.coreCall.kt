@@ -207,6 +207,8 @@ actual object NativeEngine {
         now("indexLocalTracks") { put("items", json(itemsJson)) }
 
     actual fun findLocalMatchNative(trackJson: String): String = now("findLocalMatch") { put("track", json(trackJson)) }
+    actual fun lyricsMatchNative(wantedJson: String, foundJson: String): String =
+        now("lyricsMatch") { put("wanted", json(wantedJson)); put("found", json(foundJson)) }
 
     // ── Already listened ────────────────────────────────────────────────────────────────────────
 

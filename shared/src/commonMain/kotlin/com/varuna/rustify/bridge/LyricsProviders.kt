@@ -162,15 +162,25 @@ object LrcLibProvider : LyricsProvider {
     override val id = "lrclib"
     override suspend fun fetch(artist: String, title: String, durationSec: Int): LyricsResult? = withContext(Dispatchers.IO) {
         val a = formUrlEncode(artist); val t = formUrlEncode(title)
-        suspend fun byGet(url: String) = LyricsHttp.get(url)?.let { parse(it) }?.let { answer(it) }
+        fun isIt(j: JsonElement) = LyricsMatch.accepts(
+            artist, title, durationSec,
+            foundTitle = j.str("trackName"),
+            foundArtists = listOfNotNull(j.str("artistName")),
+            foundDurationSec = j.str("duration")?.toDoubleOrNull()?.toInt() ?: 0,
+        )
+        suspend fun byGet(url: String) = LyricsHttp.get(url)?.let { parse(it) }?.takeIf { isIt(it) }?.let { answer(it) }
         (if (durationSec > 0) byGet("https://lrclib.net/api/get?artist_name=$a&track_name=$t&duration=$durationSec") else null)
             ?: byGet("https://lrclib.net/api/get?artist_name=$a&track_name=$t")
             ?: run {
+                // A search answers whatever is closest, so the first hit is not the song: the first
+                // hit that IS the song is, and none is better than another song's lyrics.
                 val body = LyricsHttp.get("https://lrclib.net/api/search?q=" + formUrlEncode("$artist $title")) ?: return@run null
-                (parse(body) as? JsonArray)?.firstOrNull()?.let { answer(it) }
+                (parse(body) as? JsonArray)?.firstOrNull { isIt(it) }?.let { answer(it) }
             }
     }
     private fun answer(j: JsonElement): LyricsResult? {
+        // LRCLIB says when a song has no words; an instrumental is not a song whose lyrics are missing.
+        if (j.str("instrumental") == "true") return null
         val synced = j.str("syncedLyrics").orEmpty().let { if (it.isNotBlank()) parseLrcText(it) else emptyList() }
         val plain = j.str("plainLyrics")?.takeIf { it.isNotBlank() }
         return if (synced.isEmpty() && plain == null) null else LyricsResult(synced, plain)
@@ -187,9 +197,27 @@ object MusixmatchProvider : LyricsProvider {
             val tokenJson = LyricsHttp.get("$base/token.get?$common", cookie) ?: return@runCatching null
             val userToken = parse(tokenJson).obj("message").obj("body").str("user_token")
                 ?.takeIf { it.isNotBlank() && !it.startsWith("UpgradeOnly") } ?: return@runCatching null
-            val q = "q_artist=${formUrlEncode(artist)}&q_track=${formUrlEncode(title)}"
+            val q = "q_artist=${formUrlEncode(artist)}&q_track=${formUrlEncode(title)}" +
+                (if (durationSec > 0) "&q_duration=$durationSec" else "")
             val body = LyricsHttp.get("$base/macro.subtitles.get?$common&$q&usertoken=$userToken&subtitle_format=lrc", cookie) ?: return@runCatching null
             val macro = parse(body).obj("message").obj("body").obj("macro_calls")
+            // macro.subtitles.get always answers its best match for the artist and title, even when
+            // it does not have the song: that is how an instrumental came back with another song's
+            // lyrics in another language. The matched track is in the same answer; it has to be this
+            // one, and an instrumental has no lyrics to show.
+            val matched = macro.obj("matcher.track.get").obj("message").obj("body").obj("track")
+                ?: return@runCatching null
+            if (matched.str("instrumental") == "1") return@runCatching null
+            if (!LyricsMatch.accepts(
+                    artist, title, durationSec,
+                    foundTitle = matched.str("track_name"),
+                    foundArtists = listOfNotNull(matched.str("artist_name")),
+                    foundDurationSec = matched.str("track_length")?.toIntOrNull() ?: 0,
+                )
+            ) {
+                Log.i("Lyrics", "musixmatch: best match is another song (${matched.str("track_name")} by ${matched.str("artist_name")})")
+                return@runCatching null
+            }
             val subtitle = macro.obj("track.subtitles.get").obj("message").obj("body")
                 .arr("subtitle_list")?.firstOrNull().obj("subtitle").str("subtitle_body")
             if (!subtitle.isNullOrBlank()) LyricsResult(parseLrcText(subtitle), null)
@@ -207,8 +235,18 @@ object GeniusProvider : LyricsProvider {
             val q = formUrlEncode("$title $artist")
             val search = LyricsHttp.get("https://genius.com/api/search/song?q=$q") ?: return@runCatching null
             val secs = parse(search).obj("response").arr("sections") ?: return@runCatching null
+            // A search's first hit is whatever is closest; the hit used has to be this song.
             val url = secs.firstNotNullOfOrNull { section ->
-                section.arr("hits")?.firstOrNull().obj("result").str("url")?.takeIf { it.isNotBlank() }
+                section.arr("hits")?.firstNotNullOfOrNull { hit ->
+                    val result = hit.obj("result")
+                    result.str("url")?.takeIf {
+                        it.isNotBlank() && LyricsMatch.accepts(
+                            artist, title, durationSec,
+                            foundTitle = result.str("title"),
+                            foundArtists = listOfNotNull(result.obj("primary_artist").str("name"), result.str("artist_names")),
+                        )
+                    }
+                }
             } ?: return@runCatching null
             val html = LyricsHttp.get(url) ?: return@runCatching null
             // [\s\S] is any character, line breaks included: DOT_MATCHES_ALL, which only the JVM has.

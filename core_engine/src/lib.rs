@@ -2600,6 +2600,38 @@ pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_findLocalMatc
     })
 }
 
+/// JNI Bridge: is `found` (what a lyrics site matched) the song `wanted` (what is playing)?
+///
+/// Both are `matcher::local::Candidate`s. Answers `{"match":true|false}`, or `{"error":…}` for a
+/// shape it cannot read, which the caller takes as "no". Pure and in-memory.
+#[no_mangle]
+pub extern "system" fn Java_com_varuna_rustify_bridge_NativeEngine_lyricsMatchNative<'local>(
+    mut env_unowned: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    wanted_json: JString<'local>,
+    found_json: JString<'local>,
+) -> jstring {
+    jni_bridge!(env_unowned, |env| {
+        let wanted = wanted_json.mutf8_chars(env)?.to_string();
+        let found = found_json.mutf8_chars(env)?.to_string();
+        lyrics_match_answer(
+            serde_json::from_str(&wanted).map_err(|e| e.to_string()),
+            serde_json::from_str(&found).map_err(|e| e.to_string()),
+        )
+    })
+}
+
+/// The answer both bridges give for `lyricsMatch`.
+pub(crate) fn lyrics_match_answer(
+    wanted: Result<matcher::local::Candidate, String>,
+    found: Result<matcher::local::Candidate, String>,
+) -> String {
+    match (wanted, found) {
+        (Ok(w), Ok(f)) => serde_json::json!({ "match": matcher::lyrics::accepts(&w, &f) }).to_string(),
+        (Err(e), _) | (_, Err(e)) => serde_json::json!({ "error": e }).to_string(),
+    }
+}
+
 // =============================================================================
 // ALREADY LISTENED (point I)
 // =============================================================================

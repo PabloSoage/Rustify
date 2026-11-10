@@ -147,6 +147,7 @@ pub const METHODS: &[&str] = &[
     "searchForget",
     "indexLocalTracks",
     "findLocalMatch",
+    "lyricsMatch",
     "playerReduce",
     "arrangeReleases",
     "recordListening",
@@ -387,6 +388,12 @@ pub(crate) fn dispatch(method: &str, args: &Value) -> String {
                 },
             }
         }
+
+        // lyricsMatchNative — `wanted` and `found` are `matcher::local::Candidate`s; `{"match":…}`.
+        "lyricsMatch" => crate::lyrics_match_answer(
+            serde_json::from_value(args["wanted"].clone()).map_err(|e| e.to_string()),
+            serde_json::from_value(args["found"].clone()).map_err(|e| e.to_string()),
+        ),
 
         // playerReduceNative
         "playerReduce" => {
@@ -1451,6 +1458,7 @@ mod tests {
             "isSpotifyAuthenticated",
             "getSpotifyHashes",
             "findLocalMatch",
+            "lyricsMatch",
             "arrangeReleases",
             "bpmAnalyze",
             "tempoOf",

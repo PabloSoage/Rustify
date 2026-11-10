@@ -161,6 +161,12 @@ expect object NativeEngine {
     /** The id of the local file that is this track, as `{"id":…}`, or `{}`. */
     fun findLocalMatchNative(trackJson: String): String
 
+    /**
+     * Whether [foundJson] (the song a lyrics site matched) is [wantedJson] (the one playing), as
+     * `{"match":…}`. Both are `{name, artists, durationMs}`. Memory only; use [LyricsMatch].
+     */
+    fun lyricsMatchNative(wantedJson: String, foundJson: String): String
+
     // ── Already listened. Storage. ──────────────────────────────────────────────────────────────
 
     /** Marks a track as listened within a context; [queueJson] is the context's ids in order, every time. */

@@ -287,6 +287,9 @@ actual object NativeEngine {
      */
     actual external fun findLocalMatchNative(trackJson: String): String
 
+    /** Whether a lyrics site's song is the one playing, as `{"match":…}`. Pure, in memory. */
+    actual external fun lyricsMatchNative(wantedJson: String, foundJson: String): String
+
     // =====================================================================
     // ALREADY LISTENED (point I)
     // =====================================================================
