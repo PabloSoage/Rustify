@@ -21,6 +21,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.varuna.rustify.bridge.FullTrack
+import com.varuna.rustify.bridge.effectiveCoverUrl
 import com.varuna.rustify.bridge.fromJson
 import com.varuna.rustify.bridge.listFromJsonArray
 import com.varuna.rustify.bridge.toJson
@@ -1867,6 +1868,7 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
             imageUrl = context.imageUrl,
             trackTitle = st.currentTrack?.name.orEmpty(),
             trackArtist = st.currentTrack?.artists?.firstOrNull()?.name.orEmpty(),
+            trackImageUrl = st.currentTrack?.effectiveCoverUrl().orEmpty(),
             queue = st.queue.mapNotNull { it.id },
             index = index,
             positionMs = st.positionMs,

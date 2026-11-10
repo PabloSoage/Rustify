@@ -375,6 +375,7 @@ mod tests {
             image_url: String::new(),
             track_title: String::new(),
             track_artist: String::new(),
+            track_image_url: String::new(),
             state: PlayerState {
                 queue: queue.iter().map(|q| q.to_string()).collect(),
                 index: 1,

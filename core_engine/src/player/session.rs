@@ -66,6 +66,13 @@ pub struct Session {
     /// this field existed.
     #[serde(default)]
     pub track_artist: String,
+    /// The artwork of that track, which is not [`Session::image_url`]: that one is the
+    /// **context's** (a playlist's cover), and a stand-in built from it showed the playlist's cover
+    /// in the miniplayer as if it were the song's. Empty for sessions written before this field
+    /// existed; the app then falls back to the context's image only for an album, whose cover is the
+    /// track's.
+    #[serde(default)]
+    pub track_image_url: String,
     pub state: PlayerState,
     /// Duration of the track that was playing, when it is known. Used to tell "left off" from
     /// "finished"; zero means "not known", which is treated as not finished.
@@ -163,6 +170,7 @@ mod tests {
             image_url: String::new(),
             track_title: format!("Track for {id}"),
             track_artist: "An Artist".to_string(),
+            track_image_url: String::new(),
             state: PlayerState {
                 queue: vec!["t0".into(), "t1".into(), "t2".into()],
                 index: 1,

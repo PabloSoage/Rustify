@@ -108,6 +108,7 @@ async fn a_session_recorded_while_playing_comes_back_as_something_resumable() {
         image_url: "https://example.invalid/cover.jpg".into(),
         track_title: "Smooth".into(),
         track_artist: "Santana".into(),
+        track_image_url: String::new(),
         state: core_engine::player::PlayerState {
             queue: queue.clone(),
             index: 3,
@@ -161,6 +162,7 @@ async fn finishing_an_album_takes_its_row_away_and_leaves_the_ticks() {
         image_url: String::new(),
         track_title: "b".into(),
         track_artist: String::new(),
+        track_image_url: String::new(),
         state: core_engine::player::PlayerState {
             queue: queue.clone(),
             index: 1,
@@ -207,6 +209,7 @@ async fn an_export_carries_a_real_session_back_and_still_leaks_nothing() {
         image_url: String::new(),
         track_title: "y".into(),
         track_artist: String::new(),
+        track_image_url: String::new(),
         state: core_engine::player::PlayerState {
             queue: queue.clone(),
             index: 1,

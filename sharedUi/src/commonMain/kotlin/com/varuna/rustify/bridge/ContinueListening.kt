@@ -48,6 +48,12 @@ data class ListeningSession(
      * with **no network at all** — see [stub]. Empty for sessions stored before this field existed.
      */
     val trackArtist: String,
+    /**
+     * The artwork of that track — not [imageUrl], which is the **context's**. A playlist's cover is
+     * not its songs' cover, and a stand-in drawn with it put the playlist's cover in the miniplayer as
+     * the song's. Empty for sessions stored before this field existed: see [stub].
+     */
+    val trackImageUrl: String = "",
     /** Track ids in play order. */
     val queue: List<String>,
     val index: Int,
@@ -91,6 +97,10 @@ data class ListeningSession(
     fun stub(): FullTrack? {
         val trackId = currentTrackId ?: return null
         if (trackTitle.isBlank()) return null
+        // The track's own artwork; failing that, the context's only where it is the same picture —
+        // an album. For a playlist or a radio, no artwork beats the wrong one until the real track
+        // arrives a moment later.
+        val artwork = trackImageUrl.ifBlank { if (id.startsWith("album:")) imageUrl else "" }
         return FullTrack(
             id = trackId,
             name = trackTitle,
@@ -102,13 +112,13 @@ data class ListeningSession(
                       else listOf(
                           SimpleArtist(id = "", name = trackArtist, externalUri = "", images = null)
                       ),
-            album = if (imageUrl.isBlank()) null else SimpleAlbum(
+            album = if (artwork.isBlank()) null else SimpleAlbum(
                 id = "",
                 name = label,
                 externalUri = "",
                 releaseDate = null,
                 releaseDatePrecision = null,
-                images = listOf(SpotifyImage(url = imageUrl, height = null, width = null)),
+                images = listOf(SpotifyImage(url = artwork, height = null, width = null)),
                 artists = emptyList(),
                 albumType = null
             )
@@ -122,6 +132,7 @@ data class ListeningSession(
         put("image_url", imageUrl)
         put("track_title", trackTitle)
         put("track_artist", trackArtist)
+        put("track_image_url", trackImageUrl)
         put("duration_ms", durationMs)
         put("updated_at_ms", updatedAtMs)
         put("state", buildJsonObject {
@@ -144,6 +155,7 @@ data class ListeningSession(
                 imageUrl = json["image_url"].optString(),
                 trackTitle = json["track_title"].optString(),
                 trackArtist = json["track_artist"].optString(),
+                trackImageUrl = json["track_image_url"].optString(),
                 queue = queue,
                 index = state["index"].optInt(),
                 positionMs = state["position_ms"].optLong(),
