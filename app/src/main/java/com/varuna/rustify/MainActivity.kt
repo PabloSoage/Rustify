@@ -245,6 +245,7 @@ internal suspend fun resolveMapsRedirect(startUrl: String): com.varuna.rustify.t
 
 class MainActivity : ComponentActivity() {
     private var initialDeepLink: String? = null
+    private var pendingLocalNetworkRequest: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
     /**
      * Extract a Spotify link from a shared URL — unified parser.
@@ -449,6 +450,30 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
+            val localNetworkLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                pendingLocalNetworkRequest?.complete(granted)
+                pendingLocalNetworkRequest = null
+            }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                com.varuna.rustify.ui.AndroidAppPlatform.localNetworkPermissionRequester = {
+                    if (!com.varuna.rustify.platform.LocalNetworkAccess.needed()) {
+                        true
+                    } else if (com.varuna.rustify.platform.LocalNetworkAccess.granted(applicationContext)) {
+                        true
+                    } else {
+                        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                        pendingLocalNetworkRequest = deferred
+                        localNetworkLauncher.launch(com.varuna.rustify.platform.LocalNetworkAccess.PERMISSION)
+                        deferred.await()
+                    }
+                }
+                onDispose {
+                    com.varuna.rustify.ui.AndroidAppPlatform.localNetworkPermissionRequester = null
+                }
+            }
+
             var appLanguage by remember { mutableStateOf(prefs.getString("app_language", "system") ?: "system") }
             val context = LocalContext.current
             val currentConfig = LocalConfiguration.current

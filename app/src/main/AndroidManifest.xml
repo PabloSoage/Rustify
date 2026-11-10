@@ -4,6 +4,10 @@
     tools:ignore="ForegroundServicePermission">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Local network access (Android 17+ / SDK 37): gates LAN discovery (SSDP casting) and
+         own music servers on the local network (Subsonic/Navidrome on a home NAS).
+         On Android < 17, standard INTERNET covers local network. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Casting (E16): finding a speaker or TV is an SSDP multicast question, and without this
          permission the socket never sees the answers — which looks exactly like "no devices on this
          network" rather than like a missing permission. Normal permission: not prompted, and it
