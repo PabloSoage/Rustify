@@ -263,8 +263,10 @@ class EnginePlayerControllerCastTest {
         // Next poll should detect track ended on TV and advance to track 2 via castTrack
         controller.skipToNext()
 
+        // Both, not just the URI: the mock TV records the URI first and fetches the bytes after, so
+        // waiting on the URI alone read the bytes a moment too early (failed CI on 2026-11-10).
         val deadline = System.currentTimeMillis() + 4000L
-        while (setUriCalls.size < 2 && System.currentTimeMillis() < deadline) {
+        while ((setUriCalls.size < 2 || fetchedBytes.size < 2) && System.currentTimeMillis() < deadline) {
             kotlinx.coroutines.delay(50)
         }
 
