@@ -15,6 +15,13 @@ class DisconnectResumeTest {
     private val bt = listOf(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
 
     @Test
+    fun `every window offered ends while the service is still in the foreground`() {
+        // Android 17 mutes a background start without a foreground service; see FOREGROUND_AFTER_PAUSE_MS.
+        val longest = DisconnectResume.WINDOW_CHOICES.max() * 1_000L + DisconnectResume.SETTLE_MS
+        assertTrue("$longest ms", longest < DisconnectResume.FOREGROUND_AFTER_PAUSE_MS)
+    }
+
+    @Test
     fun `a car that drops for a few seconds while starting carries on`() {
         assertEquals(Action.Pause, dr.onNoisy(0, isPlaying = true))
         assertEquals(Action.ResumeAfter(DisconnectResume.SETTLE_MS), dr.onOutputsAdded(10_000, bt))

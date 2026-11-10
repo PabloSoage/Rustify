@@ -104,6 +104,19 @@ class DisconnectResume(
         const val CONNECT_PLAY_WINDOW_MS = 5_000L
         const val OWN_PAUSE_ECHO_MS = 1_000L
 
+        /**
+         * How long the playback service stays in the foreground once paused
+         * (`MediaSessionService.setForegroundServiceTimeoutMs`, set in [RustifyForegroundService]).
+         *
+         * The resume after a reconnection depends on it. It starts with the app in the background,
+         * from an `AudioDeviceCallback` and with no tap, and Android 17 mutes, without an error,
+         * audio started from the background unless a foreground service is already running. While
+         * the service is still in the foreground the resume plays. The longest window offered has
+         * to end before the service leaves the foreground ([WINDOW_CHOICES], pinned by a test).
+         * This is media3's default (10 min), written down so the dependency is visible.
+         */
+        const val FOREGROUND_AFTER_PAUSE_MS = 600_000L
+
         /** Outputs a person wears or plugs in. The speaker, the earpiece and HDMI are not. */
         val EXTERNAL_OUTPUTS = setOf(
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,

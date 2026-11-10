@@ -89,6 +89,9 @@ class RustifyForegroundService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Still in the foreground for as long as a reconnection may resume (DisconnectResume): on
+        // Android 17 a resume started after the service left it would play muted.
+        setForegroundServiceTimeoutMs(DisconnectResume.FOREGROUND_AFTER_PAUSE_MS)
 
         ensureNotificationChannel()
         setMediaNotificationProvider(
