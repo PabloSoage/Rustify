@@ -117,6 +117,18 @@ class DisconnectResume(
          */
         const val FOREGROUND_AFTER_PAUSE_MS = 600_000L
 
+        /**
+         * The same, while in a Jam. A guest's player is started by the host, over MQTT, with nobody
+         * touching the phone, and a host's by a guest's skip. Either may arrive long after a pause
+         * with the app in the background. Six hours rather than "never": a Jam left open overnight
+         * should still let the service go.
+         */
+        const val FOREGROUND_AFTER_PAUSE_IN_JAM_MS = 6 * 60 * 60_000L
+
+        /** What [RustifyForegroundService] sets, depending on whether a Jam is open. */
+        fun foregroundAfterPauseMs(inJam: Boolean): Long =
+            if (inJam) FOREGROUND_AFTER_PAUSE_IN_JAM_MS else FOREGROUND_AFTER_PAUSE_MS
+
         /** Outputs a person wears or plugs in. The speaker, the earpiece and HDMI are not. */
         val EXTERNAL_OUTPUTS = setOf(
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,

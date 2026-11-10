@@ -22,6 +22,12 @@ class DisconnectResumeTest {
     }
 
     @Test
+    fun `a Jam keeps the service in the foreground longer, and leaving it goes back`() {
+        assertTrue(DisconnectResume.foregroundAfterPauseMs(inJam = true) > DisconnectResume.FOREGROUND_AFTER_PAUSE_MS)
+        assertEquals(DisconnectResume.FOREGROUND_AFTER_PAUSE_MS, DisconnectResume.foregroundAfterPauseMs(inJam = false))
+    }
+
+    @Test
     fun `a car that drops for a few seconds while starting carries on`() {
         assertEquals(Action.Pause, dr.onNoisy(0, isPlaying = true))
         assertEquals(Action.ResumeAfter(DisconnectResume.SETTLE_MS), dr.onOutputsAdded(10_000, bt))

@@ -92,6 +92,13 @@ class RustifyForegroundService : MediaLibraryService() {
         // Still in the foreground for as long as a reconnection may resume (DisconnectResume): on
         // Android 17 a resume started after the service left it would play muted.
         setForegroundServiceTimeoutMs(DisconnectResume.FOREGROUND_AFTER_PAUSE_MS)
+        // And for as long as a Jam is open, whose commands start playback with no tap here.
+        autoScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            Jam.ui
+                .map { it.role != Jam.Role.NONE }
+                .distinctUntilChanged()
+                .collect { inJam -> setForegroundServiceTimeoutMs(DisconnectResume.foregroundAfterPauseMs(inJam)) }
+        }
 
         ensureNotificationChannel()
         setMediaNotificationProvider(
