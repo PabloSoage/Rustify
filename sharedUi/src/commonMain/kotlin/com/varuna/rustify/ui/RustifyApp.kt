@@ -226,15 +226,23 @@ fun RustifyApp(
     LaunchedEffect(Unit) {
         // Whatever Home showed last time, before anything touches the network. Without it a start
         // with no connection was a spinner and then an error, with nothing else on the screen.
+        // How long each step of Home takes, one line each (tag HomeTiming). Home was reported slow
+        // on an iPhone 15 (docs serie-4.x/31 §4) with nothing to say which step: the cache, the
+        // session or the sections. These lines are what the next test reads.
+        val t0 = com.varuna.rustify.platform.currentTimeMillis()
+        fun since() = com.varuna.rustify.platform.currentTimeMillis() - t0
         if (spotifyRepo.hasSavedSession()) {
             browseSections = spotifyRepo.cachedBrowseSections()
+            com.varuna.rustify.platform.Log.i("HomeTiming", "cached sections (${browseSections?.size ?: 0}) at ${since()} ms")
         }
         if (spotifyRepo.hasSavedSession()) {
             isRunning = true
             val result = spotifyRepo.restoreSession()
+            com.varuna.rustify.platform.Log.i("HomeTiming", "session restored (${result?.success}) at ${since()} ms")
             if (result?.success == true) {
                 try {
                     browseSections = spotifyRepo.getBrowseSections(10)
+                    com.varuna.rustify.platform.Log.i("HomeTiming", "sections fetched (${browseSections?.size ?: 0}) at ${since()} ms")
                 } catch (e: Exception) {
                     errorMessage = homeError(platform, e.message)
                 }
