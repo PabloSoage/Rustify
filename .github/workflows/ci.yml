@@ -2,9 +2,9 @@ name: ci
 
 on:
   push:
-    # multiplatform too while the shared module is moving code out of the app: every step of it has
-    # to keep the APK's checks green (docs 25).
-    branches: [main, multiplatform]
+    # The release branch too (release/X.Y, where the next version is put together before it reaches
+    # main): every step of it has to keep the APK's checks green.
+    branches: [main, 'release/**']
   pull_request:
 
 jobs:
