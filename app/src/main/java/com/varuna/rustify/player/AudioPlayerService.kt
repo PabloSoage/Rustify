@@ -3141,9 +3141,9 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
         // The first radio after an album or a playlist becomes the context when its songs start
         // playing ([liveContext]). A radio's own radio stays that radio.
         val from = playbackContext
-        if (from != null && from.id.substringBefore(':') != "radio" && radioAfterContext == null) {
+        if (from != null && ContextRef.parse(from.id) !is ContextRef.Radio && radioAfterContext == null) {
             radioAfterContext = PlaybackContext(
-                id = "radio:$seed",
+                id = ContextRef.Radio(seed).wire,
                 label = context.getString(com.varuna.rustify.R.string.radio_after_context, from.label),
                 subtitle = from.subtitle,
                 imageUrl = from.imageUrl

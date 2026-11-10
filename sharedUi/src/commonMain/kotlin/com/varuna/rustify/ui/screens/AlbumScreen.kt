@@ -118,7 +118,7 @@ fun AlbumScreen(
     // A row with no id gets a positional stand-in rather than being dropped: dropping it would
     // shift every tick after it onto the wrong song, and a stand-in is simply never marked.
     val listened = com.varuna.rustify.bridge.rememberListened(
-        contextId = "album:$albumId",
+        contextId = com.varuna.rustify.player.ContextRef.Album(albumId).wire,
         trackIds = tracks.mapIndexed { position, t -> t.id?.takeIf { it.isNotBlank() } ?: "#$position" },
         refreshKey = currentTrackId
     )

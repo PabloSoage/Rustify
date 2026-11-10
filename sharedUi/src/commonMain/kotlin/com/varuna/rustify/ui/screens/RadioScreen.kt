@@ -65,7 +65,7 @@ fun RadioScreen(
     // track rather than by refetching a list that never existed as a list.
     val radioContext = remember(trackId, trackName, tracks) {
         com.varuna.rustify.player.PlaybackContext(
-            id = "radio:$trackId",
+            id = com.varuna.rustify.player.ContextRef.Radio(trackId).wire,
             label = trackName,
             subtitle = "",
             imageUrl = tracks.firstOrNull()?.effectiveCoverUrl().orEmpty()

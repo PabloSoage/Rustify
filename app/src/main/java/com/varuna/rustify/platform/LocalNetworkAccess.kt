@@ -1,14 +1,8 @@
 package com.varuna.rustify.platform
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.Composable
 import androidx.core.content.ContextCompat
 
 /**
@@ -60,29 +54,6 @@ object LocalNetworkAccess {
         return !isGranted
     }
 
-    /**
-     * Opens the application's details settings page in the Android system settings.
-     */
-    fun openAppSettings(context: Context) {
-        runCatching {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-        }
-    }
-
-    /**
-     * A Composable launcher for requesting local network permission.
-     */
-    @Composable
-    fun rememberLauncher(onResult: (Boolean) -> Unit): () -> Unit {
-        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            onResult(granted)
-        }
-        return {
-            launcher.launch(PERMISSION)
-        }
-    }
+    // The request itself is MainActivity's launcher (AndroidAppPlatform.ensureLocalNetwork), and
+    // the settings page is AndroidAppPlatform.openAppSettings: one of each, nothing here.
 }

@@ -165,9 +165,10 @@ suspend fun resumeListening(
      */
     onPlaying: () -> Unit = {}
 ) {
-    val (kind, id) = session.id.split(':', limit = 2).let {
-        if (it.size == 2) it[0] to it[1] else return
-    }
+    val ref = com.varuna.rustify.player.ContextRef.parse(session.id)
+    // A kind this version cannot fetch (one added later, arriving over Drive) is left alone rather
+    // than half-resumed as a single stand-in track.
+    if (ref is com.varuna.rustify.player.ContextRef.Unknown) return
     val context = com.varuna.rustify.player.PlaybackContext(
         id = session.id,
         label = session.label,
@@ -198,21 +199,21 @@ suspend fun resumeListening(
     }
 
     val tracks = runCatching {
-        when (kind) {
+        when (ref) {
             // Every page, not just the first: a session left off at track 120 used to resume at
             // track 1 because the track it wanted was never fetched. That paging now lives in the
             // repository, because "the tracks it has scrolled to" being read as "the whole album"
             // turned out to be a bug three screens had as well.
-            "album" -> spotifyRepo.getAllAlbumTracks(id)
-            "playlist" -> spotifyRepo.getAllPlaylistTracks(id)
+            is com.varuna.rustify.player.ContextRef.Album -> spotifyRepo.getAllAlbumTracks(ref.albumId)
+            is com.varuna.rustify.player.ContextRef.Playlist -> spotifyRepo.getAllPlaylistTracks(ref.playlistId)
             // A radio is a generated list, so there is nothing to re-fetch by id: it is regenerated
             // from the track it was seeded on. Resuming it means the same seed, which gives a list
             // that starts where you were even when its tail differs.
-            "radio" -> spotifyRepo.getTrackRadio(id)
+            is com.varuna.rustify.player.ContextRef.Radio -> spotifyRepo.getTrackRadio(ref.seedTrackId)
             // Your liked songs: the whole list, and the track is found in it by id below, never by
             // the stored index — liking one more song moves every row by one.
-            "liked" -> spotifyRepo.getAllLikedTracks()
-            else -> emptyList()
+            com.varuna.rustify.player.ContextRef.Liked -> spotifyRepo.getAllLikedTracks()
+            is com.varuna.rustify.player.ContextRef.Unknown -> emptyList()
         }
     }.getOrElse { emptyList() }
 

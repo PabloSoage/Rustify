@@ -38,7 +38,8 @@ const FINISHED_MARGIN_MS: u64 = 30_000;
 /// One thing you were listening to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
-    /// What was being played, as a stable string: `"album:ID"`, `"playlist:ID"`, `"radio:ID"`.
+    /// What was being played, as a stable string: `"album:ID"`, `"playlist:ID"`, `"radio:ID"`,
+    /// `"liked:spotify"`. Opaque here; the app parses it once (`ContextRef`).
     ///
     /// The id is what makes this per-context rather than per-track: coming back to the same album
     /// updates the entry you already had instead of adding another.
@@ -185,8 +186,12 @@ mod tests {
     #[tokio::test]
     async fn coming_back_to_the_same_context_updates_it_rather_than_adding_another() {
         let _guard = mock::lock_and_reset();
-        record::<MockEnv>(session("album:a", 60_000, 100)).await.unwrap();
-        record::<MockEnv>(session("album:a", 120_000, 200)).await.unwrap();
+        record::<MockEnv>(session("album:a", 60_000, 100))
+            .await
+            .unwrap();
+        record::<MockEnv>(session("album:a", 120_000, 200))
+            .await
+            .unwrap();
 
         let sessions = list::<MockEnv>().await;
         assert_eq!(sessions.len(), 1);
@@ -208,7 +213,9 @@ mod tests {
         // "barely started" per track deleted the row on each change and re-created it twenty seconds
         // later. Past the first track, the context is plainly being listened to.
         let _guard = mock::lock_and_reset();
-        record::<MockEnv>(session("album:a", 60_000, 100)).await.unwrap();
+        record::<MockEnv>(session("album:a", 60_000, 100))
+            .await
+            .unwrap();
 
         let mut just_advanced = session("album:a", 400, 200);
         just_advanced.state.index = 2;
@@ -224,7 +231,9 @@ mod tests {
         // Otherwise an album you completed sits on the home screen forever offering its final
         // twenty seconds back.
         let _guard = mock::lock_and_reset();
-        record::<MockEnv>(session("album:a", 60_000, 100)).await.unwrap();
+        record::<MockEnv>(session("album:a", 60_000, 100))
+            .await
+            .unwrap();
         assert_eq!(list::<MockEnv>().await.len(), 1);
 
         let mut finished = session("album:a", 235_000, 200);
@@ -260,8 +269,12 @@ mod tests {
     #[tokio::test]
     async fn a_session_can_be_resumed_and_forgotten_by_id() {
         let _guard = mock::lock_and_reset();
-        record::<MockEnv>(session("playlist:p", 60_000, 100)).await.unwrap();
-        record::<MockEnv>(session("album:a", 60_000, 200)).await.unwrap();
+        record::<MockEnv>(session("playlist:p", 60_000, 100))
+            .await
+            .unwrap();
+        record::<MockEnv>(session("album:a", 60_000, 200))
+            .await
+            .unwrap();
 
         let resumed = get::<MockEnv>("playlist:p").await.expect("the playlist");
         assert_eq!(resumed.state.index, 1);

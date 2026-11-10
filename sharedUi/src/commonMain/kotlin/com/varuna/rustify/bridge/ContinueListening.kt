@@ -100,7 +100,10 @@ data class ListeningSession(
         // The track's own artwork; failing that, the context's only where it is the same picture —
         // an album. For a playlist or a radio, no artwork beats the wrong one until the real track
         // arrives a moment later.
-        val artwork = trackImageUrl.ifBlank { if (id.startsWith("album:")) imageUrl else "" }
+        val artwork = trackImageUrl.ifBlank {
+            if (com.varuna.rustify.player.ContextRef.parse(id) is com.varuna.rustify.player.ContextRef.Album) imageUrl
+            else ""
+        }
         return FullTrack(
             id = trackId,
             name = trackTitle,

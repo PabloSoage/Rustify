@@ -693,7 +693,7 @@ fun RustifyApp(
                             audioPlayerService.loadPlaylist(
                                 tracks, index,
                                 context = com.varuna.rustify.player.PlaybackContext(
-                                    id = "playlist:${currentScreen.id}",
+                                    id = com.varuna.rustify.player.ContextRef.Playlist(currentScreen.id).wire,
                                     label = currentScreen.name,
                                     imageUrl = currentScreen.images.firstOrNull()?.url.orEmpty()
                                 )
@@ -725,7 +725,7 @@ fun RustifyApp(
                             audioPlayerService.loadPlaylist(
                                 tracks, index,
                                 context = com.varuna.rustify.player.PlaybackContext(
-                                    id = "album:${currentScreen.id}",
+                                    id = com.varuna.rustify.player.ContextRef.Album(currentScreen.id).wire,
                                     label = currentScreen.name,
                                     imageUrl = currentScreen.images.firstOrNull()?.url.orEmpty()
                                 )

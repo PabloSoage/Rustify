@@ -143,7 +143,7 @@ fun PlaylistScreen(
     // This is the list where the bitfield's realignment earns its keep, because playlists are the
     // ones that get edited.
     val listened = com.varuna.rustify.bridge.rememberListened(
-        contextId = "playlist:$playlistId",
+        contextId = com.varuna.rustify.player.ContextRef.Playlist(playlistId).wire,
         trackIds = tracks.mapIndexed { position, t -> t.id?.takeIf { it.isNotBlank() } ?: "#$position" },
         refreshKey = currentTrackId
     )
