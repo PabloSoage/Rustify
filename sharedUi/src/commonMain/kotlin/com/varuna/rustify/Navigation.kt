@@ -224,7 +224,7 @@ suspend fun resumeListening(
     }
 
     if (stub != null) {
-        audioPlayerService.replaceQueuePreservingCurrent(tracks, target)
+        audioPlayerService.replaceQueuePreservingCurrent(tracks, target, playOrder = session.playOrder(tracks))
         return
     }
 

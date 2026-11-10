@@ -1873,7 +1873,8 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
             index = index,
             positionMs = st.positionMs,
             durationMs = st.durationMs,
-            updatedAtMs = System.currentTimeMillis()
+            updatedAtMs = System.currentTimeMillis(),
+            shuffle = st.isShuffle
         )
         // The queue can contain a track with no id; if that shifted the indices the session would
         // resume on the wrong song, so it is dropped rather than stored wrong.
@@ -3005,25 +3006,34 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * those seconds the user may have skipped, or started something else entirely. Replacing the
      * queue then would yank them back to a context they had left.
      */
-    override fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
+    override fun replaceQueuePreservingCurrent(
+        tracks: List<FullTrack>,
+        keepPlayingId: String?,
+        playOrder: List<FullTrack>?,
+    ) {
         if (tracks.isEmpty() || keepPlayingId == null) return
         val st = _state.value
         if (st.currentTrack?.id != keepPlayingId) return
-        val idx = tracks.indexOfFirst { it.id == keepPlayingId }
+        // A resumed shuffle plays in the order it was playing; [tracks] stays the order switching
+        // shuffle off goes back to, as after cyclePlaybackMode.
+        val queue = playOrder ?: tracks
+        val idx = queue.indexOfFirst { it.id == keepPlayingId }
         // Not in the list any more — the playlist was edited since. The single-track queue it is
         // playing from stays, which is worse than a full queue and much better than a jump.
         if (idx < 0) return
 
         currentQueueIndex = idx
         _state.value = st.copy(
-            queue = tracks,
+            queue = queue,
             originalQueue = tracks,
+            isShuffle = playOrder != null || st.isShuffle,
+            isRepeat = if (playOrder != null) false else st.isRepeat,
             // The fetched copy carries the real artwork and duration; the stub had only what the row
             // stored. Swapping it here is why the notification fills in a second after playback
             // starts rather than being wrong for the whole track.
-            currentTrack = tracks[idx]
+            currentTrack = queue[idx]
         )
-        notifyQueueChanged(tracks)
+        notifyQueueChanged(queue)
         requestSave()
         preBufferNextTrack()
     }

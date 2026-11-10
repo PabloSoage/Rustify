@@ -2,6 +2,7 @@ package com.varuna.rustify.bridge
 
 import com.varuna.rustify.platform.Log
 import com.varuna.rustify.util.optArray
+import com.varuna.rustify.util.optBoolean
 import com.varuna.rustify.util.optInt
 import com.varuna.rustify.util.optLong
 import com.varuna.rustify.util.optObject
@@ -59,7 +60,13 @@ data class ListeningSession(
     val index: Int,
     val positionMs: Long,
     val durationMs: Long,
-    val updatedAtMs: Long
+    val updatedAtMs: Long,
+    /**
+     * Shuffle was on. [queue] is then already in the shuffled order (the core's `PlayerState`
+     * keeps the shuffle *in* the order), so resuming plays it in that order: see [playOrder].
+     * False for sessions stored before the app wrote it, which resume in the list's order.
+     */
+    val shuffle: Boolean = false
 ) {
     /** The track to resume on, or null if the stored index no longer makes sense. */
     val currentTrackId: String? get() = queue.getOrNull(index)
@@ -128,6 +135,30 @@ data class ListeningSession(
         )
     }
 
+    /**
+     * [fetched] — the context's whole list, in its own order — rearranged into the order this
+     * session was playing, or null when shuffle was off and the list's order is the one to use.
+     *
+     * Without it a shuffled session came back in the list's order: the song was right and everything
+     * after it was the album from that point on. Each stored id takes the next copy of that track,
+     * so a playlist that repeats a song keeps both; a stored id no longer in the list is skipped,
+     * and a track added to the list since is played after the rest, in the list's order.
+     */
+    fun playOrder(fetched: List<FullTrack>): List<FullTrack>? {
+        if (!shuffle) return null
+        val unused = fetched.indices.groupBy { fetched[it].id }
+            .mapValues { (_, at) -> ArrayDeque(at) }
+        val taken = BooleanArray(fetched.size)
+        val ordered = ArrayList<FullTrack>(fetched.size)
+        for (id in queue) {
+            val at = unused[id]?.removeFirstOrNull() ?: continue
+            taken[at] = true
+            ordered += fetched[at]
+        }
+        fetched.forEachIndexed { at, track -> if (!taken[at]) ordered += track }
+        return ordered
+    }
+
     internal fun toJson(): JsonObject = buildJsonObject {
         put("id", id)
         put("label", label)
@@ -142,6 +173,7 @@ data class ListeningSession(
             put("queue", JsonArray(queue.map { JsonPrimitive(it) }))
             put("index", index)
             put("position_ms", positionMs)
+            put("shuffle", shuffle)
         })
     }
 
@@ -163,7 +195,8 @@ data class ListeningSession(
                 index = state["index"].optInt(),
                 positionMs = state["position_ms"].optLong(),
                 durationMs = json["duration_ms"].optLong(),
-                updatedAtMs = json["updated_at_ms"].optLong()
+                updatedAtMs = json["updated_at_ms"].optLong(),
+                shuffle = state["shuffle"].optBoolean()
             )
         }
     }

@@ -346,12 +346,19 @@ class EnginePlayerController(
 
     override fun removeCachedStreamUrl(trackId: String) = Unit
 
-    override fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?) {
+    override fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?, playOrder: List<FullTrack>?) {
         if (tracks.isEmpty() || keepPlayingId == null || player.ui.value.current?.id != keepPlayingId) return
-        val at = tracks.indexOfFirst { it.id == keepPlayingId }
+        val order = playOrder ?: tracks
+        val at = order.indexOfFirst { it.id == keepPlayingId }
         if (at < 0) return
-        player.editQueue(tracks, at)
-        forgetShuffle()
+        player.editQueue(order, at)
+        if (playOrder == null) {
+            forgetShuffle()
+        } else {
+            if (mode.value == Mode.REPEAT) player.setRepeat("off")
+            beforeShuffle = tracks
+            mode.value = Mode.SHUFFLE
+        }
     }
 
     // The DJ's blocks are the whole of what follows the song playing (the phone's, without its

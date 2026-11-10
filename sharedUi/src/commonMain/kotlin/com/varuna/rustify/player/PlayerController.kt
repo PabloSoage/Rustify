@@ -66,8 +66,15 @@ interface PlayerController {
      * Swaps the queue for [tracks] without interrupting the song playing, which must be
      * [keepPlayingId] and be in [tracks]; otherwise nothing changes (the user moved on while the list
      * was being fetched). How "continue listening" starts at once and fills the queue in after.
+     *
+     * [playOrder], when given, is [tracks] in the order to play — a resumed shuffle — and turns
+     * shuffle on, with [tracks] as the order switching it off goes back to.
      */
-    fun replaceQueuePreservingCurrent(tracks: List<FullTrack>, keepPlayingId: String?)
+    fun replaceQueuePreservingCurrent(
+        tracks: List<FullTrack>,
+        keepPlayingId: String?,
+        playOrder: List<FullTrack>? = null,
+    )
 
     /**
      * Replaces everything after the song playing with [tracks], leaving that song alone: the
