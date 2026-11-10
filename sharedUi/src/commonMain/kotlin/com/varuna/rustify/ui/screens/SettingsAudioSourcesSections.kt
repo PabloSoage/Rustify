@@ -137,6 +137,8 @@ import com.varuna.rustify.ui.resources.settings_audio_backends
 import com.varuna.rustify.ui.resources.settings_backends_download_order
 import com.varuna.rustify.ui.resources.settings_backends_drag_hint
 import com.varuna.rustify.ui.resources.settings_backends_stream_order
+import com.varuna.rustify.ui.resources.settings_local_network_permission_denied
+import com.varuna.rustify.ui.resources.settings_open_app_settings
 import com.varuna.rustify.ui.resources.settings_subsonic
 import com.varuna.rustify.ui.resources.settings_subsonic_desc
 import com.varuna.rustify.ui.resources.settings_subsonic_failed
@@ -361,6 +363,8 @@ private fun ReorderableBackendList(
     catalog: Map<String, AudioSourceCapabilities>,
     onOrderChanged: (List<AudioBackendSettings.BackendEntry>) -> Unit
 ) {
+    val platform = LocalAppPlatform.current
+    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val rowHeightPx = with(density) { 56.dp.toPx() }
     var order by remember(entries) { mutableStateOf(entries) }
@@ -411,7 +415,16 @@ private fun ReorderableBackendList(
                         if (badges.isNotEmpty()) Text(badges.joinToString(" · "), color = Color.Gray, fontSize = 12.sp)
                     }
                     Switch(checked = entry.enabled, onCheckedChange = { checked ->
-                        val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = checked); order = mutable; onOrderChanged(order)
+                        if (checked && entry.id == SubsonicAudioSource.ID) {
+                            scope.launch {
+                                val ok = platform.ensureLocalNetwork()
+                                if (ok) {
+                                    val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = true); order = mutable; onOrderChanged(order)
+                                }
+                            }
+                        } else {
+                            val mutable = order.toMutableList(); mutable[currentIndex] = entry.copy(enabled = checked); order = mutable; onOrderChanged(order)
+                        }
                     }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF1DB954)))
                 }
             }
@@ -716,6 +729,7 @@ fun DeezerBackendSection() {
 /** The user's own Subsonic server (`20`): address, user, password, checked with `ping`. */
 @Composable
 fun SubsonicBackendSection() {
+    val platform = LocalAppPlatform.current
     val store = rememberSourceEnvironment().settings
     val ss = SubsonicSettings
     val initial = remember { ss.load(store) }
@@ -751,6 +765,12 @@ fun SubsonicBackendSection() {
                     ss.save(store, config)
                     busy = true
                     scope.launch {
+                        val ok = platform.ensureLocalNetwork()
+                        if (!ok) {
+                            busy = false
+                            status = appString(Res.string.settings_local_network_permission_denied)
+                            return@launch
+                        }
                         val r = ss.ping(config)
                         busy = false
                         if (r.isSuccess) AudioBackendSettings.enable(store, SubsonicAudioSource.ID)
@@ -761,7 +781,16 @@ fun SubsonicBackendSection() {
                     }
                 }
             ) { Text(stringResource(Res.string.settings_subsonic_test), color = Color(0xFF1DB954)) }
-            if (status.isNotEmpty()) Text(status, color = Color.LightGray, fontSize = 12.sp)
+            if (status.isNotEmpty()) {
+                val deniedMsg = stringResource(Res.string.settings_local_network_permission_denied)
+                val isDenied = status == deniedMsg
+                Text(status, color = if (isDenied) Color(0xFFE57373) else Color.LightGray, fontSize = 12.sp)
+                if (isDenied) {
+                    TextButton(onClick = { platform.openAppSettings() }) {
+                        Text(stringResource(Res.string.settings_open_app_settings), color = Color(0xFF1DB954), fontSize = 12.sp)
+                    }
+                }
+            }
         }
     }
 }

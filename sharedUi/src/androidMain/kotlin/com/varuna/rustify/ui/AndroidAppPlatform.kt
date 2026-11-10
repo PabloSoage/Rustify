@@ -70,6 +70,31 @@ class AndroidAppPlatform(context: Context) : AppPlatform {
         (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
             ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()
     }.getOrNull()
+
+    override suspend fun ensureLocalNetwork(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 37) return true
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                app,
+                "android.permission.ACCESS_LOCAL_NETWORK"
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return true
+        return localNetworkPermissionRequester?.invoke() ?: false
+    }
+
+    override fun openAppSettings() {
+        runCatching {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", app.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            app.startActivity(intent)
+        }
+    }
+
+    companion object {
+        @kotlin.concurrent.Volatile
+        var localNetworkPermissionRequester: (suspend () -> Boolean)? = null
+    }
 }
 
 /**

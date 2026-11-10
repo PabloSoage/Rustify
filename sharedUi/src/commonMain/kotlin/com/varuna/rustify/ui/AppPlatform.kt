@@ -68,6 +68,16 @@ interface AppPlatform {
     /** Whether there is a network to try at all; "no" turns an error into "you are offline". */
     fun isOnline(): Boolean
 
+    /**
+     * Ensures the app has permission to communicate with devices or servers on the local network.
+     * On Android 17+ (SDK 37), prompts for ACCESS_LOCAL_NETWORK; on older Android and other platforms,
+     * returns true immediately without asking.
+     */
+    suspend fun ensureLocalNetwork(): Boolean = true
+
+    /** Opens the system's application details settings page (e.g. to grant permissions). */
+    fun openAppSettings() {}
+
     enum class Kind { ANDROID, DESKTOP, IOS, WEB }
 
     companion object {

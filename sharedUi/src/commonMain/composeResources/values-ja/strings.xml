@@ -677,6 +677,8 @@
     <string name="settings_casting_idle">キャストしていません</string>
     <string name="settings_casting_to">%1$s で再生中</string>
     <string name="settings_casting_stop">停止</string>
+    <string name="settings_local_network_permission_denied">近隣のデバイスへのアクセス権限がない場合、Rustify はローカルネットワークに接続できません。</string>
+    <string name="settings_open_app_settings">アプリの設定を開く</string>
     <string name="cast_track_not_on_device">「%1$s」はこのデバイスにまだないため、送信できません</string>    <!-- キュー終了時の自動ラジオ -->
     <string name="settings_autoplay_radio">キューが終わったら</string>
     <string name="settings_autoplay_radio_enabled">似た曲を続けて再生</string>

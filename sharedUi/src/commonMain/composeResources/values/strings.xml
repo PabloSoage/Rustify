@@ -680,6 +680,8 @@
     <string name="settings_casting_idle">Not casting</string>
     <string name="settings_casting_to">Playing on %1$s</string>
     <string name="settings_casting_stop">Stop</string>
+    <string name="settings_local_network_permission_denied">Without nearby devices permission, Rustify cannot reach your local network.</string>
+    <string name="settings_open_app_settings">Open app settings</string>
     <string name="cast_track_not_on_device">"%1$s" is not on this device yet, so there is nothing to send</string>    <!-- Autoplay radio at the end of a queue -->
     <string name="settings_autoplay_radio">When a queue ends</string>
     <string name="settings_autoplay_radio_enabled">Keep playing similar music</string>

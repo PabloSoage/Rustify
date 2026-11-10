@@ -672,6 +672,8 @@
     <string name="settings_casting_idle">Sin castear</string>
     <string name="settings_casting_to">Sonando en %1$s</string>
     <string name="settings_casting_stop">Parar</string>
+    <string name="settings_local_network_permission_denied">Sin el permiso de dispositivos cercanos, Rustify no puede llegar a tu red local.</string>
+    <string name="settings_open_app_settings">Abrir ajustes de la app</string>
     <string name="cast_track_not_on_device">«%1$s» aún no está en este dispositivo, así que no hay nada que enviar</string>    <!-- Radio automatica al acabar la cola -->
     <string name="settings_autoplay_radio">Cuando se acaba la cola</string>
     <string name="settings_autoplay_radio_enabled">Seguir con música parecida</string>

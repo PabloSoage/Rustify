@@ -40,6 +40,8 @@ import com.varuna.rustify.ui.resources.settings_casting_search
 import com.varuna.rustify.ui.resources.settings_casting_searching
 import com.varuna.rustify.ui.resources.settings_casting_stop
 import com.varuna.rustify.ui.resources.settings_casting_to
+import com.varuna.rustify.ui.resources.settings_local_network_permission_denied
+import com.varuna.rustify.ui.resources.settings_open_app_settings
 import com.varuna.rustify.ui.theme.RustifySwitch
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -67,6 +69,7 @@ fun CastingSection() {
     /** Why the last attempt did not start. Shown as-is: every reason is something the user can act on. */
     var failure by remember { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
+    var localNetworkDenied by remember { mutableStateOf(false) }
     val noneFound = stringResource(Res.string.settings_casting_none)
     val player = LocalPlayer.current
 
@@ -94,12 +97,24 @@ fun CastingSection() {
                 Switch(
                     checked = enabled,
                     onCheckedChange = { on ->
-                        enabled = on
-                        CastSession.setEnabled(store, on)
-                        if (!on) {
+                        if (on) {
+                            scope.launch {
+                                val ok = platform.ensureLocalNetwork()
+                                if (ok) {
+                                    enabled = true
+                                    CastSession.setEnabled(store, true)
+                                    localNetworkDenied = false
+                                } else {
+                                    localNetworkDenied = true
+                                }
+                            }
+                        } else {
+                            enabled = false
+                            CastSession.setEnabled(store, false)
                             devices = emptyList()
                             active = null
                             failure = null
+                            localNetworkDenied = false
                         }
                     },
                     colors = RustifySwitch.colors()
@@ -111,6 +126,22 @@ fun CastingSection() {
                 color = Color.Gray,
                 fontSize = 12.sp
             )
+
+            if (localNetworkDenied) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(Res.string.settings_local_network_permission_denied),
+                    color = Color(0xFFE57373),
+                    fontSize = 12.sp
+                )
+                TextButton(onClick = { platform.openAppSettings() }) {
+                    Text(
+                        stringResource(Res.string.settings_open_app_settings),
+                        color = Color(0xFF1DB954),
+                        fontSize = 12.sp
+                    )
+                }
+            }
 
             if (enabled) {
                 Spacer(Modifier.height(14.dp))
@@ -141,6 +172,12 @@ fun CastingSection() {
                             enabled = !searching,
                             onClick = {
                                 scope.launch {
+                                    val ok = platform.ensureLocalNetwork()
+                                    if (!ok) {
+                                        localNetworkDenied = true
+                                        return@launch
+                                    }
+                                    localNetworkDenied = false
                                     searching = true
                                     devices = CastDiscovery.search()
                                     searching = false
