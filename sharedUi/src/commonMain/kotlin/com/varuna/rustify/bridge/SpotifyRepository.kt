@@ -413,6 +413,20 @@ val localAlbumTracks = mutableMapOf<String, List<FullTrack>>()
         }
     }
 
+    /**
+     * Every liked song, for something that decides about the whole list (resuming it).
+     *
+     * Not [likedTracks]: that is filled in batches after start-up, so early on it holds the first 50.
+     * The cache file has them all; with no cache, the list is synced first.
+     */
+    suspend fun getAllLikedTracks(): List<FullTrack> = withContext(Dispatchers.IO) {
+        val cached = getLikedTracksCacheFile().takeIf { it.fileExists() }?.readTextOrNull()
+            ?.let { runCatching { decodeTracks(it) }.getOrNull() }
+        if (!cached.isNullOrEmpty()) return@withContext cached
+        if (likedTracks.isEmpty() && isAuthenticated()) syncLikedTracks()
+        withContext(Dispatchers.Main) { likedTracks.toList() }
+    }
+
     private fun saveLikedTracksToCache() {
         val file = getLikedTracksCacheFile()
         try {

@@ -134,6 +134,10 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onGoToRadio: ((String, String) -> Unit)? = null,
     onShufflePlay: (List<FullTrack>) -> Unit = {},
+    // The liked songs tab plays as a context of its own ("continue listening" offers it back);
+    // every other tab plays a plain list.
+    onLikedTrackClick: (List<FullTrack>, Int) -> Unit = onTrackClick,
+    onLikedShufflePlay: (List<FullTrack>) -> Unit = onShufflePlay,
     // YouTube Music: shared repo plus navigation callbacks to the top-level NavHost screens.
     ytmRepo: YtMusicRepository? = null,
     onYtmOpenSearch: () -> Unit = {},
@@ -258,13 +262,13 @@ fun LibraryScreen(
                 LibraryTab.ARTISTS -> LibraryArtists(spotifyRepo, onArtistClick, globalSearchQuery)
                 LibraryTab.TRACKS -> LibraryTracks(
                     spotifyRepo = spotifyRepo,
-                    onTrackClick = onTrackClick,
+                    onTrackClick = onLikedTrackClick,
                     onAddToQueue = onAddToQueue,
                     onGoToQueue = onGoToQueue,
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
                     onGoToRadio = onGoToRadio,
-                    onShufflePlay = onShufflePlay,
+                    onShufflePlay = onLikedShufflePlay,
                     currentTrackId = currentTrackId,
                     searchQuery = globalSearchQuery
                 )

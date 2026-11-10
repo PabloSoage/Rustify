@@ -14,7 +14,13 @@ data class PlaybackContext(
 ) {
     // The org.json forms the saved playback state reads and writes (`toJson()`,
     // `PlaybackContext.fromJson(obj)`) are the app's, in bridge/SpotifyModelsJson.kt.
-    companion object
+    companion object {
+        /**
+         * Your Spotify liked songs, as a context: one per account, so it has no id of its own. Kind
+         * `liked`, which is what [com.varuna.rustify.resumeListening] reads back.
+         */
+        const val LIKED_SONGS_ID = "liked:spotify"
+    }
 }
 
 data class AudioPlayerState(

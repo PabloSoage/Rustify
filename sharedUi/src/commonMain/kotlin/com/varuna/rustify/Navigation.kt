@@ -209,6 +209,9 @@ suspend fun resumeListening(
             // from the track it was seeded on. Resuming it means the same seed, which gives a list
             // that starts where you were even when its tail differs.
             "radio" -> spotifyRepo.getTrackRadio(id)
+            // Your liked songs: the whole list, and the track is found in it by id below, never by
+            // the stored index — liking one more song moves every row by one.
+            "liked" -> spotifyRepo.getAllLikedTracks()
             else -> emptyList()
         }
     }.getOrElse { emptyList() }

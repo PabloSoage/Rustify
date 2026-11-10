@@ -2264,10 +2264,10 @@ class AudioPlayerService private constructor(private val context: Context) : Pla
      * Start playback of [tracks] in shuffle mode from a random first track (not index 0).
      * Forces isShuffle ON before delegating to loadPlaylist (which honours _state.isShuffle).
      */
-    override fun shufflePlay(tracks: List<FullTrack>) {
+    override fun shufflePlay(tracks: List<FullTrack>, context: PlaybackContext?) {
         if (tracks.isEmpty()) return
         _state.value = _state.value.copy(isShuffle = true, isRepeat = false)
-        loadPlaylist(tracks, tracks.indices.random(), keepShuffle = true)
+        loadPlaylist(tracks, tracks.indices.random(), keepShuffle = true, context = context)
         requestSave()
     }
 

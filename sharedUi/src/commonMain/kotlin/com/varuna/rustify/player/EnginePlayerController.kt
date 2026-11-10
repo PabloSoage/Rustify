@@ -117,7 +117,7 @@ class EnginePlayerController(
 
     override fun loadAndPlay(track: FullTrack) = loadPlaylist(listOf(track), 0)
 
-    override fun shufflePlay(tracks: List<FullTrack>) {
+    override fun shufflePlay(tracks: List<FullTrack>, context: PlaybackContext?) {
         forgetShuffle()
         if (mode.value == Mode.REPEAT) player.setRepeat("off")
         player.playAll(inShuffledOrder(tracks, current = null), 0)

@@ -308,6 +308,13 @@ fun RustifyApp(
     // would stay on the previous song. With derivedStateOf, reading `currentTrack` inside the
     // movableContent recomposes when the track changes.
     val currentTrack by remember { derivedStateOf { playerStateHolder.value.currentTrack } }
+    val likedLabel = stringResource(Res.string.library_tab_liked_tracks)
+    val likedContext = remember(likedLabel) {
+        com.varuna.rustify.player.PlaybackContext(
+            id = com.varuna.rustify.player.PlaybackContext.LIKED_SONGS_ID,
+            label = likedLabel
+        )
+    }
 
     LaunchedEffect(currentTrack?.id) {
         val current = currentTrack?.id
@@ -623,6 +630,10 @@ fun RustifyApp(
                             },
                             onTrackClick = { tracks, index -> audioPlayerService.loadPlaylist(tracks, index) },
                             onShufflePlay = { audioPlayerService.shufflePlay(it) },
+                            onLikedTrackClick = { tracks, index ->
+                                audioPlayerService.loadPlaylist(tracks, index, context = likedContext)
+                            },
+                            onLikedShufflePlay = { audioPlayerService.shufflePlay(it, likedContext) },
                             onAddToQueue = { track -> audioPlayerService.enqueue(track) },
                             onGoToQueue = {
                                 currentTrack?.id?.let { id ->

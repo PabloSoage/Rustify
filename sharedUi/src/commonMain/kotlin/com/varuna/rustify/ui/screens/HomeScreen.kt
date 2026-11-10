@@ -439,7 +439,9 @@ fun ContinueListeningRow(
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = session.imageUrl.takeIf { it.isNotBlank() },
+                            // A context with no picture of its own (your liked songs) shows the
+                            // song it was left on.
+                            model = session.imageUrl.ifBlank { session.trackImageUrl }.takeIf { it.isNotBlank() },
                             contentDescription = session.label,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

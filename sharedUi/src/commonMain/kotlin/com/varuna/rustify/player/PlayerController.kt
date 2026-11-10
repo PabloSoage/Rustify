@@ -41,7 +41,7 @@ interface PlayerController {
         startPositionMs: Long = 0L,
     )
     fun loadAndPlay(track: FullTrack)
-    fun shufflePlay(tracks: List<FullTrack>)
+    fun shufflePlay(tracks: List<FullTrack>, context: PlaybackContext? = null)
     fun playPreview(track: FullTrack, youtubeVideoId: String)
     fun playSpecificTrackInQueue(trackId: String, youtubeId: String? = null, queueIndex: Int? = null)
     fun retryCurrentTrack(youtubeId: String? = null, fallbackTrackId: String? = null, isAutoRetry: Boolean = false)
